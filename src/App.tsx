@@ -36,10 +36,12 @@ const Jarvis = lazyWithRetry(() => import("./pages/Jarvis"), "jarvis");
 const Widgets = lazyWithRetry(() => import("./pages/Widgets"), "widgets");
 const SmartBoardMode = lazyWithRetry(() => import("./pages/SmartBoardMode"), "smartboard");
 const GuardScanner = lazyWithRetry(() => import("./pages/GuardScanner"), "guard-scanner");
+const SharedMediaPage = lazyWithRetry(() => import("./pages/SharedMediaPage"), "shared-media-page");
 
 import { AttendanceProvider } from './contexts/AttendanceContext';
 import { ThemeProvider } from './hooks/use-theme';
 import { PerformanceModeProvider } from './hooks/usePerformanceMode';
+import SharedMediaGateway from './components/share/SharedMediaGateway';
 
 
 import MobileAppShell from "./components/mobile/MobileAppShell";
@@ -333,6 +335,7 @@ function AnimatedRoutes() {
         } />
         <Route path="/widgets" element={bound(<Widgets />, "Quick Tools")} />
         <Route path="/smartboard" element={bound(<SmartBoardMode />, "Smart Board")} />
+        <Route path="/shared-media" element={bound(<SharedMediaPage />, "Shared Media")} />
         <Route path="*" element={bound(<NotFound />, "Page Not Found")} />
       </Routes>
     </Suspense>
@@ -443,6 +446,7 @@ function App() {
                         <PWAInstallPrompt />
                         <EmergencyAlertListener />
                         <RealtimeNotificationListener />
+                        <SharedMediaGateway />
                       </NotificationPermissionGate>
                     </DesktopSlideProvider>
                   </RoyalScrollProvider>

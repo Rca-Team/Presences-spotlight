@@ -55,6 +55,27 @@
                 <data android:scheme="https" android:host="www.presences.dev" />
             </intent-filter>
 
+            <!-- Android System Share Target: Receive Single Photo/Image from Gallery/Camera/WhatsApp -->
+            <intent-filter>
+                <action android:name="android.intent.action.SEND" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:mimeType="image/*" />
+            </intent-filter>
+
+            <!-- Android System Share Target: Receive Multiple Photos from Gallery -->
+            <intent-filter>
+                <action android:name="android.intent.action.SEND_MULTIPLE" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:mimeType="image/*" />
+            </intent-filter>
+
+            <!-- Android System Share Target: Receive PDF Documents (Student ID Cards, Rosters) -->
+            <intent-filter>
+                <action android:name="android.intent.action.SEND" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:mimeType="application/pdf" />
+            </intent-filter>
+
         </activity>
 
         <provider

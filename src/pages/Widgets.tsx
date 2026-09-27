@@ -12,7 +12,8 @@ import {
   Clock, 
   ArrowRight,
   BookOpen,
-  LayoutGrid
+  LayoutGrid,
+  Share2
 } from 'lucide-react';
 import { AndroidWidgetBoard } from '@/components/widgets/android/AndroidWidgetBoard';
 import { AddWidgetToHomeScreenModal } from '@/components/widgets/android/AddWidgetToHomeScreenModal';
@@ -554,6 +555,14 @@ const WidgetsPage: React.FC = () => {
               </div>
 
               <div className="flex items-center gap-2 flex-wrap justify-end">
+                <Link
+                  to="/shared-media"
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold bg-cyan-500/15 hover:bg-cyan-500/25 text-cyan-600 dark:text-cyan-400 border border-cyan-500/30 transition-all active:scale-95 shadow-sm"
+                >
+                  <Share2 className="h-3.5 w-3.5 text-cyan-500" />
+                  <span>Photo Action Center</span>
+                </Link>
+
                 <button
                   type="button"
                   onClick={() => setShowAddWidgetModal(true)}
