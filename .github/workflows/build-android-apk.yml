@@ -61,10 +61,11 @@ jobs:
 
       - name: Generate Production Release Keystore (if not exists)
         run: |
-          if [ ! -f "android/app/presences-release-key.jks" ]; then
+          cd android/app
+          if [ ! -f "presences-release-key.jks" ]; then
             echo "Generating release keystore..."
-            echo "yes" | keytool -genkeypair -v \
-              -keystore android/app/presences-release-key.jks \
+            keytool -genkeypair -noprompt -v \
+              -keystore presences-release-key.jks \
               -storetype JKS \
               -alias presences \
               -keyalg RSA \
@@ -73,6 +74,7 @@ jobs:
               -storepass presences123 \
               -keypass presences123 \
               -dname "CN=Presences, OU=Mobile, O=Presences Dev, L=San Francisco, ST=CA, C=US" || true
+            ls -la presences-release-key.jks || true
           fi
 
       - name: Build Android Debug APK
