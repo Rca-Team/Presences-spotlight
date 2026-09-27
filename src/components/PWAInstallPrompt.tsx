@@ -11,14 +11,22 @@ const PWAInstallPrompt: React.FC = () => {
   const { showPrompt, isIOS, isAndroid, deviceLabel, install, dismissPrompt } = usePWAInstall();
   const { setPreference } = usePerformanceMode();
 
+  const [showManualGuide, setShowManualGuide] = React.useState(false);
+
   const handleInstallFull = async () => {
     setPreference('off');
-    await install();
+    const ok = await install();
+    if (!ok) {
+      setShowManualGuide(true);
+    }
   };
 
   const handleInstallLite = async () => {
     setPreference('on');
-    await install();
+    const ok = await install();
+    if (!ok) {
+      setShowManualGuide(true);
+    }
   };
 
   if (!showPrompt) return null;
@@ -59,12 +67,12 @@ const PWAInstallPrompt: React.FC = () => {
                   {deviceLabel} Detected
                 </Badge>
                 <Badge className="bg-blue-500/20 text-blue-300 border-blue-500/30 text-[10px] font-bold py-0.5 px-2">
-                  App Available
+                  Auto-Updating
                 </Badge>
               </div>
 
               <h3 className="font-bold text-base text-white mt-1 leading-tight">
-                Install Presences App & Widgets
+                Direct Install Presences App
               </h3>
             </div>
           </div>
@@ -73,15 +81,15 @@ const PWAInstallPrompt: React.FC = () => {
           <div className="my-3.5 grid grid-cols-1 gap-1.5 text-xs text-slate-300 bg-white/5 border border-white/10 rounded-2xl p-3">
             <div className="flex items-center gap-2">
               <LayoutGrid className="w-3.5 h-3.5 text-blue-400 shrink-0" />
-              <span>Native <strong>Home Screen Widgets</strong> (Live Attendance & Timetable)</span>
+              <span>Native <strong>Home Screen Widgets</strong> & offline verification</span>
             </div>
             <div className="flex items-center gap-2">
               <Zap className="w-3.5 h-3.5 text-amber-400 shrink-0" />
-              <span><strong>3x Faster Launch</strong> & Instant Face Recognition</span>
+              <span><strong>Instant 1-Tap Launch</strong> • Never needs manual APK updates</span>
             </div>
             <div className="flex items-center gap-2">
               <ShieldCheck className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
-              <span><strong>Full Offline Access</strong> & Low Data Battery Mode</span>
+              <span><strong>Auto-Updated</strong> directly with every school release</span>
             </div>
           </div>
 
@@ -112,41 +120,57 @@ const PWAInstallPrompt: React.FC = () => {
               </div>
             </div>
           ) : (
-            // Android / Standard Mobile Install Card with Prominent Latest APK Download
+            // Android / Desktop Direct 1-Tap Install Card
             <div className="space-y-2.5">
               <Button
                 size="sm"
-                onClick={() => downloadLatestApk()}
+                onClick={handleInstallFull}
                 className="w-full gap-2 bg-gradient-to-r from-emerald-600 via-teal-600 to-blue-600 hover:from-emerald-500 hover:to-blue-500 text-white font-bold text-xs h-11 rounded-xl shadow-lg shadow-emerald-500/25 border border-white/20 transition-all hover:scale-[1.01]"
               >
                 <Download className="h-4 w-4 text-emerald-200" />
-                <span className="flex items-center gap-1.5">
-                  <span>Download Latest Android App (.APK)</span>
-                  <span className="text-[10px] bg-white/20 px-1.5 py-0.5 rounded-full font-mono">
-                    {LATEST_APK_CONFIG.version} • {LATEST_APK_CONFIG.fileSize}
+                <span className="flex items-center justify-between w-full pr-1">
+                  <span>Install App Directly (Always Up-To-Date)</span>
+                  <span className="text-[10px] bg-white/20 px-2 py-0.5 rounded-full font-semibold">
+                    1-Tap Install
                   </span>
                 </span>
               </Button>
+
+              {showManualGuide && (
+                <div className="rounded-2xl bg-white/5 border border-emerald-500/30 p-3 text-xs space-y-2 animate-in fade-in duration-200">
+                  <p className="font-bold text-emerald-300">Complete 1-Tap Browser Install:</p>
+                  <div className="flex items-center gap-2 text-slate-300">
+                    <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-emerald-500 text-[10px] font-black text-white">1</span>
+                    <span>Tap the Chrome/browser menu <strong>(⋮)</strong> in the top-right corner</span>
+                  </div>
+                  <div className="flex items-center gap-2 text-slate-300">
+                    <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-emerald-500 text-[10px] font-black text-white">2</span>
+                    <span>Tap <strong>"Install app"</strong> or <strong>"Add to Home screen"</strong></span>
+                  </div>
+                </div>
+              )}
 
               <div className="flex gap-2">
                 <Button
                   size="sm"
                   variant="outline"
-                  onClick={handleInstallFull}
-                  className="flex-1 gap-1.5 text-xs font-semibold h-9 rounded-xl bg-white/10 hover:bg-white/20 text-white border-white/15"
-                >
-                  <Sparkles className="h-3.5 w-3.5 text-blue-400" />
-                  <span>Instant Web App</span>
-                </Button>
-                <Button
-                  size="sm"
-                  variant="outline"
                   onClick={handleInstallLite}
-                  className="gap-1.5 text-xs font-semibold h-9 rounded-xl bg-white/10 hover:bg-white/20 text-white border-white/15"
+                  className="flex-1 gap-1.5 text-xs font-semibold h-9 rounded-xl bg-white/10 hover:bg-white/20 text-white border-white/15"
                   title="Super lightweight for low-RAM phones"
                 >
                   <Feather className="h-3.5 w-3.5 text-amber-400" />
-                  <span>Lite Mode</span>
+                  <span>Install Lite App</span>
+                </Button>
+
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => downloadLatestApk()}
+                  className="gap-1.5 text-xs font-semibold h-9 rounded-xl bg-white/10 hover:bg-white/20 text-white border-white/15"
+                  title="Download standalone APK file"
+                >
+                  <Sparkles className="h-3.5 w-3.5 text-blue-400" />
+                  <span>Standalone .APK</span>
                 </Button>
               </div>
 

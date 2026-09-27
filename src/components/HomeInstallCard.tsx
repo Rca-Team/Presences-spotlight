@@ -112,25 +112,31 @@ const HomeInstallCard: React.FC = () => {
         </div>
 
         {/* Install actions */}
-        <div className="mt-4 flex flex-col gap-2.5 sm:flex-row sm:items-center">
-          {platform === 'android' && (
-            <Button
-              onClick={() => downloadLatestApk()}
-              className="gap-2 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-bold"
-            >
-              <Download className="h-4 w-4" />
-              <span>Download Android .APK ({LATEST_APK_CONFIG.version})</span>
-            </Button>
-          )}
-
-          <Button onClick={() => void handle('full')} variant={platform === 'android' ? 'outline' : 'default'} className="gap-2">
+        <div className="mt-4 flex flex-col gap-2.5 sm:flex-row sm:items-center flex-wrap">
+          <Button
+            onClick={() => void handle('full')}
+            className="gap-2 bg-gradient-to-r from-emerald-600 via-teal-600 to-blue-600 hover:from-emerald-500 hover:to-blue-500 text-white font-bold shadow-md shadow-emerald-500/20"
+          >
             {done === 'full' ? <Check className="h-4 w-4" /> : <Download className="h-4 w-4" />}
-            {done === 'full' ? 'Installed' : platform === 'android' ? 'Install Instant Web App' : 'Install full app'}
+            <span>{done === 'full' ? 'App Installed' : 'Direct Install App (Always Up-To-Date)'}</span>
           </Button>
+
           <Button variant="outline" onClick={() => void handle('lite')} className="gap-2">
             {done === 'lite' ? <Check className="h-4 w-4" /> : <Feather className="h-4 w-4" />}
-            {done === 'lite' ? 'Lite installed' : 'Install Lite app'}
+            {done === 'lite' ? 'Lite Installed' : 'Install Lite App'}
           </Button>
+
+          {platform === 'android' && (
+            <Button
+              variant="outline"
+              onClick={() => downloadLatestApk()}
+              className="gap-2 text-muted-foreground hover:text-foreground border-border/80"
+              title="Download standalone APK file"
+            >
+              <Download className="h-3.5 w-3.5 text-primary" />
+              <span>Standalone .APK</span>
+            </Button>
+          )}
         </div>
 
         {showManual && !done && (

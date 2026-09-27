@@ -48,7 +48,9 @@ export const usePWAInstall = () => {
     // BeforeInstallPrompt listener for Android / Chromium browsers
     const handleBeforeInstallPrompt = (e: Event) => {
       e.preventDefault();
-      setDeferredPrompt(e as BeforeInstallPromptEvent);
+      const promptEvt = e as BeforeInstallPromptEvent;
+      setDeferredPrompt(promptEvt);
+      (window as any).__presencesInstallPrompt = promptEvt;
       setIsInstallable(true);
 
       if (!sessionDismissed && !isStandalone) {
@@ -62,10 +64,16 @@ export const usePWAInstall = () => {
       setIsInstallable(false);
       setShowPrompt(false);
       setDeferredPrompt(null);
+      (window as any).__presencesInstallPrompt = null;
+    };
+
+    const handleExternalTrigger = () => {
+      install();
     };
 
     window.addEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
     window.addEventListener('appinstalled', handleAppInstalled);
+    window.addEventListener('presences:trigger-install', handleExternalTrigger);
 
     // For iOS or Android devices where beforeinstallprompt doesn't fire immediately
     if (!sessionDismissed && !isStandalone) {
@@ -76,31 +84,34 @@ export const usePWAInstall = () => {
         clearTimeout(timer);
         window.removeEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
         window.removeEventListener('appinstalled', handleAppInstalled);
+        window.removeEventListener('presences:trigger-install', handleExternalTrigger);
       };
     }
 
     return () => {
       window.removeEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
       window.removeEventListener('appinstalled', handleAppInstalled);
+      window.removeEventListener('presences:trigger-install', handleExternalTrigger);
     };
   }, []);
 
   const install = useCallback(async () => {
-    if (!deferredPrompt) {
+    const promptEvt = deferredPrompt || (window as any).__presencesInstallPrompt;
+    if (!promptEvt) {
       // Fallback for browsers without direct prompt API
       return false;
     }
 
     try {
-      await deferredPrompt.prompt();
-      const { outcome } = await deferredPrompt.userChoice;
+      await promptEvt.prompt();
+      const { outcome } = await promptEvt.userChoice;
 
       if (outcome === 'accepted') {
         setIsInstalled(true);
         setShowPrompt(false);
+        (window as any).__presencesInstallPrompt = null;
+        setDeferredPrompt(null);
       }
-
-      setDeferredPrompt(null);
       return outcome === 'accepted';
     } catch (error) {
       console.error('Error installing PWA:', error);
