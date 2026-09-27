@@ -6,6 +6,100 @@ const corsHeaders = {
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 };
 
+/**
+ * Robust multi-strategy parser that handles clean JSON, truncated JSON,
+ * trailing commas, missing outer brackets, and raw embedded objects.
+ */
+function parseGeminiResponse(rawText: string): { users: any[]; class_detected?: string } {
+  if (!rawText || typeof rawText !== "string") {
+    return { users: [] };
+  }
+
+  let text = rawText.trim();
+  // Strip markdown code fences
+  if (text.startsWith("```json")) text = text.slice(7);
+  else if (text.startsWith("```")) text = text.slice(3);
+  if (text.endsWith("```")) text = text.slice(0, -3);
+  text = text.trim();
+
+  // Strategy 1: Direct JSON.parse
+  try {
+    const direct = JSON.parse(text);
+    if (Array.isArray(direct)) return { users: direct };
+    if (Array.isArray(direct?.users)) return { users: direct.users, class_detected: direct.class_detected };
+  } catch {}
+
+  // Strategy 2: Extract top-level JSON object or array substring
+  try {
+    const firstBrace = text.indexOf("{");
+    const lastBrace = text.lastIndexOf("}");
+    if (firstBrace !== -1 && lastBrace > firstBrace) {
+      const candidate = text.slice(firstBrace, lastBrace + 1);
+      const parsed = JSON.parse(candidate);
+      if (Array.isArray(parsed?.users)) {
+        return { users: parsed.users, class_detected: parsed.class_detected };
+      }
+    }
+  } catch {}
+
+  // Strategy 3: Handle truncated array/object (repair unclosed brackets)
+  try {
+    const usersIdx = text.indexOf('"users"');
+    if (usersIdx !== -1) {
+      const arrayStart = text.indexOf('[', usersIdx);
+      if (arrayStart !== -1) {
+        let sub = text.slice(arrayStart);
+        // Find last complete object closing '}'
+        const lastObjEnd = sub.lastIndexOf('}');
+        if (lastObjEnd !== -1) {
+          sub = sub.slice(0, lastObjEnd + 1) + ']';
+          // Clean trailing commas before ']'
+          sub = sub.replace(/,\s*\]/g, ']');
+          const parsedUsers = JSON.parse(sub);
+          if (Array.isArray(parsedUsers) && parsedUsers.length > 0) {
+            return { users: parsedUsers };
+          }
+        }
+      }
+    }
+  } catch {}
+
+  // Strategy 4: Regex-based individual student object extractor
+  // Matches each { ... } block that contains student fields
+  const recovered: any[] = [];
+  const objectRegex = /\{[^{}]*?(?:"name"|"employee_id"|"student_name"|"admn_no")[^{}]*?\}/g;
+  let match;
+  while ((match = objectRegex.exec(text)) !== null) {
+    try {
+      const sanitized = match[0].replace(/[\u0000-\u001F]+/g, " ");
+      const student = JSON.parse(sanitized);
+      if (student.name || student.employee_id || student.student_name) {
+        recovered.push(student);
+      }
+    } catch {}
+  }
+
+  if (recovered.length > 0) {
+    return { users: recovered };
+  }
+
+  // Strategy 5: Block boundary splitting
+  const blocks = text.split(/(?<=\})\s*,\s*(?=\{)/);
+  for (const b of blocks) {
+    try {
+      const cleanedBlock = b.trim().replace(/^\[\s*/, '').replace(/\s*\]$/, '');
+      if (cleanedBlock.startsWith('{') && cleanedBlock.endsWith('}')) {
+        const item = JSON.parse(cleanedBlock);
+        if (item.name || item.employee_id) {
+          recovered.push(item);
+        }
+      }
+    } catch {}
+  }
+
+  return { users: recovered };
+}
+
 serve(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response(null, { headers: corsHeaders });
@@ -131,55 +225,42 @@ serve(async (req) => {
     const isPdf = mimeType.toLowerCase().includes("pdf") || (fileName && fileName.toLowerCase().endsWith(".pdf"));
     if (isPdf) mimeType = "application/pdf";
 
-    // System prompt specifically tailored to Kendriya Vidyalaya (PM SHRI KV) ID cards
-    const systemPrompt = `You are an expert AI extractor specialized in extracting student identity cards from PM SHRI KENDRIYA VIDYALAYA (KV) documents and PDF files.
+    // High-efficiency concise system prompt for Kendriya Vidyalaya (PM SHRI KV) ID cards
+    const systemPrompt = `You are an expert AI extractor for PM SHRI KENDRIYA VIDYALAYA (KV) student identity cards.
+Extract every student ID card found across all pages in this document into clean JSON.
 
-Each ID card in this format follows this exact layout:
-- Top Banner Header: PM SHRI KENDRIYA VIDYALAYA NEW FRIENDS CENTRE VIGYAN VIHAR - SHIFT - 1 (or other KV branch)
-- Student ID: 10-digit number printed on the upper left (e.g. "1000481387")
-- Student Photo: Square portrait on the left side
-- Student Name: Bold uppercase text printed directly under the student photo (e.g. "AISHA ALVI")
-- QR Code: printed below the student name
-- Title: "IDENTITY CARD" Session (e.g. "Session : 2026-27")
-- Father Name: printed next to Father Name label (e.g. "SHAKEEL AHAMAD")
-- Mother Name: printed next to Mother Name label (e.g. "SHAHANAJ")
-- Date of Birth: printed as DD-MM-YYYY (e.g. "26-08-2014")
-- Class: printed as class number and section letter (e.g. "6 A" or "7 B" or "11 A"). Always format as "6-A", "7-B", etc.
-- Admn No: Admission number (e.g. "12453"). THIS IS THE PRIMARY STUDENT ADMISSION NUMBER / EMPLOYEE ID.
-- PEN No: 11-digit Permanent Education Number (e.g. "20432877236")
-- Blood Group: (e.g. "B-", "O+", "A+", "AB+")
-- Father/Mother Phone: 10-digit mobile number (e.g. "9818115518"). THIS IS THE PRIMARY PARENT CONTACT PHONE.
-- Address: Full address (e.g. "1755 Uttar Pradesh GHAZIABAD Ghaziabad 201005")
-- Bottom Barcode: Barcode with number (e.g. "91429122012453")
+Card Layout details:
+- Top Banner Header: Kendriya Vidyalaya branch name
+- Student ID: 10-digit number (e.g. "1000481387")
+- Student Name: Bold uppercase text under photo (e.g. "AISHA ALVI")
+- Admn No: Admission number (e.g. "12453") -> Use as employee_id
+- Class: class and section (e.g. "6 A" -> format as "6-A")
+- Father/Mother Name: Father & Mother names
+- Phone: 10-digit phone number
+- DOB: DD-MM-YYYY
+- PEN No: Permanent Education Number
+- Blood Group, Address: if visible
 
-INSTRUCTIONS:
-1. The uploaded file is a PDF or document containing the ID cards of a whole class (1 or many cards per page across multiple pages).
-2. Scan through ALL pages and extract EVERY SINGLE student ID card. Do not stop after the first card.
-3. For each card found, output a JSON object with:
-   - "name": Full student name in Title Case or Uppercase (e.g. "AISHA ALVI")
-   - "employee_id": The Admission Number ("Admn No", e.g. "12453")
-   - "student_id_kv": The 10-digit Student ID on top left (e.g. "1000481387")
-   - "class": The numeric class (e.g. "6")
-   - "section": The section letter in uppercase (e.g. "A")
-   - "department": Combined "Class-Section" (e.g. "6-A")
-   - "roll_number": Roll number if visible on card (or empty string)
-   - "father_name": Father's full name (e.g. "SHAKEEL AHAMAD")
-   - "mother_name": Mother's full name (e.g. "SHAHANAJ")
-   - "parent_name": Father or Mother name for emergency contact
-   - "parent_phone": 10-digit mobile number from Father/Mother Phone
-   - "date_of_birth": DOB in YYYY-MM-DD or DD-MM-YYYY
-   - "pen_number": PEN No
-   - "blood_group": Blood group
-   - "address": Full residential address
-   - "barcode": Barcode number if visible
-   - "has_photo": true if photo is visible on the card
-   - "photo_bbox": approximate normalized bounding box of student portrait photo on the card {"x": 0.05, "y": 0.3, "width": 0.2, "height": 0.35}
-
-Output format:
+Output JSON format:
 {
   "class_detected": "6-A",
-  "total_extracted": N,
-  "users": [ ... ]
+  "users": [
+    {
+      "name": "STUDENT NAME",
+      "employee_id": "ADMISSION_NUMBER",
+      "student_id_kv": "1000481387",
+      "class": "6",
+      "section": "A",
+      "department": "6-A",
+      "father_name": "FATHER NAME",
+      "mother_name": "MOTHER NAME",
+      "parent_phone": "9818115518",
+      "date_of_birth": "26-08-2014",
+      "pen_number": "20432877236",
+      "blood_group": "B+",
+      "address": "Address string"
+    }
+  ]
 }`;
 
     const buildPayload = (useCamelCase = false) => ({
@@ -187,7 +268,7 @@ Output format:
         {
           parts: [
             {
-              text: `${systemPrompt}\n\nPlease analyze this entire document ("${fileName}") and extract all Kendriya Vidyalaya student ID cards across all pages into structured JSON.`
+              text: `${systemPrompt}\n\nPlease analyze this document ("${fileName}") and extract all student ID cards across all pages into the JSON format above.`
             },
             useCamelCase ? {
               inlineData: {
@@ -206,15 +287,15 @@ Output format:
       generationConfig: useCamelCase ? {
         responseMimeType: "application/json",
         temperature: 0.1,
-        maxOutputTokens: 8192
+        maxOutputTokens: 32768
       } : {
         response_mime_type: "application/json",
         temperature: 0.1,
-        max_output_tokens: 8192
+        max_output_tokens: 32768
       }
     });
 
-    // 1. Dynamic ListModels discovery to find all supported models for this exact API key
+    // Dynamic model discovery with priority for 2.0-flash and 1.5-flash
     let candidateModels: { version: string; name: string }[] = [];
     try {
       console.log("Querying Gemini ListModels for supported models...");
@@ -225,9 +306,8 @@ Output format:
           .filter((m: any) => (m.supportedGenerationMethods || []).includes("generateContent"))
           .map((m: any) => m.name.replace(/^models\//, ""));
 
-        console.log(`Discovered ${discovered.length} supported models:`, discovered);
+        console.log(`Discovered ${discovered.length} supported models`);
 
-        // Sort: flash models first, then pro models, filter out embedding/vision-only
         const usable = discovered.filter((m: string) => !m.includes("embedding") && !m.includes("aqa"));
         usable.sort((a: string, b: string) => {
           if (a.includes("2.0-flash") && !b.includes("2.0-flash")) return -1;
@@ -238,15 +318,11 @@ Output format:
         });
 
         usable.forEach((m: string) => candidateModels.push({ version: "v1beta", name: m }));
-      } else {
-        const errText = await listResp.text();
-        console.warn("ListModels returned error:", listResp.status, errText);
       }
     } catch (e: any) {
       console.warn("ListModels query error:", e.message);
     }
 
-    // Static fallback models if ListModels didn't return any
     if (candidateModels.length === 0) {
       candidateModels = [
         { version: "v1beta", name: "gemini-2.0-flash" },
@@ -254,14 +330,13 @@ Output format:
         { version: "v1beta", name: "gemini-1.5-flash-latest" },
         { version: "v1", name: "gemini-1.5-flash" },
         { version: "v1beta", name: "gemini-1.5-pro-latest" },
-        { version: "v1", name: "gemini-1.5-pro" },
       ];
     }
 
     let rawAiText = "";
     const attemptErrors: string[] = [];
 
-    // Try candidate models in order of capability and speed
+    // Try candidate models
     for (const item of candidateModels) {
       for (const useCamel of [false, true]) {
         try {
@@ -277,17 +352,15 @@ Output format:
             const geminiResult = await response.json();
             rawAiText = geminiResult.candidates?.[0]?.content?.parts?.[0]?.text || "";
             if (rawAiText) {
-              console.log(`Successfully extracted with ${item.name} (${item.version})! Text length: ${rawAiText.length}`);
+              console.log(`Successfully extracted with ${item.name}! Length: ${rawAiText.length}`);
               break;
             }
           } else {
             const errText = await response.text();
-            attemptErrors.push(`${item.name} (${item.version}) [HTTP ${response.status}]: ${errText.slice(0, 200)}`);
-            console.warn(`Model ${item.name} failed (${response.status}): ${errText.slice(0, 200)}`);
+            attemptErrors.push(`${item.name} (${item.version}) [HTTP ${response.status}]: ${errText.slice(0, 150)}`);
           }
         } catch (err: any) {
           attemptErrors.push(`${item.name} error: ${err.message}`);
-          console.warn(`Model ${item.name} error:`, err);
         }
       }
       if (rawAiText) break;
@@ -296,44 +369,31 @@ Output format:
     if (!rawAiText) {
       return new Response(
         JSON.stringify({ 
-          error: `AI processing failed across available models (${candidateModels.map(m => m.name).slice(0, 4).join(', ')}). Errors: ${attemptErrors.slice(0, 3).join(' | ')}`, 
+          error: `AI processing failed across available models. Details: ${attemptErrors.slice(0, 3).join(' | ')}`, 
           users: [] 
         }),
         { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
 
-    // Parse extracted JSON
-    let parsedData: any = { users: [] };
-    try {
-      let cleaned = rawAiText.trim();
-      if (cleaned.startsWith("```json")) cleaned = cleaned.slice(7);
-      if (cleaned.startsWith("```")) cleaned = cleaned.slice(3);
-      if (cleaned.endsWith("```")) cleaned = cleaned.slice(0, -3);
-      cleaned = cleaned.trim();
+    // Parse extracted JSON with bulletproof multi-strategy parser
+    const parsedData = parseGeminiResponse(rawAiText);
+    let users = Array.isArray(parsedData.users) ? parsedData.users : [];
 
-      const jsonMatch = cleaned.match(/\{[\s\S]*\}/);
-      if (jsonMatch) {
-        parsedData = JSON.parse(jsonMatch[0]);
-      } else {
-        const arrMatch = cleaned.match(/\[[\s\S]*\]/);
-        if (arrMatch) {
-          parsedData = { users: JSON.parse(arrMatch[0]) };
-        }
-      }
-    } catch (parseErr) {
-      console.error("JSON parse error:", parseErr, rawAiText.substring(0, 500));
+    if (users.length === 0) {
+      console.warn("No students could be parsed from output. Raw preview:", rawAiText.slice(0, 400));
       return new Response(
-        JSON.stringify({ error: "Failed to parse structured ID card data from AI output", users: [] }),
-        { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        JSON.stringify({
+          error: "Could not parse student cards from this document. Please ensure the PDF is clear and contains readable ID cards.",
+          rawPreview: rawAiText.slice(0, 300),
+          users: []
+        }),
+        { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
 
-    let users = Array.isArray(parsedData?.users) ? parsedData.users : [];
-
     // Clean and normalize each student record
     users = users.map((u: any, index: number) => {
-      // Normalise class & section (e.g. "6 A" or "6" + "A")
       let cls = String(u.class || "").replace(/[^0-9]/g, "");
       let sec = String(u.section || "").trim().toUpperCase();
       let dept = u.department || (cls && sec ? `${cls}-${sec}` : "");
@@ -347,7 +407,6 @@ Output format:
         }
       }
 
-      // If targetCategory was specified (e.g. teacher portal), fallback to it
       if ((!cls || !sec) && targetCategory) {
         const tm = targetCategory.match(/^(\d+)\s*-\s*([A-Da-d])$/);
         if (tm) {
@@ -393,7 +452,7 @@ Output format:
       console.log(`Filtered for teacher: ${users.length} of ${originalCount} matched assigned classes: ${teacherAllowedClasses.join(", ")}`);
     }
 
-    console.log(`Successfully extracted ${users.length} students from ID cards`);
+    console.log(`Successfully extracted and normalized ${users.length} students from ID cards`);
 
     return new Response(
       JSON.stringify({

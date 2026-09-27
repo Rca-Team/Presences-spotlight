@@ -45,6 +45,7 @@ export function ProtectedRoute({ children, requireAdmin = false, requireRoles }:
     return required.includes(role);
   };
 
+  const rolesKey = (requireRoles || []).join(',');
   useEffect(() => {
     const checkAuth = async () => {
       try {
@@ -52,11 +53,14 @@ export function ProtectedRoute({ children, requireAdmin = false, requireRoles }:
         
         if (!user) {
           setIsAuthenticated(false);
-          navigate('/login', {
-            state: {
-              from: `${location.pathname}${location.search}${location.hash}`,
-            },
-          });
+          if (location.pathname !== '/login') {
+            navigate('/login', {
+              replace: true,
+              state: {
+                from: `${location.pathname}${location.search}${location.hash}`,
+              },
+            });
+          }
           return;
         }
 
@@ -73,11 +77,14 @@ export function ProtectedRoute({ children, requireAdmin = false, requireRoles }:
       } catch (error) {
         console.error('Auth check error:', error);
         setIsAuthenticated(false);
-        navigate('/login', {
-          state: {
-            from: `${location.pathname}${location.search}${location.hash}`,
-          },
-        });
+        if (location.pathname !== '/login') {
+          navigate('/login', {
+            replace: true,
+            state: {
+              from: `${location.pathname}${location.search}${location.hash}`,
+            },
+          });
+        }
       } finally {
         setLoading(false);
       }
@@ -87,8 +94,9 @@ export function ProtectedRoute({ children, requireAdmin = false, requireRoles }:
 
     // Listen for auth changes
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
-      if (event === 'SIGNED_OUT' || !session) {
+      if ((event === 'SIGNED_OUT' || !session) && location.pathname !== '/login') {
         navigate('/login', {
+          replace: true,
           state: {
             from: `${location.pathname}${location.search}${location.hash}`,
           },
@@ -97,7 +105,7 @@ export function ProtectedRoute({ children, requireAdmin = false, requireRoles }:
     });
 
     return () => subscription.unsubscribe();
-  }, [navigate, location.pathname, location.search, location.hash, requireAdmin, requireRoles]);
+  }, [navigate, location.pathname, location.search, location.hash, requireAdmin, requireRoles ? requireRoles.join(',') : '']);
 
   if (loading) {
     return null;

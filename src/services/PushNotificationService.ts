@@ -217,14 +217,13 @@ class PushNotificationService {
       };
 
       try {
-        const { error: endpointErr } = await (supabase as any).from('push_subscriptions').upsert(payload, {
-          onConflict: 'endpoint'
+        const { error: userErr } = await (supabase as any).from('push_subscriptions').upsert(payload, {
+          onConflict: 'user_id'
         });
 
-        if (endpointErr) {
-          await (supabase as any).from('push_subscriptions').upsert(payload, {
-            onConflict: 'user_id'
-          });
+        if (userErr) {
+          // If onConflict fails, try simple upsert
+          await (supabase as any).from('push_subscriptions').upsert(payload);
         }
       } catch {
         // Silently ignore if push_subscriptions table is not provisioned

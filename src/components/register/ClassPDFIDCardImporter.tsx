@@ -181,7 +181,7 @@ export const ClassPDFIDCardImporter: React.FC<ClassPDFIDCardImporterProps> = ({
       if (users.length === 0) {
         toast({
           title: 'No Students Found',
-          description: data?.reason || 'Could not find any readable ID cards in the PDF. Please ensure cards are clear.',
+          description: data?.error || data?.reason || 'Could not find any readable ID cards in the PDF. Please ensure cards are clear.',
           variant: 'destructive',
         });
         setIsExtracting(false);
