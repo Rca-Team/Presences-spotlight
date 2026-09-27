@@ -106,19 +106,33 @@ jobs:
       - name: Prepare Release Artifacts
         run: |
           mkdir -p release-artifacts
-          if [ -f "android/app/build/outputs/apk/release/app-release.apk" ]; then
-            cp android/app/build/outputs/apk/release/app-release.apk release-artifacts/Presences-latest.apk
-            cp android/app/build/outputs/apk/release/app-release.apk release-artifacts/Presences-Release-v2.4.2.apk
-          else
-            cp android/app/build/outputs/apk/debug/app-debug.apk release-artifacts/Presences-latest.apk
-            cp android/app/build/outputs/apk/debug/app-debug.apk release-artifacts/Presences-Release-v2.4.2.apk
+          echo "Scanning build outputs:"
+          find android/app/build/outputs/ -type f \( -name "*.apk" -o -name "*.aab" \) || true
+
+          RELEASE_APK=$(find android/app/build/outputs/apk -name "*release*.apk" 2>/dev/null | head -n 1)
+          DEBUG_APK=$(find android/app/build/outputs/apk -name "*debug*.apk" 2>/dev/null | head -n 1)
+          ANY_APK=$(find android/app/build/outputs/apk -name "*.apk" 2>/dev/null | head -n 1)
+          RELEASE_AAB=$(find android/app/build/outputs/ -name "*.aab" 2>/dev/null | head -n 1)
+
+          TARGET_APK="${RELEASE_APK:-${DEBUG_APK:-$ANY_APK}}"
+          if [ -n "$TARGET_APK" ] && [ -f "$TARGET_APK" ]; then
+            echo "Copying primary APK: $TARGET_APK"
+            cp -v "$TARGET_APK" release-artifacts/Presences-latest.apk
+            cp -v "$TARGET_APK" release-artifacts/Presences-Release-v2.4.2.apk
           fi
-          if [ -f "android/app/build/outputs/bundle/release/app-release.aab" ]; then
-            cp android/app/build/outputs/bundle/release/app-release.aab release-artifacts/Presences-v2.4.2.aab
+
+          if [ -n "$DEBUG_APK" ] && [ -f "$DEBUG_APK" ]; then
+            echo "Copying debug APK: $DEBUG_APK"
+            cp -v "$DEBUG_APK" release-artifacts/Presences-Debug-v2.4.2.apk
           fi
-          if [ -f "android/app/build/outputs/apk/debug/app-debug.apk" ]; then
-            cp android/app/build/outputs/apk/debug/app-debug.apk release-artifacts/Presences-Debug-v2.4.2.apk
+
+          if [ -n "$RELEASE_AAB" ] && [ -f "$RELEASE_AAB" ]; then
+            echo "Copying release bundle: $RELEASE_AAB"
+            cp -v "$RELEASE_AAB" release-artifacts/Presences-v2.4.2.aab
           fi
+
+          echo "Final release artifacts content:"
+          ls -la release-artifacts/
 
       - name: Upload Artifacts to Action Run
         uses: actions/upload-artifact@v4
