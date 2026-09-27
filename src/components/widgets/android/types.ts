@@ -16,7 +16,12 @@ export type AndroidWidgetType =
   | 'student_picker'
   | 'decibel_meter'
   | 'stopwatch_timer'
-  | 'emergency_alert';
+  | 'emergency_alert'
+  | 'daily_quote'
+  | 'quick_notes'
+  | 'student_wheel'
+  | 'soundboard_bell'
+  | 'live_tpa';
 
 export interface AndroidWidgetItem {
   id: string;
@@ -186,6 +191,56 @@ export const ANDROID_WIDGET_CATALOG: AndroidWidgetCatalogEntry[] = [
     defaultSize: '4x2',
     defaultPalette: 'dynamic-rose',
   },
+  {
+    type: 'daily_quote',
+    title: 'Daily Wisdom & Quote',
+    description: 'Inspirational educational quotes and thoughts with 1-tap copy and continuous wisdom rotation.',
+    category: 'classroom',
+    icon: 'Quote',
+    supportedSizes: ['2x2', '2x1', '4x2'],
+    defaultSize: '2x2',
+    defaultPalette: 'dynamic-amber',
+  },
+  {
+    type: 'quick_notes',
+    title: 'Sticky Notes & Goals',
+    description: 'Color-coded classroom scratchpad and checklist notes with persistent local memory.',
+    category: 'tools',
+    icon: 'StickyNote',
+    supportedSizes: ['2x2', '4x2'],
+    defaultSize: '2x2',
+    defaultPalette: 'dynamic-emerald',
+  },
+  {
+    type: 'student_wheel',
+    title: 'Lucky Quiz Wheel',
+    description: 'Animated rotating roulette wheel to pick random students for quiz answers, viva, and classroom games.',
+    category: 'classroom',
+    icon: 'Sparkles',
+    supportedSizes: ['2x2', '4x2'],
+    defaultSize: '2x2',
+    defaultPalette: 'dynamic-rose',
+  },
+  {
+    type: 'soundboard_bell',
+    title: 'School Bell & Chimes',
+    description: '1-tap synthesized audio soundboard for school period bells, assembly horns, and correct quiz sounds.',
+    category: 'tools',
+    icon: 'Bell',
+    supportedSizes: ['2x2', '4x2'],
+    defaultSize: '2x2',
+    defaultPalette: 'dynamic-purple',
+  },
+  {
+    type: 'live_tpa',
+    title: 'Live TPA Hub (Teacher/Period/Stats)',
+    description: 'Consolidated master card with active period countdown, teacher room, attendance rate, and fast links.',
+    category: 'attendance',
+    icon: 'LayoutDashboard',
+    supportedSizes: ['4x2', '4x4'],
+    defaultSize: '4x2',
+    defaultPalette: 'dynamic-blue',
+  },
 ];
 
 export const DEFAULT_ANDROID_WIDGETS: AndroidWidgetItem[] = [
@@ -242,5 +297,41 @@ export const DEFAULT_ANDROID_WIDGETS: AndroidWidgetItem[] = [
     palette: 'dynamic-amber',
     pinned: false,
     order: 5,
+  },
+  {
+    id: 'w-daily-quote',
+    type: 'daily_quote',
+    title: 'Daily Wisdom & Quote',
+    size: '2x2',
+    palette: 'dynamic-amber',
+    pinned: false,
+    order: 6,
+  },
+  {
+    id: 'w-quick-notes',
+    type: 'quick_notes',
+    title: 'Sticky Notes & Goals',
+    size: '2x2',
+    palette: 'dynamic-emerald',
+    pinned: false,
+    order: 7,
+  },
+  {
+    id: 'w-student-wheel',
+    type: 'student_wheel',
+    title: 'Lucky Quiz Wheel',
+    size: '2x2',
+    palette: 'dynamic-rose',
+    pinned: false,
+    order: 8,
+  },
+  {
+    id: 'w-soundboard-bell',
+    type: 'soundboard_bell',
+    title: 'School Bell & Chimes',
+    size: '2x2',
+    palette: 'dynamic-purple',
+    pinned: false,
+    order: 9,
   },
 ];

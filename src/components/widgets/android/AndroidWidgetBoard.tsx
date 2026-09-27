@@ -30,6 +30,11 @@ import { StudentPickerWidget } from './StudentPickerWidget';
 import { DecibelMeterWidget } from './DecibelMeterWidget';
 import { StopwatchWidget } from './StopwatchWidget';
 import { EmergencyAlertWidget } from './EmergencyAlertWidget';
+import { DailyQuoteWidget } from './DailyQuoteWidget';
+import { QuickNotesWidget } from './QuickNotesWidget';
+import { StudentWheelWidget } from './StudentWheelWidget';
+import { SoundboardBellWidget } from './SoundboardBellWidget';
+import { LiveTpaWidget } from './LiveTpaWidget';
 import { SmartBoardFloatingDock } from '../smartboard/SmartBoardFloatingDock';
 import { ClassStudent, ClassAssignment } from '@/components/teacher/TeacherAdminWorkspace';
 
@@ -242,6 +247,30 @@ export const AndroidWidgetBoard: React.FC<AndroidWidgetBoardProps> = ({
                   <EmergencyAlertWidget
                     widget={widget}
                     classNameStr={activeClass?.category}
+                  />
+                )}
+
+                {widget.type === 'daily_quote' && (
+                  <DailyQuoteWidget widget={widget} />
+                )}
+
+                {widget.type === 'quick_notes' && (
+                  <QuickNotesWidget widget={widget} />
+                )}
+
+                {widget.type === 'student_wheel' && (
+                  <StudentWheelWidget widget={widget} students={students} />
+                )}
+
+                {widget.type === 'soundboard_bell' && (
+                  <SoundboardBellWidget widget={widget} />
+                )}
+
+                {widget.type === 'live_tpa' && (
+                  <LiveTpaWidget
+                    widget={widget}
+                    students={students}
+                    activeClassName={activeClass?.category}
                   />
                 )}
               </AndroidWidgetContainer>

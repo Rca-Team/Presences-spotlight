@@ -206,10 +206,16 @@ export const AddWidgetToHomeScreenModal: React.FC<AddWidgetToHomeScreenModalProp
                 <div className="flex items-start gap-3 p-3 rounded-xl bg-white/5 border border-white/10">
                   <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-emerald-500 text-xs font-black text-white">3</span>
                   <div>
-                    <p className="font-bold text-white">Drag the Presences Attendance Widget ($4\times2$)</p>
+                    <p className="font-bold text-white">Choose any of the 4 Presences Widgets</p>
                     <p className="text-[11px] text-slate-400 mt-0.5">
-                      Scroll to <strong>Presences</strong> and drag the live Attendance Glance widget onto your screen!
+                      Scroll to <strong>Presences</strong> and drag any widget onto your screen:
                     </p>
+                    <ul className="mt-1.5 space-y-1 text-[11px] text-slate-300 font-medium">
+                      <li>• 📊 <strong>Attendance Glance ($4\times2$)</strong>: Live count &amp; quick scanner</li>
+                      <li>• ⚡ <strong>Quick Actions ($2\times1$)</strong>: 1-tap Attendance, Widgets, SmartBoard</li>
+                      <li>• ⏰ <strong>Live Period ($3\times1$)</strong>: Class period countdown &amp; room</li>
+                      <li>• 🛡️ <strong>Campus Gate ($3\times1$)</strong>: Guard scanner &amp; security pass</li>
+                    </ul>
                   </div>
                 </div>
               </div>

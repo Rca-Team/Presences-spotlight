@@ -18,6 +18,10 @@ import {
   Smartphone,
   Tv,
   CheckCircle2,
+  Quote,
+  StickyNote,
+  Bell,
+  LayoutDashboard,
 } from 'lucide-react';
 import {
   Dialog,
@@ -53,6 +57,11 @@ const ICON_MAP: Record<string, React.ElementType> = {
   Mic,
   Timer,
   ShieldAlert,
+  Quote,
+  StickyNote,
+  Sparkles,
+  Bell,
+  LayoutDashboard,
 };
 
 const ALL_PALETTES: MaterialPalette[] = [
