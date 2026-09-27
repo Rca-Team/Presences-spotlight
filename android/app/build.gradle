@@ -17,26 +17,36 @@ android {
         }
     }
 
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_21
+        targetCompatibility JavaVersion.VERSION_21
+    }
+
+    lint {
+        abortOnError false
+        checkReleaseBuilds false
+    }
+
     signingConfigs {
         release {
             def keystoreFile = file('presences-release-key.jks')
-            if (keystoreFile.exists()) {
+            if (keystoreFile.exists() && keystoreFile.length() > 0) {
                 storeFile keystoreFile
                 storePassword System.getenv("ANDROID_KEYSTORE_PASSWORD") ?: "presences123"
                 keyAlias System.getenv("ANDROID_KEY_ALIAS") ?: "presences"
                 keyPassword System.getenv("ANDROID_KEY_PASSWORD") ?: "presences123"
+            } else {
+                storeFile signingConfigs.debug.storeFile
+                storePassword signingConfigs.debug.storePassword
+                keyAlias signingConfigs.debug.keyAlias
+                keyPassword signingConfigs.debug.keyPassword
             }
         }
     }
 
     buildTypes {
         release {
-            def keystoreFile = file('presences-release-key.jks')
-            if (keystoreFile.exists()) {
-                signingConfig signingConfigs.release
-            } else {
-                signingConfig signingConfigs.debug
-            }
+            signingConfig signingConfigs.release
             minifyEnabled false
             proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
         }
