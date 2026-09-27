@@ -57,6 +57,7 @@ import LuminaScope from './components/LuminaScope';
 import RoyalScrollProvider from './components/RoyalScrollProvider';
 import DesktopSlideProvider from './components/DesktopSlideProvider';
 import GlobalTelemetryTracker from './components/telemetry/GlobalTelemetryTracker';
+import AppUpdateListener from './components/AppUpdateListener';
 
 
 const queryClient = new QueryClient();
@@ -438,6 +439,7 @@ function App() {
                         {mountNonCritical && (
                           <AppExperienceLayer />
                         )}
+                        <AppUpdateListener />
                         <PWAInstallPrompt />
                         <EmergencyAlertListener />
                         <RealtimeNotificationListener />
