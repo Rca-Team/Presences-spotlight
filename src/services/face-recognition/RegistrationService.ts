@@ -146,8 +146,10 @@ export const registerFace = async (
     }
 
     // Use a stable student identity id.
-    // Priority: existing student record -> passed student id -> auth user (fallback)
-    const stableStudentUserId = existingRegistrationUserId || userId || user?.id || null;
+    // Priority: existing student record -> passed student id -> fresh student UUID.
+    // Note: NEVER default to the creator/teacher's user?.id, otherwise all students
+    // registered by that teacher collapse into the same user_id and overwrite each other.
+    const stableStudentUserId = existingRegistrationUserId || (userId && userId !== user?.id ? userId : uuidv4());
     console.log('Using stable student user ID:', stableStudentUserId);
 
     // Parse class & section from "6-A" style department string

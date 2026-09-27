@@ -16,6 +16,7 @@ import {
 import { useToast } from '@/hooks/use-toast';
 import { supabase } from '@/integrations/supabase/client';
 import { loadOptimizedModels, getOptimizedFaceDescriptor } from '@/services/face-recognition/OptimizedModelService';
+import { v4 as uuidv4 } from 'uuid';
 import { 
   Upload, 
   Image as ImageIcon, 
@@ -184,10 +185,13 @@ const BulkImageRegistration: React.FC = () => {
             }
           };
 
+          const studentUserId = uuidv4();
           const { error: insertError } = await supabase
             .from('attendance_records')
             .insert({
-              user_id: user.id,
+              user_id: studentUserId,
+              student_id: img.employeeId,
+              student_name: img.name,
               status: 'registered',
               category,
               device_info: deviceInfo,

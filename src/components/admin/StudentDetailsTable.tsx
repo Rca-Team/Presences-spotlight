@@ -110,23 +110,33 @@ const StudentDetailsTable: React.FC = () => {
         if (r.user_id && empKey) employeeToUserId.set(empKey, r.user_id);
       });
 
-      // Primary map keyed by a canonical identity. We also index by name and
-      // user_id so subsequent rows (with or without an employee id) merge in.
+      // Primary map keyed by a canonical identity. We index by employee_id and (name + category).
       const map = new Map<string, StudentRow>();
-      const byUserId = new Map<string, string>(); // user_id -> canonical key
-      const byName = new Map<string, string>(); // normalized name -> canonical key
+      const byEmpId = new Map<string, string>(); // normEmpId -> canonical key
+      const byNameAndCategory = new Map<string, string>(); // normName#normCategory -> canonical key
 
-      const upsertStudent = (candidate: StudentRow, aliases: { userId?: string; name?: string }) => {
-        const nameKey = normName(aliases.name || candidate.name);
-        const uid = normKey(aliases.userId || candidate.user_id);
+      const upsertStudent = (candidate: StudentRow) => {
+        const nameKey = normName(candidate.name);
+        const rawEmp = candidate.employee_id !== '—' ? candidate.employee_id : '';
+        const empKey = normKey(rawEmp);
+        const catKey = normKey(candidate.category);
 
-        // Try to find an existing canonical key for this student.
-        let existingKey =
-          (uid && byUserId.get(uid)) ||
-          (nameKey && byName.get(nameKey)) ||
-          (map.has(candidate.id) ? candidate.id : undefined);
+        // Try to find an existing canonical key for this student:
+        // 1. Exact employee / student ID match (highest confidence)
+        // 2. Exact Name + Class/Category match
+        // 3. Fallback to existing candidate.id in map
+        let existingKey: string | undefined;
+        if (empKey && empKey !== 'null' && empKey !== 'undefined' && empKey !== 'n/a') {
+          existingKey = byEmpId.get(empKey);
+        }
+        if (!existingKey && nameKey && nameKey !== 'unknown' && nameKey !== 'user') {
+          existingKey = byNameAndCategory.get(`${nameKey}#${catKey}`) || byNameAndCategory.get(`${nameKey}#all`);
+        }
+        if (!existingKey && map.has(candidate.id)) {
+          existingKey = candidate.id;
+        }
 
-        if (existingKey) {
+        if (existingKey && map.has(existingKey)) {
           // Merge: fill blanks on the existing row, don't create a new one.
           const cur = map.get(existingKey)!;
           const merged: StudentRow = {
@@ -144,11 +154,22 @@ const StudentDetailsTable: React.FC = () => {
           };
           map.set(existingKey, merged);
         } else {
-          map.set(candidate.id, candidate);
-          existingKey = candidate.id;
+          const newKey = empKey && empKey !== 'null' && empKey !== 'n/a'
+            ? `emp:${empKey}`
+            : `${nameKey}#${catKey || 'A'}#${candidate.id}`;
+          map.set(newKey, candidate);
+          existingKey = newKey;
         }
-        if (uid) byUserId.set(uid, existingKey);
-        if (nameKey) byName.set(nameKey, existingKey);
+
+        if (empKey && empKey !== 'null' && empKey !== 'n/a') {
+          byEmpId.set(empKey, existingKey);
+        }
+        if (nameKey && nameKey !== 'unknown' && nameKey !== 'user') {
+          byNameAndCategory.set(`${nameKey}#${catKey}`, existingKey);
+          if (!byNameAndCategory.has(`${nameKey}#all`)) {
+            byNameAndCategory.set(`${nameKey}#all`, existingKey);
+          }
+        }
       };
 
       (data || []).forEach((r: any) => {
@@ -160,7 +181,7 @@ const StudentDetailsTable: React.FC = () => {
           meta?.employee_id || meta?.roll_number || deviceInfo?.employee_id || r.student_id,
         );
         const canonicalUserId = r.user_id || (empKey ? employeeToUserId.get(empKey) : null);
-        const key = (empKey || normKey(canonicalUserId) || r.id) as string;
+        const key = empKey ? `emp:${empKey}` : `rec:${r.id}`;
 
         const avatar = pickPreferredPhotoCandidate(
           canonicalUserId ? profileImageByUserId.get(canonicalUserId) : '',
@@ -173,24 +194,21 @@ const StudentDetailsTable: React.FC = () => {
           meta.image,
         );
 
-        upsertStudent(
-          {
-            id: key,
-            user_id: canonicalUserId || key,
-            name,
-            employee_id: meta.employee_id || deviceInfo.employee_id || '—',
-            roll_number: meta.roll_number || meta.employee_id || deviceInfo.employee_id || '—',
-            category: r.category || 'A',
-            blood_group: meta.blood_group || '—',
-            parent_name: meta.parent_name || '—',
-            parent_phone: meta.parent_phone || meta.phone || '—',
-            parent_email: meta.parent_email || '—',
-            transport_mode: meta.transport_mode || '—',
-            address: meta.address || '—',
-            avatar_url: avatar,
-          },
-          { userId: canonicalUserId || undefined, name },
-        );
+        upsertStudent({
+          id: key,
+          user_id: canonicalUserId || key,
+          name,
+          employee_id: meta.employee_id || deviceInfo.employee_id || r.student_id || '—',
+          roll_number: meta.roll_number || meta.employee_id || deviceInfo.employee_id || '—',
+          category: r.category || 'A',
+          blood_group: meta.blood_group || '—',
+          parent_name: meta.parent_name || '—',
+          parent_phone: meta.parent_phone || meta.phone || '—',
+          parent_email: meta.parent_email || '—',
+          transport_mode: meta.transport_mode || '—',
+          address: meta.address || '—',
+          avatar_url: avatar,
+        });
       });
 
       // Include descriptor-only students too, so Student page matches ID-card coverage.
@@ -200,8 +218,7 @@ const StudentDetailsTable: React.FC = () => {
 
         const descriptorUserId = normKey(descriptor?.user_id);
         const descriptorStudentId = normKey(descriptor?.student_id);
-        const descriptorKey = descriptorStudentId || descriptorUserId || descriptor?.id;
-        if (!descriptorKey) return;
+        const descriptorKey = descriptorStudentId ? `emp:${descriptorStudentId}` : `fd:${descriptor?.id || Math.random().toString(36).slice(2)}`;
 
         const avatar = pickPreferredPhotoCandidate(
           descriptorUserId ? profileImageByUserId.get(descriptorUserId) : '',
@@ -210,24 +227,21 @@ const StudentDetailsTable: React.FC = () => {
           descriptor?.image_url,
         );
 
-        upsertStudent(
-          {
-            id: descriptorKey,
-            user_id: descriptorUserId || descriptorKey,
-            name: descriptorName,
-            employee_id: descriptorStudentId || '—',
-            roll_number: descriptorStudentId || '—',
-            category: 'A',
-            blood_group: '—',
-            parent_name: '—',
-            parent_phone: '—',
-            parent_email: '—',
-            transport_mode: '—',
-            address: '—',
-            avatar_url: avatar,
-          },
-          { userId: descriptorUserId || undefined, name: descriptorName },
-        );
+        upsertStudent({
+          id: descriptorKey,
+          user_id: descriptorUserId || descriptorKey,
+          name: descriptorName,
+          employee_id: descriptorStudentId || '—',
+          roll_number: descriptorStudentId || '—',
+          category: descriptor?.category || 'A',
+          blood_group: '—',
+          parent_name: '—',
+          parent_phone: '—',
+          parent_email: '—',
+          transport_mode: '—',
+          address: '—',
+          avatar_url: avatar,
+        });
       });
 
       const resolvedRows = await Promise.all(

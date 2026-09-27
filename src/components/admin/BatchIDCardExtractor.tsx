@@ -10,6 +10,7 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 import { useToast } from '@/hooks/use-toast';
 import { supabase } from '@/integrations/supabase/client';
 import { registerFace } from '@/services/face-recognition/RegistrationService';
+import { v4 as uuidv4 } from 'uuid';
 import { 
   loadRegistrationModels, 
   areRegistrationModelsLoaded,
@@ -262,13 +263,14 @@ const BatchIDCardExtractor: React.FC = () => {
         if (result) descriptor = result;
       }
 
+      const studentUserId = uuidv4();
       await registerFace(
         student.imageBlob,
         student.name,
-        student.employee_id || `STU-${Date.now()}`,
+        student.employee_id || `STU-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
         student.department || 'General',
         student.position || 'Student',
-        undefined,
+        studentUserId,
         descriptor
       );
 

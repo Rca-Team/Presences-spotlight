@@ -108,6 +108,7 @@ const Register = () => {
   const { toast } = useToast();
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
+  const { role, isAdmin, isPrincipal, isTeacher, userId } = useUserRole();
 
   const returnUrl = searchParams.get('returnUrl') || searchParams.get('redirect');
   const classParam = searchParams.get('class');
@@ -167,9 +168,15 @@ const Register = () => {
     return activeDraftId;
   };
 
+  const getStorageKey = () => (userId ? `presence_register_drafts_${userId}` : REGISTER_DRAFTS_KEY);
+
   const loadDrafts = () => {
     try {
-      const raw = localStorage.getItem(REGISTER_DRAFTS_KEY);
+      const storageKey = getStorageKey();
+      let raw = localStorage.getItem(storageKey);
+      if (!raw && userId) {
+        raw = localStorage.getItem(REGISTER_DRAFTS_KEY);
+      }
       if (!raw) {
         setDrafts([]);
         return;
@@ -215,7 +222,8 @@ const Register = () => {
     if (lastPersistedFingerprintRef.current === fingerprint) return;
 
     try {
-      const currentRaw = localStorage.getItem(REGISTER_DRAFTS_KEY);
+      const storageKey = getStorageKey();
+      const currentRaw = localStorage.getItem(storageKey);
       const current = currentRaw ? (JSON.parse(currentRaw) as RegistrationDraft[]) : [];
       const withUpdated = [
         nextDraft,
@@ -224,13 +232,12 @@ const Register = () => {
         ),
       ];
       const merged = dedupeDrafts(withUpdated);
-      localStorage.setItem(REGISTER_DRAFTS_KEY, JSON.stringify(merged));
+      localStorage.setItem(storageKey, JSON.stringify(merged));
       setDrafts(merged);
       lastPersistedFingerprintRef.current = fingerprint;
     } catch {}
   };
 
-  const { role, isAdmin, isPrincipal, isTeacher } = useUserRole();
   const canBulkImport = isAdmin || isPrincipal || isTeacher;
   const [isPdfModalOpen, setIsPdfModalOpen] = useState(false);
   const [draftSearchQuery, setDraftSearchQuery] = useState('');
@@ -255,10 +262,11 @@ const Register = () => {
 
   const clearDraftById = (id: string) => {
     try {
-      const currentRaw = localStorage.getItem(REGISTER_DRAFTS_KEY);
+      const storageKey = getStorageKey();
+      const currentRaw = localStorage.getItem(storageKey);
       const current = currentRaw ? (JSON.parse(currentRaw) as RegistrationDraft[]) : [];
       const next = (Array.isArray(current) ? current : []).filter((d) => d.id !== id);
-      localStorage.setItem(REGISTER_DRAFTS_KEY, JSON.stringify(next));
+      localStorage.setItem(storageKey, JSON.stringify(next));
       setDrafts(next.sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime()));
     } catch {}
   };
@@ -266,7 +274,8 @@ const Register = () => {
   const clearAllDrafts = () => {
     if (!window.confirm(`Are you sure you want to clear all ${drafts.length} drafts in the enrollment queue?`)) return;
     try {
-      localStorage.removeItem(REGISTER_DRAFTS_KEY);
+      const storageKey = getStorageKey();
+      localStorage.removeItem(storageKey);
       setDrafts([]);
       toast({ title: 'Enrollment Queue Cleared' });
     } catch {}
@@ -306,10 +315,11 @@ const Register = () => {
     });
 
     try {
-      const currentRaw = localStorage.getItem(REGISTER_DRAFTS_KEY);
+      const storageKey = getStorageKey();
+      const currentRaw = localStorage.getItem(storageKey);
       const current = currentRaw ? (JSON.parse(currentRaw) as RegistrationDraft[]) : [];
       const merged = dedupeDrafts([...newDrafts, ...(Array.isArray(current) ? current : [])]);
-      localStorage.setItem(REGISTER_DRAFTS_KEY, JSON.stringify(merged));
+      localStorage.setItem(storageKey, JSON.stringify(merged));
       setDrafts(merged);
       setIsDraftsExpanded(true);
       toast({
@@ -353,6 +363,10 @@ const Register = () => {
     init();
     loadDrafts();
   }, [toast]);
+
+  useEffect(() => {
+    loadDrafts();
+  }, [userId]);
 
   useEffect(() => {
     const timeout = window.setTimeout(() => {

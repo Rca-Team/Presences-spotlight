@@ -285,9 +285,12 @@ const AdminFacesList: React.FC<AdminFacesListProps> = ({
             try {
               const di = (record.device_info as any) || {};
               const metadata = di.metadata || {};
-              const name = metadata.name || di.name || 'Unknown';
-              const employeeId = (metadata.employee_id || di.employee_id || record.student_id || record.id || '').toString().trim();
-              const key = employeeId || record.user_id || record.id;
+              const name = metadata.name || di.name || record.student_name || 'Unknown';
+              const employeeId = (metadata.employee_id || di.employee_id || record.student_id || '').toString().trim();
+              const category = record.category || metadata.department || 'A';
+              const key = employeeId
+                ? `emp:${employeeId.toLowerCase()}`
+                : `name:${name.toLowerCase().trim()}#${category.toLowerCase()}#${record.id}`;
               const canonicalUserId = (record.user_id || '').toString().trim();
               if (!name || name === 'Unknown' || name === 'User') return null;
               if (seenKeys.has(key)) return null;

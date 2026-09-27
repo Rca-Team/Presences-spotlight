@@ -406,16 +406,24 @@ const StudentFaceSamplesManager: React.FC = () => {
         const normName = normalizeNameKey(fallbackName);
         const normEmpId = empId ? String(empId).trim().toLowerCase() : '';
 
-        // Check if we ALREADY have a group indexed by userId, empId, or normalized name
+        // Check if we ALREADY have a group indexed by empId, normalized name, or unique student userId
         let existing: StudentGroup | undefined;
-        if (userId && studentGroupsMap.has(userId)) existing = studentGroupsMap.get(userId);
-        else if (normEmpId && studentGroupsMap.has(`emp:${normEmpId}`)) existing = studentGroupsMap.get(`emp:${normEmpId}`);
-        else if (normName && studentGroupsMap.has(`name:${normName}`)) existing = studentGroupsMap.get(`name:${normName}`);
+        if (normEmpId && studentGroupsMap.has(`emp:${normEmpId}`)) {
+          existing = studentGroupsMap.get(`emp:${normEmpId}`);
+        } else if (normName && normName !== 'student' && normName !== 'unknown' && studentGroupsMap.has(`name:${normName}`)) {
+          existing = studentGroupsMap.get(`name:${normName}`);
+        } else if (userId && studentGroupsMap.has(userId)) {
+          const candidateExisting = studentGroupsMap.get(userId);
+          // Only group by userId if names match or are unassigned
+          if (candidateExisting && (!normName || normName === 'student' || normalizeNameKey(candidateExisting.name) === normName)) {
+            existing = candidateExisting;
+          }
+        }
 
         const profile =
-          (userId ? profileMapByUserId.get(userId) : null) ||
           (normEmpId ? profileMapByEmpId.get(normEmpId) : null) ||
-          (normName ? profileMapByName.get(normName) : null);
+          (normName ? profileMapByName.get(normName) : null) ||
+          (userId ? profileMapByUserId.get(userId) : null);
 
         const regMeta = normName ? regMetaByName.get(normName) : null;
 
@@ -436,11 +444,10 @@ const StudentFaceSamplesManager: React.FC = () => {
           if ((!existing.name || existing.name === 'Student') && name !== 'Student') existing.name = name;
 
           // Cross-index all aliases
-          if (finalUserId) studentGroupsMap.set(finalUserId, existing);
-          if (userId) studentGroupsMap.set(userId, existing);
           if (finalEmpId) studentGroupsMap.set(`emp:${finalEmpId.toLowerCase()}`, existing);
           if (normEmpId) studentGroupsMap.set(`emp:${normEmpId}`, existing);
-          if (normName) studentGroupsMap.set(`name:${normName}`, existing);
+          if (normName && normName !== 'student') studentGroupsMap.set(`name:${normName}`, existing);
+          if (finalUserId) studentGroupsMap.set(finalUserId, existing);
 
           return existing;
         }
@@ -455,13 +462,13 @@ const StudentFaceSamplesManager: React.FC = () => {
           samples: [],
         };
 
-        const primaryKey = finalUserId || (finalEmpId ? `emp:${finalEmpId.toLowerCase()}` : `name:${normName}`);
+        const primaryKey = normEmpId
+          ? `emp:${normEmpId}`
+          : (normName && normName !== 'student' ? `name:${normName}` : (finalUserId || `rand:${Math.random()}`));
         studentGroupsMap.set(primaryKey, newGroup);
-        if (finalUserId) studentGroupsMap.set(finalUserId, newGroup);
-        if (userId) studentGroupsMap.set(userId, newGroup);
         if (finalEmpId) studentGroupsMap.set(`emp:${finalEmpId.toLowerCase()}`, newGroup);
-        if (normEmpId) studentGroupsMap.set(`emp:${normEmpId}`, newGroup);
-        if (normName) studentGroupsMap.set(`name:${normName}`, newGroup);
+        if (normName && normName !== 'student') studentGroupsMap.set(`name:${normName}`, newGroup);
+        if (finalUserId) studentGroupsMap.set(finalUserId, newGroup);
 
         return newGroup;
       };
