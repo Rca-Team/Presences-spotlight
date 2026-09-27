@@ -90,7 +90,7 @@ lint/tmp/
 *.hprof
 
 # Cordova plugins for Capacitor
-capacitor-cordova-android-plugins
+# (tracked so Gradle builds succeed on clean clones)
 
 # Copied web assets
 app/src/main/assets/public

@@ -48,10 +48,14 @@ jobs:
 
       - name: Fix Capacitor Android Settings
         run: |
-          sed -i "s|new File('.*node_modules/@capacitor/android/capacitor')|new File(settingsDir, '../node_modules/@capacitor/android/capacitor')|g" android/capacitor.settings.gradle || true
+          printf "// Auto-generated\ninclude ':capacitor-android'\nproject(':capacitor-android').projectDir = new File(settingsDir, '../node_modules/@capacitor/android/capacitor')\n" > android/capacitor.settings.gradle
 
       - name: Sync Capacitor Android
-        run: npx cap sync android
+        run: |
+          npx cap sync android || {
+            printf "// Auto-generated\ninclude ':capacitor-android'\nproject(':capacitor-android').projectDir = new File(settingsDir, '../node_modules/@capacitor/android/capacitor')\n" > android/capacitor.settings.gradle
+            npx cap copy android
+          }
 
       - name: Ensure Gradlew Executable
         run: chmod +x android/gradlew
