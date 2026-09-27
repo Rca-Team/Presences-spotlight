@@ -12,6 +12,7 @@
  */
 
 import { supabase } from '@/integrations/supabase/client';
+import { AndroidAppSyncEngine } from '@/services/AndroidAppSyncEngine';
 
 export interface WriteJob<T = unknown> {
   /** de-dup key — repeated pushes within `dedupeMs` are ignored */
@@ -124,6 +125,28 @@ async function runJob(job: WriteJob): Promise<void> {
     } else {
       seen.delete(job.key);
       console.error('[AttendanceWriteQueue] Write job failed permanently:', job.key, err);
+      try {
+        const p = job.payload as any;
+        if (p) {
+          AndroidAppSyncEngine.enqueue({
+            userId: p.userId || p.user_id,
+            studentId: String(p.student_id || p.metadata?.employee_id || p.userId || p.employee_id || ''),
+            studentName: p.studentName || p.student_name || p.name || p.metadata?.name || 'Student',
+            class: p.metadata?.class ?? p.class ?? null,
+            section: p.metadata?.section ?? p.section ?? null,
+            category: p.metadata?.category ?? p.category ?? null,
+            rollNumber: p.metadata?.roll_number ? String(p.metadata.roll_number) : null,
+            status: p.status || 'present',
+            timestamp: p.timestamp || new Date().toISOString(),
+            confidenceScore: p.confidence ?? 0.95,
+            source: 'offline-vault',
+            captureMode: p.capture_mode || p.metadata?.capture_mode || 'ai-scan',
+            metadata: p.metadata,
+          });
+        }
+      } catch (backupErr) {
+        console.warn('[AttendanceWriteQueue] Failed to backup to offline queue:', backupErr);
+      }
     }
   }
 }

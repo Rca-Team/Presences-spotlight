@@ -58,6 +58,7 @@ import RoyalScrollProvider from './components/RoyalScrollProvider';
 import DesktopSlideProvider from './components/DesktopSlideProvider';
 import GlobalTelemetryTracker from './components/telemetry/GlobalTelemetryTracker';
 import AppUpdateListener from './components/AppUpdateListener';
+import { AndroidAppSyncEngine } from './services/AndroidAppSyncEngine';
 
 
 const queryClient = new QueryClient();
@@ -404,6 +405,15 @@ function App() {
       if (idleId !== undefined) browser.cancelIdleCallback?.(idleId);
       if (timeoutId !== undefined) window.clearTimeout(timeoutId);
     };
+  }, []);
+
+  useEffect(() => {
+    const unsub = AndroidAppSyncEngine.subscribe((status) => {
+      if (status.pendingCount > 0 && status.isOnline && !status.isDraining) {
+        void AndroidAppSyncEngine.drainQueue();
+      }
+    });
+    return () => unsub();
   }, []);
 
   const handleSplashComplete = () => {

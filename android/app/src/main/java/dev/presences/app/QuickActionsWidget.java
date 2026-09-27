@@ -1,4 +1,4 @@
-package app.lovable.a36e0c5ecda643f1907d9f0a7dc28fbb;
+package dev.presences.app;
 
 import android.app.PendingIntent;
 import android.appwidget.AppWidgetManager;
@@ -42,6 +42,14 @@ public class QuickActionsWidget extends AppWidgetProvider {
                 context, 203, boardIntent, PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE
         );
         views.setOnClickPendingIntent(R.id.widget_action_smartboard, boardPending);
+
+        // Root view click opens main app
+        Intent mainIntent = new Intent(context, MainActivity.class);
+        mainIntent.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TOP);
+        PendingIntent mainPending = PendingIntent.getActivity(
+                context, 200, mainIntent, PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE
+        );
+        views.setOnClickPendingIntent(R.id.widget_qa_root, mainPending);
 
         appWidgetManager.updateAppWidget(appWidgetId, views);
     }

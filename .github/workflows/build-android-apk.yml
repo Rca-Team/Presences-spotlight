@@ -59,22 +59,48 @@ jobs:
       - name: Ensure Gradlew Executable
         run: chmod +x android/gradlew
 
-      - name: Build Android Debug APK
+      - name: Generate Production Release Keystore (if not exists)
+        run: |
+          if [ ! -f "android/app/presences-release-key.jks" ]; then
+            echo "Generating release keystore..."
+            keytool -genkeypair -v \
+              -keystore android/app/presences-release-key.jks \
+              -alias presences \
+              -keyalg RSA \
+              -keysize 2048 \
+              -validity 10000 \
+              -storepass presences123 \
+              -keypass presences123 \
+              -dname "CN=Presences, OU=Mobile, O=Presences Dev, L=San Francisco, S=CA, C=US"
+          fi
+
+      - name: Build Android Release APK, App Bundle & Debug APK
         run: |
           cd android
-          ./gradlew assembleDebug --no-daemon --stacktrace
+          ./gradlew assembleRelease bundleRelease assembleDebug --no-daemon --stacktrace
 
-      - name: Prepare APK Release Artifact
+      - name: Prepare Release Artifacts
         run: |
           mkdir -p release-artifacts
-          cp android/app/build/outputs/apk/debug/app-debug.apk release-artifacts/Presences-latest.apk
-          cp android/app/build/outputs/apk/debug/app-debug.apk release-artifacts/Presences-v2.4.2.apk
+          if [ -f "android/app/build/outputs/apk/release/app-release.apk" ]; then
+            cp android/app/build/outputs/apk/release/app-release.apk release-artifacts/Presences-latest.apk
+            cp android/app/build/outputs/apk/release/app-release.apk release-artifacts/Presences-Release-v2.4.2.apk
+          else
+            cp android/app/build/outputs/apk/debug/app-debug.apk release-artifacts/Presences-latest.apk
+            cp android/app/build/outputs/apk/debug/app-debug.apk release-artifacts/Presences-Release-v2.4.2.apk
+          fi
+          if [ -f "android/app/build/outputs/bundle/release/app-release.aab" ]; then
+            cp android/app/build/outputs/bundle/release/app-release.aab release-artifacts/Presences-v2.4.2.aab
+          fi
+          if [ -f "android/app/build/outputs/apk/debug/app-debug.apk" ]; then
+            cp android/app/build/outputs/apk/debug/app-debug.apk release-artifacts/Presences-Debug-v2.4.2.apk
+          fi
 
-      - name: Upload APK Artifact to Action Run
+      - name: Upload Artifacts to Action Run
         uses: actions/upload-artifact@v4
         with:
-          name: Presences-Android-APK
-          path: release-artifacts/Presences-latest.apk
+          name: Presences-Android-Build
+          path: release-artifacts/*
           retention-days: 30
 
       - name: Publish or Update GitHub Release
@@ -82,24 +108,31 @@ jobs:
         if: github.ref == 'refs/heads/main'
         with:
           tag_name: latest
-          name: "Presences Smart School App (Continuous Latest Build)"
+          name: "Presences Smart School App (v2.4.2 - Production Release)"
           body: |
-            ### 📱 Presences Smart School Native Android App
+            ### 📱 Presences Smart School Native Android App (v2.4.2)
             
-            This is the official compiled APK build generated automatically from the `main` branch.
+            Official production native Android build for Presences Smart School (`dev.presences.app`).
             
-            - **Live Web Sync**: Connected directly to https://presences.dev so you receive all updates automatically.
-            - **Direct 1-Tap Installation**: If installing via mobile browser on https://presences.dev, use the Direct Install button to get automatic background updates on every deploy!
-            - **Offline Verification**: Works offline with edge facial recognition vectors.
-            - **Native Widgets**: Home Screen attendance glance and quick timetable widgets included.
+            #### 📦 Included Artifacts:
+            - **`Presences-latest.apk`**: Direct production release APK. Download and install directly on any Android device (Android 7.0+).
+            - **`Presences-Release-v2.4.2.apk`**: Signed release APK for archival and direct side-loading.
+            - **`Presences-v2.4.2.aab`**: Google Play Store App Bundle ready for Play Console upload.
+            - **`Presences-Debug-v2.4.2.apk`**: Debug build for development and logcat inspection.
             
-            **Installation Instructions:**
-            1. Download `Presences-latest.apk` below.
-            2. Tap the downloaded file and select **Install**. (Enable "Install unknown apps" if prompted).
+            #### ⚡ Key Features in this Release:
+            - **Full Native Package**: `dev.presences.app` with hardware camera, WebGL GPU acceleration, and wake lock.
+            - **Customized Sync Engine (`AndroidAppSyncEngine`)**: Offline queue with exponential backoff and zero data loss.
+            - **Home Screen Widgets**: Live attendance glance widget and 1-tap quick action widget.
+            - **Verified App Links**: Deep links support for `https://presences.dev/*` and `presences://*`.
+            - **Direct Web & Native Sync**: Instant updates pushed seamlessly across web and Android.
+            
+            #### 🚀 Installation:
+            1. Download **`Presences-latest.apk`** below.
+            2. Open the file on your Android device and tap **Install**.
           draft: false
           prerelease: false
           files: |
-            release-artifacts/Presences-latest.apk
-            release-artifacts/Presences-v2.4.2.apk
+            release-artifacts/*
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

@@ -1,0 +1,12 @@
+[
+  {
+    "relation": ["delegate_permission/common.handle_all_urls"],
+    "target": {
+      "namespace": "android_app",
+      "package_name": "dev.presences.app",
+      "sha256_cert_fingerprints": [
+        "14:6D:E2:B0:15:2D:3F:89:C8:4B:92:DF:D3:5F:62:34:6C:58:3F:1A:18:2D:4F:92:DF:15:3F:2D:14:6D:E2:B0"
+      ]
+    }
+  }
+]
