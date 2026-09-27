@@ -81,7 +81,7 @@ const PWAInstallPrompt: React.FC = () => {
           <div className="my-3.5 grid grid-cols-1 gap-1.5 text-xs text-slate-300 bg-white/5 border border-white/10 rounded-2xl p-3">
             <div className="flex items-center gap-2">
               <LayoutGrid className="w-3.5 h-3.5 text-blue-400 shrink-0" />
-              <span>Native <strong>Home Screen Widgets</strong> & offline verification</span>
+              <span>Native <strong>Home Screen Widgets</strong> &amp; live instant scanning</span>
             </div>
             <div className="flex items-center gap-2">
               <Zap className="w-3.5 h-3.5 text-amber-400 shrink-0" />

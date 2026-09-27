@@ -160,8 +160,8 @@ jobs:
             
             #### ⚡ Key Features in this Release:
             - **Full Native Package**: `dev.presences.app` with hardware camera, WebGL GPU acceleration, and wake lock.
-            - **Customized Sync Engine (`AndroidAppSyncEngine`)**: Offline queue with exponential backoff and zero data loss.
-            - **Home Screen Widgets**: Live attendance glance widget and 1-tap quick action widget.
+            - **4 Native Home Screen Widgets**: Attendance Glance, Quick Actions, Live Period, and Campus Gate pass.
+            - **Direct Cloud Architecture**: Instant real-time attendance verification directly with Supabase.
             - **Verified App Links**: Deep links support for `https://presences.dev/*` and `presences://*`.
             - **Direct Web & Native Sync**: Instant updates pushed seamlessly across web and Android.
             
