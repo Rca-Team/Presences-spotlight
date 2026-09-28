@@ -16,7 +16,7 @@ public class CampusEmergencyWidget extends AppWidgetProvider {
         // 1-Tap Open Gate Guard Scanner
         Intent guardIntent = new Intent(context, MainActivity.class);
         guardIntent.setAction(Intent.ACTION_VIEW);
-        guardIntent.setData(Uri.parse("https://presences.dev/guard"));
+        guardIntent.setData(Uri.parse("presences://guard"));
         guardIntent.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TOP);
         PendingIntent guardPending = PendingIntent.getActivity(
                 context, 401, guardIntent, PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE
@@ -26,7 +26,7 @@ public class CampusEmergencyWidget extends AppWidgetProvider {
         // Entire widget root click opens emergency panel or gate
         Intent mainIntent = new Intent(context, MainActivity.class);
         mainIntent.setAction(Intent.ACTION_VIEW);
-        mainIntent.setData(Uri.parse("https://presences.dev/guard"));
+        mainIntent.setData(Uri.parse("presences://guard"));
         mainIntent.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TOP);
         PendingIntent mainPending = PendingIntent.getActivity(
                 context, 400, mainIntent, PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE

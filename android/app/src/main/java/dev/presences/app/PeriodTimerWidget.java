@@ -16,7 +16,7 @@ public class PeriodTimerWidget extends AppWidgetProvider {
         // Intent to launch SmartBoard mode directly
         Intent boardIntent = new Intent(context, MainActivity.class);
         boardIntent.setAction(Intent.ACTION_VIEW);
-        boardIntent.setData(Uri.parse("https://presences.dev/smartboard"));
+        boardIntent.setData(Uri.parse("presences://smartboard"));
         boardIntent.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TOP);
         PendingIntent boardPending = PendingIntent.getActivity(
                 context, 301, boardIntent, PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE
@@ -26,7 +26,7 @@ public class PeriodTimerWidget extends AppWidgetProvider {
         // Entire widget root click
         Intent mainIntent = new Intent(context, MainActivity.class);
         mainIntent.setAction(Intent.ACTION_VIEW);
-        mainIntent.setData(Uri.parse("https://presences.dev/widgets"));
+        mainIntent.setData(Uri.parse("presences://widgets"));
         mainIntent.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TOP);
         PendingIntent mainPending = PendingIntent.getActivity(
                 context, 300, mainIntent, PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE

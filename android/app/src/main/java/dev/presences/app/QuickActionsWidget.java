@@ -16,7 +16,7 @@ public class QuickActionsWidget extends AppWidgetProvider {
         // 1. Attendance Action
         Intent attendanceIntent = new Intent(context, MainActivity.class);
         attendanceIntent.setAction(Intent.ACTION_VIEW);
-        attendanceIntent.setData(Uri.parse("https://presences.dev/attendance"));
+        attendanceIntent.setData(Uri.parse("presences://attendance"));
         attendanceIntent.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TOP);
         PendingIntent attendancePending = PendingIntent.getActivity(
                 context, 201, attendanceIntent, PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE
@@ -26,7 +26,7 @@ public class QuickActionsWidget extends AppWidgetProvider {
         // 2. Widgets Action
         Intent widgetsIntent = new Intent(context, MainActivity.class);
         widgetsIntent.setAction(Intent.ACTION_VIEW);
-        widgetsIntent.setData(Uri.parse("https://presences.dev/widgets"));
+        widgetsIntent.setData(Uri.parse("presences://widgets"));
         widgetsIntent.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TOP);
         PendingIntent widgetsPending = PendingIntent.getActivity(
                 context, 202, widgetsIntent, PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE
@@ -36,7 +36,7 @@ public class QuickActionsWidget extends AppWidgetProvider {
         // 3. SmartBoard Action
         Intent boardIntent = new Intent(context, MainActivity.class);
         boardIntent.setAction(Intent.ACTION_VIEW);
-        boardIntent.setData(Uri.parse("https://presences.dev/smartboard"));
+        boardIntent.setData(Uri.parse("presences://smartboard"));
         boardIntent.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TOP);
         PendingIntent boardPending = PendingIntent.getActivity(
                 context, 203, boardIntent, PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE

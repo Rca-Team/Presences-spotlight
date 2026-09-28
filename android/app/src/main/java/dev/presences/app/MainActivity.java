@@ -76,7 +76,8 @@ public class MainActivity extends BridgeActivity {
             Log.e(TAG, "WebView configuration error", e);
         }
 
-        // Process any launch intent containing shared media
+        // Process any launch intent containing deep links or shared media
+        handleDeepLink(getIntent());
         processSendIntent(getIntent());
     }
 
@@ -84,7 +85,36 @@ public class MainActivity extends BridgeActivity {
     protected void onNewIntent(Intent intent) {
         super.onNewIntent(intent);
         setIntent(intent);
+        handleDeepLink(intent);
         processSendIntent(intent);
+    }
+
+    private void handleDeepLink(Intent intent) {
+        if (intent == null) return;
+        Uri uri = intent.getData();
+        if (uri != null && "presences".equalsIgnoreCase(uri.getScheme())) {
+            String host = uri.getHost();
+            String path = uri.getPath();
+            String route = "/" + (host != null ? host : "") + (path != null ? path : "");
+            route = route.replaceAll("//+", "/");
+            final String targetRoute = route;
+            runOnUiThread(() -> {
+                try {
+                    WebView webView = getBridge() != null ? getBridge().getWebView() : null;
+                    if (webView != null) {
+                        String js = "(function() { " +
+                                "if (window.location.pathname !== '" + targetRoute + "') { " +
+                                "  window.history.pushState(null, '', '" + targetRoute + "'); " +
+                                "  window.dispatchEvent(new PopStateEvent('popstate')); " +
+                                "} " +
+                                "})();";
+                        webView.evaluateJavascript(js, null);
+                    }
+                } catch (Exception e) {
+                    Log.e(TAG, "Deep link routing error", e);
+                }
+            });
+        }
     }
 
     private void processSendIntent(Intent intent) {

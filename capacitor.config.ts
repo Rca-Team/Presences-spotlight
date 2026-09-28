@@ -5,8 +5,6 @@ const config: CapacitorConfig = {
   appName: 'Presences',
   webDir: 'dist',
   server: {
-    url: 'https://presences.dev',
-    cleartext: true,
     androidScheme: 'https',
   },
   android: {

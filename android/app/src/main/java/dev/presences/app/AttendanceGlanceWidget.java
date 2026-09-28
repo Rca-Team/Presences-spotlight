@@ -27,7 +27,7 @@ public class AttendanceGlanceWidget extends AppWidgetProvider {
         // Intent to launch Attendance page
         Intent attendanceIntent = new Intent(context, MainActivity.class);
         attendanceIntent.setAction(Intent.ACTION_VIEW);
-        attendanceIntent.setData(Uri.parse("https://presences.dev/attendance"));
+        attendanceIntent.setData(Uri.parse("presences://attendance"));
         attendanceIntent.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TOP);
         PendingIntent attendancePendingIntent = PendingIntent.getActivity(
                 context, 101, attendanceIntent, PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE
@@ -37,7 +37,7 @@ public class AttendanceGlanceWidget extends AppWidgetProvider {
         // Intent to launch Widgets dashboard
         Intent widgetsIntent = new Intent(context, MainActivity.class);
         widgetsIntent.setAction(Intent.ACTION_VIEW);
-        widgetsIntent.setData(Uri.parse("https://presences.dev/widgets"));
+        widgetsIntent.setData(Uri.parse("presences://widgets"));
         widgetsIntent.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TOP);
         PendingIntent widgetsPendingIntent = PendingIntent.getActivity(
                 context, 102, widgetsIntent, PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE
