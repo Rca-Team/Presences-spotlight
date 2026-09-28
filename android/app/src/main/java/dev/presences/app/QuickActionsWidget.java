@@ -49,7 +49,7 @@ public class QuickActionsWidget extends AppWidgetProvider {
         PendingIntent mainPending = PendingIntent.getActivity(
                 context, 200, mainIntent, PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE
         );
-        views.setOnClickPendingIntent(R.id.widget_qa_root, mainPending);
+        views.setOnClickPendingIntent(R.id.widget_quick_root, mainPending);
 
         appWidgetManager.updateAppWidget(appWidgetId, views);
     }

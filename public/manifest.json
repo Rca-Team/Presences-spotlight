@@ -1,7 +1,8 @@
 {
-  "name": "Presences - Smart School Automation",
+  "name": "Presences",
   "short_name": "Presences",
-  "description": "AI-Powered Smart School Automation Platform",
+  "description": "Presences",
+
   "theme_color": "#3b82f6",
   "background_color": "#0f172a",
   "display": "standalone",
