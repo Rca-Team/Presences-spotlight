@@ -85,6 +85,7 @@ export const fetchAttendanceRecords = async (
   setLateAttendanceDays: SetDatesFunction
 ) => {
   try {
+    const { userIds, employeeId } = await getFaceIdentifiers(faceId);
     const isUuid = (val: string) => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(val);
 
     // Build queries for all possible identifier matches
