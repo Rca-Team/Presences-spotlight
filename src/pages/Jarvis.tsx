@@ -6,6 +6,7 @@ import { jarvisAudit, AuditSummaryResult } from "@/services/jarvis/JarvisAuditSe
 import { jarvisAI, JarvisAnalysisResponse } from "@/services/jarvis/JarvisAIService";
 import { jarvisVoice } from "@/services/jarvis/JarvisVoiceService";
 import { presencesDataContext } from "@/services/jarvis/PresencesDataContext";
+import autoHealService from "@/services/autoheal/AutoHealService";
 import { jarvisSupabase, JarvisStudentAudit, JarvisSystemLog } from "@/integrations/jarvis/supabaseClient";
 import {
   ShieldCheck,
@@ -193,22 +194,27 @@ export default function Jarvis() {
     );
   };
 
-  // Autonomous Biometric Auto-Healing Handler
+  // Autonomous Multi-Tier Auto-Healing Handler
   const handleAutoHealBiometrics = async () => {
     if (isHealing) return;
     setIsHealing(true);
     jarvisVoice.playChime("scan");
-    notify.info("JARVIS: Initializing autonomous biometric descriptor enrollment...");
+    notify.info("JARVIS: Initializing autonomous multi-tier system auto-healing sequence...");
 
     try {
-      const result = await jarvisAudit.autoHealMissingBiometrics((curr, total, name) => {
-        setHealingProgress({ current: curr, total, name });
+      const unsub = autoHealService.subscribeProgress((p) => {
+        if (p) {
+          setHealingProgress({ current: p.current, total: p.total, name: p.step });
+        }
       });
 
+      const result = await autoHealService.runFullAutoHeal();
+      unsub();
+
       const message =
-        result.healed > 0
-          ? `Biometric auto-healing concluded, Sir. I have successfully enrolled facial descriptors for ${result.healed} student${result.healed > 1 ? "s" : ""}. ${result.failed > 0 ? `${result.failed} portraits could not be processed.` : "All candidates are now enrolled for gate recognition."}`
-          : `Autonomous sequence completed, Sir. ${result.details[0] || "No eligible candidate portraits found."}`;
+        result.healedCount > 0
+          ? `Auto-healing sequence concluded, Sir. I have successfully resolved ${result.healedCount} system & biometric anomalies across the architecture. Campus health is now rated at ${result.report.overallScore} percent.`
+          : `Autonomous self-healing scan completed, Sir. All operational matrices, biometric vectors, and realtime sockets are performing at nominal capacity (${result.report.overallScore}% health score).`;
 
       setChatHistory((prev) => [
         ...prev,
@@ -220,7 +226,7 @@ export default function Jarvis() {
 
       // Refresh snapshot
       await handleRunDiagnosticSweep();
-      notify.success(`Autonomous enrollment complete: ${result.healed} enrolled.`);
+      notify.success(`Auto-heal complete: ${result.healedCount} resolved. Health: ${result.report.overallScore}%.`);
     } catch (err: any) {
       notify.error("Auto-heal error: " + (err?.message || "Unknown error"));
     } finally {

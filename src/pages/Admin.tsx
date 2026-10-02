@@ -43,6 +43,8 @@ const AdminSecretGateModal = lazyWithRetry(() => import('@/components/admin/tele
 // them out of the critical path too.
 const AttendanceExport = lazyWithRetry(() => import('@/components/admin/AttendanceExport'), 'admin-export');
 const BulkNotificationService = lazyWithRetry(() => import('@/components/admin/BulkNotificationService'), 'admin-bulk-notif');
+const AutoHealDashboard = lazyWithRetry(() => import('@/components/admin/autoheal/AutoHealDashboard'), 'admin-autoheal');
+import AutoHealBadgeWidget from '@/components/admin/autoheal/AutoHealBadgeWidget';
 
 import { usePerformanceMode } from '@/hooks/usePerformanceMode';
 import { Button } from '@/components/ui/button';
@@ -56,7 +58,7 @@ import {
   User, Calendar, Clock, FolderKanban, School,
   LayoutDashboard, Settings, Bell, Users, BarChart3,
   Shield, Activity, TrendingUp, ChevronRight, Send, UserCog,
-  CreditCard, Image, Download, RefreshCw, MessageSquareText, Mail, Siren, CalendarDays, DatabaseBackup, ScanLine, QrCode, Smartphone, Radio } from
+  CreditCard, Image, Download, RefreshCw, MessageSquareText, Mail, Siren, CalendarDays, DatabaseBackup, ScanLine, QrCode, Smartphone, Radio, Zap } from
 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
@@ -410,6 +412,7 @@ const Admin = () => {
     // 3. Settings & Admin
     { id: 'access', icon: UserCog, label: 'Staff Permissions', group: 'Settings & Admin' },
     { id: 'samples', icon: Activity, label: 'Student Face Photos', group: 'Settings & Admin' },
+    { id: 'autoheal', icon: Zap, label: 'AutoHeal Guardian', group: 'Settings & Admin', badge: 'AI' },
     { id: 'settings', icon: Settings, label: 'School Settings', group: 'Settings & Admin' },
     ...(isTelemetryUnlocked
       ? [{ id: 'telemetry', icon: Radio, label: 'Fleet Intelligence', group: 'Settings & Admin', badge: 'LIVE' }]
@@ -420,6 +423,12 @@ const Admin = () => {
 
   const renderContent = () => {
     switch (activeTab) {
+      case 'autoheal':
+        return (
+          <TabPanel>
+            <AutoHealDashboard />
+          </TabPanel>
+        );
       case 'telemetry':
         return (
           <TabPanel>
@@ -679,6 +688,7 @@ const Admin = () => {
                     </span>
                   </div>
                   <p className="text-[10px] sm:text-xs text-slate-500 dark:text-slate-400 hidden sm:block truncate mt-0.5">
+                    {activeTab === 'autoheal' && 'Autonomous multi-tier self-healing engine, biometric repair & watchdog diagnostics'}
                     {activeTab === 'telemetry' && 'Real-time device radar, IP geolocation, hardware specs & fleet control'}
                     {activeTab === 'dashboard' && 'Daily attendance summary, turnout trends, and quick actions'}
                     {activeTab === 'students' && 'View and manage student details, classes, and photos'}
@@ -695,6 +705,7 @@ const Admin = () => {
                 </div>
               </div>
               <div className="flex items-center gap-1.5 sm:gap-2 flex-shrink-0">
+                <AutoHealBadgeWidget onClick={() => handleTabChange('autoheal')} className="hidden sm:inline-flex" />
                 <LiteModeToggle variant="segmented" className="hidden md:inline-flex" />
                 <LiteModeToggle variant="badge" className="md:hidden" />
                 <Button
