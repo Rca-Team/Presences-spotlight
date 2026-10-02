@@ -1,0 +1,8 @@
+# Presences Spotlight AI — Core Dependencies
+# Compatible with all modern Windows PCs (Python 3.9 - 3.12)
+numpy>=1.24.0,<2.0.0
+opencv-python>=4.8.0.76
+requests>=2.28.0
+python-dotenv>=1.0.0
+Pillow>=9.5.0
+pygame>=2.5.0
