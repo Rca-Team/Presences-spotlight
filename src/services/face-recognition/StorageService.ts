@@ -1,13 +1,14 @@
 
+import { storage as appwriteStorage, APPWRITE_CONFIG, getAppwriteStorageViewUrl } from '@/integrations/appwrite/client';
+import { ID, Permission, Role } from 'appwrite';
 import { supabase } from '@/integrations/supabase/client';
 
 /**
- * Uploads an image to Supabase Storage.
- * Uses the 'public' bucket as the primary target instead of trying to create a new bucket.
+ * Uploads an image to Appwrite Storage (with Supabase fallback).
  * 
  * @param file - The file to upload.
- * @param path - The storage path.
- * @param bucket - The storage bucket (default: 'public').
+ * @param path - The storage path or identifier.
+ * @param bucket - The storage bucket (default: 'face-images').
  * @returns The public URL of the uploaded file.
  */
 export const uploadImage = async (file: File, path: string, bucket: string = 'face-images'): Promise<string> => {
@@ -16,54 +17,50 @@ export const uploadImage = async (file: File, path: string, bucket: string = 'fa
       throw new Error('Invalid file: The file is empty or invalid');
     }
 
-    // Use 'face-images' bucket for face image storage
-    const safeBucket = 'face-images';
+    const bucketId = APPWRITE_CONFIG.buckets.faceImages || bucket || 'face-images';
     
-    // Clean the path and make sure it doesn't have bucket prefix
+    // Clean path to generate fileId if helpful, or unique ID
+    const cleanId = path ? path.replace(/[^a-zA-Z0-9._-]/g, '_').slice(0, 36) : ID.unique();
+    const fileId = (cleanId && /^[a-zA-Z0-9._-]+$/.test(cleanId)) ? cleanId : ID.unique();
+
+    console.log(`Uploading image to Appwrite bucket: ${bucketId} (fileId: ${fileId}), size: ${file.size} bytes`);
+
+    try {
+      const res = await appwriteStorage.createFile(
+        bucketId,
+        fileId,
+        file,
+        [
+          Permission.read(Role.any()),
+          Permission.write(Role.any()),
+          Permission.delete(Role.any())
+        ]
+      );
+      const publicUrl = getAppwriteStorageViewUrl(bucketId, res.$id);
+      console.log(`File uploaded successfully to Appwrite:`, publicUrl);
+      return publicUrl;
+    } catch (appwriteErr: any) {
+      if (appwriteErr?.code === 409) {
+        // File already exists -> return existing view URL
+        return getAppwriteStorageViewUrl(bucketId, fileId);
+      }
+      console.warn('Appwrite upload attempt error, falling back to Supabase:', appwriteErr?.message);
+    }
+
+    // Fallback: Supabase storage
+    const safeBucket = 'face-images';
     const cleanPath = path.replace(/^(faces|public|face-images)\//, '');
     const fullPath = `faces/${cleanPath}`;
-    
-    console.log(`Uploading image to ${safeBucket}/${fullPath}, file size: ${file.size} bytes`);
 
-    // Upload to face-images bucket with added retries
-    let uploadSuccess = false;
-    let attempt = 0;
-    let data;
-    let lastError;
-    
-    while (!uploadSuccess && attempt < 3) {
-      try {
-        const result = await supabase.storage.from(safeBucket).upload(fullPath, file, {
-          cacheControl: '3600',
-          upsert: true,
-        });
-        
-        data = result.data;
-        lastError = result.error;
-        
-        if (!lastError) {
-          uploadSuccess = true;
-          console.log(`File uploaded successfully on attempt ${attempt + 1}:`, data?.path);
-        } else {
-          console.warn(`Upload attempt ${attempt + 1} failed:`, lastError.message);
-          // Wait a bit before retrying
-          await new Promise(resolve => setTimeout(resolve, 500));
-        }
-      } catch (err) {
-        lastError = err;
-        console.warn(`Upload attempt ${attempt + 1} exception:`, err);
-      }
-      
-      attempt++;
+    const result = await supabase.storage.from(safeBucket).upload(fullPath, file, {
+      cacheControl: '3600',
+      upsert: true,
+    });
+
+    if (result.error) {
+      throw new Error(`Upload failed: ${result.error.message}`);
     }
 
-    if (!uploadSuccess) {
-      console.error('All upload attempts failed');
-      // Return null to indicate failure - the calling code will handle fallback to base64
-      throw new Error(`Upload failed after ${attempt} attempts: ${lastError?.message || 'Unknown error'}`);
-    }
-
-    // Success - return the public URL
     const publicUrlResult = supabase.storage.from(safeBucket).getPublicUrl(fullPath);
     return publicUrlResult.data.publicUrl;
   } catch (error) {
@@ -73,19 +70,18 @@ export const uploadImage = async (file: File, path: string, bucket: string = 'fa
 };
 
 /**
- * Retrieves the public URL of a file from Supabase Storage.
+ * Retrieves the public URL of a file from Appwrite Storage.
  * 
- * @param path - The storage path.
- * @param bucket - The storage bucket (default: 'public').
+ * @param path - The storage path or file ID.
+ * @param bucket - The storage bucket (default: 'face-images').
  * @returns The public URL of the file.
  */
 export const getImageUrl = (path: string, bucket: string = 'face-images'): string => {
-  // Always use face-images bucket for consistency
-  const safeBucket = 'face-images';
-  
-  // Clean up the path to ensure proper formatting
-  const cleanPath = path.replace(/^(faces|public|face-images)\//, '');
-  const fullPath = `faces/${cleanPath}`;
-  
-  return supabase.storage.from(safeBucket).getPublicUrl(fullPath).data.publicUrl;
+  const bucketId = APPWRITE_CONFIG.buckets.faceImages || bucket || 'face-images';
+  if (path.startsWith('http://') || path.startsWith('https://')) {
+    return path;
+  }
+  const cleanId = path.replace(/^(faces|public|face-images)\//, '').replace(/[^a-zA-Z0-9._-]/g, '_').slice(0, 36);
+  return getAppwriteStorageViewUrl(bucketId, cleanId);
 };
+

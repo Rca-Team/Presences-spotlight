@@ -1,3 +1,5 @@
+import { storage as appwriteStorage, APPWRITE_CONFIG } from '@/integrations/appwrite/client';
+import { ID, Permission, Role } from 'appwrite';
 import { supabase } from '@/integrations/supabase/client';
 import { uploadImage } from './StorageService';
 
@@ -86,7 +88,26 @@ export const uploadRegistrationTrainingImage = async (
     const label = sanitizeSegment(input.label || 'register');
     const timestamp = Date.now();
 
-    const path = `${uploaderId}/class-${className}/section-${sectionName}/student-${studentKey}/${timestamp}-${label}.jpg`;
+    const filename = `${timestamp}-${label}.jpg`;
+    const path = `${uploaderId}/class-${className}/section-${sectionName}/student-${studentKey}/${filename}`;
+    const file = new File([input.imageBlob], filename, { type: 'image/jpeg' });
+    const fileId = ID.unique();
+
+    try {
+      await appwriteStorage.createFile(
+        APPWRITE_CONFIG.buckets.studentRegistrationFaces,
+        fileId,
+        file,
+        [
+          Permission.read(Role.any()),
+          Permission.write(Role.any()),
+          Permission.delete(Role.any())
+        ]
+      );
+      return path;
+    } catch (appwriteErr) {
+      console.warn('Appwrite registration upload failed, falling back to Supabase:', appwriteErr);
+    }
 
     const { error } = await supabase.storage
       .from('student-registration-faces')
@@ -115,7 +136,27 @@ export const uploadAttendanceTrainingImage = async (
   const status = sanitizeSegment(input.status);
   const confidenceLabel = Math.round(((input.confidence ?? 1) * 100));
   const actorKey = sanitizeSegment(uploaderId || input.studentId || input.employeeId || 'unknown');
-  const path = `${actorKey}/date-${dateKey}/mode-${mode}/student-${studentKey}/status-${status}/${Date.now()}-conf-${confidenceLabel}.jpg`;
+  const filename = `${Date.now()}-conf-${confidenceLabel}.jpg`;
+  const path = `${actorKey}/date-${dateKey}/mode-${mode}/student-${studentKey}/status-${status}/${filename}`;
+
+  const file = new File([input.imageBlob], filename, { type: 'image/jpeg' });
+  const fileId = ID.unique();
+
+  try {
+    await appwriteStorage.createFile(
+      APPWRITE_CONFIG.buckets.attendanceTrainingFaces,
+      fileId,
+      file,
+      [
+        Permission.read(Role.any()),
+        Permission.write(Role.any()),
+        Permission.delete(Role.any())
+      ]
+    );
+    return path;
+  } catch (appwriteErr) {
+    console.warn('Appwrite attendance upload failed, trying Supabase:', appwriteErr);
+  }
 
   const { error } = await supabase.storage
     .from('attendance-training-faces')
@@ -127,7 +168,6 @@ export const uploadAttendanceTrainingImage = async (
 
   console.warn('Attendance training upload failed, using fallback bucket:', error.message);
   try {
-    const file = new File([input.imageBlob], `${Date.now()}-conf-${confidenceLabel}.jpg`, { type: 'image/jpeg' });
     const fallbackPath = `attendance-training/${path}`;
     return await uploadImage(file, fallbackPath, 'face-images');
   } catch (fallbackErr) {
@@ -146,7 +186,8 @@ export const uploadRegistrationFaceModel = async (
     const { className, sectionName } = parseClassSection(input.category);
     const studentKey = sanitizeSegment(input.employeeId || input.studentId);
     const timestamp = Date.now();
-    const path = `${uploaderId}/class-${className}/section-${sectionName}/student-${studentKey}/models/${timestamp}-face-model.json`;
+    const filename = `${timestamp}-face-model.json`;
+    const path = `${uploaderId}/class-${className}/section-${sectionName}/student-${studentKey}/models/${filename}`;
 
     const descriptorCloud = input.descriptors.map((d) => Array.from(d));
     const pointCloud3D = input.descriptors.map((d, idx) => ({
@@ -171,11 +212,28 @@ export const uploadRegistrationFaceModel = async (
       sample_images: input.sampleImages || [],
     };
 
-    const jsonBlob = new Blob([JSON.stringify(payload)], { type: 'application/json' });
+    const jsonFile = new File([JSON.stringify(payload)], filename, { type: 'application/json' });
+    const fileId = ID.unique();
+
+    try {
+      await appwriteStorage.createFile(
+        APPWRITE_CONFIG.buckets.studentRegistrationFaces,
+        fileId,
+        jsonFile,
+        [
+          Permission.read(Role.any()),
+          Permission.write(Role.any()),
+          Permission.delete(Role.any())
+        ]
+      );
+      return path;
+    } catch (appwriteErr) {
+      console.warn('Appwrite model upload failed, trying Supabase:', appwriteErr);
+    }
 
     const { error } = await supabase.storage
       .from('student-registration-faces')
-      .upload(path, jsonBlob, { contentType: 'application/json', upsert: false, cacheControl: '3600' });
+      .upload(path, jsonFile, { contentType: 'application/json', upsert: false, cacheControl: '3600' });
 
     if (error) {
       console.warn('Registration face model upload failed:', error.message);
@@ -188,3 +246,4 @@ export const uploadRegistrationFaceModel = async (
     return null;
   }
 };
+
