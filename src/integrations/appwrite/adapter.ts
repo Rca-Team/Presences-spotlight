@@ -148,12 +148,105 @@ export class AppwriteQueryBuilder<T = any> implements PromiseLike<{ data: T | nu
 
   is(column: string, value: any): this {
     const col = mapColumnName(column);
-    if (value === null) {
+    if (value === null || value === 'null') {
       this.queries.push(Query.isNull(col));
     } else {
       this.queries.push(Query.equal(col, value));
     }
     return this;
+  }
+
+  not(column: string, operator: string, value: any): this {
+    const col = mapColumnName(column);
+    if (operator === 'is' && (value === null || value === 'null')) {
+      this.queries.push(Query.isNotNull(col));
+    } else if (operator === 'eq') {
+      this.queries.push(Query.notEqual(col, value));
+    } else if (operator === 'in' && Array.isArray(value)) {
+      value.forEach(v => this.queries.push(Query.notEqual(col, v)));
+    } else {
+      this.queries.push(Query.notEqual(col, value));
+    }
+    return this;
+  }
+
+  or(filterString: string): this {
+    if (!filterString || typeof filterString !== 'string') return this;
+    try {
+      const parts = filterString.split(',').map(s => s.trim()).filter(Boolean);
+      const subQueries: string[] = [];
+      for (const part of parts) {
+        const match = part.match(/^([a-zA-Z0-9_$]+)\.([a-z]+)\.(.*)$/);
+        if (match) {
+          const [, rawCol, op, rawVal] = match;
+          const col = mapColumnName(rawCol);
+          let val: any = rawVal;
+          if (val === 'null') val = null;
+          else if (val === 'true') val = true;
+          else if (val === 'false') val = false;
+
+          if (op === 'eq') {
+            subQueries.push(val === null ? Query.isNull(col) : Query.equal(col, val));
+          } else if (op === 'neq') {
+            subQueries.push(val === null ? Query.isNotNull(col) : Query.notEqual(col, val));
+          } else if (op === 'gte') {
+            subQueries.push(Query.greaterThanEqual(col, val));
+          } else if (op === 'lte') {
+            subQueries.push(Query.lessThanEqual(col, val));
+          } else if (op === 'gt') {
+            subQueries.push(Query.greaterThan(col, val));
+          } else if (op === 'lt') {
+            subQueries.push(Query.lessThan(col, val));
+          } else if (op === 'is') {
+            subQueries.push(val === null ? Query.isNull(col) : Query.equal(col, val));
+          }
+        }
+      }
+      if (subQueries.length > 0) {
+        if (typeof (Query as any).or === 'function') {
+          this.queries.push((Query as any).or(subQueries));
+        } else {
+          // Fallback if Query.or not available in older SDK
+          this.queries.push(...subQueries);
+        }
+      }
+    } catch (err) {
+      console.warn('[AppwriteQueryBuilder] .or() parse fallback:', err);
+    }
+    return this;
+  }
+
+  filter(column: string, operator: string, value: any): this {
+    const col = mapColumnName(column);
+    switch (operator) {
+      case 'eq': return this.eq(column, value);
+      case 'neq': return this.neq(column, value);
+      case 'gt': return this.gt(column, value);
+      case 'gte': return this.gte(column, value);
+      case 'lt': return this.lt(column, value);
+      case 'lte': return this.lte(column, value);
+      case 'in': return this.in(column, value);
+      case 'is': return this.is(column, value);
+      case 'contains': return this.contains(column, value);
+      case 'like':
+      case 'ilike': return this.like(column, value);
+      default:
+        this.queries.push(Query.equal(col, value));
+        return this;
+    }
+  }
+
+  match(criteria: Record<string, any>): this {
+    if (criteria && typeof criteria === 'object') {
+      Object.entries(criteria).forEach(([col, val]) => {
+        this.eq(col, val);
+      });
+    }
+    return this;
+  }
+
+  textSearch(column: string, query: string, _options?: any): this {
+    return this.like(column, query);
   }
 
   order(column: string, options?: { ascending?: boolean; nullsFirst?: boolean }): this {
@@ -190,6 +283,18 @@ export class AppwriteQueryBuilder<T = any> implements PromiseLike<{ data: T | nu
   }
 
   returns(): this {
+    return this;
+  }
+
+  csv(): this {
+    return this;
+  }
+
+  throwOnError(): this {
+    return this;
+  }
+
+  abortSignal(_signal?: any): this {
     return this;
   }
 
