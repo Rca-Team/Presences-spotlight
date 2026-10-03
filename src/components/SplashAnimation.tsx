@@ -1,19 +1,6 @@
 import React, { useEffect, useState, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import {
-  Bot,
-  Code2,
-  Cpu,
-  Sparkles,
-  Zap,
-  Radio,
-  GraduationCap,
-  Binary,
-  Wrench,
-  CircuitBoard,
-  Layers,
-  Terminal,
-} from 'lucide-react';
+import { Sparkles, Shield, Cpu, Scan, CheckCircle2 } from 'lucide-react';
 import { useTheme } from '@/hooks/use-theme';
 
 interface SplashAnimationProps {
@@ -21,46 +8,46 @@ interface SplashAnimationProps {
   duration?: number;
 }
 
-// Synthesize authentic warm Windows 11 startup harmonic chime using Web Audio API
-const playWindows11Chime = () => {
+// Crisp, signature iOS/Apple startup harmonic acoustic chime
+const playStartupChime = () => {
   try {
-    const AudioContextClass = window.AudioContext || (window as any).webkitAudioContext;
+    const AudioContextClass = window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
     if (!AudioContextClass) return;
     const ctx = new AudioContextClass();
-    // If browser autoplay policy suspended the AudioContext, close and exit silently without spamming warnings
     if (ctx.state === 'suspended') {
       try { ctx.close().catch(() => {}); } catch {}
       return;
     }
 
-    const chordFrequencies = [369.99, 415.30, 554.37, 622.25, 830.61];
-    const startTime = ctx.currentTime + 0.08;
+    // Ascending harmonic triad (F#4, A#4, C#5, F#5)
+    const notes = [369.99, 466.16, 554.37, 739.99];
+    const startTime = ctx.currentTime + 0.05;
 
-    chordFrequencies.forEach((freq, index) => {
+    notes.forEach((freq, idx) => {
       const osc = ctx.createOscillator();
       const gain = ctx.createGain();
 
-      osc.type = index % 2 === 0 ? 'sine' : 'triangle';
-      osc.frequency.setValueAtTime(freq, startTime + index * 0.04);
+      osc.type = 'sine';
+      osc.frequency.setValueAtTime(freq, startTime + idx * 0.06);
 
-      gain.gain.setValueAtTime(0.0001, startTime + index * 0.04);
-      gain.gain.exponentialRampToValueAtTime(0.04 / (index + 1), startTime + index * 0.04 + 0.08);
-      gain.gain.exponentialRampToValueAtTime(0.0001, startTime + 2.2);
+      gain.gain.setValueAtTime(0.0001, startTime + idx * 0.06);
+      gain.gain.exponentialRampToValueAtTime(0.14 / (idx + 1), startTime + idx * 0.06 + 0.04);
+      gain.gain.exponentialRampToValueAtTime(0.0001, startTime + 1.8);
 
       osc.connect(gain);
       gain.connect(ctx.destination);
 
-      osc.start(startTime + index * 0.04);
-      osc.stop(startTime + 2.3);
+      osc.start(startTime + idx * 0.06);
+      osc.stop(startTime + 1.9);
     });
   } catch {
-    // Audio autoplays fail silently if user has not interacted
+    // Autoplay restrictions handle silently
   }
 };
 
 export const SplashAnimation: React.FC<SplashAnimationProps> = ({
   onComplete,
-  duration = 2600,
+  duration = 2000,
 }) => {
   const { theme } = useTheme();
   const isDark =
@@ -68,317 +55,195 @@ export const SplashAnimation: React.FC<SplashAnimationProps> = ({
     (typeof window !== 'undefined' &&
       window.document.documentElement.classList.contains('dark'));
 
-  const [phase, setPhase] = useState<'logo' | 'spinning' | 'welcome' | 'exiting'>('logo');
-  const [statusMessage, setStatusMessage] = useState('Starting Presence OS...');
+  const [progress, setProgress] = useState(0);
+  const [exiting, setExiting] = useState(false);
   const hasTriggeredChime = useRef(false);
 
   useEffect(() => {
     if (!hasTriggeredChime.current) {
       hasTriggeredChime.current = true;
-      playWindows11Chime();
+      playStartupChime();
     }
 
-    const t1 = setTimeout(() => {
-      setPhase('spinning');
-      setStatusMessage('Initializing Robotics & AI Vision Modules...');
-    }, 450);
+    // Smooth mobile progress animation
+    const startTime = performance.now();
+    let animId: number;
 
-    const t2 = setTimeout(() => {
-      setPhase('welcome');
-      setStatusMessage('Connecting ATL Innovation Lab & Smart Gate...');
-    }, 1100);
+    const tick = (now: number) => {
+      const elapsed = now - startTime;
+      const pct = Math.min(100, Math.round((elapsed / (duration - 300)) * 100));
+      setProgress(pct);
 
-    const t3 = setTimeout(() => {
-      setPhase('exiting');
-      setTimeout(() => {
-        if (onComplete) onComplete();
-      }, 300);
-    }, duration);
+      if (pct < 100) {
+        animId = requestAnimationFrame(tick);
+      } else {
+        setExiting(true);
+        setTimeout(() => {
+          if (onComplete) onComplete();
+        }, 320);
+      }
+    };
+
+    animId = requestAnimationFrame(tick);
 
     return () => {
-      clearTimeout(t1);
-      clearTimeout(t2);
-      clearTimeout(t3);
+      cancelAnimationFrame(animId);
     };
   }, [duration, onComplete]);
 
   const handleSkip = () => {
-    setPhase('exiting');
+    setExiting(true);
     setTimeout(() => {
       if (onComplete) onComplete();
     }, 120);
   };
 
-  // Thematic holographic stickers
-  const stickers = [
-    {
-      id: 'robotics',
-      title: 'ROBOTICS LAB',
-      subtitle: 'Autonomous Bots • ROS & Servos',
-      icon: Bot,
-      color: isDark ? 'from-emerald-500/20 to-teal-500/10 border-emerald-500/30 text-emerald-400' : 'from-emerald-50 to-teal-100 border-emerald-300 text-emerald-700',
-      badge: 'ATL ROBOTICS',
-      pos: 'top-10 left-6 sm:top-14 sm:left-12',
-      rotation: -6,
-      delay: 0.15,
-    },
-    {
-      id: 'coding',
-      title: 'AI & CODING CORE',
-      subtitle: 'Python • ArcFace Vision • Neural Net',
-      icon: Terminal,
-      color: isDark ? 'from-cyan-500/20 to-blue-500/10 border-cyan-500/30 text-cyan-400' : 'from-cyan-50 to-blue-100 border-cyan-300 text-cyan-700',
-      badge: 'CODE CLUB',
-      pos: 'top-12 right-6 sm:top-16 sm:right-12',
-      rotation: 5,
-      delay: 0.25,
-    },
-    {
-      id: 'atl-lab',
-      title: 'PM SHRI ATL LAB',
-      subtitle: 'Tinkering • 3D Print • IoT Sensors',
-      icon: Sparkles,
-      color: isDark ? 'from-amber-500/20 to-orange-500/10 border-amber-500/30 text-amber-400' : 'from-amber-50 to-orange-100 border-amber-300 text-amber-700',
-      badge: 'INNOVATION HUB',
-      pos: 'bottom-16 left-6 sm:bottom-20 sm:left-14',
-      rotation: 4,
-      delay: 0.35,
-    },
-    {
-      id: 'stem',
-      title: 'SMART BIOMETRICS',
-      subtitle: '3D Neural Mesh • Gate Vision',
-      icon: CircuitBoard,
-      color: isDark ? 'from-purple-500/20 to-indigo-500/10 border-purple-500/30 text-purple-400' : 'from-purple-50 to-indigo-100 border-purple-300 text-purple-700',
-      badge: 'STEM 2026',
-      pos: 'bottom-16 right-6 sm:bottom-20 sm:right-14',
-      rotation: -5,
-      delay: 0.45,
-    },
-  ];
-
   return (
     <AnimatePresence>
-      {phase !== 'exiting' && (
+      {!exiting && (
         <motion.div
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           exit={{
             opacity: 0,
-            scale: 1.02,
-            transition: { duration: 0.3, ease: [0.16, 1, 0.3, 1] },
+            scale: 1.04,
+            filter: 'blur(8px)',
+            transition: { duration: 0.35, ease: [0.32, 0.72, 0, 1] },
           }}
           onClick={handleSkip}
-          className={`fixed inset-0 z-[9999] flex flex-col items-center justify-center select-none overflow-hidden cursor-pointer transition-colors duration-500 ${
-            isDark
-              ? 'bg-[#04060d] text-white'
-              : 'bg-[#f4f7fb] text-slate-900'
-          }`}
+          className="fixed inset-0 z-[9999] flex flex-col items-center justify-between select-none overflow-hidden cursor-pointer bg-[#050914] text-white px-6 py-12"
+          style={{
+            touchAction: 'none',
+          }}
         >
-          {/* Subtle Ambient Radial Lighting Nebula */}
-          <div
-            className="absolute inset-0 pointer-events-none transition-opacity duration-700"
-            style={{
-              background: isDark
-                ? 'radial-gradient(circle 650px at 50% 45%, rgba(0, 168, 255, 0.16) 0%, rgba(99, 102, 241, 0.08) 45%, transparent 75%)'
-                : 'radial-gradient(circle 650px at 50% 45%, rgba(0, 140, 255, 0.14) 0%, rgba(147, 51, 234, 0.08) 50%, transparent 75%)',
-            }}
-          />
-
-          {/* Blueprint Circuit Matrix Grid Lines */}
-          <div
-            className="absolute inset-0 pointer-events-none opacity-[0.25]"
-            style={{
-              backgroundImage: isDark
-                ? `linear-gradient(to right, rgba(255,255,255,0.03) 1px, transparent 1px), linear-gradient(to bottom, rgba(255,255,255,0.03) 1px, transparent 1px)`
-                : `linear-gradient(to right, rgba(0,0,0,0.03) 1px, transparent 1px), linear-gradient(to bottom, rgba(0,0,0,0.03) 1px, transparent 1px)`,
-              backgroundSize: '40px 40px',
-            }}
-          />
-
-          {/* Floating Thematic Hologram Stickers (Robotics, Coding, ATL Lab, Biometrics) */}
+          {/* Ambient iOS Aurora Glow Background */}
           <div className="absolute inset-0 pointer-events-none overflow-hidden">
-            {stickers.map((s) => {
-              const IconComp = s.icon;
-              return (
-                <motion.div
-                  key={s.id}
-                  initial={{ opacity: 0, scale: 0.7, y: 15 }}
-                  animate={{
-                    opacity: 1,
-                    scale: 1,
-                    y: [0, -8, 0],
-                  }}
-                  transition={{
-                    opacity: { duration: 0.6, delay: s.delay },
-                    scale: { duration: 0.6, delay: s.delay },
-                    y: {
-                      duration: 3.5 + s.delay * 2,
-                      repeat: Infinity,
-                      ease: 'easeInOut',
-                    },
-                  }}
-                  style={{ transform: `rotate(${s.rotation}deg)` }}
-                  className={`absolute ${s.pos} hidden sm:flex items-center gap-3 p-3 rounded-2xl border backdrop-blur-xl bg-gradient-to-br shadow-2xl ${s.color}`}
-                >
-                  <div className={`p-2 rounded-xl border ${isDark ? 'bg-black/40 border-white/10' : 'bg-white/80 border-slate-200'}`}>
-                    <IconComp className="h-5 w-5" />
-                  </div>
-                  <div className="space-y-0.5 pr-1">
-                    <div className="flex items-center gap-1.5">
-                      <span className="text-[11px] font-black tracking-wider uppercase">{s.title}</span>
-                      <span className="text-[9px] font-bold px-1.5 py-0.2 rounded-full border bg-background/60">
-                        {s.badge}
-                      </span>
-                    </div>
-                    <p className={`text-[10px] font-medium font-mono ${isDark ? 'text-neutral-400' : 'text-slate-600'}`}>
-                      {s.subtitle}
-                    </p>
-                  </div>
-                </motion.div>
-              );
-            })}
+            <motion.div
+              animate={{
+                scale: [1, 1.25, 1],
+                opacity: [0.3, 0.55, 0.3],
+                x: [0, 15, 0],
+                y: [0, -20, 0],
+              }}
+              transition={{ duration: 7, repeat: Infinity, ease: 'easeInOut' }}
+              className="absolute -top-32 -left-32 w-[340px] h-[340px] sm:w-[500px] sm:h-[500px] rounded-full blur-[100px] bg-gradient-to-br from-cyan-500/35 to-blue-600/25"
+            />
+            <motion.div
+              animate={{
+                scale: [1.2, 1, 1.2],
+                opacity: [0.25, 0.45, 0.25],
+                x: [0, -20, 0],
+                y: [0, 25, 0],
+              }}
+              transition={{ duration: 8, repeat: Infinity, ease: 'easeInOut', delay: 1 }}
+              className="absolute -bottom-32 -right-32 w-[340px] h-[340px] sm:w-[500px] sm:h-[500px] rounded-full blur-[110px] bg-gradient-to-br from-emerald-500/30 to-teal-600/20"
+            />
+            {/* Subtle Texture Noise */}
+            <div
+              className="absolute inset-0 opacity-[0.035]"
+              style={{
+                backgroundImage: `url("data:image/svg+xml,%3Csvg viewBox='0 0 180 180' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.8' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Cpath fill='%23fff' filter='url(%23n)' opacity='.7' d='M0 0h180v180H0z'/%3E%3C/svg%3E")`,
+              }}
+            />
           </div>
 
-          {/* Central Hero Windows 11 Flow with Presence Logo */}
-          <div className="relative z-10 flex flex-col items-center justify-center space-y-9 sm:space-y-11">
-            {/* Center Presence Logo Capsule with Windows 11 Glow */}
+          {/* Top Status Bar Pill */}
+          <motion.div
+            initial={{ opacity: 0, y: -10 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.5, delay: 0.1 }}
+            className="relative z-10 flex items-center gap-2 px-3.5 py-1.5 rounded-full border border-white/10 bg-white/[0.04] backdrop-blur-xl shadow-lg"
+          >
+            <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+            <span className="text-[11px] font-medium tracking-wide text-slate-300">
+              Presences OS • Secure Gate Active
+            </span>
+          </motion.div>
+
+          {/* Center Stage: Apple Glass Icon with Neon Pulsing Aura */}
+          <div className="relative z-10 flex flex-col items-center justify-center my-auto">
+            {/* Pulsing Light Aura */}
             <motion.div
-              initial={{ scale: 0.85, opacity: 0, y: 10 }}
+              initial={{ scale: 0.6, opacity: 0 }}
+              animate={{
+                scale: [0.95, 1.12, 0.95],
+                opacity: [0.6, 0.9, 0.6],
+              }}
+              transition={{
+                scale: { duration: 3, repeat: Infinity, ease: 'easeInOut' },
+                opacity: { duration: 3, repeat: Infinity, ease: 'easeInOut' },
+              }}
+              className="absolute w-44 h-44 rounded-full bg-gradient-to-tr from-cyan-500/20 via-emerald-500/25 to-blue-500/20 blur-2xl pointer-events-none"
+            />
+
+            {/* Apple Squircle Icon Enclosure */}
+            <motion.div
+              initial={{ scale: 0.75, opacity: 0, y: 15 }}
               animate={{ scale: 1, opacity: 1, y: 0 }}
-              transition={{ duration: 0.8, ease: [0.16, 1, 0.3, 1] }}
-              className="relative flex flex-col items-center justify-center"
+              transition={{ duration: 0.7, ease: [0.16, 1, 0.3, 1] }}
+              className="relative p-6 sm:p-7 rounded-[32px] border border-white/20 bg-gradient-to-b from-white/[0.12] to-white/[0.03] backdrop-blur-3xl shadow-[0_20px_60px_rgba(0,0,0,0.8),inset_0_1px_0_rgba(255,255,255,0.3)] flex items-center justify-center group"
             >
-              {/* Vibrant Logo Aura Backdrop */}
-              <div
-                className={`absolute -inset-10 rounded-full blur-3xl pointer-events-none transition-opacity duration-700 ${
-                  isDark ? 'bg-cyan-500/20' : 'bg-blue-500/15'
-                }`}
+              <img
+                src="/logo.png"
+                alt="Presences Logo"
+                className="w-20 h-20 sm:w-24 sm:h-24 object-contain filter drop-shadow-[0_10px_20px_rgba(16,185,129,0.35)]"
               />
 
-              {/* Glassmorphic Logo Shield */}
-              <div
-                className={`relative p-5 sm:p-6 rounded-3xl border shadow-2xl backdrop-blur-2xl transition-all duration-300 flex items-center justify-center ${
-                  isDark
-                    ? 'bg-slate-950/75 border-cyan-500/30 shadow-[0_16px_50px_-10px_rgba(0,180,255,0.3)]'
-                    : 'bg-white/85 border-blue-400/30 shadow-[0_16px_50px_-10px_rgba(37,99,235,0.2)]'
-                }`}
-              >
-                <img
-                  src="/logo.png"
-                  alt="Presence Logo"
-                  className="w-16 h-16 sm:w-20 sm:h-20 object-contain drop-shadow-xl"
-                />
+              {/* Glowing Corner Accents */}
+              <div className="absolute top-2.5 right-2.5">
+                <Sparkles size={14} className="text-emerald-300/80 animate-pulse" />
               </div>
-
-              {/* Title Typography */}
-              <motion.div
-                initial={{ opacity: 0, y: 6 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ duration: 0.6, delay: 0.2 }}
-                className="mt-4 text-center"
-              >
-                <div className="bg-clip-text text-transparent bg-gradient-to-r from-cyan-400 via-blue-500 to-indigo-500 font-black text-2xl sm:text-3xl tracking-widest">
-                  PRESENCE
-                </div>
-                <div className="text-[11px] sm:text-xs font-bold tracking-[0.28em] uppercase text-muted-foreground mt-0.5">
-                  SMART SCHOOL AUTOMATION
-                </div>
-              </motion.div>
             </motion.div>
 
-            {/* Authentic Windows 11 Orbital Dots Ring Spinner */}
+            {/* Branding Typography */}
             <motion.div
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              transition={{ duration: 0.6, delay: 0.3 }}
-              className="flex flex-col items-center justify-center space-y-6"
+              initial={{ opacity: 0, y: 12 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.6, delay: 0.25, ease: [0.16, 1, 0.3, 1] }}
+              className="mt-6 text-center space-y-1"
             >
-              {/* Ring of 5 Orbiting Dots */}
-              <div className="relative w-10 h-10 sm:w-12 sm:h-12 flex items-center justify-center">
-                {[0, 1, 2, 3, 4].map((index) => (
-                  <div
-                    key={index}
-                    className="absolute inset-0 flex items-start justify-center"
-                    style={{
-                      animation: `win11Orbit 3.6s cubic-bezier(0.5, 0.2, 0, 1) infinite`,
-                      animationDelay: `${index * 0.16}s`,
-                    }}
-                  >
-                    <span
-                      className={`w-1.5 h-1.5 sm:w-2 sm:h-2 rounded-full ${
-                        isDark
-                          ? 'bg-white shadow-[0_0_8px_rgba(255,255,255,0.9),0_0_14px_rgba(0,180,255,0.7)]'
-                          : 'bg-blue-600 shadow-[0_0_8px_rgba(37,99,235,0.6),0_0_12px_rgba(59,130,246,0.5)]'
-                      }`}
-                      style={{
-                        transform: 'translateY(1px)',
-                      }}
-                    />
-                  </div>
-                ))}
-              </div>
-
-              {/* Cycling Status Typography */}
-              <motion.div
-                key={statusMessage}
-                initial={{ opacity: 0, y: 4 }}
-                animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0, y: -4 }}
-                transition={{ duration: 0.35 }}
-                className="text-center space-y-1 px-4 max-w-sm"
-              >
-                <p
-                  className={`text-xs sm:text-sm font-semibold tracking-wide antialiased ${
-                    isDark ? 'text-neutral-300' : 'text-slate-700'
-                  }`}
-                >
-                  {statusMessage}
-                </p>
-                <div className="flex items-center justify-center gap-1.5 text-[10px] sm:text-[11px] text-muted-foreground font-mono">
-                  <Sparkles className="h-3 w-3 text-cyan-500 animate-pulse" />
-                  <span>PM Shri KV NFC Vigyan Vihar</span>
-                </div>
-              </motion.div>
+              <h1 className="text-2xl sm:text-3xl font-extrabold tracking-tight bg-clip-text text-transparent bg-gradient-to-r from-white via-slate-100 to-slate-400">
+                Presences
+              </h1>
+              <p className="text-[11px] sm:text-xs font-semibold tracking-[0.22em] uppercase text-emerald-400/90 font-mono">
+                Smart School Automation
+              </p>
             </motion.div>
           </div>
 
-          {/* Bottom Fast Skip / Mode Indicator Pill */}
-          <div className="absolute bottom-6 flex items-center gap-3 text-[10px] text-muted-foreground tracking-wider">
-            <span className="px-2 py-0.5 rounded-full border bg-background/50 font-mono">
-              {isDark ? '🌙 Dark Mode Active' : '☀️ Light Mode Active'}
-            </span>
-            <span>• Tap anywhere to launch</span>
-          </div>
+          {/* Bottom Module: iOS Smooth Progress Capsule & Modules Loaded */}
+          <motion.div
+            initial={{ opacity: 0, y: 16 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.5, delay: 0.3 }}
+            className="relative z-10 w-full max-w-[280px] flex flex-col items-center gap-3.5"
+          >
+            {/* iOS Micro Progress Bar */}
+            <div className="w-full h-1.5 rounded-full bg-white/[0.08] p-0.5 overflow-hidden backdrop-blur-md border border-white/[0.05]">
+              <motion.div
+                className="h-full rounded-full bg-gradient-to-r from-cyan-400 via-emerald-400 to-teal-300 shadow-[0_0_12px_rgba(52,211,153,0.8)]"
+                style={{ width: `${progress}%` }}
+                transition={{ ease: 'linear' }}
+              />
+            </div>
 
-          {/* Authentic Windows 11 Orbital Keyframes Style */}
-          <style>{`
-            @keyframes win11Orbit {
-              0% {
-                transform: rotate(0deg);
-                opacity: 1;
-                animation-timing-function: cubic-bezier(0.5, 0.2, 0, 1);
-              }
-              38% {
-                transform: rotate(270deg);
-                opacity: 1;
-                animation-timing-function: cubic-bezier(0.2, 0, 0.5, 1);
-              }
-              68% {
-                transform: rotate(720deg);
-                opacity: 1;
-                animation-timing-function: cubic-bezier(0.3, 0.2, 0, 1);
-              }
-              78% {
-                transform: rotate(760deg);
-                opacity: 0.7;
-              }
-              100% {
-                transform: rotate(1080deg);
-                opacity: 0;
-              }
-            }
-          `}</style>
+            {/* Status Indicator */}
+            <div className="flex items-center justify-between w-full text-[11px] text-slate-400 font-medium">
+              <span className="flex items-center gap-1.5 text-slate-300">
+                <Scan size={13} className="text-cyan-400" />
+                {progress < 40
+                  ? 'Loading AI vision…'
+                  : progress < 80
+                  ? 'Connecting Smart Gate…'
+                  : 'Ready'}
+              </span>
+              <span className="font-mono text-emerald-400 font-semibold">{progress}%</span>
+            </div>
+
+            <p className="text-[10px] text-slate-500 tracking-wider text-center mt-1">
+              Tap anywhere to skip
+            </p>
+          </motion.div>
         </motion.div>
       )}
     </AnimatePresence>
