@@ -283,7 +283,16 @@ const AdminFacesList: React.FC<AdminFacesListProps> = ({
         const processedFaces = registrationRecords
           .map(record => {
             try {
-              const di = (record.device_info as any) || {};
+              let di: any = {};
+              if (typeof record.device_info === 'string') {
+                try {
+                  di = JSON.parse(record.device_info);
+                } catch {
+                  di = {};
+                }
+              } else {
+                di = record.device_info || {};
+              }
               const metadata = di.metadata || {};
               const name = metadata.name || di.name || record.student_name || 'Unknown';
               const employeeId = (metadata.employee_id || di.employee_id || record.student_id || '').toString().trim();
@@ -338,7 +347,7 @@ const AdminFacesList: React.FC<AdminFacesListProps> = ({
             .from('emotion_events')
             .select('user_id, student_id, emotion_label, confidence_score')
             .order('captured_at', { ascending: false })
-            .limit(2000);
+            .limit(100);
 
           const summary: Record<string, { label: string; confidence: number; samples: number }> = {};
 

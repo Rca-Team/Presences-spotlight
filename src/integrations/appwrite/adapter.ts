@@ -288,16 +288,36 @@ export class AppwriteQueryBuilder<T = any> implements PromiseLike<{ data: T | nu
   }
 
   limit(count: number): this {
-    this.queries = this.queries.filter(q => JSON.parse(q).method !== 'limit');
-    this.queries.push(Query.limit(count));
+    // Appwrite Cloud strictly caps single query limit to 100. Queries with limit > 100 trigger 400 Bad Request.
+    const safeCount = Math.max(1, Math.min(Number(count) || 25, 100));
+    try {
+      this.queries = this.queries.filter(q => {
+        try {
+          const parsed = typeof q === 'string' ? JSON.parse(q) : q;
+          return parsed.method !== 'limit';
+        } catch {
+          return true;
+        }
+      });
+    } catch (_) {}
+    this.queries.push(Query.limit(safeCount));
     return this;
   }
 
   range(from: number, to: number): this {
-    const limit = to - from + 1;
-    this.queries = this.queries.filter(q => !['limit', 'offset'].includes(JSON.parse(q).method));
+    const limit = Math.max(1, Math.min(to - from + 1, 100));
+    try {
+      this.queries = this.queries.filter(q => {
+        try {
+          const parsed = typeof q === 'string' ? JSON.parse(q) : q;
+          return !['limit', 'offset'].includes(parsed.method);
+        } catch {
+          return true;
+        }
+      });
+    } catch (_) {}
     this.queries.push(Query.limit(limit));
-    this.queries.push(Query.offset(from));
+    this.queries.push(Query.offset(Math.max(0, from)));
     return this;
   }
 
@@ -369,14 +389,34 @@ export class AppwriteQueryBuilder<T = any> implements PromiseLike<{ data: T | nu
         const { kind, data, options } = this.mutation;
         docs = [];
         if (kind === 'insert' || kind === 'upsert') {
-          for (const item of Array.isArray(data) ? data : [data]) {
+          for (const rawItem of Array.isArray(data) ? data : [data]) {
+            const item = { ...rawItem };
+            if (this.collectionName === 'push_subscriptions') {
+              if (!item.subscription && (item.endpoint || item.keys_p256dh || item.keys_auth)) {
+                item.subscription = JSON.stringify({
+                  endpoint: item.endpoint,
+                  keys: {
+                    p256dh: item.keys_p256dh,
+                    auth: item.keys_auth,
+                  },
+                });
+                delete item.endpoint;
+                delete item.keys_p256dh;
+                delete item.keys_auth;
+                delete item.updated_at;
+              }
+            }
             let id = item.id || item.$id;
             if (kind === 'upsert' && !id && options?.onConflict) {
               const fields = options.onConflict.split(',').map(f => f.trim());
-              const existing = await databases.listDocuments(DATABASE_ID, this.collectionName,
-                [...fields.map(f => Query.equal(mapColumnName(f), item[f])), Query.limit(2)]);
-              if (existing.total > 1) throw new Error('Conflict columns match multiple records');
-              id = existing.documents[0]?.$id;
+              try {
+                const existing = await databases.listDocuments(DATABASE_ID, this.collectionName,
+                  [...fields.map(f => Query.equal(mapColumnName(f), item[f])), Query.limit(2)]);
+                if (existing.total > 1) throw new Error('Conflict columns match multiple records');
+                id = existing.documents[0]?.$id;
+              } catch (_) {
+                // If conflict index doesn't exist, proceed with new creation
+              }
             }
             const payload = sanitizeDocForSave(item);
             if (kind === 'upsert' && id) {
@@ -425,11 +465,29 @@ class AppwriteAuthClient {
   private authListeners: Set<(event: string, session: any) => void> = new Set();
   private cachedUser: any = null;
   private userRequest: Promise<any> | null = null;
+  private last401Time = 0;
 
   private getAccount(): Promise<any> {
+    // If recently verified unauthenticated (within 4 seconds), skip redundant 401 network requests
+    if (Date.now() - this.last401Time < 4000) {
+      return Promise.reject({ code: 401, message: 'Unauthenticated session' });
+    }
     // All mounted listeners share the same in-flight account request.
     if (!this.userRequest) {
-      this.userRequest = account.get().finally(() => { this.userRequest = null; });
+      this.userRequest = account.get()
+        .then((u) => {
+          this.last401Time = 0;
+          return u;
+        })
+        .catch((err) => {
+          if (err?.code === 401 || err?.message?.includes('missing scope') || err?.message?.includes('unauthorized')) {
+            this.last401Time = Date.now();
+          }
+          throw err;
+        })
+        .finally(() => {
+          this.userRequest = null;
+        });
     }
     return this.userRequest;
   }
@@ -523,6 +581,7 @@ class AppwriteAuthClient {
   }
 
   async signInWithPassword({ email, password }: { email: string; password: string }): Promise<{ data: any; error: any }> {
+    this.last401Time = 0;
     try {
       await account.createEmailPasswordSession(email.trim().toLowerCase(), password);
       const user = this.formatUser(await account.get());
@@ -535,6 +594,7 @@ class AppwriteAuthClient {
   }
 
   async signInWithOAuth({ provider, options }: { provider: string; options?: { redirectTo?: string } }) {
+    this.last401Time = 0;
     try {
       const supported = { google: OAuthProvider.Google, github: OAuthProvider.Github, apple: OAuthProvider.Apple, azure: OAuthProvider.Microsoft, facebook: OAuthProvider.Facebook };
       const selected = supported[provider as keyof typeof supported];
@@ -546,6 +606,7 @@ class AppwriteAuthClient {
   }
 
   async signUp({ email, password, options }: { email: string; password: string; options?: any }): Promise<{ data: any; error: any }> {
+    this.last401Time = 0;
     try {
       await account.create(ID.unique(), email.trim(), password, options?.data?.name || options?.data?.full_name || email.split('@')[0]);
       return this.signInWithPassword({ email, password });
@@ -818,15 +879,20 @@ class AppwriteRealtimeChannel {
   presenceState<T = any>(): Record<string, T[]> { return { ...this.presences }; }
 
   async track(payload: Record<string, any>): Promise<void> {
-    const user = await account.get();
-    if (!this.presenceId) this.presenceId = storageFileId(this.channelName + '/' + crypto.randomUUID());
-    this.presencePayload = { ...this.presencePayload, ...payload };
-    await realtime.upsertPresence({
-      presenceId: this.presenceId,
-      status: 'online',
-      permissions: [Permission.read(Role.user(user.$id)), Permission.read(Role.label('admin')), Permission.read(Role.label('principal'))],
-      metadata: { channel: this.channelName, payload: this.presencePayload },
-    });
+    try {
+      const user = await account.get();
+      if (!user?.$id) return;
+      if (!this.presenceId) this.presenceId = storageFileId(this.channelName + '/' + crypto.randomUUID());
+      this.presencePayload = { ...this.presencePayload, ...payload };
+      await realtime.upsertPresence({
+        presenceId: this.presenceId,
+        status: 'online',
+        permissions: [Permission.read(Role.user(user.$id)), Permission.read(Role.label('admin')), Permission.read(Role.label('principal'))],
+        metadata: { channel: this.channelName, payload: this.presencePayload },
+      });
+    } catch {
+      // Graceful fallback when unauthenticated
+    }
   }
 
   async untrack(): Promise<void> {

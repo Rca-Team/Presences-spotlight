@@ -85,6 +85,7 @@ class AutoHealEngine {
   private watchdogTimer: any = null;
   private isHealingInProgress = false;
   private isDiagnosingInProgress = false;
+  private failedCandidatePhotos = new Set<string>();
 
   private constructor() {
     this.loadPersistedStats();
@@ -334,16 +335,17 @@ class AutoHealEngine {
         }
 
         // Check students with photo but no descriptor
-        const missingDescriptors = (profiles || []).filter((p: any) => {
+        const actionableMissing = (profiles || []).filter((p: any) => {
           const photo = p.photo_url || p.avatar_url;
-          const hasDesc = enrolledIds.has(String(p.id)) || (p.name && enrolledNames.has(String(p.name).toLowerCase()));
-          return !!photo && photo.trim() !== '' && !photo.includes('placeholder') && !hasDesc;
+          const candidateId = String(p.id || p.$id || '');
+          const hasDesc = enrolledIds.has(candidateId) || (p.name && enrolledNames.has(String(p.name).toLowerCase()));
+          return !!photo && photo.trim() !== '' && !photo.includes('placeholder') && !hasDesc && !this.failedCandidatePhotos.has(photo);
         });
 
-        if (missingDescriptors.length > 0) {
-          issues.push(`${missingDescriptors.length} students have portraits registered but lack biometric face embeddings.`);
-          score = Math.max(0, score - (missingDescriptors.length * 4));
-          anomalies += missingDescriptors.length;
+        if (actionableMissing.length > 0) {
+          issues.push(`${actionableMissing.length} students have portraits registered awaiting biometric face embeddings.`);
+          score = Math.max(0, score - (actionableMissing.length * 4));
+          anomalies += actionableMissing.length;
         }
       }
     } catch (err: any) {
@@ -710,8 +712,9 @@ class AutoHealEngine {
 
       const candidates = (rawProfiles || []).filter((p: any) => {
         const photo = p.photo_url || p.avatar_url;
-        const hasDesc = enrolledIds.has(String(p.id)) || (p.name && enrolledIds.has(String(p.name).toLowerCase()));
-        return !!photo && photo.trim() !== '' && !photo.includes('placeholder') && !hasDesc;
+        const candidateId = String(p.id || p.$id || '');
+        const hasDesc = enrolledIds.has(candidateId) || (p.name && enrolledIds.has(String(p.name).toLowerCase()));
+        return !!photo && photo.trim() !== '' && !photo.includes('placeholder') && !hasDesc && !this.failedCandidatePhotos.has(photo);
       });
 
       if (candidates.length > 0) {
@@ -722,6 +725,7 @@ class AutoHealEngine {
 
           for (let i = 0; i < Math.min(candidates.length, 10); i++) {
             const student = candidates[i];
+            const studentName = student.name || student.display_name || student.full_name || student.employee_id || student.id || student.$id || 'Student';
             const photoUrl = student.photo_url || student.avatar_url;
 
             this.notifyProgress({
@@ -729,25 +733,53 @@ class AutoHealEngine {
               step: 'Enrolling Biometric Descriptors',
               current: i + 1,
               total: Math.min(candidates.length, 10),
-              message: `Generating vector embeddings for ${student.name || 'Student'}...`,
+              message: `Generating vector embeddings for ${studentName}...`,
             });
 
             try {
-              const img = await faceapi.fetchImage(photoUrl);
+              // Load image safely using HTMLImageElement with anonymous crossOrigin
+              // and fallback parameter to prevent browser HTTP cache CORS errors
+              let img: HTMLImageElement;
+              try {
+                img = await new Promise<HTMLImageElement>((resolve, reject) => {
+                  const image = new Image();
+                  image.crossOrigin = 'anonymous';
+                  image.onload = () => resolve(image);
+                  image.onerror = () => {
+                    const retryImg = new Image();
+                    retryImg.crossOrigin = 'anonymous';
+                    retryImg.onload = () => resolve(retryImg);
+                    retryImg.onerror = () => reject(new Error('Image failed cross-origin load'));
+                    const sep = photoUrl.includes('?') ? '&' : '?';
+                    retryImg.src = `${photoUrl}${sep}heal_cors=1`;
+                  };
+                  const sep = photoUrl.includes('?') ? '&' : '?';
+                  image.src = `${photoUrl}${sep}heal_cors=1`;
+                });
+              } catch (imgLoadErr: any) {
+                this.failedCandidatePhotos.add(photoUrl);
+                console.warn(`[AutoHeal] Biometric image unreachable or CORS-restricted for ${studentName}:`, imgLoadErr?.message || imgLoadErr);
+                continue;
+              }
+
               const detection = await faceapi.detectSingleFace(img).withFaceLandmarks().withFaceDescriptor();
 
               if (detection?.descriptor) {
                 const descriptorArray = Array.from(detection.descriptor);
                 await (supabase as any).from('face_descriptors').insert({
-                  user_id: student.id,
-                  label: student.name || 'Student',
+                  user_id: student.id || student.$id,
+                  label: studentName,
                   descriptor: descriptorArray,
                   image_url: photoUrl,
                 });
                 repaired++;
+              } else {
+                this.failedCandidatePhotos.add(photoUrl);
+                console.info(`[AutoHeal] No detectable face in photo for ${studentName}.`);
               }
-            } catch (enrollErr) {
-              console.warn(`[AutoHeal] Biometric enrollment failed for ${student.name}:`, enrollErr);
+            } catch (enrollErr: any) {
+              this.failedCandidatePhotos.add(photoUrl);
+              console.warn(`[AutoHeal] Biometric enrollment skipped for ${studentName}:`, enrollErr?.message || enrollErr);
             }
           }
         } catch (modelErr) {

@@ -47,9 +47,17 @@ const ExistingUserContactPopup: React.FC = () => {
       const usersNeedingContact: UserWithoutContact[] = [];
 
       for (const record of registrationRecords || []) {
-        const deviceInfo = typeof record.device_info === 'string' 
-          ? JSON.parse(record.device_info) 
-          : record.device_info;
+        let deviceInfo: any = null;
+        if (typeof record.device_info === 'string') {
+          try {
+            deviceInfo = JSON.parse(record.device_info);
+          } catch (e) {
+            console.warn('[ExistingUserContactPopup] Safe fallback: truncated/invalid JSON in device_info:', e);
+            deviceInfo = {};
+          }
+        } else {
+          deviceInfo = record.device_info || {};
+        }
 
         // Required fields are parent_name + parent_phone (parent_email is optional on the register form).
         // Treat the student as having contact info when both required fields are present.
