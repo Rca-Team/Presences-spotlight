@@ -346,14 +346,37 @@ export class JarvisAuditService {
         onProgress?.(i + 1, candidates.length, student.name || "Student");
 
         try {
-          const img = await faceapi.fetchImage(photoUrl);
+          const studentName = student.name || student.display_name || student.full_name || student.id || "Student";
+          let img: HTMLImageElement;
+          try {
+            img = await new Promise<HTMLImageElement>((resolve, reject) => {
+              const image = new Image();
+              image.crossOrigin = 'anonymous';
+              image.onload = () => resolve(image);
+              image.onerror = () => {
+                const retryImg = new Image();
+                retryImg.crossOrigin = 'anonymous';
+                retryImg.onload = () => resolve(retryImg);
+                retryImg.onerror = () => reject(new Error('Image failed cross-origin load'));
+                const sep = photoUrl.includes('?') ? '&' : '?';
+                retryImg.src = `${photoUrl}${sep}heal_cors=1`;
+              };
+              const sep = photoUrl.includes('?') ? '&' : '?';
+              image.src = `${photoUrl}${sep}heal_cors=1`;
+            });
+          } catch (loadErr) {
+            failed++;
+            details.push(`Image unreachable or CORS restricted for ${studentName}`);
+            continue;
+          }
+
           const detection = await faceapi.detectSingleFace(img).withFaceLandmarks().withFaceDescriptor();
 
           if (detection?.descriptor) {
             const descriptorArray = Array.from(detection.descriptor);
             await (supabase as any).from("face_descriptors").insert({
               user_id: student.id,
-              label: student.name || "Student",
+              label: studentName,
               descriptor: descriptorArray,
               image_url: photoUrl,
             });

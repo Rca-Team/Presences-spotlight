@@ -33,6 +33,11 @@ const isMissingRpc = (error: any, fnName: string) => {
   const code = String(error?.code || '').toUpperCase();
   return (
     code === 'PGRST202' ||
+    code === '404' ||
+    error?.code === 404 ||
+    message.includes('not found') ||
+    message.includes('could not find') ||
+    message.includes('function with the requested id') ||
     message.includes(`could not find the function public.${fnName}`.toLowerCase()) ||
     details.includes(`public.${fnName}`.toLowerCase())
   );
