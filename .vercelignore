@@ -8,3 +8,13 @@
 __pycache__
 replit.nix
 /scratch
+/scripts
+/appwrite
+/supabase
+/self-hosted-supabase
+/.env
+/.env.*
+/*-audit.txt
+/*-report.json
+/build-verification.txt
+/typecheck-*.txt
