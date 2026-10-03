@@ -372,7 +372,7 @@ const NotificationService: React.FC<NotificationServiceProps> = ({
                         id="parent_phone"
                         value={parentPhone}
                         onChange={(e) => setParentPhone(e.target.value)}
-                        placeholder="e.g. 919414741664"
+                        placeholder="e.g. 919876543210"
                         className="mt-1"
                       />
                     </div>

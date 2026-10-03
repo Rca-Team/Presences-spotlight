@@ -1,4 +1,5 @@
 import { functions } from '@/integrations/appwrite/client';
+import { ExecutionMethod } from 'appwrite';
 import CryptoJS from 'crypto-js';
 
 const E2E_SECRET = import.meta.env.VITE_E2E_SECRET || 'secure-e2e-secret-key-123!';
@@ -11,11 +12,11 @@ export async function enrollmentApi<T>(action: string, body: Record<string, unkn
     functionId: 'presences-enrollment', 
     body: JSON.stringify({ e2e: encryptedPayload }), 
     async: false, 
-    path: '/', 
-    method: 'POST' 
+    xpath: '/', 
+    method: ExecutionMethod.POST
   });
   
-  let data: any;
+  let data: T & { error?: string };
   try { 
     const rawRes = JSON.parse(result.responseBody);
     if (rawRes.e2e) {

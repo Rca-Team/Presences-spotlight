@@ -26,7 +26,7 @@ export function phoneNumber(value) {
   return /^\+[1-9]\d{7,14}$/.test(number) ? number : '';
 }
 export const fields = ['name', 'admission_number', 'class', 'section', 'father_name', 'mother_name', 'parent_phone', 'date_of_birth', 'address'];
-export const poses = ['front', 'left', 'right', 'up', 'down'];
+export const poses = ['front', 'left', 'right', 'up', 'down', 'up-left', 'up-right', 'down-left', 'down-right'];
 export function cleanStudent(input) {
   const row = Object.fromEntries(fields.map(key => [key, String(input?.[key] || '').normalize('NFKC').trim().slice(0, key === 'address' ? 250 : 120)]));
   if (!row.name || !/^[\w./-]{1,64}$/.test(row.admission_number)) reject(400, 'Name and a valid admission number are required.');

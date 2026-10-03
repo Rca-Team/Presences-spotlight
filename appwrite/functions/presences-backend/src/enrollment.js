@@ -60,6 +60,28 @@ export function createEnrollmentService({ db, databaseId = 'presences_db', sms, 
     await audit('verified', student.admission_number, method);
     return { session: secret, student: Object.fromEntries(fields.map(k => [k, student[k] || ''])), challenge: session.challenge, expires: session.expires };
   };
+  // A durable commit intent allows cleanup to finish an interrupted submission.
+  // Once publishing begins, its photos must never be treated as abandoned uploads.
+  async function finishCommit(id, current) {
+    const { student, changes, descriptor, primaryFileId } = current.commit;
+    const imageUrl = files.url(primaryFileId);
+    const captureId = hash('capture:' + id);
+    if (Object.keys(changes).length) await save(hash('correction:' + id), 'correction', {
+      student: current.student, original: Object.fromEntries(fields.map(k => [k, student[k]])), changes, status: 'pending', at: current.commit.at,
+    }, now() + 90 * DAY);
+    await save(captureId, 'capture', { student: current.student, samples: current.samples, method: current.method, at: current.commit.at }, now() + 3650 * DAY);
+    await db.updateDocument(databaseId, 'profiles', student.profileId, { avatar_url: imageUrl, updated_at: new Date(now()).toISOString() });
+    const descriptorId = hash('enrollment-descriptor:' + current.student);
+    const record = { user_id: student.userId, student_id: student.admission_number, label: student.name, descriptor: JSON.stringify(descriptor), image_url: imageUrl, created_at: new Date(current.commit.at).toISOString() };
+    try { await db.createDocument(databaseId, 'face_descriptors', descriptorId, record, staffRead); }
+    catch (e) { if (e.code !== 409) throw e; await db.updateDocument(databaseId, 'face_descriptors', descriptorId, record); }
+    await save(hash('student:' + current.student), 'student', { ...student, status: 'completed', lastCapture: captureId }, now() + 3650 * DAY);
+    current.completed = true;
+    current.correctionPending = Object.keys(changes).length > 0;
+    await save(id, 'session', current, current.expires);
+    await audit('enrollment-completed', current.student, current.method);
+    return { completed: true, correctionPending: current.correctionPending };
+  }
   async function challengeFor(body) {
     const c = await get(hash('challenge:' + String(body.challenge || '')));
     if (!c || c.expires <= now()) reject(401, 'Verification expired. Start again.');
@@ -87,6 +109,7 @@ export function createEnrollmentService({ db, databaseId = 'presences_db', sms, 
   const monitor = createEnrollmentMonitor({ db, databaseId, files, now });
   return async function dispatch(body, { user = null, ip = 'unknown' } = {}) {
     const action = body.action;
+    if (typeof action !== 'string') reject(400, 'An action is required.');
     const admin = user?.labels?.some(l => ['admin', 'principal', 'superadmin'].includes(l));
     const staff = admin; // Import/contact changes affect authentication; school administrators own them.
     // Read-only monitoring: admins see everything, teachers only their assigned classes.
@@ -133,6 +156,7 @@ export function createEnrollmentService({ db, databaseId = 'presences_db', sms, 
           const student = await studentFor(c.student);
           if (!student) reject(404, 'Student no longer exists.');
           if (body.approve) {
+            if (Object.keys(c.changes).some(k => student[k] !== c.original[k])) reject(409, 'School details changed after this request. Reject it and request a fresh correction.');
             const merged = cleanStudent({ ...student, ...c.changes, admission_number: c.student });
             await db.updateDocument(databaseId, 'profiles', student.profileId, profileData(merged));
           }
@@ -145,6 +169,10 @@ export function createEnrollmentService({ db, databaseId = 'presences_db', sms, 
         const expired = await db.listDocuments(databaseId, STATE, [Query.lessThan('expires', now() - 120000), Query.limit(100)]);
         for (const d of expired.documents) {
           const value = JSON.parse(d.payload);
+          if (d.kind === 'session' && value.commit && !value.completed) {
+            await lock(d.$id, () => finishCommit(d.$id, value));
+            continue;
+          }
           if (d.kind === 'session' && !value.completed) for (const s of value.samples || []) await files.remove(s.fileId);
           await db.deleteDocument(databaseId, STATE, d.$id);
         }
@@ -155,15 +183,16 @@ export function createEnrollmentService({ db, databaseId = 'presences_db', sms, 
     await limit('ip:' + ip, 120, 3600000);
     if (action === 'verify-student') {
       await limit('verify-student-ip:' + ip, 20, 3600000);
-      const admission = String(body.admission || '').trim();
+      const admission = String(body.admission || '').trim().slice(0, 64);
       const phone = phoneNumber(body.phone);
-      const dob = String(body.dob || '').trim();
+      const dob = String(body.dob || '').trim().slice(0, 32);
       if (!admission || !phone || !dob) reject(400, 'Admission number, registered phone, and date of birth are all required.');
-
+      await limit('credentials-student:' + admission, 5, 15 * 60000);
+      await limit('credentials-phone:' + phone, 8, 15 * 60000);
       const student = await studentFor(admission);
       if (!student) {
         await limit('verify-student-fail:' + ip, 6, 3600000);
-        reject(404, 'No registered student matched these details. Please check with your school.');
+        reject(400, 'Details do not match school records. Check admission number, registered phone, and date of birth.');
       }
 
       const registeredPhone = phoneNumber(student.parent_phone);
@@ -231,7 +260,11 @@ export function createEnrollmentService({ db, databaseId = 'presences_db', sms, 
       const id = hash('session:' + body.session);
       return lock(id, async () => {
         const current = await get(id);
-        if (current.completed) { if (action === 'submit') return { completed: true }; reject(409, 'Enrollment is already complete.'); }
+        if (current.completed) { if (action === 'submit') return { completed: true, correctionPending: current.correctionPending }; reject(409, 'Enrollment is already complete.'); }
+        if (current.commit) {
+          if (action === 'submit') return finishCommit(id, current);
+          reject(409, 'Submission is being finalized. Retry confirmation instead.');
+        }
         if (action === 'cancel') {
           for (const s of current.samples) await files.remove(s.fileId);
           await db.deleteDocument(databaseId, STATE, id);
@@ -242,11 +275,11 @@ export function createEnrollmentService({ db, databaseId = 'presences_db', sms, 
           const key = body.sample.pose + ':' + body.sample.glasses;
           const fileId = hash(id + ':' + key);
           const prior = current.samples.find(s => s.fileId === fileId);
-          if (prior) return { saved: true }; // Stable retry, never overwrite a staged slot.
-          if (current.samples.length >= 10) reject(400, 'Too many samples.');
+          if (prior?.uploaded) return { saved: true }; // Stable retry, never overwrite a completed slot.
+          if (!prior && current.samples.length >= 10) reject(400, 'Too many samples.');
           // Persist intent first so cleanup can reclaim an interrupted storage upload.
-          const sample = { ...body.sample, image: undefined, fileId };
-          current.samples.push(sample);
+          const sample = prior || { pose: body.sample.pose, glasses: body.sample.glasses, descriptor: body.sample.descriptor, quality: body.sample.quality, fileId };
+          if (!prior) current.samples.push(sample);
           await save(id, 'session', current, current.expires);
           try { await files.put(fileId, bytes); }
           catch (e) { current.samples = current.samples.filter(s => s.fileId !== fileId); await save(id, 'session', current, current.expires); throw e; }
@@ -260,24 +293,12 @@ export function createEnrollmentService({ db, databaseId = 'presences_db', sms, 
         const student = await studentFor(session.student);
         if (!student) reject(404, 'Student record is unavailable.');
         const changes = Object.fromEntries(fields.filter(k => k !== 'admission_number' && body.changes && Object.hasOwn(body.changes, k) && String(body.changes[k]).trim() !== student[k]).map(k => [k, String(body.changes[k]).trim()]));
-        if (Object.keys(changes).length) {
-          cleanStudent({ ...student, ...changes });
-          await save(hash('correction:' + id), 'correction', { student: session.student, original: Object.fromEntries(fields.map(k => [k, student[k]])), changes, status: 'pending', at: now() }, now() + 90 * DAY);
-        }
+        if (Object.keys(changes).length) cleanStudent({ ...student, ...changes });
         const primary = current.samples.find(s => s.pose === 'front' && s.glasses === (body.wearsGlasses ? 'with' : 'without'));
-        const imageUrl = files.url(primary.fileId);
-        // All samples exist before the compatible recognition record is activated.
-        await save(hash('capture:' + id), 'capture', { student: session.student, samples: current.samples, method: current.method, at: now() }, now() + 3650 * DAY);
-        await db.updateDocument(databaseId, 'profiles', student.profileId, { avatar_url: imageUrl, updated_at: new Date(now()).toISOString() });
-        const descriptorId = hash('enrollment-descriptor:' + session.student);
-        const record = { user_id: student.userId, student_id: student.admission_number, label: student.name, descriptor: JSON.stringify(descriptor), image_url: imageUrl, created_at: new Date(now()).toISOString() };
-        try { await db.createDocument(databaseId, 'face_descriptors', descriptorId, record, staffRead); }
-        catch (e) { if (e.code !== 409) throw e; await db.updateDocument(databaseId, 'face_descriptors', descriptorId, record); }
-        await save(hash('student:' + session.student), 'student', { ...student, status: 'completed', lastCapture: hash('capture:' + id) }, now() + 3650 * DAY);
-        current.completed = true;
+        current.commit = { student, changes, descriptor, primaryFileId: primary.fileId, at: now() };
         await save(id, 'session', current, current.expires);
-        await audit('enrollment-completed', session.student, current.method);
-        return { completed: true, correctionPending: Object.keys(changes).length > 0 };
+        await save(hash('student:' + session.student), 'student', { ...student, status: 'captured' }, now() + 3650 * DAY);
+        return finishCommit(id, current);
       });
     }
     reject(404, 'Unknown enrollment action.');

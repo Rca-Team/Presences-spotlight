@@ -13,6 +13,10 @@ const directions: Record<Pose, string> = {
   right: 'Turn gently to your right ➡️',
   up: 'Lift your chin slightly ⬆️',
   down: 'Lower your chin slightly ⬇️',
+  'up-left': 'Look gently up and left',
+  'up-right': 'Look gently up and right',
+  'down-left': 'Look gently down and left',
+  'down-right': 'Look gently down and right',
 };
 
 const TOTAL_TICKS = 36;
@@ -49,7 +53,7 @@ class AppleFaceIDSoundEngine {
       gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.05);
       osc.start(ctx.currentTime);
       osc.stop(ctx.currentTime + 0.05);
-    } catch {}
+    } catch { /* Optional sound/haptic feedback is unavailable on this device. */ }
   }
 
   playSectorComplete() {
@@ -70,7 +74,7 @@ class AppleFaceIDSoundEngine {
         osc.start(start);
         osc.stop(start + 0.12);
       });
-    } catch {}
+    } catch { /* Optional sound/haptic feedback is unavailable on this device. */ }
   }
 
   playComplete() {
@@ -92,7 +96,7 @@ class AppleFaceIDSoundEngine {
         osc.start(start);
         osc.stop(start + 0.35);
       });
-    } catch {}
+    } catch { /* Optional sound/haptic feedback is unavailable on this device. */ }
   }
 }
 
@@ -160,7 +164,8 @@ export default function GuidedFaceCapture({
     if (animFrameRef.current) cancelAnimationFrame(animFrameRef.current);
   };
 
-  const triggerBurst = (cx: number, cy: number, count = 28) => {
+  const triggerBurst = useCallback((cx: number, cy: number, count = 28) => {
+    if (reduced) return;
     for (let i = 0; i < count; i++) {
       const angle = Math.random() * Math.PI * 2;
       const speed = 2 + Math.random() * 4.5;
@@ -176,7 +181,7 @@ export default function GuidedFaceCapture({
         maxLife: 32 + Math.random() * 24,
       });
     }
-  };
+  }, [reduced]);
 
   // Apple Face ID 3D HUD Canvas Animation Loop
   useEffect(() => {
@@ -346,7 +351,7 @@ export default function GuidedFaceCapture({
       running = false;
       if (animFrameRef.current) cancelAnimationFrame(animFrameRef.current);
     };
-  }, []);
+  }, [generation]);
 
   // Main Detection & Capture Lifecycle
   useEffect(() => {
@@ -589,7 +594,7 @@ export default function GuidedFaceCapture({
               return;
             }
 
-            // Phase: Capture Core 5 Poses
+            // Capture every required view, including the four diagonals.
             const needsBare = glasses.current && samples.current.length === 0;
             const capturedMain = samples.current.filter(
               (s) => s.glasses === (glasses.current ? 'with' : 'without')
@@ -635,7 +640,7 @@ export default function GuidedFaceCapture({
             if ('vibrate' in navigator) {
               try {
                 navigator.vibrate(35);
-              } catch {}
+              } catch { /* Optional sound/haptic feedback is unavailable on this device. */ }
             }
 
             if (needsBare) {
@@ -655,7 +660,7 @@ export default function GuidedFaceCapture({
               if ('vibrate' in navigator) {
                 try {
                   navigator.vibrate([60, 50, 90]);
-                } catch {}
+                } catch { /* Optional sound/haptic feedback is unavailable on this device. */ }
               }
               stop();
               onComplete({
@@ -671,7 +676,7 @@ export default function GuidedFaceCapture({
               stableSince = 0;
             }
           } finally {
-            if (!disposed && phase.current !== 'done') {
+            if (!disposed && (phase.current as Phase) !== 'done') {
               timer = setTimeout(loop, 120);
             }
           }
@@ -697,12 +702,12 @@ export default function GuidedFaceCapture({
       stop();
       canvas.width = qualityCanvas.width = 0;
     };
-  }, [challenge, generation, onComplete]);
+  }, [challenge, generation, onComplete, triggerBurst]);
 
   const totalRequired = glasses.current ? poses.length + 1 : poses.length;
 
   return (
-    <section className="faceid-stage" aria-label="Apple Face ID guided scan">
+    <section className="faceid-stage" aria-label="Guided multi-angle face capture">
       <div className="faceid-viewport">
         {/* Circular camera mask with mirrored video */}
         <div className="faceid-circle-mask">
@@ -710,7 +715,7 @@ export default function GuidedFaceCapture({
           {stage === 'prepare' && (
             <div className="faceid-loading-scrim">
               <Camera size={34} className="animate-pulse text-emerald-400" />
-              <span className="text-xs font-medium tracking-wide">Starting Face ID…</span>
+              <span className="text-xs font-medium tracking-wide">Preparing guided capture…</span>
             </div>
           )}
         </div>
@@ -888,7 +893,7 @@ export default function GuidedFaceCapture({
       <div className="flex items-center justify-between w-full mt-5 text-xs text-slate-400">
         <span className="flex items-center gap-2">
           <ScanFace size={15} className="text-emerald-400" />
-          Apple Face ID TrueDepth Guidance
+          Guided multi-angle face capture
         </span>
         <Button
           variant="ghost"

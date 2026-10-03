@@ -70,7 +70,7 @@ await test('Partial capture cannot activate recognition; uploads can retry', asy
   assert.equal(writes.filter(w => w.table === 'face_descriptors').length, 0);
 });
 await test('All angles save once, activate compatible 128-value descriptor and queue corrections', async () => {
-  for (const p of ['left', 'right', 'up', 'down']) await service({ action: 'sample', session: session.session, sample: sample(p), student: 'OTHER' });
+  for (const p of ['left', 'right', 'up', 'down', 'up-left', 'up-right', 'down-left', 'down-right']) await service({ action: 'sample', session: session.session, sample: sample(p), student: 'OTHER' });
   const input = { action: 'submit', session: session.session, consent: true, blinked: true, challenge: session.challenge, changes: { address: 'New address', admission_number: 'OTHER' } };
   assert.equal((await service(input)).completed, true); assert.equal((await service(input)).completed, true);
   const descriptors = [...documents.entries()].filter(([key]) => key.startsWith('face_descriptors:'));
@@ -85,7 +85,7 @@ await test('Monitor shows the whole school to admins with masked contacts and ca
   await assert.rejects(() => service({ action: 'staff.monitor' }), e => e.status === 401);
   const m = await service({ action: 'staff.monitor' }, admin);
   const s = m.students.find(x => x.admission_number === 'A100');
-  assert.equal(m.scope.all, true); assert.equal(s.status, 'completed'); assert.equal(s.samples.length, 5); assert.equal(s.faceOnFile, true);
+  assert.equal(m.scope.all, true); assert.equal(s.status, 'completed'); assert.equal(s.samples.length, 9); assert.equal(s.faceOnFile, true);
   assert.equal(s.parent_phone, '•••• 3210'); assert.equal(s.userId, undefined);
   assert.ok(m.activity.some(a => a.event === 'enrollment-completed')); assert.ok(m.activity.every(a => a.method !== 'admin'));
   const photo = await service({ action: 'staff.photo', admission: 'A100', fileId: s.samples[0].fileId }, admin);
@@ -115,11 +115,11 @@ await test('Incorrect OTP blocks fallback, and repeated guesses are rate limited
   const verified = await service({ action: 'verify-otp', challenge: c.challenge, code: '123456' }, { ip: 'otp-test' }); assert.equal(verified.student.admission_number, 'A100');
 });
 await test('Direct credential verification binds session when admission, phone and dob match', async () => {
-  const s1 = { ...row, admission_number: 'A200', date_of_birth: '2010-05-15', parent_phone: '9414741664' };
+  const s1 = { ...row, admission_number: 'A200', date_of_birth: '2010-05-15', parent_phone: '9876543211' };
   await service({ action: 'staff.import', student: s1 }, admin);
-  const credSession = await service({ action: 'verify-student', admission: 'A200', phone: '9414741664', dob: '15/05/2010' }, { ip: 'direct' });
+  const credSession = await service({ action: 'verify-student', admission: 'A200', phone: '9876543211', dob: '15/05/2010' }, { ip: 'direct' });
   assert.equal(credSession.student.admission_number, 'A200');
-  await assert.rejects(() => service({ action: 'verify-student', admission: 'A200', phone: '9414741664', dob: '16/05/2010' }, { ip: 'direct' }), e => e.status === 400);
+  await assert.rejects(() => service({ action: 'verify-student', admission: 'A200', phone: '9876543211', dob: '16/05/2010' }, { ip: 'direct' }), e => e.status === 400);
   await assert.rejects(() => service({ action: 'verify-student', admission: 'A200', phone: '9999999999', dob: '15/05/2010' }, { ip: 'direct' }), e => e.status === 400);
 });
 console.log(`${passed} enrollment tests passed`);

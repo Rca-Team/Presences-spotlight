@@ -35,6 +35,7 @@ export default async ({ req, res, error }) => {
       body = JSON.parse(bytes.toString(CryptoJS.enc.Utf8));
     }
     if (typeof body.action !== 'string') reject(400, 'An action is required.');
+    if (['start', 'resend', 'verify-otp', 'verify-father'].includes(body.action)) reject(410, 'Use admission number, registered parent phone, and date of birth to verify.');
     let user = null;
     if (body.action.startsWith('staff.')) {
       const jwt = req.headers['x-appwrite-user-jwt'];

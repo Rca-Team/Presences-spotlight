@@ -24,7 +24,11 @@ export function estimateFacePose(points: Point[]): PoseEstimate {
   if (continuousAngle < 0) continuousAngle += Math.PI * 2;
 
   let pose: Pose | null = null;
-  if (Math.abs(yaw) < 0.16 && pitchRatio >= 0.35 && pitchRatio <= 0.48) {
+  const horizontal = yaw > 0.18 ? 'left' : yaw < -0.18 ? 'right' : '';
+  const vertical = pitchRatio < 0.33 ? 'up' : pitchRatio > 0.49 ? 'down' : '';
+  if (horizontal && vertical) {
+    pose = `${vertical}-${horizontal}` as Pose;
+  } else if (Math.abs(yaw) < 0.16 && pitchRatio >= 0.35 && pitchRatio <= 0.48) {
     pose = 'front';
   } else if (yaw > 0.18) {
     pose = 'left';

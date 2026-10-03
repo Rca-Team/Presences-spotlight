@@ -11,9 +11,21 @@ export function parseCardText(text: string): StudentDetails {
     date_of_birth: '(?:date\\s*of\\s*birth|d\\.?o\\.?b\\.?)', address: '(?:address)',
   };
   const allLabels = Object.values(patterns).join('|');
-  const normalized = text.replace(/\r/g, '').replace(/[\t ]+/g, ' ');
-  return Object.fromEntries(Object.entries(patterns).map(([field, pattern]) => {
-    const match = normalized.match(new RegExp(`(?:^|\\n)\\s*${pattern}\\s*[:=–-]?\\s*(.*?)(?=\\s+(?:${allLabels})\\s*[:=]|\\n|$)`, 'i'));
-    return [field, match?.[1]?.trim() || ''];
-  })) as StudentDetails;
+  const normalized = text.replace(/\r/g, '').replace(/[\t ]+/g, ' ')
+    .replace(new RegExp(` +(?=(?:${allLabels}) *[:=])`, 'gi'), '\n');
+  const result = Object.fromEntries(Object.keys(patterns).map(k => [k, ''])) as StudentDetails;
+  let current: keyof StudentDetails | null = null;
+  for (const line of normalized.split('\n')) {
+    let matched = false;
+    for (const [field, pattern] of Object.entries(patterns)) {
+      const match = line.match(new RegExp(`^ *${pattern} *(?:[:=–-]+ *)?(.*)$`, 'i'));
+      if (!match) continue;
+      current = field as keyof StudentDetails;
+      result[current] = match[1].trim(); matched = true; break;
+    }
+    if (!matched && current === 'address' && line.trim()) result.address += ' ' + line.trim();
+  }
+  const combined = result.class.match(/^(\d+|[IVX]+)\s*[-/]\s*([A-Z])$/i);
+  if (combined && !result.section) { result.class = combined[1]; result.section = combined[2].toUpperCase(); }
+  return result;
 }

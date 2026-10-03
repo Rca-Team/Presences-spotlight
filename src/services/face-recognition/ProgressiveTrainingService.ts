@@ -72,14 +72,6 @@ export async function storeFaceSample(
       return false;
     }
 
-    // 1. Confidence gate for progressive training sample persistence
-    if (confidence < 0.82 && confidence !== 1.0) {
-      console.log(
-        `Skipping training sample — confidence ${confidence.toFixed(2)} < 0.82`
-      );
-      return false;
-    }
-
     // 2. Anti-Contamination Gate: Verify distance against the user's existing enrolled descriptors
     const { data: existingSamples } = await supabase
       .from('face_descriptors')

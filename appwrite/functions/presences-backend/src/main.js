@@ -63,6 +63,7 @@ export async function dispatch(body, user, db, users) {
     try { await db.updateDocument(dbId,'realtime_messages',id,data,permissions); }
     catch(error) { if(error.code!==404) throw error; await db.createDocument(dbId,'realtime_messages',id,data,permissions); }
     return {success:true};
+  }
   if (action === 'trigger_auto_backup') {
     if (!admin) fail(403, 'Administrator access required');
     const collections = ['profiles', 'face_descriptors', 'attendance_records', 'timetable', 'user_roles', 'emergency_events', 'notifications', 'subjects', 'attendance_settings'];

@@ -56,6 +56,10 @@ export default function StudentEnrollment() {
 
   async function cancelCapture() {
     if (session) {
+      if (Date.now() >= session.expires) {
+        setSession(undefined); setResult(undefined); setDetails(undefined); setConsent(false); setError(''); setPhase('verify');
+        return;
+      }
       await run(async () => {
         await enrollmentApi('cancel', { session: session.session });
         setSession(undefined);
@@ -127,7 +131,7 @@ export default function StudentEnrollment() {
                         required
                         value={admission}
                         onChange={e => setAdmission(e.target.value)}
-                        placeholder="e.g. 10226"
+                        placeholder="Enter admission number"
                         autoComplete="off"
                       />
                     </label>
@@ -140,7 +144,7 @@ export default function StudentEnrollment() {
                         onChange={e => setPhone(e.target.value)}
                         inputMode="tel"
                         autoComplete="tel"
-                        placeholder="e.g. +919414741664"
+                        placeholder="e.g. +91 98765 43210"
                       />
                     </label>
 
@@ -272,7 +276,7 @@ export default function StudentEnrollment() {
               )}
             </motion.div>
           </AnimatePresence>
-          {expired && <p role="alert" className="enrollment-error">Your session expired. Discard this capture and verify again.</p>}
+          {expired && <div role="alert" className="enrollment-error">Your session expired. Discard this capture and verify again.<Button variant="ghost" className="w-full mt-2" onClick={() => void cancelCapture()}>Verify again</Button></div>}
           {error && <p role="alert" className="enrollment-error">{error}</p>}
         </section>
       </div>
