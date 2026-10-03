@@ -251,6 +251,7 @@ const AutoCapture10: React.FC<AutoCapture10Props> = ({
       {/* Controls */}
       {!done && (
         <Button
+          type="button"
           onClick={start}
           disabled={isRunning || !cameraReady || isModelLoading}
           className="w-full h-12 text-base bg-gradient-to-r from-cyan-600 to-violet-600 hover:opacity-90"
@@ -275,7 +276,7 @@ const AutoCapture10: React.FC<AutoCapture10Props> = ({
             <CheckCircle2 className="h-5 w-5" />
             <span className="text-sm font-semibold">Captured {shots.length} samples</span>
           </div>
-          <Button variant="outline" onClick={reset}>
+          <Button type="button" variant="outline" onClick={reset}>
             <RotateCcw className="h-4 w-4 mr-1" />
             Redo
           </Button>
