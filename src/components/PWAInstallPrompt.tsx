@@ -8,28 +8,9 @@ import { usePerformanceMode } from '@/hooks/usePerformanceMode';
 import { downloadLatestApk, LATEST_APK_CONFIG } from '@/utils/apkDownload';
 
 const PWAInstallPrompt: React.FC = () => {
-  const { showPrompt, isIOS, isAndroid, deviceLabel, install, dismissPrompt } = usePWAInstall();
-  const { setPreference } = usePerformanceMode();
-
-  const [showManualGuide, setShowManualGuide] = React.useState(false);
-
-  const handleInstallFull = async () => {
-    setPreference('off');
-    const ok = await install();
-    if (!ok) {
-      setShowManualGuide(true);
-    }
-  };
-
-  const handleInstallLite = async () => {
-    setPreference('on');
-    const ok = await install();
-    if (!ok) {
-      setShowManualGuide(true);
-    }
-  };
-
-  if (!showPrompt) return null;
+  // Banner permanently removed as requested
+  return null;
+};
 
   return (
     <AnimatePresence>

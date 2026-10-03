@@ -459,7 +459,6 @@ function App() {
                           <AppExperienceLayer />
                         )}
                         <AppUpdateListener />
-                        <PWAInstallPrompt />
                         <EmergencyAlertListener />
                         <RealtimeNotificationListener />
                         <SharedMediaGateway />
