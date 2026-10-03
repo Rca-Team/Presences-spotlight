@@ -178,7 +178,28 @@ export class AppwriteQueryBuilder<T = any> implements PromiseLike<{ data: T | nu
   }
 
   contains(column: string, values: any): this {
-    this.queries.push(Query.contains(mapColumnName(column), Array.isArray(values) ? values : [values]));
+    const mappedCol = mapColumnName(column);
+    const rawList = Array.isArray(values) ? values : [values];
+    const cleanList: (string | number | boolean)[] = [];
+    let extractedUserId: string | null = null;
+
+    for (const val of rawList) {
+      if (typeof val === 'string' || typeof val === 'number' || typeof val === 'boolean') {
+        cleanList.push(val);
+      } else if (val && typeof val === 'object') {
+        const candidate = (val as any).employee_id || (val as any).student_id || (val as any).user_id || (val as any).metadata?.employee_id || (val as any).metadata?.student_id;
+        if (candidate && typeof candidate === 'string') {
+          extractedUserId = candidate;
+        }
+      }
+    }
+
+    if (mappedCol === 'device_info' && extractedUserId) {
+      // In Appwrite, device_info string column cannot be queried with contains(). Route to user_id equal query.
+      this.queries.push(Query.equal('user_id', extractedUserId));
+    } else if (cleanList.length > 0 && mappedCol !== 'device_info') {
+      this.queries.push(Query.contains(mappedCol, cleanList as any));
+    }
     return this;
   }
 

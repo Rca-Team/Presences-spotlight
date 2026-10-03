@@ -162,7 +162,7 @@ export const useAttendanceCalendar = (selectedFaceId: string | null) => {
         queries.push(
           supabase.from('attendance_records')
             .select('id, timestamp, status, source, capture_mode, class, section, device_info, image_url')
-            .contains('device_info', { metadata: { employee_id: employeeId } })
+            .eq('user_id', employeeId)
             .in('status', ['present', 'late', 'unauthorized'])
             .order('timestamp', { ascending: true })
         );

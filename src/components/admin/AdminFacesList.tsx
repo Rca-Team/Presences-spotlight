@@ -313,7 +313,9 @@ const AdminFacesList: React.FC<AdminFacesListProps> = ({
           .map(record => {
             try {
               let di: any = {};
+              let rawDi = '';
               if (typeof record.device_info === 'string') {
+                rawDi = record.device_info;
                 try {
                   di = JSON.parse(record.device_info);
                 } catch {
@@ -322,9 +324,14 @@ const AdminFacesList: React.FC<AdminFacesListProps> = ({
               } else {
                 di = record.device_info || {};
               }
+              const extractField = (f: string) => {
+                if (!rawDi) return '';
+                const m = rawDi.match(new RegExp(`"${f}"\\s*:\\s*"([^"]+)"`));
+                return m ? m[1] : '';
+              };
               const metadata = di.metadata || {};
-              const name = metadata.name || di.name || record.student_name || 'Unknown';
-              const employeeId = (metadata.employee_id || di.employee_id || record.student_id || '').toString().trim();
+              const name = metadata.name || di.name || record.student_name || extractField('name') || 'Unknown';
+              const employeeId = (metadata.employee_id || di.employee_id || record.student_id || extractField('employee_id') || '').toString().trim();
               const category = record.category || metadata.department || 'A';
               const empKey = employeeId.toLowerCase();
               const key = employeeId
@@ -410,15 +417,17 @@ const AdminFacesList: React.FC<AdminFacesListProps> = ({
         setFaces(resolvedFaces);
         fetchTodayStatuses(resolvedFaces);
         const fetchEmotionStats = async () => {
-          const { data: emotionRows } = await supabase
-            .from('emotion_events')
-            .select('user_id, student_id, emotion_label, confidence_score')
-            .order('captured_at', { ascending: false })
-            .limit(100);
+          try {
+            const { data: emotionRows, error: emotionErr } = await supabase
+              .from('emotion_events')
+              .select('user_id, student_id, emotion_label, confidence_score')
+              .limit(100);
 
-          const summary: Record<string, { label: string; confidence: number; samples: number }> = {};
+            if (emotionErr || !emotionRows) return;
 
-          processedFaces.forEach((face) => {
+            const summary: Record<string, { label: string; confidence: number; samples: number }> = {};
+
+            processedFaces.forEach((face) => {
             const matches = (emotionRows || []).filter((row: any) =>
               (face.user_id && row.user_id === face.user_id) ||
               (row.student_id && [face.employee_id, face.user_id].filter(Boolean).includes(row.student_id)),
@@ -454,6 +463,9 @@ const AdminFacesList: React.FC<AdminFacesListProps> = ({
           });
 
           setEmotionStatsByStudent(summary);
+          } catch {
+            // Safe fallback if emotion_events is unavailable or unindexed
+          }
         };
 
         fetchEmotionStats();

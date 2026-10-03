@@ -139,7 +139,7 @@ export const fetchAttendanceRecords = async (
       queries.push(
         supabase.from('attendance_records')
           .select('id, timestamp, status, source, capture_mode, class, section, device_info, student_id')
-          .contains('device_info', { metadata: { employee_id: employeeId } })
+          .eq('user_id', employeeId)
           .in('status', ['present', 'late', 'unauthorized'])
       );
     }
@@ -234,7 +234,7 @@ export const fetchDailyAttendance = async (
       queries.push(
         supabase.from('attendance_records')
           .select('id, timestamp, status, source, capture_mode, class, section, device_info, user_id, student_id, image_url')
-          .contains('device_info', { metadata: { employee_id: employeeId } })
+          .eq('user_id', employeeId)
           .gte('timestamp', timestampStart)
           .lte('timestamp', timestampEnd)
           .order('timestamp', { ascending: true })

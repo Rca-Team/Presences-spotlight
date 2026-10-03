@@ -102,6 +102,9 @@ export function isRecoverableChunkOrNetworkError(error: unknown): boolean {
     msg.includes('csssyntaxerror') ||
     msg.includes('networkerror') ||
     msg.includes('expected a javascript-or-wasm') ||
+    msg.includes('failed to load module script') ||
+    msg.includes('mime type of "text/html"') ||
+    msg.includes('strict mime type checking') ||
     msg.includes('chunk_reload')
   );
 }

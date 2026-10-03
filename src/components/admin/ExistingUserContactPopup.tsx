@@ -48,23 +48,32 @@ const ExistingUserContactPopup: React.FC = () => {
 
       for (const record of registrationRecords || []) {
         let deviceInfo: any = null;
+        let rawStr = '';
         if (typeof record.device_info === 'string') {
+          rawStr = record.device_info;
           try {
             deviceInfo = JSON.parse(record.device_info);
-          } catch (e) {
-            console.warn('[ExistingUserContactPopup] Safe fallback: truncated/invalid JSON in device_info:', e);
+          } catch {
+            // String was likely truncated at column limit (e.g. 3000 chars) by storage backend.
             deviceInfo = {};
           }
         } else {
           deviceInfo = record.device_info || {};
         }
 
+        // Helper to extract field if JSON was truncated
+        const extractField = (field: string) => {
+          if (!rawStr) return '';
+          const m = rawStr.match(new RegExp(`"${field}"\\s*:\\s*"([^"]+)"`));
+          return m ? m[1] : '';
+        };
+
         // Required fields are parent_name + parent_phone (parent_email is optional on the register form).
         // Treat the student as having contact info when both required fields are present.
         const meta = deviceInfo?.metadata || {};
-        const hasContactInDeviceInfo = !!(
-          (meta.parent_name && (meta.parent_phone || meta.phone))
-        );
+        const pName = meta.parent_name || extractField('parent_name');
+        const pPhone = meta.parent_phone || meta.phone || extractField('parent_phone') || extractField('phone');
+        const hasContactInDeviceInfo = !!(pName && pPhone);
 
         let hasContactInProfiles = false;
         if (!hasContactInDeviceInfo && record.user_id) {
@@ -86,9 +95,9 @@ const ExistingUserContactPopup: React.FC = () => {
 
         // Only add to list if contact info is missing in both places
         if (!hasContactInDeviceInfo && !hasContactInProfiles) {
-          const userName = deviceInfo?.metadata?.name || deviceInfo?.name || 'Unknown User';
-          const employeeId = deviceInfo?.metadata?.employee_id || deviceInfo?.employee_id;
-          const department = deviceInfo?.metadata?.department || deviceInfo?.department;
+          const userName = deviceInfo?.metadata?.name || deviceInfo?.name || extractField('name') || 'Unknown User';
+          const employeeId = deviceInfo?.metadata?.employee_id || deviceInfo?.employee_id || extractField('employee_id');
+          const department = deviceInfo?.metadata?.department || deviceInfo?.department || extractField('department');
 
           usersNeedingContact.push({
             id: record.user_id || record.id,

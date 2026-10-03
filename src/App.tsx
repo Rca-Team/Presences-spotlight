@@ -398,11 +398,17 @@ function App() {
       handleChunkError(event.reason);
     };
 
+    const onError = (event: ErrorEvent) => {
+      handleChunkError(event.error || event.message);
+    };
+
     window.addEventListener('vite:preloadError', onPreloadError);
     window.addEventListener('unhandledrejection', onUnhandledRejection);
+    window.addEventListener('error', onError);
     return () => {
       window.removeEventListener('vite:preloadError', onPreloadError);
       window.removeEventListener('unhandledrejection', onUnhandledRejection);
+      window.removeEventListener('error', onError);
     };
   }, []);
 
