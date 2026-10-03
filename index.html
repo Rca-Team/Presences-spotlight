@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="en" class="notranslate" translate="no">
+<html lang="en" class="dark notranslate" translate="no">
   <head>
     <meta charset="UTF-8" />
     <meta name="google" content="notranslate" />
@@ -13,15 +13,30 @@
     <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate" />
     <meta http-equiv="Pragma" content="no-cache" />
     <meta http-equiv="Expires" content="0" />
+
+    <!-- Early Theme Initializer to prevent white flash -->
+    <script>
+      (function() {
+        try {
+          var manual = localStorage.getItem('ui-theme-manual') === 'true';
+          var stored = localStorage.getItem('ui-theme');
+          var theme = (manual && (stored === 'light' || stored === 'dark')) ? stored : 'dark';
+          document.documentElement.classList.remove('light', 'dark');
+          document.documentElement.classList.add(theme);
+        } catch (_) {
+          document.documentElement.classList.add('dark');
+        }
+      })();
+    </script>
     
     <!-- PWA Meta Tags -->
-    <meta name="theme-color" content="#3b82f6" />
+    <meta name="theme-color" content="#0f172a" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
     <meta name="apple-mobile-web-app-title" content="Presences" />
     <meta name="mobile-web-app-capable" content="yes" />
     <meta name="application-name" content="Presences" />
-    <meta name="msapplication-TileColor" content="#3b82f6" />
+    <meta name="msapplication-TileColor" content="#0f172a" />
     <meta name="msapplication-tap-highlight" content="no" />
     
     <!-- Icons -->

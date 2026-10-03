@@ -1,4 +1,3 @@
-
 import { createContext, useContext, useEffect, useState, ReactNode } from 'react';
 
 type Theme = 'light' | 'dark';
@@ -18,13 +17,24 @@ const ThemeProviderContext = createContext<ThemeProviderState | undefined>(undef
 
 export function ThemeProvider({
   children,
-  defaultTheme = 'light',
+  defaultTheme = 'dark',
   storageKey = 'ui-theme',
   ...props
 }: ThemeProviderProps) {
-  const [theme, setTheme] = useState<Theme>(
-    () => (localStorage.getItem(storageKey) as Theme) || defaultTheme
-  );
+  const [theme, setThemeState] = useState<Theme>(() => {
+    try {
+      if (typeof window !== 'undefined') {
+        const hasManualChoice = localStorage.getItem('ui-theme-manual') === 'true';
+        if (hasManualChoice) {
+          const stored = localStorage.getItem(storageKey);
+          if (stored === 'light' || stored === 'dark') {
+            return stored;
+          }
+        }
+      }
+    } catch (_) {}
+    return defaultTheme;
+  });
 
   useEffect(() => {
     const root = window.document.documentElement;
@@ -34,7 +44,9 @@ export function ThemeProvider({
     
     root.classList.remove('light', 'dark');
     root.classList.add(theme);
-    localStorage.setItem(storageKey, theme);
+    try {
+      localStorage.setItem(storageKey, theme);
+    } catch (_) {}
     
     // Remove transition class after animation completes
     const timer = setTimeout(() => {
@@ -46,8 +58,12 @@ export function ThemeProvider({
 
   const value = {
     theme,
-    setTheme: (theme: Theme) => {
-      setTheme(theme);
+    setTheme: (newTheme: Theme) => {
+      try {
+        localStorage.setItem('ui-theme-manual', 'true');
+        localStorage.setItem(storageKey, newTheme);
+      } catch (_) {}
+      setThemeState(newTheme);
     },
   };
 
