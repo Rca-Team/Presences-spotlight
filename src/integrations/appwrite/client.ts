@@ -17,7 +17,12 @@ export const avatars = new Avatars(client);
 export const functions = new Functions(client);
 export const realtime = new Realtime(client);
 
-// Client ping is available on-demand rather than blocking app startup
+// Ensure client.ping() runs once when app starts to confirm Appwrite setup
+client.ping().then((res) => {
+  console.log('[Appwrite SDK] Ping successful:', res);
+}).catch((err) => {
+  console.warn('[Appwrite SDK] Ping check completed (or blocked by platform CORS):', err?.message || err);
+});
 
 
 export const APPWRITE_CONFIG = {
