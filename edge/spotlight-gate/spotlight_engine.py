@@ -35,6 +35,13 @@ import config
 from sound_generator import generate_chime
 
 # ─── Face Recognition Model Loading ──────────────────────────────────────────
+MP_AVAILABLE = False
+try:
+    import mediapipe as mp
+    MP_AVAILABLE = True
+except ImportError:
+    pass
+
 FACE_RECOG_AVAILABLE = False
 try:
     import face_recognition
@@ -1064,6 +1071,12 @@ class SpotlightEngine:
         scale_factor = config.FRAME_SCALE
         scale_up = int(1.0 / scale_factor)
 
+        face_detector = None
+        if MP_AVAILABLE:
+            mp_face_detection = mp.solutions.face_detection
+            # model_selection=1 is optimized for sparse faces (further away) suitable for gates
+            face_detector = mp_face_detection.FaceDetection(model_selection=1, min_detection_confidence=0.5)
+
         while self.running:
             try:
                 frame = self.inference_queue.get(timeout=0.1)
@@ -1072,24 +1085,47 @@ class SpotlightEngine:
 
             try:
                 detections = []
-                small_frame = cv2.resize(frame, (0, 0), fx=scale_factor, fy=scale_factor)
-
+                
                 if FACE_RECOG_AVAILABLE:
-                    rgb_small = cv2.cvtColor(small_frame, cv2.COLOR_BGR2RGB)
-                    face_locations = face_recognition.face_locations(rgb_small, model="hog")
+                    fh, fw, _ = frame.shape
+                    full_res_locations = []
+                    
+                    if face_detector:
+                        # Use Ultra-Fast MediaPipe for Bounding Boxes (ARKit-level reliability)
+                        rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+                        results = face_detector.process(rgb_frame)
+                        
+                        if results.detections:
+                            for detection in results.detections:
+                                bbox = detection.location_data.relative_bounding_box
+                                left = int(bbox.xmin * fw)
+                                top = int(bbox.ymin * fh)
+                                right = int((bbox.xmin + bbox.width) * fw)
+                                bottom = int((bbox.ymin + bbox.height) * fh)
+                                
+                                c_top = max(0, min(fh - 1, top))
+                                c_right = max(0, min(fw - 1, right))
+                                c_bottom = max(0, min(fh - 1, bottom))
+                                c_left = max(0, min(fw - 1, left))
+                                
+                                if (c_bottom - c_top) > 10 and (c_right - c_left) > 10:
+                                    full_res_locations.append((c_top, c_right, c_bottom, c_left))
+                    else:
+                        # Fallback to slow HOG
+                        small_frame = cv2.resize(frame, (0, 0), fx=scale_factor, fy=scale_factor)
+                        rgb_small = cv2.cvtColor(small_frame, cv2.COLOR_BGR2RGB)
+                        face_locations = face_recognition.face_locations(rgb_small, model="hog")
 
-                    if face_locations:
-                        fh, fw, _ = frame.shape
-                        # Scale back bounding boxes and clamp to frame boundaries
-                        full_res_locations = []
-                        for top, right, bottom, left in face_locations:
-                            c_top = max(0, min(fh - 1, int(top * scale_up)))
-                            c_right = max(0, min(fw - 1, int(right * scale_up)))
-                            c_bottom = max(0, min(fh - 1, int(bottom * scale_up)))
-                            c_left = max(0, min(fw - 1, int(left * scale_up)))
-                            if (c_bottom - c_top) > 10 and (c_right - c_left) > 10:
-                                full_res_locations.append((c_top, c_right, c_bottom, c_left))
+                        if face_locations:
+                            for top, right, bottom, left in face_locations:
+                                c_top = max(0, min(fh - 1, int(top * scale_up)))
+                                c_right = max(0, min(fw - 1, int(right * scale_up)))
+                                c_bottom = max(0, min(fh - 1, int(bottom * scale_up)))
+                                c_left = max(0, min(fw - 1, int(left * scale_up)))
+                                if (c_bottom - c_top) > 10 and (c_right - c_left) > 10:
+                                    full_res_locations.append((c_top, c_right, c_bottom, c_left))
 
+                    if full_res_locations:
                         # Associate with persistent tracks
                         track_associations = self._associate_tracks(full_res_locations)
 
