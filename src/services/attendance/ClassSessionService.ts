@@ -35,13 +35,14 @@ export const ensureActiveClassSession = async (scope: ClassScope): Promise<strin
   if (!normalized) return null;
 
   const { className, section, subject } = normalized;
+  const schoolDay = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Kolkata' }).format(new Date());
 
   const { data: existing, error: readError } = await db
     .from('class_sessions')
     .select('id')
     .eq('class', className)
     .eq('section', section)
-    .eq('school_day', new Date().toISOString().slice(0, 10))
+    .eq('school_day', schoolDay)
     .eq('is_active', true)
     .order('started_at', { ascending: false })
     .limit(1)
@@ -59,6 +60,9 @@ export const ensureActiveClassSession = async (scope: ClassScope): Promise<strin
       class: className,
       section,
       subject,
+      school_day: schoolDay,
+      started_at: new Date().toISOString(),
+      is_active: true,
       metadata: { source: 'attendance-scanner' },
     })
     .select('id')
@@ -70,7 +74,7 @@ export const ensureActiveClassSession = async (scope: ClassScope): Promise<strin
       .select('id')
       .eq('class', className)
       .eq('section', section)
-      .eq('school_day', new Date().toISOString().slice(0, 10))
+      .eq('school_day', schoolDay)
       .eq('is_active', true)
       .order('started_at', { ascending: false })
       .limit(1)

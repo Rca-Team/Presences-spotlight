@@ -745,7 +745,9 @@ export const TeacherMobileAppView: React.FC<TeacherMobileAppViewProps> = ({
             transition={{ duration: 0.18, ease: [0.16, 1, 0.3, 1] }}
           >
             <TeacherMonthlyRegister
-              activeClass={activeClass}
+              classNameNumber={activeClass?.class || ""}
+              section={activeClass?.section || ""}
+              category={activeClass?.category || ""}
               students={students}
             />
           </motion.div>

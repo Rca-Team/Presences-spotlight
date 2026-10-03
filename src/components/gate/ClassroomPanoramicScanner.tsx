@@ -374,7 +374,7 @@ export default function ClassroomPanoramicScanner({
           await recordAttendance(userId, 'present', confidence, {
             metadata: {
               name: studentName,
-              student_id: student?.studentId || student?.employee_id,
+              student_id: student?.studentId,
               class: selectedClass,
               section: selectedSection,
               mode: 'classroom-panoramic',

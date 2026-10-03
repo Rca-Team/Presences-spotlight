@@ -60,7 +60,7 @@ const StatsOverview: React.FC<StatsOverviewProps> = ({ isLoading, data, refetch 
       transition: {
         delay: custom * 0.08,
         duration: 0.35,
-        ease: [0.16, 1, 0.3, 1],
+        ease: [0.16, 1, 0.3, 1] as [number, number, number, number],
       },
     }),
   };

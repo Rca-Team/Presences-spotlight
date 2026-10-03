@@ -1,0 +1,7 @@
+{
+  "name": "presences-backend",
+  "version": "1.0.0",
+  "type": "module",
+  "private": true,
+  "dependencies": { "node-appwrite": "26.1.0" }
+}

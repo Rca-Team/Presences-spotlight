@@ -1,17 +1,34 @@
-import { Client, Account, Databases, Storage, Avatars, Functions } from 'appwrite';
+import { Client, Account, Databases, Storage, Avatars, Functions, Realtime } from 'appwrite';
 
 const APPWRITE_ENDPOINT = import.meta.env.VITE_APPWRITE_ENDPOINT || 'https://sgp.cloud.appwrite.io/v1';
 const APPWRITE_PROJECT_ID = import.meta.env.VITE_APPWRITE_PROJECT_ID || '6abfd34f000604fcf074';
 
-export const appwriteClient = new Client()
+export const client = new Client()
   .setEndpoint(APPWRITE_ENDPOINT)
   .setProject(APPWRITE_PROJECT_ID);
 
-export const account = new Account(appwriteClient);
-export const databases = new Databases(appwriteClient);
-export const storage = new Storage(appwriteClient);
-export const avatars = new Avatars(appwriteClient);
-export const functions = new Functions(appwriteClient);
+export const appwriteClient = client;
+
+export const account = new Account(client);
+export const databases = new Databases(client);
+export const storage = new Storage(client);
+export const avatars = new Avatars(client);
+export const functions = new Functions(client);
+export const realtime = new Realtime(client);
+
+// Run client.ping() once when the app starts so the user can confirm setup
+try {
+  client.ping().then(
+    (response) => {
+      console.log('[Appwrite] Ping successful:', response);
+    },
+    (error) => {
+      console.warn('[Appwrite] Ping response:', error?.message || error);
+    }
+  );
+} catch (e) {
+  console.warn('[Appwrite] Ping caught:', e);
+}
 
 export const APPWRITE_CONFIG = {
   endpoint: APPWRITE_ENDPOINT,
@@ -49,4 +66,3 @@ export function getAppwriteStorageViewUrl(bucketId: string, fileId: string): str
 export function getAppwriteStorageDownloadUrl(bucketId: string, fileId: string): string {
   return `${APPWRITE_ENDPOINT}/storage/buckets/${bucketId}/files/${fileId}/download?project=${APPWRITE_PROJECT_ID}`;
 }
-

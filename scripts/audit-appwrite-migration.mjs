@@ -1,0 +1,10 @@
+import fs from 'node:fs';
+import { Client, Databases, Functions, Query } from 'node-appwrite';
+const key = process.env.APPWRITE_API_KEY;
+const client = new Client().setEndpoint('https://sgp.cloud.appwrite.io/v1').setProject('6abfd34f000604fcf074').setKey(key);
+const db = new Databases(client);
+const functions = new Functions(client);
+const list = await db.listCollections('presences_db', [Query.limit(100)]);
+console.log(JSON.stringify({ collections: list.collections.map(c => ({ id: c.$id, permissions: c.$permissions, documentSecurity: c.documentSecurity, attributes: c.attributes.map(a => ({key:a.key,type:a.type,array:a.array,status:a.status})) })) }, null, 2));
+const f = await functions.list([Query.limit(100)]);
+console.log('FUNCTIONS', f.functions.map(f => ({id:f.$id, deployment:f.deploymentId, status:f.status, enabled:f.enabled})));

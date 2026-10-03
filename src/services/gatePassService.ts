@@ -773,7 +773,7 @@ export async function verifyAndExecuteExit(
     await persistGatePasses(updatedList);
 
     // 2. Insert record into gate_entries table
-    const { class: classNum, section: sectionLetter } = parseClassSection(pass.class_section);
+    const { className: classNum, section: sectionLetter } = parseClassSection(pass.class_section);
     await supabase.from('gate_entries').insert({
       student_id: pass.student_id,
       student_name: pass.student_name,

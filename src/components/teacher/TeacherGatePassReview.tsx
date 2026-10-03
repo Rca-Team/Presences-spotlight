@@ -869,7 +869,7 @@ export const TeacherGatePassReview: React.FC<TeacherGatePassReviewProps> = ({
                 <option value="">-- Choose Student from Class {activeClass?.category} --</option>
                 {students.map((s) => (
                   <option key={s.id} value={s.admission_number || s.id}>
-                    {s.roll_number ? `#${s.roll_number} - ` : ''}{s.name} ({s.admission_number || s.employee_id || 'ID'})
+                    {s.roll_number ? `#${s.roll_number} - ` : ''}{s.name} ({s.admission_number || s.id})
                   </option>
                 ))}
               </select>

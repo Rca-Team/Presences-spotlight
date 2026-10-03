@@ -97,6 +97,7 @@ export interface ClassStudent {
   name: string;
   roll_number?: string;
   admission_number?: string;
+  attendance_percentage?: number;
   parent_name?: string;
   parent_email?: string;
   parent_phone?: string;
@@ -1413,7 +1414,10 @@ export const TeacherAdminWorkspace: React.FC<TeacherAdminWorkspaceProps> = ({ in
           pendingGatePassesCount={pendingGatePassesCount}
           isMarkingAttendance={isMarkingAttendance}
           onSelectClass={setActiveClass}
-          onQuickMarkAttendance={handleQuickMarkAttendance}
+          onQuickMarkAttendance={async (studentId, status) => {
+            const student = students.find(s => s.id === studentId);
+            if (student) await handleQuickMarkAttendance(student, status);
+          }}
           onAutoMarkAbsent={handleAutoMarkAbsent}
           onMarkAllPresent={handleMarkAllUnmarkedPresent}
           onOpenAddStudent={() => setIsAddStudentOpen(true)}
@@ -1424,11 +1428,9 @@ export const TeacherAdminWorkspace: React.FC<TeacherAdminWorkspaceProps> = ({ in
 
         {selectedFaceStudent && (
           <CaptureFaceDialog
-            isOpen={Boolean(selectedFaceStudent)}
-            onClose={() => setSelectedFaceStudent(null)}
-            studentId={selectedFaceStudent.admission_number || selectedFaceStudent.id}
-            studentName={selectedFaceStudent.name}
-            classSection={activeClass?.category}
+            open={Boolean(selectedFaceStudent)}
+            onOpenChange={(open) => { if (!open) setSelectedFaceStudent(null); }}
+            student={{ ...selectedFaceStudent, employee_id: selectedFaceStudent.admission_number || selectedFaceStudent.id, category: activeClass?.category }}
             onSuccess={() => {
               loadClassStudents();
               setSelectedFaceStudent(null);

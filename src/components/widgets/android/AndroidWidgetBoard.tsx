@@ -291,7 +291,7 @@ export const AndroidWidgetBoard: React.FC<AndroidWidgetBoardProps> = ({
       {/* Floating Smart Board Touch Assistive Dock */}
       <SmartBoardFloatingDock
         students={students}
-        activeClassName={activeClass?.category}
+        activeClass={activeClass}
       />
     </div>
   );

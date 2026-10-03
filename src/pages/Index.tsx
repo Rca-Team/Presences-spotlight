@@ -69,7 +69,7 @@ import {
 const cardTilt = {
   whileHover: { y: -4 },
   whileTap: { scale: 0.98 },
-  transition: { type: 'spring', stiffness: 420, damping: 28, mass: 0.6 },
+  transition: { type: 'spring' as const, stiffness: 420, damping: 28, mass: 0.6 },
 };
 
 const Index = () => {
@@ -811,7 +811,7 @@ const Index = () => {
                       >
                         <motion.div
                           animate={{ rotate: isSwapped ? 180 : 0 }}
-                          transition={{ type: 'spring', stiffness: 400, damping: 25 }}
+                          transition={{ type: 'spring' as const, stiffness: 400, damping: 25 }}
                         >
                           <ArrowLeftRight className="h-3 w-3 text-emerald-700 dark:text-emerald-400" />
                         </motion.div>
@@ -831,7 +831,7 @@ const Index = () => {
                           haptic('selection');
                           setActiveProfile(member);
                         }}
-                        transition={{ type: 'spring', stiffness: 450, damping: 30, mass: 0.6 }}
+                        transition={{ type: 'spring' as const, stiffness: 450, damping: 30, mass: 0.6 }}
                         className="flex items-center justify-between gap-3 rounded-2xl border border-border/80 bg-white/90 dark:bg-card/60 p-3.5 text-left transition-all hover:border-amber-400/60 hover:bg-amber-50/40 dark:hover:bg-accent/40 group shadow-xs cursor-pointer"
                         aria-label={`Open ${member.name} profile`}
                       >
@@ -899,7 +899,7 @@ const Index = () => {
                   <motion.article
                     key={p.id}
                     whileHover={{ y: -4 }}
-                    transition={{ type: 'spring', stiffness: 400, damping: 28 }}
+                    transition={{ type: 'spring' as const, stiffness: 400, damping: 28 }}
                     className="group relative overflow-hidden rounded-3xl border border-border/80 dark:border-white/10 bg-white/90 dark:bg-card/75 backdrop-blur-2xl shadow-xl flex flex-col justify-between"
                   >
                     <div className="relative aspect-video overflow-hidden bg-muted/40 group-hover:shadow-lg transition-shadow">

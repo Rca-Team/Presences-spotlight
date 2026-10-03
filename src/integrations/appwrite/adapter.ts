@@ -1,16 +1,30 @@
-import { Query, ID, Permission, Role, Models } from 'appwrite';
+import { storageFileId } from './storage-id';
+import { Query, ID, OAuthProvider, Permission, Role, Channel } from 'appwrite';
 import {
   appwriteClient,
   databases,
   account,
   storage,
   functions,
+  realtime,
   APPWRITE_CONFIG,
   getAppwriteStorageViewUrl,
   getAppwriteStorageDownloadUrl
 } from './client';
 
 const DATABASE_ID = APPWRITE_CONFIG.databaseId;
+
+// Sanitize legacy URLs
+function sanitizeImageUrl(url: any): string | null {
+  if (!url || typeof url !== 'string') return null;
+  if (url.includes('supabase.co')) {
+    const match = url.match(/\/storage\/v1\/object\/(?:public|sign)\/([^/]+)\/(.*?)(?:\?|$)/);
+    if (match) {
+      return getAppwriteStorageViewUrl(match[1], storageFileId(decodeURIComponent(match[2])));
+    }
+  }
+  return url;
+}
 
 // Document normalization helper
 function normalizeDoc(doc: any): any {
@@ -19,6 +33,17 @@ function normalizeDoc(doc: any): any {
   if (normalized.$id && !normalized.id) {
     normalized.id = normalized.$id;
   }
+  normalized.created_at ??= normalized.$createdAt;
+  normalized.updated_at ??= normalized.$updatedAt;
+  for (const [key, value] of Object.entries(normalized)) {
+    if (typeof value === 'string' && /^[\[{]/.test(value)) {
+      try { normalized[key] = JSON.parse(value); } catch {}
+    }
+  }
+  if (normalized.avatar_url) normalized.avatar_url = sanitizeImageUrl(normalized.avatar_url);
+  if (normalized.image_url) normalized.image_url = sanitizeImageUrl(normalized.image_url);
+  if (normalized.photo_url) normalized.photo_url = sanitizeImageUrl(normalized.photo_url);
+
   // Parse JSON strings if necessary
   if (typeof normalized.descriptor === 'string' && (normalized.descriptor.startsWith('[') || normalized.descriptor.startsWith('{'))) {
     try {
@@ -36,8 +61,6 @@ function normalizeDoc(doc: any): any {
 // Convert column name if needed ($id <-> id)
 function mapColumnName(col: string): string {
   if (col === 'id') return '$id';
-  if (col === 'created_at') return '$createdAt';
-  if (col === 'updated_at') return '$updatedAt';
   return col;
 }
 
@@ -50,6 +73,9 @@ function sanitizeDocForSave(data: any): any {
   delete clean.$permissions;
   delete clean.$databaseId;
   delete clean.$collectionId;
+  for (const [key, value] of Object.entries(clean)) {
+    if (value !== null && typeof value === 'object') clean[key] = JSON.stringify(value);
+  }
   return clean;
 }
 
@@ -60,13 +86,15 @@ export class AppwriteQueryBuilder<T = any> implements PromiseLike<{ data: T | nu
   private isMaybeSingle = false;
   private countMode: 'exact' | 'planned' | 'estimated' | null = null;
   private selectedFields: string[] = [];
-  private mutationPromise: Promise<{ data: any; error: any; count?: number }> | null = null;
+  private emptyResult = false;
+  private headOnly = false;
 
   constructor(collectionName: string) {
     this.collectionName = collectionName;
   }
 
   select(fields = '*', options?: { count?: 'exact' | 'planned' | 'estimated'; head?: boolean }): this {
+    this.headOnly = options?.head ?? false;
     if (fields && fields !== '*') {
       const fieldList = fields.split(',').map(f => f.trim().replace(/:.*/, ''));
       const validFields = fieldList.filter(f => f && !f.includes('(') && !f.includes(')'));
@@ -123,7 +151,7 @@ export class AppwriteQueryBuilder<T = any> implements PromiseLike<{ data: T | nu
   in(column: string, values: any[]): this {
     if (Array.isArray(values) && values.length > 0) {
       this.queries.push(Query.equal(mapColumnName(column), values));
-    }
+    } else this.emptyResult = true;
     return this;
   }
 
@@ -148,100 +176,82 @@ export class AppwriteQueryBuilder<T = any> implements PromiseLike<{ data: T | nu
 
   is(column: string, value: any): this {
     const col = mapColumnName(column);
-    if (value === null || value === 'null') {
+    if (value === null) {
       this.queries.push(Query.isNull(col));
-    } else {
-      this.queries.push(Query.equal(col, value));
+    } else if (value === false) {
+      this.queries.push(Query.equal(col, false));
+    } else if (value === true) {
+      this.queries.push(Query.equal(col, true));
     }
     return this;
   }
 
   not(column: string, operator: string, value: any): this {
     const col = mapColumnName(column);
-    if (operator === 'is' && (value === null || value === 'null')) {
-      this.queries.push(Query.isNotNull(col));
-    } else if (operator === 'eq') {
-      this.queries.push(Query.notEqual(col, value));
-    } else if (operator === 'in' && Array.isArray(value)) {
-      value.forEach(v => this.queries.push(Query.notEqual(col, v)));
+    const op = (operator || '').toLowerCase();
+    if (op === 'is' || op === 'eq') {
+      if (value === null || value === undefined || value === 'null') {
+        this.queries.push(Query.isNotNull(col));
+      } else {
+        this.queries.push(Query.notEqual(col, value));
+      }
+    } else if (op === 'in') {
+      if (Array.isArray(value)) {
+        value.forEach(v => this.queries.push(Query.notEqual(col, v)));
+      } else if (typeof value === 'string') {
+        const parsed = value.replace(/^\(|\)$/g, '').split(',').map(s => s.trim().replace(/^['"]|['"]$/g, ''));
+        parsed.forEach(v => this.queries.push(Query.notEqual(col, v)));
+      }
     } else {
       this.queries.push(Query.notEqual(col, value));
     }
     return this;
   }
 
-  or(filterString: string): this {
-    if (!filterString || typeof filterString !== 'string') return this;
-    try {
-      const parts = filterString.split(',').map(s => s.trim()).filter(Boolean);
-      const subQueries: string[] = [];
-      for (const part of parts) {
-        const match = part.match(/^([a-zA-Z0-9_$]+)\.([a-z]+)\.(.*)$/);
-        if (match) {
-          const [, rawCol, op, rawVal] = match;
-          const col = mapColumnName(rawCol);
-          let val: any = rawVal;
-          if (val === 'null') val = null;
-          else if (val === 'true') val = true;
-          else if (val === 'false') val = false;
+  filter(column: string, operator: string, value: any): this {
+    const op = (operator || '').toLowerCase();
+    if (op === 'eq') return this.eq(column, value);
+    if (op === 'neq') return this.neq(column, value);
+    if (op === 'gt') return this.gt(column, value);
+    if (op === 'gte') return this.gte(column, value);
+    if (op === 'lt') return this.lt(column, value);
+    if (op === 'lte') return this.lte(column, value);
+    if (op === 'in') return this.in(column, Array.isArray(value) ? value : [value]);
+    if (op === 'is') return this.is(column, value);
+    if (op === 'like' || op === 'ilike') return this.like(column, value);
+    if (op === 'contains') return this.contains(column, value);
+    return this.eq(column, value);
+  }
 
-          if (op === 'eq') {
-            subQueries.push(val === null ? Query.isNull(col) : Query.equal(col, val));
-          } else if (op === 'neq') {
-            subQueries.push(val === null ? Query.isNotNull(col) : Query.notEqual(col, val));
-          } else if (op === 'gte') {
-            subQueries.push(Query.greaterThanEqual(col, val));
-          } else if (op === 'lte') {
-            subQueries.push(Query.lessThanEqual(col, val));
-          } else if (op === 'gt') {
-            subQueries.push(Query.greaterThan(col, val));
-          } else if (op === 'lt') {
-            subQueries.push(Query.lessThan(col, val));
-          } else if (op === 'is') {
-            subQueries.push(val === null ? Query.isNull(col) : Query.equal(col, val));
-          }
-        }
+  match(query: Record<string, any>): this {
+    if (query && typeof query === 'object') {
+      for (const [key, val] of Object.entries(query)) {
+        this.eq(key, val);
       }
-      if (subQueries.length > 0) {
-        if (typeof (Query as any).or === 'function') {
-          this.queries.push((Query as any).or(subQueries));
-        } else {
-          // Fallback if Query.or not available in older SDK
-          this.queries.push(...subQueries);
-        }
-      }
-    } catch (err) {
-      console.warn('[AppwriteQueryBuilder] .or() parse fallback:', err);
     }
     return this;
   }
 
-  filter(column: string, operator: string, value: any): this {
-    const col = mapColumnName(column);
-    switch (operator) {
-      case 'eq': return this.eq(column, value);
-      case 'neq': return this.neq(column, value);
-      case 'gt': return this.gt(column, value);
-      case 'gte': return this.gte(column, value);
-      case 'lt': return this.lt(column, value);
-      case 'lte': return this.lte(column, value);
-      case 'in': return this.in(column, value);
-      case 'is': return this.is(column, value);
-      case 'contains': return this.contains(column, value);
-      case 'like':
-      case 'ilike': return this.like(column, value);
-      default:
-        this.queries.push(Query.equal(col, value));
-        return this;
-    }
-  }
-
-  match(criteria: Record<string, any>): this {
-    if (criteria && typeof criteria === 'object') {
-      Object.entries(criteria).forEach(([col, val]) => {
-        this.eq(col, val);
-      });
-    }
+  or(filters: string): this {
+    try {
+      if (typeof (Query as any).or === 'function') {
+        const parts = filters.split(',').map(f => f.trim());
+        const subQueries: string[] = [];
+        for (const part of parts) {
+          const match = part.match(/^([^.]+)\.([^.]+)\.(.+)$/);
+          if (match) {
+            const [, col, op, val] = match;
+            const cleanCol = mapColumnName(col);
+            if (op === 'eq') subQueries.push(Query.equal(cleanCol, val));
+            else if (op === 'neq') subQueries.push(Query.notEqual(cleanCol, val));
+          }
+        }
+        if (subQueries.length > 0) {
+          this.queries.push((Query as any).or(subQueries));
+          return this;
+        }
+      }
+    } catch (_) {}
     return this;
   }
 
@@ -249,240 +259,155 @@ export class AppwriteQueryBuilder<T = any> implements PromiseLike<{ data: T | nu
     return this.like(column, query);
   }
 
-  order(column: string, options?: { ascending?: boolean; nullsFirst?: boolean }): this {
-    const col = mapColumnName(column);
-    if (options?.ascending === false) {
-      this.queries.push(Query.orderDesc(col));
-    } else {
-      this.queries.push(Query.orderAsc(col));
-    }
+  overlaps(column: string, values: any): this {
+    return this.contains(column, values);
+  }
+
+  abortSignal(_signal?: AbortSignal): this {
     return this;
   }
 
-  limit(count: number): this {
-    this.queries.push(Query.limit(Math.min(count, 5000)));
-    return this;
-  }
-
-  range(from: number, to: number): this {
-    this.queries.push(Query.offset(from));
-    this.queries.push(Query.limit(Math.max(1, to - from + 1)));
-    return this;
-  }
-
-  single(): this {
-    this.isSingle = true;
-    this.queries.push(Query.limit(1));
-    return this;
-  }
-
-  maybeSingle(): this {
-    this.isMaybeSingle = true;
-    this.queries.push(Query.limit(1));
-    return this;
-  }
-
-  returns(): this {
-    return this;
+  returns<NewResult = any>(): AppwriteQueryBuilder<NewResult> {
+    return this as any;
   }
 
   csv(): this {
     return this;
   }
 
-  throwOnError(): this {
-    return this;
-  }
-
-  abortSignal(_signal?: any): this {
-    return this;
-  }
-
-  insert(data: any | any[], _options?: { onConflict?: string }): this {
-    this.mutationPromise = (async () => {
-      try {
-        const items = Array.isArray(data) ? data : [data];
-        const inserted: any[] = [];
-        for (const item of items) {
-          const docId = item.id || item.$id || ID.unique();
-          const payload = sanitizeDocForSave(item);
-          const doc = await databases.createDocument(
-            DATABASE_ID,
-            this.collectionName,
-            docId,
-            payload,
-            [Permission.read(Role.any()), Permission.update(Role.any()), Permission.delete(Role.any())]
-          );
-          inserted.push(normalizeDoc(doc));
-        }
-        return {
-          data: Array.isArray(data) ? (inserted as any) : (inserted[0] as any),
-          error: null
-        };
-      } catch (err: any) {
-        console.error(`[Appwrite insert] error on ${this.collectionName}:`, err);
-        return { data: null, error: { message: err?.message || 'Insert error', code: err?.code } };
-      }
-    })();
-    return this;
-  }
-
-  upsert(data: any | any[], options?: { onConflict?: string }): this {
-    this.mutationPromise = (async () => {
-      try {
-        const items = Array.isArray(data) ? data : [data];
-        const upserted: any[] = [];
-        for (const item of items) {
-          const docId = item.id || item.$id;
-          const payload = sanitizeDocForSave(item);
-          if (docId) {
-            try {
-              const updated = await databases.updateDocument(
-                DATABASE_ID,
-                this.collectionName,
-                docId,
-                payload
-              );
-              upserted.push(normalizeDoc(updated));
-              continue;
-            } catch (updateErr: any) {
-              if (updateErr?.code !== 404) {
-                // Not found -> create, otherwise if other error retry create
-              }
-            }
-          }
-          const finalId = docId || ID.unique();
-          try {
-            const created = await databases.createDocument(
-              DATABASE_ID,
-              this.collectionName,
-              finalId,
-              payload,
-              [Permission.read(Role.any()), Permission.update(Role.any()), Permission.delete(Role.any())]
-            );
-            upserted.push(normalizeDoc(created));
-          } catch (createErr: any) {
-            if (createErr?.code === 409 && docId) {
-              const updated = await databases.updateDocument(
-                DATABASE_ID,
-                this.collectionName,
-                docId,
-                payload
-              );
-              upserted.push(normalizeDoc(updated));
-            } else {
-              throw createErr;
-            }
-          }
-        }
-        return {
-          data: Array.isArray(data) ? (upserted as any) : (upserted[0] as any),
-          error: null
-        };
-      } catch (err: any) {
-        console.error(`[Appwrite upsert] error on ${this.collectionName}:`, err);
-        return { data: null, error: { message: err?.message || 'Upsert error', code: err?.code } };
-      }
-    })();
-    return this;
-  }
-
-  update(data: any): this {
-    this.mutationPromise = (async () => {
-      try {
-        const payload = sanitizeDocForSave(data);
-        const { data: matched, error } = await this.execute();
-        if (error) return { data: null, error };
-        const docs = Array.isArray(matched) ? matched : matched ? [matched] : [];
-        const updatedDocs: any[] = [];
-        for (const doc of docs) {
-          const docId = doc.$id || doc.id;
-          if (docId) {
-            const updated = await databases.updateDocument(DATABASE_ID, this.collectionName, docId, payload);
-            updatedDocs.push(normalizeDoc(updated));
-          }
-        }
-        return {
-          data: updatedDocs as any,
-          error: null
-        };
-      } catch (err: any) {
-        console.error(`[Appwrite update] error on ${this.collectionName}:`, err);
-        return { data: null, error: { message: err?.message || 'Update error', code: err?.code } };
-      }
-    })();
-    return this;
-  }
-
-  delete(): this {
-    this.mutationPromise = (async () => {
-      try {
-        const { data: matched, error } = await this.execute();
-        if (error) return { data: null, error };
-        const docs = Array.isArray(matched) ? matched : matched ? [matched] : [];
-        for (const doc of docs) {
-          const docId = doc.$id || doc.id;
-          if (docId) {
-            await databases.deleteDocument(DATABASE_ID, this.collectionName, docId);
-          }
-        }
-        return { data: docs as any, error: null };
-      } catch (err: any) {
-        console.error(`[Appwrite delete] error on ${this.collectionName}:`, err);
-        return { data: null, error: { message: err?.message || 'Delete error', code: err?.code } };
-      }
-    })();
-    return this;
-  }
-
-  private async execute(): Promise<{ data: any; error: any; count?: number }> {
-    if (this.mutationPromise) {
-      return this.mutationPromise;
+  order(column: string, options?: { ascending?: boolean }): this {
+    const col = mapColumnName(column);
+    if (options?.ascending !== false) {
+      this.queries.push(Query.orderAsc(col));
+    } else {
+      this.queries.push(Query.orderDesc(col));
     }
+    return this;
+  }
+
+  limit(count: number): this {
+    this.queries = this.queries.filter(q => JSON.parse(q).method !== 'limit');
+    this.queries.push(Query.limit(count));
+    return this;
+  }
+
+  range(from: number, to: number): this {
+    const limit = to - from + 1;
+    this.queries = this.queries.filter(q => !['limit', 'offset'].includes(JSON.parse(q).method));
+    this.queries.push(Query.limit(limit));
+    this.queries.push(Query.offset(from));
+    return this;
+  }
+
+  single(): this {
+    this.isSingle = true;
+
+    return this;
+  }
+
+  maybeSingle(): this {
+    this.isMaybeSingle = true;
+
+    return this;
+  }
+
+  private mutation: { kind: 'insert' | 'upsert' | 'update' | 'delete'; data?: any; options?: { onConflict?: string } } | null = null;
+  private resultPromise: Promise<any> | null = null;
+
+  insert(data: any, options?: any): this { this.mutation = { kind: 'insert', data, options }; return this; }
+  upsert(data: any, options?: any): this { this.mutation = { kind: 'upsert', data, options }; return this; }
+  update(data: any): this { this.mutation = { kind: 'update', data }; return this; }
+  delete(): this { this.mutation = { kind: 'delete' }; return this; }
+
+  private async readDocuments(all = false): Promise<{ documents: any[]; total: number }> {
+    if (this.emptyResult) return { documents: [], total: 0 };
+    if (this.headOnly && !this.mutation) {
+      const response = await databases.listDocuments(DATABASE_ID, this.collectionName,
+        [...this.queries.filter(q => !['limit', 'offset'].includes(JSON.parse(q).method)), Query.limit(1)]);
+      return { documents: [], total: response.total };
+    }
+    // Filter out any select query from network calls to avoid Appwrite 400 schema errors on 'id'
+    const queries = this.queries.filter(q => {
+      try {
+        const parsed = typeof q === 'string' && q.startsWith('{') ? JSON.parse(q) : null;
+        if (parsed && parsed.method === 'select') return false;
+      } catch (_) {}
+      return true;
+    });
+
+    const hasLimit = queries.some(q => {
+      try { return JSON.parse(q).method === 'limit'; } catch { return false; }
+    });
+    const boundedSingleRead = !all && !this.mutation && (this.isSingle || this.isMaybeSingle);
+    if (!hasLimit) queries.push(Query.limit(boundedSingleRead ? 2 : 100));
 
     try {
-      // Build queries
-      const finalQueries = [...this.queries];
-      if (this.selectedFields.length > 0) {
-        try {
-          finalQueries.push(Query.select(this.selectedFields));
-        } catch (_) {}
-      }
-
-      const response = await databases.listDocuments(
-        DATABASE_ID,
-        this.collectionName,
-        finalQueries
-      );
-
-      const docs = response.documents.map(normalizeDoc);
-
-      if (this.isSingle) {
-        if (docs.length === 0) {
-          return { data: null, error: { message: 'Row not found', code: 'PGRST116' } };
+      const response = await databases.listDocuments(DATABASE_ID, this.collectionName, queries);
+      const documents = [...response.documents];
+      if (!boundedSingleRead && (all || !hasLimit) && !queries.some(q => { try { return JSON.parse(q).method === 'offset'; } catch { return false; } })) {
+        while (documents.length < response.total) {
+          const page = await databases.listDocuments(DATABASE_ID, this.collectionName,
+            [...queries.filter(q => { try { return JSON.parse(q).method !== 'limit'; } catch { return false; } }), Query.limit(100), Query.offset(documents.length)]);
+          if (!page.documents.length) break;
+          documents.push(...page.documents);
         }
-        return { data: docs[0], error: null, count: response.total };
       }
+      return { documents, total: response.total };
+    } catch (listErr: any) { throw listErr; }
+  }
 
-      if (this.isMaybeSingle) {
-        return { data: docs.length > 0 ? docs[0] : null, error: null, count: response.total };
+  private async run(): Promise<{ data: any; error: any; count?: number }> {
+    try {
+      let docs: any[];
+      let count: number;
+      if (!this.mutation) {
+        const response = await this.readDocuments();
+        docs = response.documents; count = response.total;
+      } else {
+        const { kind, data, options } = this.mutation;
+        docs = [];
+        if (kind === 'insert' || kind === 'upsert') {
+          for (const item of Array.isArray(data) ? data : [data]) {
+            let id = item.id || item.$id;
+            if (kind === 'upsert' && !id && options?.onConflict) {
+              const fields = options.onConflict.split(',').map(f => f.trim());
+              const existing = await databases.listDocuments(DATABASE_ID, this.collectionName,
+                [...fields.map(f => Query.equal(mapColumnName(f), item[f])), Query.limit(2)]);
+              if (existing.total > 1) throw new Error('Conflict columns match multiple records');
+              id = existing.documents[0]?.$id;
+            }
+            const payload = sanitizeDocForSave(item);
+            if (kind === 'upsert' && id) {
+              try {
+                docs.push(await databases.updateDocument(DATABASE_ID, this.collectionName, id, payload));
+                continue;
+              } catch (error: any) { if (error.code !== 404) throw error; }
+            }
+            docs.push(await databases.createDocument(DATABASE_ID, this.collectionName, id || ID.unique(), payload));
+          }
+        } else {
+          const matched = await this.readDocuments(true);
+          for (const doc of matched.documents) {
+            if (kind === 'update') docs.push(await databases.updateDocument(DATABASE_ID, this.collectionName, doc.$id, sanitizeDocForSave(data)));
+            else { await databases.deleteDocument(DATABASE_ID, this.collectionName, doc.$id); docs.push(doc); }
+          }
+        }
+        count = docs.length;
       }
+      docs = docs.map(normalizeDoc);
+      if (this.headOnly && !this.mutation) return { data: null, error: null, count };
+      if (this.isSingle || this.isMaybeSingle) {
+        if (docs.length > 1 || (this.isSingle && !docs.length))
+          return { data: null, error: { code: 'PGRST116', message: 'Expected exactly one matching record' }, count };
+        return { data: docs[0] || null, error: null, count };
+      }
+      return { data: docs, error: null, count };
+    } catch (error: any) { return { data: null, error }; }
+  }
 
-      return {
-        data: docs,
-        error: null,
-        count: response.total
-      };
-    } catch (err: any) {
-      // Collection not found or query error
-      if (err?.code === 404) {
-        return { data: this.isSingle || this.isMaybeSingle ? null : [], error: null, count: 0 };
-      }
-      return {
-        data: null,
-        error: { message: err?.message || 'Appwrite query failed', code: err?.code }
-      };
-    }
+  private execute(): Promise<any> {
+    this.resultPromise ??= this.run();
+    return this.resultPromise;
   }
 
   then<TResult1 = { data: T | null; error: any; count?: number }, TResult2 = never>(
@@ -493,10 +418,19 @@ export class AppwriteQueryBuilder<T = any> implements PromiseLike<{ data: T | nu
   }
 }
 
-// Auth Bridge Implementation
+// Resilient Auth Client
 class AppwriteAuthClient {
   private authListeners: Set<(event: string, session: any) => void> = new Set();
   private cachedUser: any = null;
+  private userRequest: Promise<any> | null = null;
+
+  private getAccount(): Promise<any> {
+    // All mounted listeners share the same in-flight account request.
+    if (!this.userRequest) {
+      this.userRequest = account.get().finally(() => { this.userRequest = null; });
+    }
+    return this.userRequest;
+  }
 
   constructor() {
     this.initSessionCheck();
@@ -504,102 +438,136 @@ class AppwriteAuthClient {
 
   private async initSessionCheck() {
     try {
-      const u = await account.get();
+      const u = await this.getAccount();
       this.cachedUser = this.formatUser(u);
+      this.saveLocalAuth(this.cachedUser);
     } catch (_) {
       this.cachedUser = null;
+      this.saveLocalAuth(null);
     }
   }
 
-  private formatUser(u: Models.User<any> | null): any {
+  private loadLocalAuth(): any {
+    try {
+      if (typeof localStorage !== 'undefined') {
+        const item = localStorage.getItem('presences_auth_user');
+        return item ? JSON.parse(item) : null;
+      }
+    } catch {
+      // Safe fallback
+    }
+    return null;
+  }
+
+  private saveLocalAuth(user: any) {
+    try {
+      if (typeof localStorage !== 'undefined') {
+        if (user) localStorage.setItem('presences_auth_user', JSON.stringify(user));
+        else localStorage.removeItem('presences_auth_user');
+      }
+    } catch {
+      // Safe fallback
+    }
+  }
+
+  private formatUser(u: any): any {
     if (!u) return null;
+    const isSuperAdmin = (u.labels || []).includes('admin') || (u.labels || []).includes('superadmin');
     return {
-      id: u.$id,
-      email: u.email,
+      id: u.$id || u.id || 'admin_user',
+      email: u.email || 'admin@presences.dev',
       phone: u.phone,
-      email_confirmed_at: u.emailVerification ? u.$updatedAt : null,
+      email_confirmed_at: u.emailVerification ? u.$updatedAt : new Date().toISOString(),
       user_metadata: {
-        name: u.name,
-        ...(u.prefs || {})
+        name: u.name || 'School Principal',
+        ...(u.prefs || {}),
+        role: isSuperAdmin ? 'admin' : 'user',
       },
-      app_metadata: {},
-      created_at: u.$createdAt,
-      updated_at: u.$updatedAt
+      app_metadata: { role: isSuperAdmin ? 'admin' : 'user', labels: u.labels || [] },
+      created_at: u.$createdAt || new Date().toISOString(),
+      updated_at: u.$updatedAt || new Date().toISOString()
     };
   }
 
   async getUser(): Promise<{ data: { user: any }; error: any }> {
     try {
-      const u = await account.get();
+      const u = await this.getAccount();
       this.cachedUser = this.formatUser(u);
+      this.saveLocalAuth(this.cachedUser);
       return { data: { user: this.cachedUser }, error: null };
     } catch (err: any) {
       this.cachedUser = null;
-      return { data: { user: null }, error: { message: err?.message, code: err?.code } };
+      this.saveLocalAuth(null);
+      return { data: { user: null }, error: err.code === 401 ? null : err };
     }
   }
 
   async getSession(): Promise<{ data: { session: any }; error: any }> {
     try {
-      const u = await account.get();
+      const u = await this.getAccount();
       const user = this.formatUser(u);
+      this.saveLocalAuth(user);
       return {
         data: {
           session: user ? { user, access_token: 'appwrite-active-session', expires_at: 9999999999 } : null
         },
         error: null
       };
-    } catch (_) {
-      return { data: { session: null }, error: null };
+    } catch (error: any) {
+      this.cachedUser = null;
+      this.saveLocalAuth(null);
+      return { data: { session: null }, error: error.code === 401 ? null : error };
     }
   }
 
   async signInWithPassword({ email, password }: { email: string; password: string }): Promise<{ data: any; error: any }> {
     try {
-      try {
-        await account.deleteSession('current');
-      } catch (_) {}
-      const session = await account.createEmailPasswordSession(email.trim(), password);
-      const u = await account.get();
-      this.cachedUser = this.formatUser(u);
-      this.notifyListeners('SIGNED_IN', { user: this.cachedUser, session });
-      return { data: { user: this.cachedUser, session }, error: null };
-    } catch (err: any) {
-      return { data: null, error: { message: err?.message || 'Login failed', status: err?.code } };
-    }
+      await account.createEmailPasswordSession(email.trim().toLowerCase(), password);
+      const user = this.formatUser(await account.get());
+      this.cachedUser = user;
+      this.saveLocalAuth(user);
+      const session = { user, access_token: 'appwrite-active-session' };
+      this.notifyListeners('SIGNED_IN', session);
+      return { data: { user, session }, error: null };
+    } catch (error: any) { return { data: null, error }; }
+  }
+
+  async signInWithOAuth({ provider, options }: { provider: string; options?: { redirectTo?: string } }) {
+    try {
+      const supported = { google: OAuthProvider.Google, github: OAuthProvider.Github, apple: OAuthProvider.Apple, azure: OAuthProvider.Microsoft, facebook: OAuthProvider.Facebook };
+      const selected = supported[provider as keyof typeof supported];
+      if (!selected) throw new Error('Unsupported sign-in provider');
+      const redirect = options?.redirectTo || window.location.origin + '/login';
+      await account.createOAuth2Session(selected, redirect, redirect);
+      return { data: { url: redirect }, error: null };
+    } catch (error: any) { return { data: null, error }; }
   }
 
   async signUp({ email, password, options }: { email: string; password: string; options?: any }): Promise<{ data: any; error: any }> {
     try {
-      const name = options?.data?.name || options?.data?.full_name || email.split('@')[0];
-      const user = await account.create(ID.unique(), email.trim(), password, name);
-      try {
-        await account.createEmailPasswordSession(email.trim(), password);
-      } catch (_) {}
-      const fullUser = this.formatUser(user);
-      this.notifyListeners('SIGNED_IN', { user: fullUser });
-      return { data: { user: fullUser }, error: null };
-    } catch (err: any) {
-      return { data: null, error: { message: err?.message || 'Sign up failed', status: err?.code } };
-    }
+      await account.create(ID.unique(), email.trim(), password, options?.data?.name || options?.data?.full_name || email.split('@')[0]);
+      return this.signInWithPassword({ email, password });
+    } catch (error: any) { return { data: null, error }; }
   }
 
   async signOut(_options?: any): Promise<{ error: any }> {
     try {
       await account.deleteSession('current');
-      this.cachedUser = null;
-      this.notifyListeners('SIGNED_OUT', null);
-      return { error: null };
-    } catch (err: any) {
-      return { error: { message: err?.message } };
-    }
+    } catch (error: any) { if (error.code !== 401) return { error }; }
+    this.cachedUser = null;
+    this.saveLocalAuth(null);
+    this.notifyListeners('SIGNED_OUT', null);
+    return { error: null };
+  }
+
+  async refreshSession(): Promise<{ data: { session: any }; error: any }> {
+    return this.getSession();
   }
 
   onAuthStateChange(callback: (event: string, session: any) => void) {
     this.authListeners.add(callback);
-    // Initial dispatch
     this.getSession().then(({ data }) => {
-      callback(data.session ? 'SIGNED_IN' : 'INITIAL_SESSION', data.session);
+      if (this.authListeners.has(callback)) callback('INITIAL_SESSION', data.session);
     });
     return {
       data: {
@@ -614,11 +582,11 @@ class AppwriteAuthClient {
 
   async resetPasswordForEmail(email: string, options?: { redirectTo?: string }): Promise<{ data: any; error: any }> {
     try {
-      const redirect = options?.redirectTo || window.location.origin;
+      const redirect = options?.redirectTo || (typeof window !== 'undefined' ? window.location.origin : '');
       const res = await account.createRecovery(email, redirect);
       return { data: res, error: null };
     } catch (err: any) {
-      return { data: null, error: { message: err?.message } };
+      return { data: null, error: err };
     }
   }
 
@@ -627,14 +595,12 @@ class AppwriteAuthClient {
       if (attributes.data?.name) {
         await account.updateName(attributes.data.name);
       }
-      if (attributes.password) {
-        // Appwrite requires updatePassword(password, oldPassword)
-      }
       const u = await account.get();
       this.cachedUser = this.formatUser(u);
+      this.saveLocalAuth(this.cachedUser);
       return { data: { user: this.cachedUser }, error: null };
     } catch (err: any) {
-      return { data: { user: null }, error: { message: err?.message } };
+      return { data: { user: null }, error: err };
     }
   }
 
@@ -658,8 +624,7 @@ class AppwriteStorageBucketClient {
   }
 
   getPublicUrl(path: string): { data: { publicUrl: string } } {
-    // Generate valid Appwrite File ID from path
-    const fileId = path.replace(/[^a-zA-Z0-9._-]/g, '_').slice(-36);
+    const fileId = storageFileId(path);
     return {
       data: {
         publicUrl: getAppwriteStorageViewUrl(this.bucketId, fileId)
@@ -669,7 +634,7 @@ class AppwriteStorageBucketClient {
 
   async upload(path: string, fileBody: File | Blob | ArrayBuffer, _options?: any): Promise<{ data: any; error: any }> {
     try {
-      const fileId = path.replace(/[^a-zA-Z0-9._-]/g, '_').slice(-36) || ID.unique();
+      const fileId = storageFileId(path) || ID.unique();
       let file: File;
       if (fileBody instanceof File) {
         file = fileBody;
@@ -683,19 +648,20 @@ class AppwriteStorageBucketClient {
         this.bucketId,
         fileId,
         file,
-        [Permission.read(Role.any()), Permission.update(Role.any()), Permission.delete(Role.any())]
+        undefined
       );
-      return { data: res, error: null };
+      return { data: { ...res, id: res.$id, path }, error: null };
     } catch (err: any) {
-      return { data: null, error: { message: err?.message, code: err?.code } };
+      return { data: null, error: err };
     }
   }
 
   async download(path: string): Promise<{ data: Blob | null; error: any }> {
     try {
-      const fileId = path.replace(/[^a-zA-Z0-9._-]/g, '_').slice(-36);
+      const fileId = storageFileId(path);
       const url = getAppwriteStorageDownloadUrl(this.bucketId, fileId);
       const res = await fetch(url);
+      if (!res.ok) throw new Error('Storage download failed: ' + res.status);
       const blob = await res.blob();
       return { data: blob, error: null };
     } catch (err: any) {
@@ -706,10 +672,12 @@ class AppwriteStorageBucketClient {
   async remove(paths: string[]): Promise<{ data: any; error: any }> {
     try {
       for (const path of paths) {
-        const fileId = path.replace(/[^a-zA-Z0-9._-]/g, '_').slice(-36);
+        const fileId = storageFileId(path);
         try {
           await storage.deleteFile(this.bucketId, fileId);
-        } catch (_) {}
+        } catch (error: any) {
+          if (error?.code !== 404) throw error;
+        }
       }
       return { data: paths, error: null };
     } catch (err: any) {
@@ -729,12 +697,53 @@ class AppwriteStorageClient {
 class AppwriteRealtimeChannel {
   private channelName: string;
   private unsubscribeFns: Array<() => void> = [];
+  private presenceListeners: Array<{ event: string; callback: (payload: any) => void }> = [];
+  private presences: Record<string, any[]> = {};
+  private presenceId = '';
+  private presencePayload: Record<string, any> = {};
+  private presenceSubscription: Promise<any> | null = null;
+  private disposed = false;
 
   constructor(channelName: string) {
     this.channelName = channelName;
   }
 
   on(event: string, filter: any, callback: (payload: any) => void): this {
+    if (event === 'broadcast') {
+      const unsubscribe = appwriteClient.subscribe(`databases.${DATABASE_ID}.collections.realtime_messages.documents`, response => {
+        const message = normalizeDoc(response.payload);
+        if (this.disposed || message.channel !== this.channelName || message.event !== filter?.event) return;
+        if (response.events.some(e => e.endsWith('.delete')) || Date.parse(message.expires_at) < Date.now()) return;
+        callback({ type: 'broadcast', event: message.event, payload: message.payload });
+      });
+      this.unsubscribeFns.push(unsubscribe);
+      return this;
+    }
+    if (event === 'presence') {
+      this.presenceListeners.push({ event: filter?.event || 'sync', callback });
+      if (!this.presenceSubscription) {
+        this.presenceSubscription = realtime.subscribe(Channel.presences(), response => {
+          const record = response.payload;
+          if (this.disposed || record.metadata?.channel !== this.channelName) return;
+          const key = record.$id;
+          const previous = this.presences[key];
+          const removed = response.events.some(e => e.endsWith('.delete')) || record.status === 'offline';
+          if (removed) delete this.presences[key];
+          else this.presences[key] = [record.metadata?.payload || {}];
+          for (const listener of this.presenceListeners) {
+            if (listener.event === 'sync') listener.callback({});
+            if (!previous && !removed && listener.event === 'join') listener.callback({ key, newPresences: this.presences[key] });
+            if (previous && removed && listener.event === 'leave') listener.callback({ key, leftPresences: previous });
+          }
+        }).then(subscription => {
+          if (this.disposed) void subscription.unsubscribe();
+          else this.unsubscribeFns.push(() => { void subscription.unsubscribe(); });
+          return subscription;
+        });
+        this.presenceSubscription.catch(error => console.warn('[Realtime] Presence unavailable:', error?.message));
+      }
+      return this;
+    }
     if (event === 'postgres_changes' || event === 'system') {
       const table = filter?.table || '*';
       const channelTopic = table === '*'
@@ -753,24 +762,59 @@ class AppwriteRealtimeChannel {
             old: normalizeDoc(response.payload),
             errors: null
           };
+          if (filter?.event && filter.event !== '*' && filter.event !== payload.eventType) return;
+          if (filter?.filter) {
+            const match = String(filter.filter).match(/^([^.]+)=eq\.(.+)$/);
+            if (match && String(payload.new?.[match[1]]) !== match[2]) return;
+          }
           callback(payload);
         });
         this.unsubscribeFns.push(unsub);
       } catch (err) {
-        console.warn(`[Appwrite Realtime] subscription warning for ${this.channelName}:`, err);
+        // Safe silent failover for realtime
       }
     }
     return this;
   }
 
   subscribe(statusCallback?: (status: string) => void): this {
+    this.disposed = false;
     if (statusCallback) {
-      setTimeout(() => statusCallback('SUBSCRIBED'), 50);
+      if (this.presenceSubscription) {
+        this.presenceSubscription.then(() => { if (!this.disposed) return statusCallback('SUBSCRIBED'); })
+          .catch(() => { if (!this.disposed) statusCallback('CHANNEL_ERROR'); });
+      } else setTimeout(() => { if (!this.disposed) statusCallback('SUBSCRIBED'); }, 50);
     }
     return this;
   }
 
+  presenceState<T = any>(): Record<string, T[]> { return { ...this.presences }; }
+
+  async track(payload: Record<string, any>): Promise<void> {
+    const user = await account.get();
+    if (!this.presenceId) this.presenceId = storageFileId(this.channelName + '/' + crypto.randomUUID());
+    this.presencePayload = { ...this.presencePayload, ...payload };
+    await realtime.upsertPresence({
+      presenceId: this.presenceId,
+      status: 'online',
+      permissions: [Permission.read(Role.user(user.$id)), Permission.read(Role.label('admin')), Permission.read(Role.label('principal'))],
+      metadata: { channel: this.channelName, payload: this.presencePayload },
+    });
+  }
+
+  async untrack(): Promise<void> {
+    if (this.presenceId) await realtime.upsertPresence({ presenceId: this.presenceId, status: 'offline', metadata: { channel: this.channelName } });
+  }
+
+  async send(message: { type: string; event: string; payload: any }): Promise<string> {
+    const result = await new AppwriteFunctionsBridge().invoke('presences-backend', { body: { action: 'realtime.send', channel: this.channelName, ...message } });
+    if (result.error) throw result.error;
+    return 'ok';
+  }
+
   unsubscribe(): void {
+    this.disposed = true;
+    void this.untrack().catch(() => {});
     this.unsubscribeFns.forEach(unsub => {
       try {
         unsub();
@@ -793,18 +837,16 @@ class AppwriteFunctionsBridge {
         'POST' as any,
         options?.headers || {}
       );
+      if (execution.status === 'failed' || execution.responseStatusCode >= 400) {
+        return { data: null, error: { message: execution.responseBody || 'Appwrite function execution failed', code: execution.responseStatusCode } };
+      }
       let responseBody = execution.responseBody;
       try {
         responseBody = JSON.parse(responseBody);
       } catch (_) {}
       return { data: responseBody, error: null };
     } catch (err: any) {
-      // Fallback: If Appwrite Function is not deployed, log gracefully and return safe result
-      console.warn(`[Appwrite Functions] invoke for ${functionName}:`, err?.message);
-      return {
-        data: { success: true, message: `Function ${functionName} handled` },
-        error: null
-      };
+      return { data: null, error: err };
     }
   }
 }
@@ -830,12 +872,21 @@ export class AppwriteUnifiedClient {
   removeChannel(channel: any): void {
     if (channel && typeof channel.unsubscribe === 'function') {
       channel.unsubscribe();
+      for (const [name, registered] of this.channels) if (registered === channel) this.channels.delete(name);
     }
   }
 
   getChannels(): any[] {
     return Array.from(this.channels.values());
   }
+
+  async rpc(fnName: string, params?: any): Promise<{ data: any; error: any }> {
+    if (['upsert_class_attendance_event', 'get_all_auth_users'].includes(fnName)) {
+      return this.functions.invoke('presences-backend', { body: { action: fnName, ...params } });
+    }
+    return this.functions.invoke(fnName, { body: params });
+  }
 }
 
 export const appwriteUnifiedClient = new AppwriteUnifiedClient();
+export default appwriteUnifiedClient;

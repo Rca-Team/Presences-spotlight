@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
+import { cn } from '@/lib/utils';
 import { motion } from 'framer-motion';
 import { Mic, MicOff, Volume2, VolumeX, AlertTriangle, ShieldCheck, Activity } from 'lucide-react';
 import { AndroidWidgetItem, MaterialPalette, AndroidWidgetSize, PALETTE_CLASSES } from './types';

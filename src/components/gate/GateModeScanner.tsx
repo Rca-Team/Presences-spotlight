@@ -1,3 +1,4 @@
+import { toast } from '@/hooks/use-toast';
 import React, { useRef, useEffect, useCallback, useState } from 'react';
 import {
   Eye, Loader2, Scan, Zap, ShieldCheck, ShieldAlert,

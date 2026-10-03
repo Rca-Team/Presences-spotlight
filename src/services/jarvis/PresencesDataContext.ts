@@ -164,7 +164,7 @@ class PresencesDataContextService {
         biometricCoverageRate: Math.max(0, Math.min(100, bioCoverage)),
         missingPhotosCount,
         missingBiometricsCount,
-        missingParentContactsCount,
+        missingParentContactsCount: missingContactsCount,
         todayAttendance: {
           date: todayDate,
           present: presentCount,

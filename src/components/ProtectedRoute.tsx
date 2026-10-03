@@ -21,7 +21,7 @@ export function ProtectedRoute({ children, requireAdmin = false, requireRoles }:
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [currentRole, setCurrentRole] = useState<AppRole | null>(null);
 
-  const resolveUserRole = async (userId: string): Promise<AppRole> => {
+  const resolveUserRole = async (userId: string, email?: string): Promise<AppRole> => {
     const db = supabase as any;
 
     const { data: userRoles } = await db
@@ -42,14 +42,20 @@ export function ProtectedRoute({ children, requireAdmin = false, requireRoles }:
 
   const hasRequiredRole = (role: AppRole, required?: AppRole[]) => {
     if (!required || required.length === 0) return true;
+    if (role === 'admin') return true; // Superadmin has universal access to all routes
+    if (role === 'principal' && (required.includes('principal') || required.includes('teacher') || required.includes('user'))) return true;
     return required.includes(role);
   };
 
   const rolesKey = (requireRoles || []).join(',');
   useEffect(() => {
+    let active = true;
+    setLoading(true);
+    setIsAuthorized(false);
     const checkAuth = async () => {
       try {
         const { data: { user } } = await supabase.auth.getUser();
+        if (!active) return;
         
         if (!user) {
           setIsAuthenticated(false);
@@ -66,7 +72,8 @@ export function ProtectedRoute({ children, requireAdmin = false, requireRoles }:
 
         setIsAuthenticated(true);
 
-        const role = await resolveUserRole(user.id);
+        const role = await resolveUserRole(user.id, user.email);
+        if (!active) return;
         setCurrentRole(role);
 
         const effectiveRequiredRoles = requireAdmin
@@ -86,7 +93,7 @@ export function ProtectedRoute({ children, requireAdmin = false, requireRoles }:
           });
         }
       } finally {
-        setLoading(false);
+        if (active) setLoading(false);
       }
     };
 
@@ -95,6 +102,8 @@ export function ProtectedRoute({ children, requireAdmin = false, requireRoles }:
     // Listen for auth changes
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
       if ((event === 'SIGNED_OUT' || !session) && location.pathname !== '/login') {
+        setIsAuthenticated(false);
+        setIsAuthorized(false);
         navigate('/login', {
           replace: true,
           state: {
@@ -104,7 +113,7 @@ export function ProtectedRoute({ children, requireAdmin = false, requireRoles }:
       }
     });
 
-    return () => subscription.unsubscribe();
+    return () => { active = false; subscription.unsubscribe(); };
   }, [navigate, location.pathname, location.search, location.hash, requireAdmin, requireRoles ? requireRoles.join(',') : '']);
 
   if (loading) {

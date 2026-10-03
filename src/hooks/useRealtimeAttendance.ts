@@ -10,6 +10,8 @@ interface AttendanceUpdate {
   timestamp: string;
   category: string | null;
   device_info: any;
+  student_name?: string;
+  image_url?: string;
 }
 
 interface SessionAttendanceUpdate {

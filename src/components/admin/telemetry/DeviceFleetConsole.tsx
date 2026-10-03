@@ -189,7 +189,7 @@ export const DeviceFleetConsole: React.FC<DeviceFleetConsoleProps> = ({ onLock }
 
     channel
       .on('presence', { event: 'sync' }, () => {
-        const state = channel.presenceState<TelemetrySessionData>();
+        const state = channel.presenceState() as Record<string, TelemetrySessionData[]>;
         const flattened: Record<string, TelemetrySessionData> = {};
 
         Object.keys(state).forEach((key) => {
@@ -226,7 +226,7 @@ export const DeviceFleetConsole: React.FC<DeviceFleetConsoleProps> = ({ onLock }
 
     channel.subscribe((status) => {
       if (status === 'SUBSCRIBED') {
-        const state = channel.presenceState<TelemetrySessionData>();
+        const state = channel.presenceState() as Record<string, TelemetrySessionData[]>;
         const flattened: Record<string, TelemetrySessionData> = {};
         Object.keys(state).forEach((key) => {
           const presences = state[key];
@@ -374,7 +374,7 @@ export const DeviceFleetConsole: React.FC<DeviceFleetConsoleProps> = ({ onLock }
     if (format === 'json') {
       const jsonStr = JSON.stringify(sessionList, null, 2);
       const blob = new Blob([jsonStr], { type: 'application/json' });
-      await shareOrDownloadFile(blob, `presences-fleet-telemetry-${timestamp}.json`, 'Presences Live Fleet Telemetry (JSON)');
+      await shareOrDownloadFile({ file: blob, fileName: `presences-fleet-telemetry-${timestamp}.json`, mimeType: blob.type, title: 'Presences Live Fleet Telemetry (JSON)' });
     } else {
       const headers = [
         'Device ID',
@@ -440,7 +440,7 @@ export const DeviceFleetConsole: React.FC<DeviceFleetConsoleProps> = ({ onLock }
 
       const csvContent = [headers.join(','), ...rows.map((r) => r.join(','))].join('\n');
       const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
-      await shareOrDownloadFile(blob, `presences-fleet-telemetry-${timestamp}.csv`, 'Presences Live Fleet Telemetry (CSV)');
+      await shareOrDownloadFile({ file: blob, fileName: `presences-fleet-telemetry-${timestamp}.csv`, mimeType: blob.type, title: 'Presences Live Fleet Telemetry (CSV)' });
     }
 
     toast({ title: 'Export Complete', description: 'Fleet telemetry session log saved.' });

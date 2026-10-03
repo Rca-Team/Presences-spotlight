@@ -1,24 +1,6 @@
-import { defineTool, type ToolContext } from '@lovable.dev/mcp-js';
-import { createClient } from '@supabase/supabase-js';
+import { defineTool } from '@lovable.dev/mcp-js';
+import { appwriteUnifiedClient as supabase } from '@/integrations/appwrite/adapter';
 import { z } from 'zod';
-
-const supabaseForUser = (ctx: ToolContext) => {
-  const url = process.env.SUPABASE_URL;
-  const key = process.env.SUPABASE_PUBLISHABLE_KEY;
-  if (!url || !key) throw new Error('Missing Supabase MCP environment variables');
-
-  return createClient(url, key, {
-    global: {
-      headers: {
-        Authorization: `Bearer ${ctx.getToken()}`,
-      },
-    },
-    auth: {
-      persistSession: false,
-      autoRefreshToken: false,
-    },
-  });
-};
 
 export default defineTool({
   name: 'list_recent_gate_entries',
@@ -42,7 +24,6 @@ export default defineTool({
 
     try {
       const safeLimit = Math.max(1, Math.min(100, Math.floor(limit)));
-      const supabase = supabaseForUser(ctx);
 
       const { data, error } = await supabase
         .from('gate_entries')
@@ -57,7 +38,7 @@ export default defineTool({
         };
       }
 
-      const rows = (data || []).map((row) => ({
+      const rows = (data || []).map((row: any) => ({
         id: row.id,
         student_id: row.student_id,
         student_name: row.student_name,

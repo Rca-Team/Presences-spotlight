@@ -4,8 +4,8 @@ import React from "react";
 export function lazyWithRetry<T extends React.ComponentType<any>>(
   importer: () => Promise<{ default: T }>,
   retryKey: string,
-) {
-  return React.lazy(async () => {
+): React.LazyExoticComponent<T> {
+  return React.lazy<T>(async (): Promise<{ default: T }> => {
     const sessionKey = `retry_chunk_${retryKey}`;
     try {
       const mod = await importer();

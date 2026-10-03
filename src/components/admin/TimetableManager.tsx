@@ -164,8 +164,9 @@ export interface Teacher {
 export interface Subject {
   id: string;
   name: string;
-  short_name: string | null;
-  category: 'core' | 'language' | 'activity' | 'sports';
+  short_name: string;
+  category: 'core' | 'language' | 'lab' | 'activity' | 'sports';
+  classLevels: number[];
   weeklyDefault: number;
 }
 
@@ -183,15 +184,15 @@ interface TimetableManagerProps {
 const db = supabase as any;
 
 export const STANDARD_CURRICULUM_SUBJECTS: Subject[] = [
-  { id: 'subj-math', name: 'Mathematics', short_name: 'Math', category: 'core', weeklyDefault: 6 },
-  { id: 'subj-sci', name: 'Science & EVS', short_name: 'Science', category: 'core', weeklyDefault: 6 },
-  { id: 'subj-eng', name: 'English Language', short_name: 'English', category: 'language', weeklyDefault: 5 },
-  { id: 'subj-hin', name: 'Hindi', short_name: 'Hindi', category: 'language', weeklyDefault: 5 },
-  { id: 'subj-sst', name: 'Social Science (SST)', short_name: 'SST', category: 'core', weeklyDefault: 5 },
-  { id: 'subj-cs', name: 'Computer & AI Lab', short_name: 'Computer', category: 'activity', weeklyDefault: 3 },
-  { id: 'subj-pe', name: 'Physical Ed & Sports', short_name: 'PE/Sports', category: 'sports', weeklyDefault: 3 },
-  { id: 'subj-art', name: 'Art & Music', short_name: 'Art/Music', category: 'activity', weeklyDefault: 2 },
-  { id: 'subj-lib', name: 'Library & Values', short_name: 'Library', category: 'activity', weeklyDefault: 1 },
+  { id: 'subj-math', name: 'Mathematics', short_name: 'Math', category: 'core', weeklyDefault: 6, classLevels: [1,2,3,4,5,6,7,8,9,10,11,12] },
+  { id: 'subj-sci', name: 'Science & EVS', short_name: 'Science', category: 'core', weeklyDefault: 6, classLevels: [1,2,3,4,5,6,7,8,9,10,11,12] },
+  { id: 'subj-eng', name: 'English Language', short_name: 'English', category: 'language', weeklyDefault: 5, classLevels: [1,2,3,4,5,6,7,8,9,10,11,12] },
+  { id: 'subj-hin', name: 'Hindi', short_name: 'Hindi', category: 'language', weeklyDefault: 5, classLevels: [1,2,3,4,5,6,7,8,9,10,11,12] },
+  { id: 'subj-sst', name: 'Social Science (SST)', short_name: 'SST', category: 'core', weeklyDefault: 5, classLevels: [1,2,3,4,5,6,7,8,9,10,11,12] },
+  { id: 'subj-cs', name: 'Computer & AI Lab', short_name: 'Computer', category: 'activity', weeklyDefault: 3, classLevels: [1,2,3,4,5,6,7,8,9,10,11,12] },
+  { id: 'subj-pe', name: 'Physical Ed & Sports', short_name: 'PE/Sports', category: 'sports', weeklyDefault: 3, classLevels: [1,2,3,4,5,6,7,8,9,10,11,12] },
+  { id: 'subj-art', name: 'Art & Music', short_name: 'Art/Music', category: 'activity', weeklyDefault: 2, classLevels: [1,2,3,4,5,6,7,8,9,10,11,12] },
+  { id: 'subj-lib', name: 'Library & Values', short_name: 'Library', category: 'activity', weeklyDefault: 1, classLevels: [1,2,3,4,5,6,7,8,9,10,11,12] },
 ];
 
 export const STANDARD_8_PERIODS: PeriodTiming[] = [
@@ -787,7 +788,7 @@ export const TimetableManager: React.FC<TimetableManagerProps> = ({ allowedCateg
             category: selectedCategory,
             class: parsed?.className || null,
             section: parsed?.section || null,
-            day_of_week: String(day),
+            day_of_week: day,
             period_number: period,
             teacher_id: teacher.id,
             teacher_name: teacher.name,
@@ -878,7 +879,7 @@ export const TimetableManager: React.FC<TimetableManagerProps> = ({ allowedCateg
               category: selectedCategory,
               class: parsed?.className || null,
               section: parsed?.section || null,
-              day_of_week: String(day),
+              day_of_week: day,
               period_number: period,
               teacher_id: teacher?.id || 'teacher-1',
               teacher_name: teacher?.name || 'Faculty',

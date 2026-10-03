@@ -61,7 +61,7 @@ const STORAGE_BASE_URL = `${import.meta.env.VITE_SUPABASE_URL}/storage/v1/object
 
 // iOS Fluid Spring Physics
 const iosSpring = {
-  type: 'spring',
+  type: 'spring' as const,
   stiffness: 440,
   damping: 30,
   mass: 0.8,
@@ -869,7 +869,7 @@ const LiveAttendanceFeed: React.FC<LiveAttendanceFeedProps> = ({
                         {studentName}
                       </p>
                       {record.confidence && record.confidence > 0.85 && (
-                        <Zap className="h-3 w-3 text-amber-500 shrink-0" title={`${Math.round(record.confidence * 100)}% biometric match`} />
+                        <Zap className="h-3 w-3 text-amber-500 shrink-0" aria-label={`${Math.round(record.confidence * 100)}% biometric match`} />
                       )}
                     </div>
                     <div className="flex items-center gap-1.5 text-[10px] sm:text-[11px] text-muted-foreground mt-0.5 flex-wrap">

@@ -318,7 +318,7 @@ export const GatePassScannerModal: React.FC<GatePassScannerModalProps> = ({
             <Button
               variant="ghost"
               size="sm"
-              onClick={loadPasses}
+              onClick={() => loadPasses()}
               disabled={loading}
               className="h-8 px-2 rounded-xl text-xs gap-1 text-muted-foreground hover:text-foreground"
             >

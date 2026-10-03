@@ -465,9 +465,21 @@ const PrincipalDashboard: React.FC<PrincipalDashboardProps> = ({ onNavigateTab }
           .eq('is_recognized', true),
       ]);
 
+      const safeDateStr = (rawDate: any, fmt: string) => {
+        try {
+          if (!rawDate) return '';
+          const d = new Date(rawDate);
+          if (isNaN(d.getTime())) return '';
+          return format(d, fmt);
+        } catch {
+          return '';
+        }
+      };
+
       const dailyPresent: Record<string, Set<string>> = {};
       (weekAttRes.data || []).forEach(r => {
-        const d = format(new Date(r.timestamp), 'yyyy-MM-dd');
+        const d = safeDateStr(r.timestamp, 'yyyy-MM-dd');
+        if (!d) return;
         const m = (r.device_info as any)?.metadata || {};
         const key = r.student_id || m.employee_id || r.user_id || m.name || r.student_name;
         if (key) {
@@ -478,7 +490,8 @@ const PrincipalDashboard: React.FC<PrincipalDashboardProps> = ({ onNavigateTab }
 
       (weekGateRes.data || []).forEach(g => {
         if (!g.student_id) return;
-        const d = format(new Date(g.entry_time), 'yyyy-MM-dd');
+        const d = safeDateStr(g.entry_time, 'yyyy-MM-dd');
+        if (!d) return;
         if (!dailyPresent[d]) dailyPresent[d] = new Set();
         dailyPresent[d].add(String(g.student_id));
       });

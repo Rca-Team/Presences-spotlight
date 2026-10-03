@@ -1076,7 +1076,7 @@ const StudentFaceSamplesManager: React.FC = () => {
       }
 
       // 6. Synchronize AI model descriptor cache
-      await syncDescriptorCache(true).catch(() => {});
+      await syncDescriptorCache().catch(() => {});
 
       // 7. Update UI state
       toast({
@@ -1331,7 +1331,7 @@ const StudentFaceSamplesManager: React.FC = () => {
       // Also clean duplicate photo slots
       const dedupResult = await executeDeduplication();
 
-      await syncDescriptorCache(true);
+      await syncDescriptorCache();
       await fetchSamples({ silent: true });
 
       toast({
@@ -1435,7 +1435,7 @@ const StudentFaceSamplesManager: React.FC = () => {
         );
       }
 
-      await syncDescriptorCache(true);
+      await syncDescriptorCache();
       await fetchSamples({ silent: true });
 
       toast({
@@ -1536,7 +1536,7 @@ const StudentFaceSamplesManager: React.FC = () => {
         }
       }
 
-      await syncDescriptorCache(true);
+      await syncDescriptorCache();
       await fetchSamples({ silent: true });
 
       toast({

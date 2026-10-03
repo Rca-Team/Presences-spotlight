@@ -1,5 +1,6 @@
 import { createRoot } from 'react-dom/client'
 import { StrictMode } from 'react'
+import './appwrite'
 import App from './App.tsx'
 import './index.css'
 
@@ -60,6 +61,25 @@ const sanitizeSupabaseAuthStorage = () => {
 };
 
 sanitizeSupabaseAuthStorage();
+
+// Protect against browser extensions / translation tool DOM mutation crashes (NotFoundError: Failed to execute 'insertBefore' / 'removeChild' on 'Node')
+if (typeof Node === 'function' && Node.prototype) {
+  const originalInsertBefore = Node.prototype.insertBefore;
+  Node.prototype.insertBefore = function <T extends Node>(newNode: T, referenceNode: Node | null): T {
+    if (referenceNode && referenceNode.parentNode !== this) {
+      return this.appendChild(newNode);
+    }
+    return originalInsertBefore.call(this, newNode, referenceNode);
+  };
+
+  const originalRemoveChild = Node.prototype.removeChild;
+  Node.prototype.removeChild = function <T extends Node>(child: T): T {
+    if (child.parentNode !== this) {
+      return child;
+    }
+    return originalRemoveChild.call(this, child);
+  };
+}
 
 
 // Global error handler to prevent white screens and recover from deployment chunk mismatches

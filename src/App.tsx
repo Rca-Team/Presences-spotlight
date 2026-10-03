@@ -17,6 +17,7 @@ const Index = lazyWithRetry(() => import("./pages/Index"), "index");
 const Register = lazyWithRetry(() => import("./pages/Register"), "register");
 const Attendance = lazyWithRetry(() => import("./pages/Attendance"), "attendance");
 const Login = lazyWithRetry(() => import("./pages/Login"), "login");
+const PasswordRecovery = lazyWithRetry(() => import('./pages/PasswordRecovery'), 'password-recovery');
 const Signup = lazyWithRetry(() => import("./pages/Signup"), "signup");
 const NotFound = lazyWithRetry(() => import("./pages/NotFound"), "not-found");
 const Admin = lazyWithRetry(() => import("./pages/Admin"), "admin");
@@ -243,6 +244,8 @@ function AnimatedRoutes() {
         <Route path="/features" element={bound(<Features />, "Features")} />
         <Route path="/contact" element={bound(<Contact />, "Contact")} />
         <Route path="/login" element={bound(<Login />, "Login")} />
+        <Route path="/forgot-password" element={bound(<PasswordRecovery />, "Reset Password")} />
+        <Route path="/reset-password" element={bound(<PasswordRecovery />, "Reset Password")} />
         <Route path="/signup" element={bound(<Signup />, "Sign Up")} />
         <Route path="/register" element={bound(<Register />, "Add Student")} />
         <Route path="/profile" element={

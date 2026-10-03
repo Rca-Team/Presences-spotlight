@@ -220,6 +220,8 @@ export const LiteAdmin: React.FC<Props> = ({ stats: initialStats }) => {
   const [activeTab, setActiveTab] = useState<string>('dashboard');
   const [selectedCategory, setSelectedCategory] = useState<string>('All');
   const [searchQuery, setSearchQuery] = useState('');
+  const [selectedFaceId, setSelectedFaceId] = useState<string | null>(null);
+  const [availableFaces, setAvailableFaces] = useState<{ id: string; user_id?: string; name: string; employee_id: string }[]>([]);
   const [isPending, startTransition] = useTransition();
   const [liveStats, setLiveStats] = useState<UnifiedAttendanceStats>({
     totalRegistered: initialStats?.totalFaces || 0,
@@ -237,6 +239,20 @@ export const LiteAdmin: React.FC<Props> = ({ stats: initialStats }) => {
       console.warn('LiteAdmin stats error:', e);
     }
   };
+
+  useEffect(() => {
+    if (activeTab !== 'notifications') return;
+    let active = true;
+    supabase.from('profiles').select('id,user_id,full_name,display_name,employee_id,admission_number').then(({ data, error }) => {
+      if (!active) return;
+      if (error) { console.error('Notification roster failed:', error); return; }
+      setAvailableFaces((data || []).map((p: any) => ({
+        id: p.id, user_id: p.user_id, name: p.full_name || p.display_name || 'Student',
+        employee_id: p.admission_number || p.employee_id || p.id,
+      })));
+    });
+    return () => { active = false; };
+  }, [activeTab]);
 
   useEffect(() => {
     refreshStats();
@@ -306,7 +322,7 @@ export const LiteAdmin: React.FC<Props> = ({ stats: initialStats }) => {
       case 'export':
         return <AttendanceExport />;
       case 'students':
-        return <AdminFacesList />;
+        return <AdminFacesList viewMode="list" selectedFaceId={selectedFaceId} nameFilter="" setSelectedFaceId={setSelectedFaceId} />;
       case 'idcards':
         return <StudentDetailsTable />;
       case 'sections':
@@ -323,7 +339,7 @@ export const LiteAdmin: React.FC<Props> = ({ stats: initialStats }) => {
       case 'emergency':
         return <EmergencyAlertPanel />;
       case 'notifications':
-        return <AdminNotificationSender />;
+        return <AdminNotificationSender availableFaces={availableFaces} />;
       case 'inbox':
         return <AdminInbox />;
       case 'notif-log':

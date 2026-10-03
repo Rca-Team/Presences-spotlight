@@ -11,9 +11,7 @@ interface NavigatorWithConnection extends Navigator {
   deviceMemory?: number;
 }
 
-interface IdleWindow extends Window {
-  requestIdleCallback?: (callback: () => void, options?: { timeout: number }) => number;
-}
+type IdleWindow = Window;
 
 const importers: Record<string, Importer> = {
   '/': () => import('@/pages/Index'),

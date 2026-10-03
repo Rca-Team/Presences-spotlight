@@ -29,10 +29,10 @@ export const LiveTpaWidget: React.FC<LiveTpaWidgetProps> = ({
   const secs = secondsRemaining % 60;
   const progressPct = Math.round(((totalPeriod - secondsRemaining) / totalPeriod) * 100);
 
-  const total = students.length || 38;
-  const present = students.filter((s) => s.status === 'present').length || (students.length ? 0 : 34);
+  const total = students.length;
+  const present = students.filter((s) => s.today_status === 'present' || s.today_status === 'late').length;
   const absent = total - present;
-  const attendanceRate = Math.round((present / total) * 100);
+  const attendanceRate = total ? Math.round((present / total) * 100) : 0;
 
   return (
     <div className="h-full flex flex-col justify-between gap-2.5 select-none">

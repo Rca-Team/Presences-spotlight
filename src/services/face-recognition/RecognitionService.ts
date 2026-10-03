@@ -35,6 +35,7 @@ import { buildVectorIndex, searchVectorIndex } from './VectorIndexService';
 import { dataUrlToBlob, uploadAttendanceTrainingImage } from './TrainingDataStorageService';
 import { resolveStudentAdmissionId, resolveStudentClass, normalizeClassSection } from '@/utils/studentIdentityResolver';
 import { parseClassSection } from '@/utils/teacherAccess';
+import { ensureActiveClassSession, upsertClassAttendanceEvent } from '../attendance/ClassSessionService';
 
 // ─── types ────────────────────────────────────────────────────────────────────
 

@@ -58,12 +58,12 @@ export const AnimatedNotificationBadge: React.FC<AnimatedNotificationBadgeProps>
     exit: { scale: 0, opacity: 0 },
     transition: shouldBounce
       ? {
-          type: 'tween',
-          ease: 'easeOut',
+          type: 'tween' as const,
+          ease: 'easeOut' as const,
           duration: 0.5,
         }
       : {
-          type: 'spring',
+          type: 'spring' as const,
           stiffness: 500,
           damping: 15,
         },
@@ -77,7 +77,7 @@ export const AnimatedNotificationBadge: React.FC<AnimatedNotificationBadgeProps>
     transition: {
       duration: 1.5,
       repeat: Infinity,
-      ease: 'easeInOut',
+      ease: 'easeInOut' as const,
     },
   };
 

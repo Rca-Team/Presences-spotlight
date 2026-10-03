@@ -1,23 +1,5 @@
-import { defineTool, type ToolContext } from '@lovable.dev/mcp-js';
-import { createClient } from '@supabase/supabase-js';
-
-const supabaseForUser = (ctx: ToolContext) => {
-  const url = process.env.SUPABASE_URL;
-  const key = process.env.SUPABASE_PUBLISHABLE_KEY;
-  if (!url || !key) throw new Error('Missing Supabase MCP environment variables');
-
-  return createClient(url, key, {
-    global: {
-      headers: {
-        Authorization: `Bearer ${ctx.getToken()}`,
-      },
-    },
-    auth: {
-      persistSession: false,
-      autoRefreshToken: false,
-    },
-  });
-};
+import { defineTool } from '@lovable.dev/mcp-js';
+import { appwriteUnifiedClient as supabase } from '@/integrations/appwrite/adapter';
 
 export default defineTool({
   name: 'get_school_overview',
@@ -38,8 +20,6 @@ export default defineTool({
     }
 
     try {
-      const supabase = supabaseForUser(ctx);
-
       const [registeredRes, presentRes, lateRes, gateSessionRes] = await Promise.all([
         supabase.from('attendance_records').select('id', { count: 'exact', head: true }).eq('status', 'registered'),
         supabase.from('attendance_records').select('id', { count: 'exact', head: true }).eq('status', 'present'),
@@ -55,7 +35,7 @@ export default defineTool({
       const errors = [registeredRes.error, presentRes.error, lateRes.error, gateSessionRes.error].filter(Boolean);
       if (errors.length > 0) {
         return {
-          content: [{ type: 'text', text: `Query failed: ${errors.map((e) => e?.message).join('; ')}` }],
+          content: [{ type: 'text', text: `Query failed: ${errors.map((e: any) => e?.message).join('; ')}` }],
           isError: true,
         };
       }

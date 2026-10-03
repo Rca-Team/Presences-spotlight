@@ -9,7 +9,7 @@
  * 5. Runtime Assets, Service Worker & Cache (broken chunks, stale service worker, memory pressure)
  */
 
-import { supabase } from '@/integrations/supabase/client';
+import { appwriteUnifiedClient as supabase } from '@/integrations/appwrite/adapter';
 import { jarvisSupabase } from '@/integrations/jarvis/supabaseClient';
 import { formatErrorMessage } from '@/utils/errorHandler';
 

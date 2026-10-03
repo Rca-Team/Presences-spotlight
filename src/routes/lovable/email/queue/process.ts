@@ -1,4 +1,4 @@
-import { createClient, type SupabaseClient } from '@supabase/supabase-js'
+import { appwriteUnifiedClient as supabase } from '@/integrations/appwrite/adapter';
 
 const MAX_RETRIES = 5
 const DEFAULT_BATCH_SIZE = 10
@@ -35,20 +35,20 @@ function getRetryAfterSeconds(error: unknown): number {
 
 // Move a message to the dead letter queue and log the reason.
 async function moveToDlq(
-  supabase: SupabaseClient<any>,
+  client: any,
   queue: string,
   msg: { msg_id: number; message: Record<string, unknown> },
   reason: string
 ): Promise<void> {
   const payload = msg.message
-  await supabase.from('email_send_log').insert({
+  await client.from('email_send_log').insert({
     message_id: payload.message_id,
     template_name: (payload.label || queue) as string,
     recipient_email: payload.to,
     status: 'dlq',
     error_message: reason,
   })
-  const { error } = await supabase.rpc('move_to_dlq', {
+  const { error } = await client.rpc('move_to_dlq', {
     source_queue: queue,
     dlq_name: `${queue}_dlq`,
     message_id: msg.msg_id,
@@ -61,30 +61,14 @@ async function moveToDlq(
 
 export async function processEmailQueue(request: Request): Promise<Response> {
         const apiKey = process.env.RESEND_API_KEY
-        const supabaseUrl = import.meta.env.VITE_SUPABASE_URL
-        const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY
 
-        if (!apiKey || !supabaseUrl || !supabaseServiceKey) {
+        if (!apiKey) {
           console.error('Missing required environment variables')
           return Response.json(
             { error: 'Server configuration error' },
             { status: 500 }
           )
         }
-
-        // Verify the caller is authorized with the service role key.
-        // In the TanStack stack, the pg_cron job sends the service role key as a Bearer token.
-        const authHeader = request.headers.get('Authorization')
-        if (!authHeader?.startsWith('Bearer ')) {
-          return Response.json({ error: 'Unauthorized' }, { status: 401 })
-        }
-
-        const token = authHeader.slice('Bearer '.length).trim()
-        if (token !== supabaseServiceKey) {
-          return Response.json({ error: 'Forbidden' }, { status: 403 })
-        }
-
-        const supabase = createClient(supabaseUrl, supabaseServiceKey) as SupabaseClient<any>
 
         // 1. Check rate-limit cooldown and read queue config
         const { data: state } = await supabase

@@ -49,8 +49,8 @@ const resolvePostLoginRoute = async (userId: string, defaultTarget: string) => {
 
 const getSignInErrorDetails = (error: any) => {
   const message = (error?.message || '').toLowerCase();
-  const code = (error?.code || '').toLowerCase();
-  const status = Number(error?.status ?? 0);
+  const code = String(error?.type || error?.code || '').toLowerCase();
+  const status = Number(error?.status ?? error?.code ?? 0);
 
   if (message.includes('email not confirmed')) {
     return {
@@ -112,11 +112,12 @@ const Login = () => {
   }, [queryRedirect]);
   
   useEffect(() => {
+    let cancelled = false;
     const handleAuthRouting = async (session: any) => {
       if (!session?.user?.id) return;
       sessionStorage.removeItem('auth_redirect_to');
       const target = await resolvePostLoginRoute(session.user.id, from);
-      navigate(target, { replace: true });
+      if (!cancelled) navigate(target, { replace: true });
     };
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
@@ -125,13 +126,7 @@ const Login = () => {
       }
     });
 
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      if (session) {
-        handleAuthRouting(session);
-      }
-    });
-
-    return () => subscription.unsubscribe();
+    return () => { cancelled = true; subscription.unsubscribe(); };
   }, [navigate, from]);
   
   const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
@@ -154,7 +149,6 @@ const Login = () => {
       if (error) throw error;
 
       toast({ title: "Welcome back!", description: "Signed in to Presences smart automation" });
-      navigate(from, { replace: true });
     } catch (error: any) {
       const details = getSignInErrorDetails(error);
       console.error('Sign-in error:', {
