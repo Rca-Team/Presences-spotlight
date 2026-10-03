@@ -40,6 +40,8 @@ const routeTitles: Record<string, string> = {
   "/signup": "Create Account",
   "/widgets": "Quick Tools",
   "/jarvis": "Jarvis Assistant",
+  "/enroll": "Student Enrollment",
+  "/enrollment-monitor": "Enrollment Monitor",
 };
 
 const MobileAppShell: React.FC<MobileAppShellProps> = ({ children }) => {
@@ -133,7 +135,8 @@ const MobileAppShell: React.FC<MobileAppShellProps> = ({ children }) => {
     path.startsWith('/teacher') ||
     path.startsWith('/register') ||
     path.startsWith('/login') ||
-    path.startsWith('/signup');
+    path.startsWith('/signup') ||
+    path.startsWith('/enroll');
 
   // Hide the global bottom dock on camera kiosks and guard consoles
   const hideGlobalBottomNav = isImmersiveRoute;
