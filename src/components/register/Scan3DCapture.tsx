@@ -223,7 +223,7 @@ const Scan3DCapture: React.FC<Scan3DCaptureProps> = ({ onComplete, isModelLoadin
   const primaryImageRef = useRef<string | null>(null);
   const smoothPoseRef = useRef<PoseMeasure | null>(null);
   const basePoseRef = useRef<PoseMeasure | null>(null);
-  const manualProfileRequestRef = useRef(false);
+  const manualProfileRequestRef = useRef(false); const manualSampleRequestRef = useRef(false);
   const finishingRef = useRef(false);
 
   const scanningRef = useRef(false);
@@ -618,16 +618,23 @@ const Scan3DCapture: React.FC<Scan3DCaptureProps> = ({ onComplete, isModelLoadin
         }
 
         const counts = sectorCountsRef.current;
+        const targetSector = nextNeededSector(counts) ?? 'front';
         const sectorNeedsMore = counts[sector] < TARGET_SAMPLES_PER_SECTOR[sector];
+        
+        const manualSample = manualSampleRequestRef.current;
+        if (manualSample) manualSampleRequestRef.current = false;
+
         const canSample =
-          now - lastCaptureTimeRef.current >= SAMPLE_INTERVAL_MS &&
+          manualSample ||
+          (now - lastCaptureTimeRef.current >= SAMPLE_INTERVAL_MS &&
           descriptorsRef.current.length < MAX_SAMPLES &&
-          (sectorNeedsMore || (newTick && sector !== 'front'));
+          (sectorNeedsMore || (newTick && sector !== 'front')));
 
         let latest = counts;
         if (canSample) {
-          latest = addSample(detection.descriptor, sector, grabFrame());
-          if (sectorNeedsMore && latest[sector] === TARGET_SAMPLES_PER_SECTOR[sector]) {
+          const captureSector = manualSample ? targetSector : sector;
+          latest = addSample(detection.descriptor, captureSector, grabFrame());
+          if (latest[captureSector] === TARGET_SAMPLES_PER_SECTOR[captureSector]) {
             soundRef.current.playSectorComplete();
             triggerParticleBurst(22);
           }
@@ -1038,6 +1045,17 @@ const Scan3DCapture: React.FC<Scan3DCaptureProps> = ({ onComplete, isModelLoadin
               className="w-full sm:w-auto h-12 border-emerald-500/40 text-emerald-500 hover:bg-emerald-500/10 text-xs font-bold rounded-xl"
             >
               <Camera className="h-4 w-4 mr-1.5" /> Take photo now
+            </Button>
+          )}
+
+          {scanning && stage === 'rotating_angles' && (
+            <Button
+              type="button"
+              onClick={() => { manualSampleRequestRef.current = true; }}
+              variant="outline"
+              className="w-full sm:w-auto h-12 border-cyan-500/40 text-cyan-500 hover:bg-cyan-500/10 text-xs font-bold rounded-xl"
+            >
+              <Camera className="h-4 w-4 mr-1.5" /> Force capture
             </Button>
           )}
 
