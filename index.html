@@ -28,6 +28,47 @@
         } catch (_) {
           document.documentElement.classList.add('dark');
         }
+
+        // Automatic recovery when new deployment replaces dynamic chunk hashes
+        function recoverStaleBundle() {
+          var lastReload = Number(sessionStorage.getItem('presence:chunk_reload_ts') || '0');
+          var now = Date.now();
+          if (!lastReload || now - lastReload > 8000) {
+            sessionStorage.setItem('presence:chunk_reload_ts', String(now));
+            if ('serviceWorker' in navigator) {
+              navigator.serviceWorker.getRegistrations().then(function(regs) {
+                regs.forEach(function(r) { r.update(); });
+              });
+            }
+            if ('caches' in window) {
+              caches.keys().then(function(names) {
+                names.forEach(function(n) { caches.delete(n); });
+              }).finally(function() {
+                window.location.reload();
+              });
+            } else {
+              window.location.reload();
+            }
+          }
+        }
+
+        window.addEventListener('error', function(e) {
+          var msg = (e && (e.message || (e.error && e.error.message))) ? String(e.message || e.error.message).toLowerCase() : '';
+          if (
+            msg.indexOf('failed to load module script') !== -1 ||
+            msg.indexOf('text/html') !== -1 ||
+            msg.indexOf('dynamically imported module') !== -1 ||
+            msg.indexOf('loading chunk') !== -1 ||
+            msg.indexOf('strict mime type') !== -1
+          ) {
+            recoverStaleBundle();
+          }
+        }, true);
+
+        window.addEventListener('vite:preloadError', function(e) {
+          if (e && e.preventDefault) e.preventDefault();
+          recoverStaleBundle();
+        });
       })();
     </script>
     

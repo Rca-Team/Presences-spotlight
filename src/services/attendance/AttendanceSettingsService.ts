@@ -22,10 +22,10 @@ export const getCutoffTime = async (): Promise<string> => {
       .from('attendance_settings')
       .select('*')
       .eq('key', 'cutoff_time')
-      .single();
+      .maybeSingle();
 
-    if (error) {
-      console.error('Error fetching cutoff time:', error);
+    if (error && error.code !== 'PGRST116') {
+      console.warn('Non-fatal: could not fetch cutoff time, using default 08:00:', error.message || error);
       return '08:00'; // Default cutoff time (8:00 AM)
     }
 

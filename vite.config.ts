@@ -113,12 +113,15 @@ export default defineConfig(({ mode }) => {
           runtimeCaching: [
             {
               urlPattern: ({ request }) => request.destination === "script",
-              handler: "StaleWhileRevalidate",
+              handler: "NetworkFirst",
               options: {
                 cacheName: "js-chunks-cache",
-                expiration: {
-                  maxEntries: 60,
-                  maxAgeSeconds: 30 * 24 * 60 * 60,
+                networkTimeoutSeconds: 4,
+                cacheableResponse: {
+                  statuses: [0, 200],
+                  headers: {
+                    "content-type": "application/javascript",
+                  },
                 },
               },
             },
