@@ -90,11 +90,6 @@ class AutoHealEngine {
   private constructor() {
     this.loadPersistedStats();
     this.initGlobalListeners();
-    // Auto-start watchdog by default if enabled in settings
-    const autoWatchdog = typeof localStorage !== 'undefined' ? localStorage.getItem('presences:autoheal:watchdog') : null;
-    if (autoWatchdog !== 'false') {
-      this.enableWatchdog(180_000); // Check every 3 minutes
-    }
   }
 
   public static getInstance(): AutoHealEngine {

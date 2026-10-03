@@ -6,7 +6,6 @@ import { jarvisAudit, AuditSummaryResult } from "@/services/jarvis/JarvisAuditSe
 import { jarvisAI, JarvisAnalysisResponse } from "@/services/jarvis/JarvisAIService";
 import { jarvisVoice } from "@/services/jarvis/JarvisVoiceService";
 import { presencesDataContext } from "@/services/jarvis/PresencesDataContext";
-import autoHealService from "@/services/autoheal/AutoHealService";
 import { jarvisSupabase, JarvisStudentAudit, JarvisSystemLog } from "@/integrations/jarvis/supabaseClient";
 import {
   ShieldCheck,
@@ -47,8 +46,7 @@ export default function Jarvis() {
   const [auditSummary, setAuditSummary] = useState<AuditSummaryResult | null>(null);
   const [analysis, setAnalysis] = useState<JarvisAnalysisResponse | null>(null);
   const [activeTab, setActiveTab] = useState<"audits" | "recommendations" | "telemetry">("audits");
-  const [isHealing, setIsHealing] = useState(false);
-  const [healingProgress, setHealingProgress] = useState<{ current: number; total: number; name: string } | null>(null);
+
 
   // Chat / Command input
   const [chatInput, setChatInput] = useState("");
@@ -194,46 +192,7 @@ export default function Jarvis() {
     );
   };
 
-  // Autonomous Multi-Tier Auto-Healing Handler
-  const handleAutoHealBiometrics = async () => {
-    if (isHealing) return;
-    setIsHealing(true);
-    jarvisVoice.playChime("scan");
-    notify.info("JARVIS: Initializing autonomous multi-tier system auto-healing sequence...");
 
-    try {
-      const unsub = autoHealService.subscribeProgress((p) => {
-        if (p) {
-          setHealingProgress({ current: p.current, total: p.total, name: p.step });
-        }
-      });
-
-      const result = await autoHealService.runFullAutoHeal();
-      unsub();
-
-      const message =
-        result.healedCount > 0
-          ? `Auto-healing sequence concluded, Sir. I have successfully resolved ${result.healedCount} system & biometric anomalies across the architecture. Campus health is now rated at ${result.report.overallScore} percent.`
-          : `Autonomous self-healing scan completed, Sir. All operational matrices, biometric vectors, and realtime sockets are performing at nominal capacity (${result.report.overallScore}% health score).`;
-
-      setChatHistory((prev) => [
-        ...prev,
-        { sender: "jarvis", text: message, time: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) },
-      ]);
-
-      setIsSpeaking(true);
-      await jarvisVoice.speak(message, () => setIsSpeaking(false));
-
-      // Refresh snapshot
-      await handleRunDiagnosticSweep();
-      notify.success(`Auto-heal complete: ${result.healedCount} resolved. Health: ${result.report.overallScore}%.`);
-    } catch (err: any) {
-      notify.error("Auto-heal error: " + (err?.message || "Unknown error"));
-    } finally {
-      setIsHealing(false);
-      setHealingProgress(null);
-    }
-  };
 
   // Export Audit CSV Handler
   const handleExportCSV = () => {
@@ -272,7 +231,11 @@ export default function Jarvis() {
       return;
     }
     if (lower.includes("auto heal") || lower.includes("auto-heal") || lower.includes("fix biometric") || lower.includes("enroll descriptor")) {
-      handleAutoHealBiometrics();
+      const msg = "Biometric face verification and photo enrollment can be managed directly via the Student Face Photos panel in the School Admin dashboard.";
+      setChatHistory((prev) => [
+        ...prev,
+        { sender: "jarvis", text: msg, time: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) },
+      ]);
       return;
     }
     if (lower.includes("export report") || lower.includes("download report") || lower.includes("export csv")) {
@@ -555,17 +518,8 @@ export default function Jarvis() {
                 </button>
               </div>
 
-              {/* Quick Actions (Auto-Heal & Export) */}
+              {/* Quick Actions (Export & Clear) */}
               <div className="flex items-center gap-2">
-                <button
-                  onClick={handleAutoHealBiometrics}
-                  disabled={isHealing}
-                  title="Automatically setup face recognition for all students with photos"
-                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-gradient-to-r from-amber-500/20 to-orange-500/20 hover:from-amber-500/30 hover:to-orange-500/30 border border-amber-500/40 text-amber-300 text-xs font-mono font-medium transition-all cursor-pointer disabled:opacity-50"
-                >
-                  <Fingerprint className={`w-3.5 h-3.5 ${isHealing ? "animate-spin" : ""}`} />
-                  <span>{isHealing ? "Updating..." : "Fix Face Data"}</span>
-                </button>
 
                 <button
                   onClick={handleExportCSV}
@@ -586,18 +540,6 @@ export default function Jarvis() {
               </div>
             </div>
 
-            {/* Healing Progress Banner */}
-            {isHealing && healingProgress && (
-              <div className="p-3.5 rounded-xl border border-amber-500/30 bg-amber-950/40 backdrop-blur-md flex items-center justify-between text-xs font-mono text-amber-300 animate-pulse">
-                <div className="flex items-center gap-2">
-                  <Fingerprint className="w-4 h-4 animate-spin text-amber-400" />
-                  <span>
-                    UPDATING FACE PHOTOS ({healingProgress.current} / {healingProgress.total}): {healingProgress.name}...
-                  </span>
-                </div>
-                <span>{Math.round((healingProgress.current / healingProgress.total) * 100)}%</span>
-              </div>
-            )}
 
             {/* Tab 1: Student Audits Table */}
             {activeTab === "audits" && (
