@@ -160,8 +160,32 @@ async function purgeAppwriteAttendancePhotos() {
         }
       }
 
-      offset += files.length;
-      if (offset >= (res.total || 0)) break;
+    // Also purge attendance-training-faces bucket if present
+    const trainingBucketId = 'attendance-training-faces';
+    try {
+      let trainingOffset = 0;
+      let trainingDeleted = 0;
+      while (true) {
+        const res = await storage.listFiles(trainingBucketId, [
+          Query.limit(limit),
+          Query.offset(trainingOffset)
+        ]);
+        const files = res.files || [];
+        if (files.length === 0) break;
+        for (const file of files) {
+          try {
+            await storage.deleteFile(trainingBucketId, file.$id);
+            trainingDeleted++;
+          } catch {}
+        }
+        trainingOffset += files.length;
+        if (trainingOffset >= (res.total || 0)) break;
+      }
+      if (trainingDeleted > 0) {
+        console.log(`[Appwrite Purge] Purged ${trainingDeleted} tracking/training photos from "${trainingBucketId}".`);
+      }
+    } catch {
+      // Bucket might not exist, which is fine
     }
 
     console.log(`[Appwrite Purge] Complete! Purged ${totalDeleted} attendance snapshot photos from Appwrite.`);
@@ -172,7 +196,7 @@ async function purgeAppwriteAttendancePhotos() {
 
 async function main() {
   console.log('=== Presences AI Attendance Photo Storage Purge ===');
-  console.log('Policy: Zero photo retention for daily attendance. Retaining enrolled profile faces only.');
+  console.log('Policy: Zero photo retention for daily attendance & feed tracking. Retaining enrolled profile faces only.');
   await purgeSupabaseAttendancePhotos();
   await purgeAppwriteAttendancePhotos();
   console.log('=== Purge Job Finished ===');

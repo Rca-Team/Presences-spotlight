@@ -2,8 +2,8 @@ export const studentFields = ['name', 'admission_number', 'class', 'section', 'f
 export type StudentField = typeof studentFields[number];
 export type StudentDetails = Record<StudentField, string>;
 export interface ImportCard { id: string; student: StudentDetails; preview: string; portrait?: string; page: number; text: string; }
-export type Pose = 'front' | 'left' | 'right' | 'up' | 'down' | 'up-left' | 'up-right' | 'down-left' | 'down-right';
-export const poses: Pose[] = ['front', 'left', 'right', 'up', 'down', 'up-left', 'up-right', 'down-left', 'down-right'];
+export type Pose = 'front' | 'left' | 'right' | 'up' | 'down';
+export const poses: Pose[] = ['front', 'left', 'right', 'up', 'down'];
 export interface FaceSample { pose: Pose; glasses: 'with' | 'without'; image: string; descriptor: number[]; quality: { brightness: number; sharpness: number; faces: number }; }
 export interface CaptureResult { samples: FaceSample[]; wearsGlasses: boolean; blinked: boolean; challenge: 'left' | 'right'; }
 export interface EnrollmentSession { session: string; student: StudentDetails; challenge: 'left' | 'right'; expires: number; }

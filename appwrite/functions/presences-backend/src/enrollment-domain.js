@@ -4,13 +4,29 @@ export const hash = value => createHash('sha256').update(String(value)).digest('
 export const token = () => randomBytes(32).toString('hex');
 export const reject = (status, message) => { throw Object.assign(new Error(message), { status }); };
 export const normalizeName = value => String(value || '').normalize('NFKC').trim().replace(/\s+/g, ' ').toLocaleLowerCase('en');
+export function normalizeDob(value) {
+  const s = String(value || '').trim();
+  if (!s) return '';
+  // Support YYYY-MM-DD, DD/MM/YYYY, DD-MM-YYYY, D/M/YYYY
+  const isoMatch = s.match(/^(\d{4})[-/.](\d{1,2})[-/.](\d{1,2})$/);
+  if (isoMatch) {
+    const [, y, m, d] = isoMatch;
+    return `${y}-${m.padStart(2, '0')}-${d.padStart(2, '0')}`;
+  }
+  const dmyMatch = s.match(/^(\d{1,2})[-/.](\d{1,2})[-/.](\d{4})$/);
+  if (dmyMatch) {
+    const [, d, m, y] = dmyMatch;
+    return `${y}-${m.padStart(2, '0')}-${d.padStart(2, '0')}`;
+  }
+  return s.toLowerCase().replace(/[\s/.-]/g, '');
+}
 export function phoneNumber(value) {
   const number = String(value || '').replace(/[\s()-]/g, '');
   if (/^[6-9]\d{9}$/.test(number)) return '+91' + number;
   return /^\+[1-9]\d{7,14}$/.test(number) ? number : '';
 }
 export const fields = ['name', 'admission_number', 'class', 'section', 'father_name', 'mother_name', 'parent_phone', 'date_of_birth', 'address'];
-export const poses = ['front', 'left', 'right', 'up', 'down', 'up-left', 'up-right', 'down-left', 'down-right'];
+export const poses = ['front', 'left', 'right', 'up', 'down'];
 export function cleanStudent(input) {
   const row = Object.fromEntries(fields.map(key => [key, String(input?.[key] || '').normalize('NFKC').trim().slice(0, key === 'address' ? 250 : 120)]));
   if (!row.name || !/^[\w./-]{1,64}$/.test(row.admission_number)) reject(400, 'Name and a valid admission number are required.');

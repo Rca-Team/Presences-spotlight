@@ -1,15 +1,46 @@
 import type { Pose } from './types';
 export interface Point { x: number; y: number }
 const distance = (a: Point, b: Point) => Math.hypot(a.x - b.x, a.y - b.y);
-export function facePose(points: Point[]): Pose | null {
+export interface PoseEstimate {
+  pose: Pose | null;
+  yaw: number;
+  pitchRatio: number;
+  continuousAngle: number;
+}
+
+export function estimateFacePose(points: Point[]): PoseEstimate {
   const eyeMid = { x: (points[36].x + points[45].x) / 2, y: (points[36].y + points[45].y) / 2 };
-  const yaw = (points[30].x - eyeMid.x) / Math.max(1, distance(points[36], points[45]));
-  const pitch = (points[30].y - eyeMid.y) / Math.max(1, distance(points[8], eyeMid));
-  const horizontal = yaw > 0.18 ? 'left' : yaw < -0.18 ? 'right' : '';
-  const vertical = pitch < 0.33 ? 'up' : pitch > 0.49 ? 'down' : '';
-  if (horizontal && vertical) return `${vertical}-${horizontal}` as Pose;
-  if (horizontal || vertical) return (horizontal || vertical) as Pose;
-  return Math.abs(yaw) < 0.14 && pitch > 0.35 && pitch < 0.48 ? 'front' : null;
+  const eyeDist = Math.max(1, distance(points[36], points[45]));
+  const chin = points[8];
+  const faceH = Math.max(1, distance(chin, eyeMid));
+  const nose = points[30];
+
+  const yaw = (nose.x - eyeMid.x) / eyeDist;
+  const pitchRatio = (nose.y - eyeMid.y) / faceH;
+
+  const dx = yaw * 2.8;
+  const dy = (pitchRatio - 0.41) * 3.2;
+  let continuousAngle = Math.atan2(dy, dx);
+  if (continuousAngle < 0) continuousAngle += Math.PI * 2;
+
+  let pose: Pose | null = null;
+  if (Math.abs(yaw) < 0.16 && pitchRatio >= 0.35 && pitchRatio <= 0.48) {
+    pose = 'front';
+  } else if (yaw > 0.18) {
+    pose = 'left';
+  } else if (yaw < -0.18) {
+    pose = 'right';
+  } else if (pitchRatio < 0.33) {
+    pose = 'up';
+  } else if (pitchRatio > 0.49) {
+    pose = 'down';
+  }
+
+  return { pose, yaw, pitchRatio, continuousAngle };
+}
+
+export function facePose(points: Point[]): Pose | null {
+  return estimateFacePose(points).pose;
 }
 export function eyeOpenness(p: Point[]) {
   const eye = (i: number) => (distance(p[i + 1], p[i + 5]) + distance(p[i + 2], p[i + 4])) / Math.max(1, 2 * distance(p[i], p[i + 3]));

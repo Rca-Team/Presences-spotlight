@@ -1,5 +1,5 @@
 import { Query, Permission, Role } from 'node-appwrite';
-import { hash, token, reject, normalizeName, phoneNumber, cleanStudent, fields, validateSample, validateCapture } from './enrollment-domain.js';
+import { hash, token, reject, normalizeName, normalizeDob, phoneNumber, cleanStudent, fields, validateSample, validateCapture } from './enrollment-domain.js';
 
 export const STATE = 'student_enrollment';
 export const BUCKET = 'enrollment-private';
@@ -175,7 +175,9 @@ export function createEnrollmentService({ db, databaseId = 'presences_db', sms, 
         let valid = false;
         if (action === 'verify-father') {
           if (current.failures < 3 || current.blockFallback) reject(403, 'This verification option is not available.');
-          valid = Boolean(student?.father_name && normalizeName(body.fatherName) === normalizeName(student.father_name));
+          const matchFather = Boolean(student?.father_name && normalizeName(body.fatherName) === normalizeName(student.father_name));
+          const matchDob = !student?.date_of_birth || (Boolean(body.dob) && normalizeDob(body.dob) === normalizeDob(student.date_of_birth));
+          valid = matchFather && matchDob;
         } else {
           if (student && current.otpExpires > now() && /^\d{6}$/.test(body.code || '')) {
             try { await sms.verify(current.otpUser, body.code); valid = true; } catch { valid = false; }
