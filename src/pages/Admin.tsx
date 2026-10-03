@@ -65,7 +65,7 @@ import { useToast } from '@/hooks/use-toast';
 import { useUserRole } from '@/hooks/useUserRole';
 import { useIsMobile } from '@/hooks/use-mobile';
 import { cn } from '@/lib/utils';
-import { fetchUnifiedStudentSnapshot } from '@/utils/attendanceStatsHelper';
+import { fetchUnifiedStudentSnapshot, invalidateUnifiedStatsCache } from '@/utils/attendanceStatsHelper';
 import AdminUpdatePusherDialog from '@/components/admin/AdminUpdatePusherDialog';
 import LiteModeToggle from '@/components/LiteModeToggle';
 
@@ -283,29 +283,7 @@ const Admin = () => {
         return next;
       });
 
-      // Registered users for available faces list
-      const { data: faceData } = await supabase
-        .from('attendance_records')
-        .select('id, user_id, device_info, category')
-        .eq('status', 'registered');
-
-      const processedFaces = (faceData || []).map(r => {
-        const m = (r.device_info as any)?.metadata || {};
-        const name = m.name || (r.device_info as any)?.name || '';
-        const employeeId = m.employee_id || (r.device_info as any)?.employee_id || '';
-        return { id: r.id, user_id: r.user_id || undefined, name, employee_id: employeeId, category: r.category || 'A' };
-      }).filter(u => u.name && u.name !== 'Unknown' && u.name !== 'User');
-
-      const seenIds = new Set<string>();
-      const uniqueFaces = processedFaces.filter(u => {
-        const key = u.employee_id || u.user_id || u.id;
-        if (!key || seenIds.has(key)) return false;
-        seenIds.add(key);
-        return true;
-      });
-
-      setAvailableFaces(prev => (prev.length === uniqueFaces.length ? prev : uniqueFaces));
-
+      // Unread notifications count
       const { count } = await supabase
         .from('notifications')
         .select('*', { count: 'exact', head: true })
@@ -319,15 +297,47 @@ const Admin = () => {
     }
   }, [isAdminOrPrincipal]);
 
+  // Tab-scoped lazy loader: fetch available faces only when notification sender tab is opened
+  useEffect(() => {
+    if (activeTab === 'notifications' && availableFaces.length === 0) {
+      supabase
+        .from('attendance_records')
+        .select('id, user_id, device_info, category')
+        .eq('status', 'registered')
+        .then(({ data: faceData }) => {
+          const processedFaces = (faceData || []).map(r => {
+            const m = (r.device_info as any)?.metadata || {};
+            const name = m.name || (r.device_info as any)?.name || '';
+            const employeeId = m.employee_id || (r.device_info as any)?.employee_id || '';
+            return { id: r.id, user_id: r.user_id || undefined, name, employee_id: employeeId, category: r.category || 'A' };
+          }).filter(u => u.name && u.name !== 'Unknown' && u.name !== 'User');
+
+          const seenIds = new Set<string>();
+          const uniqueFaces = processedFaces.filter(u => {
+            const key = u.employee_id || u.user_id || u.id;
+            if (!key || seenIds.has(key)) return false;
+            seenIds.add(key);
+            return true;
+          });
+
+          setAvailableFaces(uniqueFaces);
+        })
+        .catch(err => console.warn('[Admin] Failed to load available faces for notifications:', err));
+    }
+  }, [activeTab, availableFaces.length]);
+
   const queueRefresh = useCallback(() => {
+    if (document.visibilityState !== 'visible') return;
+
     if (refreshTimerRef.current) {
       window.clearTimeout(refreshTimerRef.current);
     }
 
     refreshTimerRef.current = window.setTimeout(() => {
+      invalidateUnifiedStatsCache();
       fetchData();
       refreshTimerRef.current = null;
-    }, 3000);
+    }, 4000);
   }, [fetchData]);
 
   useEffect(() => {
@@ -366,6 +376,7 @@ const Admin = () => {
   };
 
   const handleRefresh = async () => {
+    invalidateUnifiedStatsCache();
     await fetchData();
     toast({ title: "Refreshed", description: "Data updated." });
   };

@@ -815,7 +815,7 @@ const LiveAttendanceFeed: React.FC<LiveAttendanceFeedProps> = ({
       )}
 
       {/* ── Scrollable Feed Stream List ── */}
-      <div className="space-y-2 overflow-y-auto max-h-[440px] sm:max-h-[500px] pr-1 no-scrollbar scrollbar-none">
+      <div className="space-y-2 overflow-y-auto max-h-[440px] sm:max-h-[500px] pr-1 no-scrollbar scrollbar-none perf-contain-list">
         <AnimatePresence mode="popLayout">
           {visibleRecords.map(record => {
             const studentName = getStudentName(record);
@@ -837,7 +837,7 @@ const LiveAttendanceFeed: React.FC<LiveAttendanceFeedProps> = ({
                 exit={{ opacity: 0, scale: 0.94 }}
                 transition={iosSpring}
                 onClick={() => setSelectedRecord(record)}
-                className={`group relative overflow-hidden flex items-center justify-between p-2.5 sm:p-3 rounded-2xl nano-glass border transition-all duration-200 cursor-pointer card-hover-pop shadow-xs ${
+                className={`group relative overflow-hidden flex items-center justify-between p-2.5 sm:p-3 rounded-2xl nano-glass border transition-all duration-200 cursor-pointer card-hover-pop shadow-xs perf-gpu-accelerate ${
                   isPresent
                     ? 'hover:border-emerald-500/50 hover:bg-emerald-500/[0.03]'
                     : isLate

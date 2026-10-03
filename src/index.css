@@ -1,9 +1,21 @@
-@import url('https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=Sora:wght@600;700;800&display=swap');
 @import './styles/nano-glass.css';
 
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
+
+@layer utilities {
+  /* High-performance virtual containment for long scrollable lists, feeds and tables */
+  .perf-contain-list {
+    content-visibility: auto;
+    contain-intrinsic-size: 0 88px;
+  }
+
+  .perf-gpu-accelerate {
+    transform: translateZ(0);
+    backface-visibility: hidden;
+  }
+}
 
 @layer base {
   :root {

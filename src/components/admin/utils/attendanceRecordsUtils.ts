@@ -51,14 +51,23 @@ function normalizeGateMetadata(record: any) {
 
 // Get all identifiers for a registered face to match attendance records
 async function getFaceIdentifiers(faceId: string): Promise<{ userIds: string[]; employeeId: string | null }> {
-  const { data } = await supabase
+  let { data } = await supabase
     .from('attendance_records')
     .select('user_id, student_id, device_info')
     .eq('id', faceId)
-    .eq('status', 'registered')
-    .single();
+    .maybeSingle();
 
-  const userIds: string[] = [faceId]; // Always include the registration record ID
+  if (!data) {
+    const { data: recByUid } = await supabase
+      .from('attendance_records')
+      .select('user_id, student_id, device_info')
+      .or(`user_id.eq.${faceId},student_id.eq.${faceId}`)
+      .limit(1)
+      .maybeSingle();
+    data = recByUid;
+  }
+
+  const userIds: string[] = [faceId]; // Always include the faceId
   let employeeId: string | null = null;
 
   if (data) {
@@ -68,14 +77,33 @@ async function getFaceIdentifiers(faceId: string): Promise<{ userIds: string[]; 
       employeeId = (data as any).student_id;
     }
     const di = data.device_info as any;
-    const metaId = di?.metadata?.employee_id || di?.employee_id;
+    const metaId = di?.metadata?.employee_id || di?.metadata?.admission_number || di?.employee_id;
     if (metaId) {
       employeeId = metaId;
       userIds.push(metaId);
     }
   }
 
-  return { userIds: [...new Set(userIds)], employeeId };
+  // Also query profiles for any additional identifiers (admission number, employee id, user id)
+  const { data: prof } = await supabase
+    .from('profiles')
+    .select('user_id, employee_id, admission_number')
+    .or(`user_id.eq.${faceId},id.eq.${faceId},admission_number.eq.${faceId},employee_id.eq.${faceId}`)
+    .maybeSingle();
+
+  if (prof) {
+    if (prof.user_id) userIds.push(prof.user_id);
+    if (prof.employee_id) {
+      userIds.push(prof.employee_id);
+      if (!employeeId) employeeId = prof.employee_id;
+    }
+    if (prof.admission_number) {
+      userIds.push(prof.admission_number);
+      if (!employeeId) employeeId = prof.admission_number;
+    }
+  }
+
+  return { userIds: [...new Set(userIds.filter(Boolean))], employeeId };
 }
 
 // Fetch attendance records - determines present/late days

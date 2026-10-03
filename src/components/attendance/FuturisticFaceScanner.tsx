@@ -5,8 +5,8 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { useToast } from '@/hooks/use-toast';
 import { 
-  loadModels, 
-  areModelsLoaded,
+  loadAttendanceModels, 
+  areAttendanceModelsLoaded,
   getFaceDescriptor
 } from '@/services/face-recognition/ModelService';
 import {
@@ -194,7 +194,8 @@ const FuturisticFaceScanner: React.FC<FuturisticFaceScannerProps> = ({ onScanCom
     imageUrl?: string;
   } | null>(null);
 
-  const [modelsLoaded, setModelsLoaded] = useState(areModelsLoaded());
+  const [modelsLoaded, setModelsLoaded] = useState(areAttendanceModelsLoaded());
+  const [modelProgress, setModelProgress] = useState(areAttendanceModelsLoaded() ? 100 : 0);
   const [galleryCount, setGalleryCount] = useState<number | null>(null);
 
   const [isScanning, setIsScanning] = useState(false);
@@ -469,16 +470,25 @@ const FuturisticFaceScanner: React.FC<FuturisticFaceScannerProps> = ({ onScanCom
 
 
   useEffect(() => {
+    let isMounted = true;
     const initModels = async () => {
       try {
-        if (!areModelsLoaded()) await loadModels();
-        setModelsLoaded(true);
-        void prefetchStudentCoverPhotos();
+        if (!areAttendanceModelsLoaded()) {
+          await loadAttendanceModels((pct) => {
+            if (isMounted) setModelProgress(pct);
+          });
+        }
+        if (isMounted) {
+          setModelProgress(100);
+          setModelsLoaded(true);
+          void prefetchStudentCoverPhotos();
+        }
       } catch (e) {
         console.error('Face model load failed:', e);
       }
     };
     initModels();
+    return () => { isMounted = false; };
   }, []);
 
   // Gallery health check — if no face descriptors exist, recognition can never
@@ -1790,7 +1800,7 @@ const FuturisticFaceScanner: React.FC<FuturisticFaceScannerProps> = ({ onScanCom
             {!modelsLoaded ? (
               <>
                 <Cpu className="w-4 h-4 mr-2 animate-spin text-cyan-400" />
-                Loading AI Models...
+                Loading AI Models {modelProgress > 0 ? `(${modelProgress}%)` : '...'}
               </>
             ) : isScanning ? (
               <>

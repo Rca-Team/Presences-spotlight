@@ -48,6 +48,7 @@ const StudentInfoCard: React.FC<StudentInfoCardProps> = ({
   const targetMonth = visibleMonth || new Date();
   const monthPresentDays = attendanceDays.filter(d => isSameMonth(new Date(d), targetMonth));
   const monthLateDays = lateAttendanceDays.filter(d => isSameMonth(new Date(d), targetMonth));
+  const monthAbsentDays = absentDays.filter(d => isSameMonth(new Date(d), targetMonth));
   const monthAttended = monthPresentDays.length + monthLateDays.length;
 
   const today = new Date();
@@ -60,10 +61,13 @@ const StudentInfoCard: React.FC<StudentInfoCardProps> = ({
     return isSameMonth(dd, targetMonth) && dd <= today;
   }).length;
 
-  // Accurate Rate: strictly capped between 0 and 100%
-  const monthRate = pastWorkingDaysInMonth > 0
-    ? Math.min(100, Math.round((monthAttended / pastWorkingDaysInMonth) * 100))
-    : monthAttended > 0 ? 100 : 0;
+  // Accurate Rate: based on tracked month sessions (attended / total tracked days) or past working days
+  const totalTrackedInMonth = monthAttended + monthAbsentDays.length;
+  const monthRate = totalTrackedInMonth > 0
+    ? Math.min(100, Math.round((monthAttended / totalTrackedInMonth) * 100))
+    : pastWorkingDaysInMonth > 0
+      ? Math.min(100, Math.round((monthAttended / pastWorkingDaysInMonth) * 100))
+      : monthAttended > 0 ? 100 : 0;
 
   // All-time total sessions
   const totalAllTime = attendanceDays.length + lateAttendanceDays.length;
@@ -154,9 +158,15 @@ const StudentInfoCard: React.FC<StudentInfoCardProps> = ({
                 <button
                   type="button"
                   onClick={onToggleDetails}
-                  className="text-xs px-3 py-1.5 rounded-xl border border-border/80 bg-background hover:bg-muted font-semibold transition-colors"
+                  className={cn(
+                    "text-xs px-3.5 py-1.5 rounded-xl border font-semibold transition-all shadow-sm flex items-center gap-1.5",
+                    showDetailsPanel
+                      ? "bg-primary text-primary-foreground border-primary shadow-primary/20"
+                      : "border-border/80 bg-background hover:bg-muted text-foreground"
+                  )}
                 >
-                  {showDetailsPanel ? 'Hide Details' : 'View & Edit Details'}
+                  <User className="w-3.5 h-3.5" />
+                  <span>{showDetailsPanel ? 'Close Editor' : 'Edit Profile'}</span>
                 </button>
               </div>
             )}
@@ -167,19 +177,19 @@ const StudentInfoCard: React.FC<StudentInfoCardProps> = ({
             <StatChip 
               icon={CheckCircle2} 
               value={monthPresentDays.length} 
-              label="Present (Month)" 
+              label={`Present (${format(targetMonth, 'MMM')})`} 
               className="text-emerald-600 dark:text-emerald-400 bg-emerald-500/10 border border-emerald-500/20" 
             />
             <StatChip 
               icon={Clock} 
               value={monthLateDays.length} 
-              label="Late (Month)" 
+              label={`Late (${format(targetMonth, 'MMM')})`} 
               className="text-amber-600 dark:text-amber-400 bg-amber-500/10 border border-amber-500/20" 
             />
             <StatChip 
               icon={XCircle} 
-              value={absentDays.length} 
-              label="Absent (Month)" 
+              value={monthAbsentDays.length} 
+              label={`Absent (${format(targetMonth, 'MMM')})`} 
               className="text-rose-600 dark:text-rose-400 bg-rose-500/10 border border-rose-500/20" 
             />
             <StatChip 
@@ -191,7 +201,7 @@ const StudentInfoCard: React.FC<StudentInfoCardProps> = ({
             <StatChip 
               icon={Award} 
               value={totalAllTime} 
-              label="All-Time Attended" 
+              label="All-Time Sessions" 
               className="text-indigo-600 dark:text-indigo-400 bg-indigo-500/10 border border-indigo-500/20 col-span-2 sm:col-span-1" 
             />
           </div>

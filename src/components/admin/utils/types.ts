@@ -19,6 +19,8 @@ export interface FaceInfo {
   parent_email?: string;
   transport_mode?: string;
   address?: string;
+  date_of_birth?: string;
+  gender?: string;
 }
 
 export interface AttendanceRecord {

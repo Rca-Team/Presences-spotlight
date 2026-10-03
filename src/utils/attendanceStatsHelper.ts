@@ -162,15 +162,35 @@ function buildDeduplicatedRoster(registrationRecords: any[], descriptorRows: any
   return canonicalRoster;
 }
 
+let cachedStats: { data: UnifiedAttendanceStats; expiresAt: number } | null = null;
+let inFlightStatsPromise: Promise<UnifiedAttendanceStats> | null = null;
+
+let cachedSnapshot: { data: UnifiedStudentSnapshot; expiresAt: number } | null = null;
+let inFlightSnapshotPromise: Promise<UnifiedStudentSnapshot> | null = null;
+
+export function invalidateUnifiedStatsCache() {
+  cachedStats = null;
+  cachedSnapshot = null;
+}
+
 /**
  * Single source of truth for attendance stats across the entire application.
  * Returns exact counts without duplicate multiplication.
  */
-export async function fetchUnifiedAttendanceStats(): Promise<UnifiedAttendanceStats> {
+export async function fetchUnifiedAttendanceStats(forceFresh = false): Promise<UnifiedAttendanceStats> {
+  const now = Date.now();
+  if (!forceFresh && cachedStats && cachedStats.expiresAt > now) {
+    return cachedStats.data;
+  }
+  if (!forceFresh && inFlightStatsPromise) {
+    return inFlightStatsPromise;
+  }
+
   const { startIso, localDateStr, utcDateStr } = getTodayRange();
 
-  try {
-    const [registeredRes, descriptorsRes, todayRes, gateRes] = await Promise.all([
+  inFlightStatsPromise = (async () => {
+    try {
+      const [registeredRes, descriptorsRes, todayRes, gateRes] = await Promise.all([
       supabase
         .from('attendance_records')
         .select('id, user_id, device_info, category, student_id, student_name')
@@ -253,13 +273,15 @@ export async function fetchUnifiedAttendanceStats(): Promise<UnifiedAttendanceSt
     const attendanceRate =
       totalRegistered > 0 ? Math.round(((totalPresent + totalLate) / totalRegistered) * 100) : 0;
 
-    return {
+    const result: UnifiedAttendanceStats = {
       totalRegistered,
       presentToday: totalPresent,
       lateToday: totalLate,
       absentToday,
       attendanceRate,
     };
+    cachedStats = { data: result, expiresAt: Date.now() + 15000 };
+    return result;
   } catch (err) {
     console.error('[attendanceStatsHelper] Error calculating attendance stats:', err);
     return {
@@ -269,16 +291,30 @@ export async function fetchUnifiedAttendanceStats(): Promise<UnifiedAttendanceSt
       absentToday: 0,
       attendanceRate: 0,
     };
+  } finally {
+    inFlightStatsPromise = null;
   }
+  })();
+
+  return inFlightStatsPromise;
 }
 
 /**
  * Unified per-student attendance snapshot for Admin & Teacher views.
  * Uses registered users as source-of-truth roster and merges Attendance + Gate Mode records.
  */
-export async function fetchUnifiedStudentSnapshot(): Promise<UnifiedStudentSnapshot> {
+export async function fetchUnifiedStudentSnapshot(forceFresh = false): Promise<UnifiedStudentSnapshot> {
+  const now = Date.now();
+  if (!forceFresh && cachedSnapshot && cachedSnapshot.expiresAt > now) {
+    return cachedSnapshot.data;
+  }
+  if (!forceFresh && inFlightSnapshotPromise) {
+    return inFlightSnapshotPromise;
+  }
+
   const { startIso, localDateStr, utcDateStr } = getTodayRange();
 
+  inFlightSnapshotPromise = (async () => {
   try {
     const [registeredRes, descriptorsRes, todayRes, gateRes] = await Promise.all([
       supabase
@@ -370,7 +406,7 @@ export async function fetchUnifiedStudentSnapshot(): Promise<UnifiedStudentSnaps
     const attendanceRate =
       totalRegistered > 0 ? Math.round(((presentToday + lateToday) / totalRegistered) * 100) : 0;
 
-    return {
+    const result: UnifiedStudentSnapshot = {
       totalRegistered,
       presentToday,
       lateToday,
@@ -378,6 +414,8 @@ export async function fetchUnifiedStudentSnapshot(): Promise<UnifiedStudentSnaps
       attendanceRate,
       statusesByEmployeeId,
     };
+    cachedSnapshot = { data: result, expiresAt: Date.now() + 15000 };
+    return result;
   } catch (err) {
     console.error('[attendanceStatsHelper] Error fetching student snapshot:', err);
     return {
@@ -388,5 +426,10 @@ export async function fetchUnifiedStudentSnapshot(): Promise<UnifiedStudentSnaps
       attendanceRate: 0,
       statusesByEmployeeId: {},
     };
+  } finally {
+    inFlightSnapshotPromise = null;
   }
+  })();
+
+  return inFlightSnapshotPromise;
 }

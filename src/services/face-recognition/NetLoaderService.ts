@@ -91,15 +91,40 @@ export function loadNet(name: NetName): Promise<void> {
   return task;
 }
 
+export const ATTENDANCE_NETS: NetName[] = [
+  'tinyFaceDetector',
+  'faceLandmark68Net',
+  'faceRecognitionNet',
+];
+
 /**
- * Load several nets. Loads run SEQUENTIALLY so a cold cache never has to fetch
- * four models' weight shards at the same time — that parallel burst is what
- * made the very first Face ID session stall.
+ * Load several nets with controlled HTTP/2 concurrency (2 concurrent downloads)
+ * and optional progress notifications.
  */
-export async function loadNets(names: NetName[]): Promise<void> {
-  for (const name of names) {
-    if (getNet(name).isLoaded) continue;
-    await loadNet(name);
+export async function loadNets(
+  names: NetName[],
+  onProgress?: (loaded: number, total: number, currentName: string) => void
+): Promise<void> {
+  const unloaded = names.filter(n => !isNetLoaded(n));
+  if (unloaded.length === 0) {
+    onProgress?.(names.length, names.length, 'complete');
+    return;
+  }
+
+  let completed = names.length - unloaded.length;
+  onProgress?.(completed, names.length, unloaded[0] || 'loading');
+
+  // Use concurrency of 2 to take advantage of HTTP/2 multiplexing without socket saturation
+  const CONCURRENCY = 2;
+  for (let i = 0; i < unloaded.length; i += CONCURRENCY) {
+    const chunk = unloaded.slice(i, i + CONCURRENCY);
+    await Promise.all(
+      chunk.map(async (name) => {
+        await loadNet(name);
+        completed++;
+        onProgress?.(completed, names.length, name);
+      })
+    );
   }
 }
 

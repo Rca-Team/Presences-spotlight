@@ -17,10 +17,10 @@
  * was trained on aligned faces.
  */
 
-import * as faceapi from 'face-api.js';
 import { alignFace, isFaceFrontal } from './FaceAlignmentService';
 import { scoreFaceQuality } from './FaceQualityService';
-import { loadNets, areNetsLoaded, type NetName } from './NetLoaderService';
+import { loadNets, areNetsLoaded, ATTENDANCE_NETS, type NetName } from './NetLoaderService';
+import * as faceapi from 'face-api.js';
 
 // ─── state ───────────────────────────────────────────────────────────────────
 
@@ -33,6 +33,35 @@ const CORE_NETS: NetName[] = [
 const GATE_NETS: NetName[] = ['ssdMobilenetv1', 'faceLandmark68Net', 'faceRecognitionNet'];
 
 let loadPromise: Promise<void> | null = null;
+let attendanceLoadPromise: Promise<void> | null = null;
+
+/**
+ * Fast attendance scanner model loader.
+ * Loads only TinyFaceDetector + Landmarks + RecognitionNet (7 MB total),
+ * skipping the heavy 5.4 MB SSD MobileNet model.
+ */
+export async function loadAttendanceModels(
+  onProgress?: (percent: number, currentNet: string) => void
+): Promise<void> {
+  if (areNetsLoaded(ATTENDANCE_NETS)) {
+    onProgress?.(100, 'ready');
+    return;
+  }
+  if (attendanceLoadPromise) return attendanceLoadPromise;
+
+  attendanceLoadPromise = loadNets(ATTENDANCE_NETS, (loaded, total, currentName) => {
+    const pct = Math.round((loaded / total) * 100);
+    onProgress?.(pct, currentName);
+  }).finally(() => {
+    attendanceLoadPromise = null;
+  });
+
+  return attendanceLoadPromise;
+}
+
+export function areAttendanceModelsLoaded(): boolean {
+  return areNetsLoaded(ATTENDANCE_NETS);
+}
 
 // ─── model loading ───────────────────────────────────────────────────────────
 

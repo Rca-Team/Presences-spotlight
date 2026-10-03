@@ -333,6 +333,34 @@ const AdminFacesList: React.FC<AdminFacesListProps> = ({
           })
           .filter((face): face is RegisteredFace => face !== null);
 
+        // Also fetch from profiles table to ensure any directly enrolled student is included
+        const { data: profileStudents } = await supabase
+          .from('profiles')
+          .select('id, user_id, full_name, display_name, admission_number, employee_id, class, section, avatar_url, photo_url, role')
+          .or('role.eq.student,admission_number.not.is.null');
+
+        (profileStudents || []).forEach(prof => {
+          const empId = (prof.admission_number || prof.employee_id || '').toString().trim();
+          const pName = prof.full_name || prof.display_name || '';
+          if (!pName || pName === 'Unknown' || pName === 'User') return;
+          const key = empId ? `emp:${empId.toLowerCase()}` : `prof:${prof.id}`;
+          if (seenKeys.has(key)) return;
+          seenKeys.add(key);
+
+          const classSec = prof.class && prof.section ? `${prof.class}-${prof.section}` : (prof.class || 'N/A');
+          processedFaces.push({
+            id: prof.id || prof.user_id || `prof-${empId}`,
+            user_id: prof.user_id || prof.id,
+            name: pName,
+            employee_id: empId || prof.user_id || prof.id,
+            department: classSec,
+            position: 'Student',
+            image_url: prof.avatar_url || prof.photo_url || '',
+            total_attendance: 0,
+            last_attendance: 'Never',
+          });
+        });
+
         const resolvedFaces = await Promise.all(
           processedFaces.map(async (face) => ({
             ...face,
@@ -447,22 +475,29 @@ const AdminFacesList: React.FC<AdminFacesListProps> = ({
     try {
       const { data, error } = await supabase
         .from('attendance_records')
-        .select('timestamp, status, student_id, device_info')
+        .select('timestamp, status, student_id, user_id, device_info')
         .in('status', ['present', 'late', 'unauthorized'])
         .limit(10000);
 
       if (error || !data) return;
 
       const employeeIdSet = new Set(faceList.map(f => f.employee_id).filter(Boolean));
+      const userIdSet = new Set(faceList.map(f => f.user_id).filter(Boolean) as string[]);
       const countsByEmp: Record<string, Set<string>> = {};
 
       data.forEach(record => {
         const m = (record.device_info as any)?.metadata || {};
         const emp = String(m.employee_id || (record.device_info as any)?.employee_id || record.student_id || '').trim();
+        const uid = String(record.user_id || '').trim();
+        const day = new Date(record.timestamp).toLocaleDateString();
+
         if (emp && employeeIdSet.has(emp)) {
           if (!countsByEmp[emp]) countsByEmp[emp] = new Set();
-          const day = new Date(record.timestamp).toLocaleDateString();
           countsByEmp[emp].add(day);
+        }
+        if (uid && userIdSet.has(uid)) {
+          if (!countsByEmp[uid]) countsByEmp[uid] = new Set();
+          countsByEmp[uid].add(day);
         }
       });
 
@@ -474,7 +509,7 @@ const AdminFacesList: React.FC<AdminFacesListProps> = ({
       setAttendanceCounts(countsMap);
       setFaces(prev => prev.map(face => ({
         ...face,
-        total_attendance: countsMap[face.employee_id] || 0
+        total_attendance: countsMap[face.employee_id] || (face.user_id ? countsMap[face.user_id] : 0) || 0
       })));
     } catch (error) {
       console.error('Error batch fetching attendance counts:', error);
