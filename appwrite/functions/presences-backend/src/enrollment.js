@@ -34,7 +34,23 @@ export function createEnrollmentService({ db, databaseId = 'presences_db', sms, 
     try { return await run(); } finally { await db.deleteDocument(databaseId, STATE, id); }
   };
   const audit = (event, student, method = '') => save(token().slice(0, 36), 'audit', { event, student, method, at: now() }, now() + 90 * DAY);
-  const profileRow = p => ({ name: p.full_name || p.display_name || '', admission_number: p.admission_number || p.employee_id || '', class: p.class || '', section: p.section || '', father_name: p.father_name || '', mother_name: p.mother_name || '', parent_phone: phoneNumber(p.parent_phone), date_of_birth: p.date_of_birth || '', address: p.address || '' });
+  const profileRow = p => {
+    let meta = {};
+    try { if (p.metadata) meta = typeof p.metadata === 'string' ? JSON.parse(p.metadata) : p.metadata; } catch (_) {}
+    const rawPhone = p.parent_phone || p.phone || meta.parent_phone || meta.phone || '';
+    const rawDob = p.date_of_birth || meta.date_of_birth || meta.dob || '';
+    return {
+      name: p.full_name || p.display_name || meta.name || '',
+      admission_number: p.admission_number || p.employee_id || meta.admission_number || meta.employee_id || '',
+      class: p.class || meta.class || '',
+      section: p.section || meta.section || '',
+      father_name: p.father_name || meta.father_name || '',
+      mother_name: p.mother_name || meta.mother_name || '',
+      parent_phone: phoneNumber(rawPhone),
+      date_of_birth: rawDob ? normalizeDob(rawDob) : '',
+      address: p.address || meta.address || ''
+    };
+  };
   async function profilesFor(admission) {
     const result = await db.listDocuments(databaseId, 'profiles', [Query.or([Query.equal('admission_number', admission), Query.equal('employee_id', admission)]), Query.limit(3)]);
     if (result.documents.length > 1) reject(409, 'School staff must resolve duplicate student records.');
@@ -197,11 +213,16 @@ export function createEnrollmentService({ db, databaseId = 'presences_db', sms, 
 
       const registeredPhone = phoneNumber(student.parent_phone);
       const phoneMatches = registeredPhone && registeredPhone === phone;
-      const dobMatches = Boolean(student.date_of_birth) && normalizeDob(dob) === normalizeDob(student.date_of_birth);
+      const normalizedInputDob = normalizeDob(dob);
+      const dobMatches = !student.date_of_birth || normalizeDob(student.date_of_birth) === normalizedInputDob;
 
       if (!phoneMatches || !dobMatches) {
         await audit('verification-failed', student.admission_number, 'credentials');
         reject(400, 'Details do not match school records. Check admission number, registered phone, and date of birth.');
+      }
+
+      if (!student.date_of_birth && normalizedInputDob) {
+        student.date_of_birth = normalizedInputDob;
       }
 
       await audit('verified-credentials', student.admission_number, 'credentials');
