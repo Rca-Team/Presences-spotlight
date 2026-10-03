@@ -15,7 +15,7 @@ for (const table of tables.members) {
     if (name === 'id') continue;
     const text = field.type.getText(parsed).replace(/\s+/g,'');
     const type = /^(boolean)(\|null)?$/.test(text) ? 'boolean' : /^(number)(\|null)?$/.test(text) ? 'double' : 'string';
-    fields.set(name,{type,size: /Json|\[\]/.test(text) ? 65535 : /url|content|message|description|notes/.test(name) ? 8192 : 1024});
+    fields.set(name,{type,size: /Json|\[\]/.test(text) ? 65535 : /url|content|message|description|notes/.test(name) ? 2048 : 256});
   }
   schema.set(table.name.getText(parsed).replace(/["']/g,''),fields);
 }
@@ -30,7 +30,7 @@ for (const match of legacy.matchAll(/CREATE TABLE IF NOT EXISTS public\.(\w+)\s*
     const field = line.trim().match(/^(\w+)\s+(DOUBLE PRECISION|[\w.]+(?:\([^)]*\))?)(\[\])?/i);
     if (!field || ['id','unique','constraint','primary','foreign','check'].includes(field[1].toLowerCase()) || fields.has(field[1])) continue;
     const t=field[2].toLowerCase();
-    fields.set(field[1],{type:t==='boolean'?'boolean':/^(integer|int|bigint|real|float|double|numeric)/.test(t)?'double':'string',size:/json|vector/.test(t)||field[3]?65535:8192});
+    fields.set(field[1],{type:t==='boolean'?'boolean':/^(integer|int|bigint|real|float|double|numeric)/.test(t)?'double':'string',size:/json|vector/.test(t)||field[3]?65535:/url|content|message|description|notes/.test(field[1])?2048:256});
   }
   schema.set(match[1],fields);
 }
@@ -42,6 +42,7 @@ schema.set('realtime_messages',new Map([
   ['sent_at',{type:'string',size:64}],['expires_at',{type:'string',size:64}],
 ]));
 const key = process.env.APPWRITE_API_KEY;
+if (!key) throw new Error('APPWRITE_API_KEY must be provided through the environment.');
 const client = new Client().setEndpoint(process.env.APPWRITE_ENDPOINT || 'https://sgp.cloud.appwrite.io/v1').setProject(process.env.APPWRITE_PROJECT_ID || '6abfd34f000604fcf074').setKey(key);
 const db = new Databases(client);
 const databaseId = 'presences_db';

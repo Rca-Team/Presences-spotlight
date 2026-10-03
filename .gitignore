@@ -44,4 +44,5 @@ __pycache__/
 supabase/.temp/
 .vercel
 .next
+appwrite/functions/*.tar.gz
 

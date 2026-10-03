@@ -1,10 +1,12 @@
 # Appwrite migration repair
 
-Local fixes compile and have adapter/backend regression coverage. Live deployment has not been applied.
+Local fixes compile and have adapter/backend regression coverage. The approved live schema repair and core backend deployment were applied on October 3, 2026.
+
+`presences-backend` deployment `6ac0bef04d97551e2080` is ready and active. Its execution permissions are signed-in users only. A live execution without a user JWT completed with HTTP 401. All attributes were available after repair; ordinary string allocations were reduced to fit Appwrite collection capacity, while JSON field capacity was preserved. The newly added attendance notes field is limited to 512 characters after checking stored values fit.
 
 ## Prepared schema change
 
-Run `node scripts/repair-appwrite-schema.mjs` for a read-only refresh. The current plan in `appwrite-schema-report.json` adds 222 missing attributes to existing collections and creates seven missing collections with their attributes: `gv_camera_zones`, `gv_tracks`, `timetable_slots`, `system_notifications`, `device_tokens`, `attendance_session_events`, and `realtime_messages`.
+Run `node scripts/repair-appwrite-schema.mjs` for a read-only refresh, providing APPWRITE_API_KEY through the environment. The repair created seven missing collections with their attributes: `gv_camera_zones`, `gv_tracks`, `timetable_slots`, `system_notifications`, `device_tokens`, `attendance_session_events`, and `realtime_messages`, and added missing attributes to existing collections.
 
 New collections use document security. New business collections grant collection read/create to trusted admin, principal, and teacher labels. The realtime collection grants no collection-wide permissions; backend writes assign document permissions. Existing records, attribute types, and existing collection permissions are not changed. Existing permissive collection permissions need a separate verified authorization migration.
 

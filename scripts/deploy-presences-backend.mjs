@@ -9,6 +9,7 @@ if (!process.argv.includes('--apply')) {
   process.exit(0);
 }
 const key=process.env.APPWRITE_API_KEY;
+if (!key) throw new Error('APPWRITE_API_KEY must be provided through the environment.');
 const client=new Client().setEndpoint('https://sgp.cloud.appwrite.io/v1').setProject('6abfd34f000604fcf074').setKey(key);
 const functions=new Functions(client);
 const functionId='presences-backend';
