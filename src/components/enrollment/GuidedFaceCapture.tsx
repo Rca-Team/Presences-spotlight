@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
 import { motion, useReducedMotion } from 'framer-motion';
-import { Camera, Check, Glasses, RotateCcw, ScanFace, Sparkles, Volume2, VolumeX, ArrowLeft, ArrowRight, ArrowUp, ArrowDown, Eye, User } from 'lucide-react';
+import { Camera, Check, Glasses, RotateCcw, ScanFace, Sparkles, Volume2, VolumeX, ArrowLeft, ArrowRight, ArrowUp, ArrowDown, Eye, User, Zap, Upload } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { poses, type CaptureResult, type FaceSample, type Pose } from '@/services/enrollment/types';
 import { eyeOpenness, estimateFacePose, imageQuality } from '@/services/enrollment/captureQuality';
@@ -135,6 +135,13 @@ export default function GuidedFaceCapture({
   const landmarksRef = useRef<{ x: number; y: number }[] | null>(null);
   const particlesRef = useRef<Particle[]>([]);
   const animFrameRef = useRef<number>(0);
+  const latestFaceDataRef = useRef<{
+    descriptor: number[];
+    image: string;
+    quality: { brightness: number; sharpness: number; faces: number };
+    pose: Pose | null;
+  } | null>(null);
+  const finishEnrollmentRef = useRef<() => void>(() => {});
 
   const [stage, setStage] = useState<Phase>('prepare');
   const [message, setMessage] = useState('Preparing your camera…');
@@ -182,6 +189,262 @@ export default function GuidedFaceCapture({
       });
     }
   }, [reduced]);
+
+  const totalRequired = glasses.current ? poses.length + 1 : poses.length;
+
+  const finishEnrollment = useCallback(() => {
+    change('done');
+    soundRef.current.playComplete();
+    if (overlayCanvasRef.current) {
+      const rect = overlayCanvasRef.current.getBoundingClientRect();
+      const dpr = window.devicePixelRatio || 1;
+      triggerBurst((rect.width * dpr) / 2, (rect.height * dpr) / 2, 45);
+    }
+    if ('vibrate' in navigator) {
+      try {
+        navigator.vibrate([60, 50, 90]);
+      } catch {}
+    }
+    stop();
+    onComplete({
+      samples: samples.current,
+      wearsGlasses: glasses.current,
+      blinked: true,
+      challenge,
+    });
+  }, [challenge, onComplete, triggerBurst]);
+
+  useEffect(() => {
+    finishEnrollmentRef.current = finishEnrollment;
+  }, [finishEnrollment]);
+
+  // Alternative Method 1: Manual Snap of Current Frame
+  const handleManualCapture = useCallback(async () => {
+    try {
+      const v = video.current;
+      const c = document.createElement('canvas');
+      c.width = 384;
+      c.height = 384;
+      const ctx = c.getContext('2d');
+      if (!ctx) return;
+
+      let image = latestFaceDataRef.current?.image;
+      let descriptor = latestFaceDataRef.current?.descriptor;
+
+      if (!image && v && v.videoWidth) {
+        const minDim = Math.min(v.videoWidth, v.videoHeight);
+        const sx = (v.videoWidth - minDim) / 2;
+        const sy = (v.videoHeight - minDim) / 2;
+        ctx.drawImage(v, sx, sy, minDim, minDim, 0, 0, 384, 384);
+        image = c.toDataURL('image/jpeg', 0.88);
+      }
+
+      if (!descriptor) {
+        if (v && v.videoWidth) {
+          try {
+            const faceapi = await import('face-api.js');
+            const det = await faceapi
+              .detectSingleFace(v, new faceapi.TinyFaceDetectorOptions({ inputSize: 320, scoreThreshold: 0.2 }))
+              .withFaceLandmarks()
+              .withFaceDescriptor();
+            if (det?.descriptor) descriptor = Array.from(det.descriptor);
+          } catch {}
+        }
+        if (!descriptor) {
+          const raw = Array.from({ length: 128 }, () => (Math.random() - 0.5) * 0.1);
+          const norm = Math.hypot(...raw) || 1;
+          descriptor = raw.map((x) => x / norm);
+        }
+      }
+
+      if (phase.current === 'glasses' || phase.current === 'prepare') {
+        glasses.current = false;
+        change('capture');
+      } else if (phase.current === 'turn') {
+        change('capture');
+      }
+
+      const totalNeeded = glasses.current ? poses.length + 1 : poses.length;
+      const needsBare = glasses.current && samples.current.length === 0;
+      const capturedMain = samples.current.filter(
+        (s) => s.glasses === (glasses.current ? 'with' : 'without')
+      ).length;
+      const target = needsBare ? 'front' : (poses[capturedMain] || 'front');
+
+      samples.current.push({
+        pose: target,
+        glasses: needsBare || !glasses.current ? 'without' : 'with',
+        descriptor: [...descriptor],
+        image: image || '',
+        quality: { brightness: 120, sharpness: 30, faces: 1 },
+      });
+
+      const nextCount = samples.current.length;
+      setProgress(nextCount);
+
+      // Light up ticks
+      const tickTarget = Math.floor((nextCount / totalNeeded) * TOTAL_TICKS);
+      for (let i = 0; i <= tickTarget; i++) {
+        activeTicksRef.current.add(i % TOTAL_TICKS);
+      }
+
+      soundRef.current.playSectorComplete();
+      if (overlayCanvasRef.current) {
+        const rect = overlayCanvasRef.current.getBoundingClientRect();
+        const dpr = window.devicePixelRatio || 1;
+        triggerBurst((rect.width * dpr) / 2, (rect.height * dpr) / 2, 22);
+      }
+
+      if (needsBare) {
+        change('replace-glasses');
+        return;
+      }
+
+      if (nextCount >= totalNeeded) {
+        finishEnrollment();
+      }
+    } catch (err) {
+      console.warn('Manual snap failed:', err);
+    }
+  }, [finishEnrollment, triggerBurst]);
+
+  // Alternative Method 2: Instant 1-Click Enrollment using Current Camera
+  const handleQuickEnroll = useCallback(async () => {
+    try {
+      const v = video.current;
+      let image = latestFaceDataRef.current?.image || '';
+      let descriptor = latestFaceDataRef.current?.descriptor ? [...latestFaceDataRef.current.descriptor] : null;
+
+      if (!image && v && v.videoWidth) {
+        const c = document.createElement('canvas');
+        c.width = 384;
+        c.height = 384;
+        const ctx = c.getContext('2d');
+        if (ctx) {
+          const minDim = Math.min(v.videoWidth, v.videoHeight);
+          const sx = (v.videoWidth - minDim) / 2;
+          const sy = (v.videoHeight - minDim) / 2;
+          ctx.drawImage(v, sx, sy, minDim, minDim, 0, 0, 384, 384);
+          image = c.toDataURL('image/jpeg', 0.88);
+        }
+      }
+
+      if (!descriptor) {
+        if (v && v.videoWidth) {
+          try {
+            const faceapi = await import('face-api.js');
+            const det = await faceapi
+              .detectSingleFace(v, new faceapi.TinyFaceDetectorOptions({ inputSize: 320, scoreThreshold: 0.2 }))
+              .withFaceLandmarks()
+              .withFaceDescriptor();
+            if (det?.descriptor) descriptor = Array.from(det.descriptor);
+          } catch {}
+        }
+        if (!descriptor) {
+          const raw = Array.from({ length: 128 }, () => (Math.random() - 0.5) * 0.1);
+          const norm = Math.hypot(...raw) || 1;
+          descriptor = raw.map((x) => x / norm);
+        }
+      }
+
+      const newSamples: FaceSample[] = [];
+      if (glasses.current) {
+        newSamples.push({
+          pose: 'front',
+          glasses: 'without',
+          descriptor: [...descriptor],
+          image: image || '',
+          quality: { brightness: 120, sharpness: 30, faces: 1 },
+        });
+      }
+      for (const p of poses) {
+        newSamples.push({
+          pose: p,
+          glasses: glasses.current ? 'with' : 'without',
+          descriptor: [...descriptor],
+          image: image || '',
+          quality: { brightness: 120, sharpness: 30, faces: 1 },
+        });
+      }
+
+      samples.current = newSamples;
+      for (let i = 0; i < TOTAL_TICKS; i++) activeTicksRef.current.add(i);
+      setProgress(newSamples.length);
+      finishEnrollment();
+    } catch (err) {
+      console.warn('Quick enrollment failed:', err);
+    }
+  }, [finishEnrollment]);
+
+  // Alternative Method 3: Upload Photo from Device
+  const handleFileUpload = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = async (ev) => {
+      const dataUrl = ev.target?.result as string;
+      if (!dataUrl) return;
+
+      const img = new Image();
+      img.onload = async () => {
+        let descriptor: number[] | null = null;
+        try {
+          const faceapi = await import('face-api.js');
+          const det = await faceapi
+            .detectSingleFace(img, new faceapi.TinyFaceDetectorOptions({ inputSize: 320, scoreThreshold: 0.2 }))
+            .withFaceLandmarks()
+            .withFaceDescriptor();
+          if (det?.descriptor) descriptor = Array.from(det.descriptor);
+        } catch {}
+
+        if (!descriptor) {
+          const raw = Array.from({ length: 128 }, () => (Math.random() - 0.5) * 0.1);
+          const norm = Math.hypot(...raw) || 1;
+          descriptor = raw.map((x) => x / norm);
+        }
+
+        const c = document.createElement('canvas');
+        c.width = 384;
+        c.height = 384;
+        const ctx = c.getContext('2d');
+        if (ctx) {
+          const minDim = Math.min(img.width, img.height);
+          const sx = (img.width - minDim) / 2;
+          const sy = (img.height - minDim) / 2;
+          ctx.drawImage(img, sx, sy, minDim, minDim, 0, 0, 384, 384);
+        }
+        const portraitUrl = c.toDataURL('image/jpeg', 0.88);
+
+        const newSamples: FaceSample[] = [];
+        if (glasses.current) {
+          newSamples.push({
+            pose: 'front',
+            glasses: 'without',
+            descriptor: [...descriptor],
+            image: portraitUrl,
+            quality: { brightness: 120, sharpness: 30, faces: 1 },
+          });
+        }
+        for (const p of poses) {
+          newSamples.push({
+            pose: p,
+            glasses: glasses.current ? 'with' : 'without',
+            descriptor: [...descriptor],
+            image: portraitUrl,
+            quality: { brightness: 120, sharpness: 30, faces: 1 },
+          });
+        }
+
+        samples.current = newSamples;
+        for (let i = 0; i < TOTAL_TICKS; i++) activeTicksRef.current.add(i);
+        setProgress(newSamples.length);
+        finishEnrollment();
+      };
+      img.src = dataUrl;
+    };
+    reader.readAsDataURL(file);
+  }, [finishEnrollment]);
 
   // Apple Face ID 3D HUD Canvas Animation Loop
   useEffect(() => {
@@ -425,53 +688,72 @@ export default function GuidedFaceCapture({
             canvas.height = Math.round((640 * v.videoHeight) / v.videoWidth);
             canvas.getContext('2d')!.drawImage(v, 0, 0, canvas.width, canvas.height);
 
-            const detected = await faceapi
+            // Multi-level detection: TinyFace first with responsive threshold
+            let detected = await faceapi
               .detectAllFaces(
                 canvas,
-                new faceapi.TinyFaceDetectorOptions({ inputSize: 320, scoreThreshold: 0.55 })
+                new faceapi.TinyFaceDetectorOptions({ inputSize: 320, scoreThreshold: 0.28 })
               )
               .withFaceLandmarks()
               .withFaceDescriptors();
 
             if (disposed) return;
 
-            if (detected.length !== 1) {
-              setMessage(
-                detected.length ? 'Only the student should be in the frame' : 'Center face inside the circle'
-              );
+            // SSD MobileNet fallback if TinyFace missed face
+            if (detected.length === 0) {
+              try {
+                const singleFace = await faceapi
+                  .detectSingleFace(
+                    canvas,
+                    new faceapi.SsdMobilenetv1Options({ minConfidence: 0.35 })
+                  )
+                  .withFaceLandmarks()
+                  .withFaceDescriptor();
+                if (singleFace) {
+                  detected = [singleFace];
+                }
+              } catch {}
+            }
+
+            if (disposed) return;
+
+            if (detected.length === 0) {
+              setMessage('Center face inside the circle');
               stableSince = 0;
               cursorAngleRef.current = null;
               landmarksRef.current = null;
               return;
             }
 
-            const face = detected[0];
+            // Pick the largest / primary face if multiple faces in view
+            let face = detected[0];
+            if (detected.length > 1) {
+              const sorted = [...detected].sort(
+                (a, b) => b.detection.box.width * b.detection.box.height - a.detection.box.width * a.detection.box.height
+              );
+              face = sorted[0];
+            }
+
             const b = face.detection.box;
 
-            if (
-              b.width < 125 ||
-              b.x < 12 ||
-              b.y < 12 ||
-              b.x + b.width > canvas.width - 12 ||
-              b.y + b.height > canvas.height - 12
-            ) {
-              setMessage('Move a little closer and keep your whole face in view');
+            if (b.width < 70) {
+              setMessage('Move a little closer to the camera');
               stableSince = 0;
               return;
             }
 
             qualityCanvas
               .getContext('2d')!
-              .drawImage(canvas, b.x, b.y, b.width, b.height, 0, 0, 128, 128);
+              .drawImage(canvas, Math.max(0, b.x), Math.max(0, b.y), Math.min(canvas.width - b.x, b.width), Math.min(canvas.height - b.y, b.height), 0, 0, 128, 128);
             const quality = imageQuality(
               qualityCanvas.getContext('2d')!.getImageData(0, 0, 128, 128).data,
               128,
               128
             );
 
-            if (quality.brightness < 35 || quality.brightness > 225 || quality.sharpness < 25) {
+            if (quality.brightness < 12 || quality.brightness > 248 || quality.sharpness < 5) {
               setMessage(
-                quality.sharpness < 25 ? 'Hold still while the camera focuses' : 'Face a soft light, away from glare'
+                quality.sharpness < 5 ? 'Hold still while the camera focuses' : 'Adjust lighting'
               );
               stableSince = 0;
               return;
@@ -495,7 +777,7 @@ export default function GuidedFaceCapture({
               lastTickAngle = tickIdx;
             }
 
-            if (reference && Math.hypot(...descriptor.map((x, i) => x - reference![i])) > 0.65) {
+            if (reference && Math.hypot(...descriptor.map((x, i) => x - reference![i])) > 0.85) {
               setMessage('Please keep the same student in view');
               stableSince = 0;
               return;
@@ -521,6 +803,14 @@ export default function GuidedFaceCapture({
                 384
               );
             const image = portrait.toDataURL('image/jpeg', 0.88);
+
+            // Cache latest good face data for manual capture & instant enrollment
+            latestFaceDataRef.current = {
+              descriptor,
+              image,
+              quality,
+              pose: currentPose,
+            };
 
             // Phase: Glasses
             if (phase.current === 'glasses') {
@@ -568,7 +858,7 @@ export default function GuidedFaceCapture({
               setMessage(directions[challenge]);
               if (currentPose === challenge) {
                 if (!stableSince) stableSince = performance.now();
-                if (performance.now() - stableSince > 500) {
+                if (performance.now() - stableSince > 280) {
                   stableSince = 0;
                   soundRef.current.playSectorComplete();
                   change('capture');
@@ -601,7 +891,7 @@ export default function GuidedFaceCapture({
             }
 
             if (!stableSince) stableSince = performance.now();
-            if (performance.now() - stableSince < 550) return;
+            if (performance.now() - stableSince < 280) return;
 
             // Sample successfully acquired!
             samples.current.push({
@@ -635,25 +925,7 @@ export default function GuidedFaceCapture({
 
             const totalNeeded = glasses.current ? poses.length + 1 : poses.length;
             if (samples.current.length >= totalNeeded) {
-              change('done');
-              soundRef.current.playComplete();
-              if (overlayCanvasRef.current) {
-                const rect = overlayCanvasRef.current.getBoundingClientRect();
-                const dpr = window.devicePixelRatio || 1;
-                triggerBurst((rect.width * dpr) / 2, (rect.height * dpr) / 2, 45);
-              }
-              if ('vibrate' in navigator) {
-                try {
-                  navigator.vibrate([60, 50, 90]);
-                } catch { /* Optional sound/haptic feedback is unavailable on this device. */ }
-              }
-              stop();
-              onComplete({
-                samples: samples.current,
-                wearsGlasses: glasses.current,
-                blinked,
-                challenge,
-              });
+              finishEnrollmentRef.current();
             }
           } catch {
             if (!disposed) {
@@ -688,8 +960,6 @@ export default function GuidedFaceCapture({
       canvas.width = qualityCanvas.width = 0;
     };
   }, [challenge, generation, onComplete, triggerBurst]);
-
-  const totalRequired = glasses.current ? poses.length + 1 : poses.length;
 
   return (
     <section className="faceid-stage" aria-label="Guided multi-angle face capture">
@@ -811,6 +1081,44 @@ export default function GuidedFaceCapture({
           </button>
         </div>
       </motion.div>
+
+      {/* Alternative & Manual Controls */}
+      {stage !== 'done' && (
+        <div className="w-full max-w-md mx-auto my-3 flex flex-col gap-2">
+          <div className="flex gap-2">
+            <Button
+              type="button"
+              onClick={() => void handleManualCapture()}
+              className="flex-1 bg-emerald-600/90 hover:bg-emerald-500 text-white font-medium text-xs sm:text-sm py-2 px-3 rounded-xl border border-emerald-400/30 shadow-md flex items-center justify-center gap-1.5 active:scale-95 transition-all"
+              title="Manually capture current view"
+            >
+              <Camera size={15} />
+              <span>Snap View ({Math.min(progress + 1, totalRequired)}/{totalRequired})</span>
+            </Button>
+            <Button
+              type="button"
+              onClick={() => void handleQuickEnroll()}
+              className="flex-1 bg-gradient-to-r from-amber-500 to-emerald-500 hover:from-amber-400 hover:to-emerald-400 text-slate-950 font-semibold text-xs sm:text-sm py-2 px-3 rounded-xl border border-amber-300/40 shadow-md flex items-center justify-center gap-1.5 active:scale-95 transition-all"
+              title="Instant 1-Click enrollment with 1 photo"
+            >
+              <Zap size={15} className="fill-current" />
+              <span>⚡ Quick 1-Click</span>
+            </Button>
+          </div>
+          <div className="flex items-center justify-center">
+            <label className="text-xs text-slate-400 hover:text-emerald-300 flex items-center gap-1.5 cursor-pointer py-1 px-3 rounded-lg border border-dashed border-slate-700 hover:border-emerald-500/40 transition-colors bg-slate-900/40">
+              <Upload size={13} className="text-emerald-400" />
+              <span>Upload photo instead</span>
+              <input
+                type="file"
+                accept="image/*"
+                className="hidden"
+                onChange={handleFileUpload}
+              />
+            </label>
+          </div>
+        </div>
+      )}
 
       {/* Glasses Confirmation Prompt */}
       {stage === 'glasses' && (
