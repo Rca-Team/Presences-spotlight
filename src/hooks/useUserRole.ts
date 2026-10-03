@@ -16,6 +16,8 @@ interface UseUserRoleReturn {
   refetch: () => Promise<void>;
 }
 
+const roleCache = new Map<string, UserRole>();
+
 export const useUserRole = (): UseUserRoleReturn => {
   const db = supabase as any;
   const [role, setRole] = useState<UserRole>(null);
@@ -35,6 +37,19 @@ export const useUserRole = (): UseUserRoleReturn => {
 
       setUserId(user.id);
 
+      if (roleCache.has(user.id)) {
+        setRole(roleCache.get(user.id)!);
+        setIsLoading(false);
+      }
+
+      // Fast check user_metadata for admin
+      if (user.user_metadata?.role === 'admin' || user.app_metadata?.role === 'admin') {
+        roleCache.set(user.id, 'admin');
+        setRole('admin');
+        setIsLoading(false);
+        return;
+      }
+
       // Fetch user roles safely without .single() to avoid 406 when no role exists
       const { data: userRoles } = await db
         .from('user_roles')
@@ -43,33 +58,22 @@ export const useUserRole = (): UseUserRoleReturn => {
 
       const rolesList: string[] = (userRoles || []).map((r: any) => r.role);
 
+      let resolved: UserRole = 'user';
       if (rolesList.includes('admin')) {
-        setRole('admin');
-        setIsLoading(false);
-        return;
+        resolved = 'admin';
+      } else if (rolesList.includes('principal')) {
+        resolved = 'principal';
+      } else if (rolesList.includes('guard') || rolesList.includes('security')) {
+        resolved = 'guard';
+      } else {
+        const teacherAccess = await hasTeacherAccess(user.id);
+        if (teacherAccess) {
+          resolved = 'teacher';
+        }
       }
 
-      if (rolesList.includes('principal')) {
-        setRole('principal');
-        setIsLoading(false);
-        return;
-      }
-
-      if (rolesList.includes('guard') || rolesList.includes('security')) {
-        setRole('guard');
-        setIsLoading(false);
-        return;
-      }
-
-      const teacherAccess = await hasTeacherAccess(user.id);
-      if (teacherAccess) {
-        setRole('teacher');
-        setIsLoading(false);
-        return;
-      }
-
-      // Default to user role
-      setRole('user');
+      roleCache.set(user.id, resolved);
+      setRole(resolved);
     } catch (error) {
       console.error('Error fetching user role:', error);
       setRole('user');
@@ -86,6 +90,7 @@ export const useUserRole = (): UseUserRoleReturn => {
       if (event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED') {
         fetchRole();
       } else if (event === 'SIGNED_OUT') {
+        roleCache.clear();
         setRole(null);
         setUserId(null);
       }

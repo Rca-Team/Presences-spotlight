@@ -60,11 +60,8 @@ export const AttendanceProvider: React.FC<{ children: React.ReactNode }> = ({ ch
           new Set(attendanceData.map((r: any) => r.user_id).filter(Boolean))
         ) as string[];
         if (userIds.length > 0) {
-          try {
-            await prefetchStudentCoverPhotos(userIds);
-          } catch {
-            /* ignore */
-          }
+          // Pre-warm student photos in background without blocking attendance state update
+          void prefetchStudentCoverPhotos(userIds).catch(() => {});
         }
 
         const processedRecords: AttendanceRecord[] = attendanceData.map((record: any) => {
@@ -135,7 +132,9 @@ export const AttendanceProvider: React.FC<{ children: React.ReactNode }> = ({ ch
   };
 
   useEffect(() => {
-    refreshAttendance();
+    const initTimer = setTimeout(() => {
+      refreshAttendance();
+    }, 120);
     
     let debounceTimer: any = null;
     const channel = supabase
@@ -162,6 +161,7 @@ export const AttendanceProvider: React.FC<{ children: React.ReactNode }> = ({ ch
     }, 60000);
     
     return () => {
+      clearTimeout(initTimer);
       if (debounceTimer) clearTimeout(debounceTimer);
       supabase.removeChannel(channel);
       clearInterval(intervalId);

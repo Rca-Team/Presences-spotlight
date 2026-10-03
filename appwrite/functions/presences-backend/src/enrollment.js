@@ -153,6 +153,31 @@ export function createEnrollmentService({ db, databaseId = 'presences_db', sms, 
       reject(404, 'Unknown staff action.');
     }
     await limit('ip:' + ip, 120, 3600000);
+    if (action === 'verify-student') {
+      await limit('verify-student-ip:' + ip, 20, 3600000);
+      const admission = String(body.admission || '').trim();
+      const phone = phoneNumber(body.phone);
+      const dob = String(body.dob || '').trim();
+      if (!admission || !phone || !dob) reject(400, 'Admission number, registered phone, and date of birth are all required.');
+
+      const student = await studentFor(admission);
+      if (!student) {
+        await limit('verify-student-fail:' + ip, 6, 3600000);
+        reject(404, 'No registered student matched these details. Please check with your school.');
+      }
+
+      const registeredPhone = phoneNumber(student.parent_phone);
+      const phoneMatches = registeredPhone && registeredPhone === phone;
+      const dobMatches = Boolean(student.date_of_birth) && normalizeDob(dob) === normalizeDob(student.date_of_birth);
+
+      if (!phoneMatches || !dobMatches) {
+        await audit('verification-failed', student.admission_number, 'credentials');
+        reject(400, 'Details do not match school records. Check admission number, registered phone, and date of birth.');
+      }
+
+      await audit('verified-credentials', student.admission_number, 'credentials');
+      return newSession(student, 'credentials');
+    }
     if (action === 'start') {
       await limit('start-ip:' + ip, 10, 3600000);
       const identifier = String(body.identifier || '').trim().slice(0, 80);

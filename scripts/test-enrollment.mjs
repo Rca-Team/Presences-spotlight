@@ -114,4 +114,12 @@ await test('Incorrect OTP blocks fallback, and repeated guesses are rate limited
   const r = await service({ action: 'resend', challenge: c.challenge }, { ip: 'otp-test' }); assert.equal(r.fallback, false);
   const verified = await service({ action: 'verify-otp', challenge: c.challenge, code: '123456' }, { ip: 'otp-test' }); assert.equal(verified.student.admission_number, 'A100');
 });
+await test('Direct credential verification binds session when admission, phone and dob match', async () => {
+  const s1 = { ...row, admission_number: 'A200', date_of_birth: '2010-05-15', parent_phone: '9414741664' };
+  await service({ action: 'staff.import', student: s1 }, admin);
+  const credSession = await service({ action: 'verify-student', admission: 'A200', phone: '9414741664', dob: '15/05/2010' }, { ip: 'direct' });
+  assert.equal(credSession.student.admission_number, 'A200');
+  await assert.rejects(() => service({ action: 'verify-student', admission: 'A200', phone: '9414741664', dob: '16/05/2010' }, { ip: 'direct' }), e => e.status === 400);
+  await assert.rejects(() => service({ action: 'verify-student', admission: 'A200', phone: '9999999999', dob: '15/05/2010' }, { ip: 'direct' }), e => e.status === 400);
+});
 console.log(`${passed} enrollment tests passed`);

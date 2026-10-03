@@ -17,19 +17,8 @@ export const avatars = new Avatars(client);
 export const functions = new Functions(client);
 export const realtime = new Realtime(client);
 
-// Run client.ping() once when the app starts so the user can confirm setup
-try {
-  client.ping().then(
-    (response) => {
-      console.log('[Appwrite] Ping successful:', response);
-    },
-    (error) => {
-      console.warn('[Appwrite] Ping response:', error?.message || error);
-    }
-  );
-} catch (e) {
-  console.warn('[Appwrite] Ping caught:', e);
-}
+// Client ping is available on-demand rather than blocking app startup
+
 
 export const APPWRITE_CONFIG = {
   endpoint: APPWRITE_ENDPOINT,

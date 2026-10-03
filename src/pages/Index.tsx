@@ -75,7 +75,6 @@ const cardTilt = {
 const Index = () => {
   const { liteMode } = usePerformanceMode();
   const { isTeacher, isAdminOrPrincipal, isLoading: isRoleLoading } = useUserRole();
-  const [isTeacherConfirmed, setIsTeacherConfirmed] = useState(false);
   const [activeProfile, setActiveProfile] = useState<null | {
     name: string;
     role: string;
@@ -93,34 +92,6 @@ const Index = () => {
     }
   }, [isTeacher, isAdminOrPrincipal, isRoleLoading, navigate]);
 
-  // If a logged-in teacher opens the app root /, directly route them to the Teacher Portal
-  useEffect(() => {
-    let isMounted = true;
-    const checkActiveTeacher = async () => {
-      try {
-        const { data: { user } } = await supabase.auth.getUser();
-        if (!user || !isMounted) return;
-
-        const [userRolesRes, hasAccess] = await Promise.all([
-          (supabase as any).from('user_roles').select('role').eq('user_id', user.id),
-          hasTeacherAccess(user.id),
-        ]);
-
-        const roles: string[] = (userRolesRes.data || []).map((r: any) => r.role);
-
-        if (roles.includes('teacher') || hasAccess) {
-          if (isMounted) {
-            setIsTeacherConfirmed(true);
-            navigate('/teacher', { replace: true });
-          }
-        }
-      } catch (e) {
-        // silent fallback
-      }
-    };
-    checkActiveTeacher();
-    return () => { isMounted = false; };
-  }, [navigate]);
 
   const modules = [
     { icon: Scan, label: 'Attendance', tone: 'bg-primary/20 text-primary', to: '/attendance' },
@@ -291,7 +262,7 @@ const Index = () => {
   };
 
   // NEVER show the home page to teachers (placed after all hooks to follow React rules)
-  if ((isTeacher && !isAdminOrPrincipal) || isTeacherConfirmed) {
+  if (isTeacher && !isAdminOrPrincipal) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-background">
         <div className="flex flex-col items-center gap-3">

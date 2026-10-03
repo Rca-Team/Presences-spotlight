@@ -364,7 +364,7 @@ function App() {
   const [showSplash, setShowSplash] = useState(() => {
     if (typeof window === 'undefined') return false;
     try {
-      if (sessionStorage.getItem('presence:splash-seen')) return false;
+      if (sessionStorage.getItem('presence:splash-seen') || localStorage.getItem('presence:splash-seen')) return false;
       const isStandalone =
         window.matchMedia?.('(display-mode: standalone)').matches ||
         (window.navigator as any).standalone === true;
@@ -427,6 +427,7 @@ function App() {
 
   const handleSplashComplete = () => {
     sessionStorage.setItem('presence:splash-seen', '1');
+    try { localStorage.setItem('presence:splash-seen', '1'); } catch {}
     setShowSplash(false);
   };
 
@@ -443,9 +444,9 @@ function App() {
             <HelmetProvider>
               <div className="premium-glass-app">
                 <BrowserRouter>
-                  <GlobalTelemetryTracker />
+                  {mountNonCritical && <GlobalTelemetryTracker />}
                   {showSplash && (
-                    <SplashAnimation onComplete={handleSplashComplete} duration={1800} />
+                    <SplashAnimation onComplete={handleSplashComplete} duration={600} />
                   )}
                   <RoyalScrollProvider>
                     <DesktopSlideProvider>

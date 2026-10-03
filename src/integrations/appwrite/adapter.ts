@@ -81,6 +81,26 @@ function sanitizeDocForSave(data: any): any {
   return clean;
 }
 
+interface CacheEntry {
+  data: { documents: any[]; total: number };
+  expiresAt: number;
+}
+
+const queryCache = new Map<string, CacheEntry>();
+const inFlightRequests = new Map<string, Promise<{ documents: any[]; total: number }>>();
+
+export function invalidateCollectionCache(collectionName?: string) {
+  if (!collectionName) {
+    queryCache.clear();
+    return;
+  }
+  for (const key of queryCache.keys()) {
+    if (key.startsWith(`${collectionName}:`)) {
+      queryCache.delete(key);
+    }
+  }
+}
+
 export class AppwriteQueryBuilder<T = any> implements PromiseLike<{ data: T | null; error: any; count?: number }> {
   private collectionName: string;
   private queries: string[] = [];
@@ -363,19 +383,46 @@ export class AppwriteQueryBuilder<T = any> implements PromiseLike<{ data: T | nu
     const boundedSingleRead = !all && !this.mutation && (this.isSingle || this.isMaybeSingle);
     if (!hasLimit) queries.push(Query.limit(boundedSingleRead ? 2 : 100));
 
-    try {
-      const response = await databases.listDocuments(DATABASE_ID, this.collectionName, queries);
-      const documents = [...response.documents];
-      if (!boundedSingleRead && (all || !hasLimit) && !queries.some(q => { try { return JSON.parse(q).method === 'offset'; } catch { return false; } })) {
-        while (documents.length < response.total) {
-          const page = await databases.listDocuments(DATABASE_ID, this.collectionName,
-            [...queries.filter(q => { try { return JSON.parse(q).method !== 'limit'; } catch { return false; } }), Query.limit(100), Query.offset(documents.length)]);
-          if (!page.documents.length) break;
-          documents.push(...page.documents);
-        }
+    const cacheKey = `${this.collectionName}:${JSON.stringify(queries)}:${boundedSingleRead ? 'single' : 'list'}`;
+    if (!this.mutation && !all) {
+      const cached = queryCache.get(cacheKey);
+      if (cached && cached.expiresAt > Date.now()) {
+        return { documents: [...cached.data.documents], total: cached.data.total };
       }
-      return { documents, total: response.total };
-    } catch (listErr: any) { throw listErr; }
+      if (inFlightRequests.has(cacheKey)) {
+        return inFlightRequests.get(cacheKey)!;
+      }
+    }
+
+    const fetchPromise = (async () => {
+      try {
+        const response = await databases.listDocuments(DATABASE_ID, this.collectionName, queries);
+        const documents = [...response.documents];
+        if (all && !boundedSingleRead && !queries.some(q => { try { return JSON.parse(q).method === 'offset'; } catch { return false; } })) {
+          while (documents.length < response.total) {
+            const page = await databases.listDocuments(DATABASE_ID, this.collectionName,
+              [...queries.filter(q => { try { return JSON.parse(q).method !== 'limit'; } catch { return false; } }), Query.limit(100), Query.offset(documents.length)]);
+            if (!page.documents.length) break;
+            documents.push(...page.documents);
+          }
+        }
+        const result = { documents, total: response.total };
+        if (!this.mutation && !all) {
+          const fastChanging = ['attendance_records', 'gate_entries', 'notifications', 'emergency_events'];
+          const ttl = fastChanging.includes(this.collectionName) ? 8000 : 30000;
+          queryCache.set(cacheKey, { data: result, expiresAt: Date.now() + ttl });
+        }
+        return result;
+      } finally {
+        inFlightRequests.delete(cacheKey);
+      }
+    })();
+
+    if (!this.mutation && !all) {
+      inFlightRequests.set(cacheKey, fetchPromise);
+    }
+
+    return fetchPromise;
   }
 
   private async run(): Promise<{ data: any; error: any; count?: number }> {
@@ -435,6 +482,7 @@ export class AppwriteQueryBuilder<T = any> implements PromiseLike<{ data: T | nu
           }
         }
         count = docs.length;
+        invalidateCollectionCache(this.collectionName);
       }
       docs = docs.map(normalizeDoc);
       if (this.headOnly && !this.mutation) return { data: null, error: null, count };
@@ -466,10 +514,11 @@ class AppwriteAuthClient {
   private cachedUser: any = null;
   private userRequest: Promise<any> | null = null;
   private last401Time = 0;
+  private lastValidatedTime = 0;
 
   private getAccount(): Promise<any> {
-    // If recently verified unauthenticated (within 4 seconds), skip redundant 401 network requests
-    if (Date.now() - this.last401Time < 4000) {
+    // If recently verified unauthenticated (within 20 seconds), skip redundant 401 network requests across the globe
+    if (Date.now() - this.last401Time < 20000) {
       return Promise.reject({ code: 401, message: 'Unauthenticated session' });
     }
     // All mounted listeners share the same in-flight account request.
@@ -493,6 +542,10 @@ class AppwriteAuthClient {
   }
 
   constructor() {
+    this.cachedUser = this.loadLocalAuth();
+    if (this.cachedUser) {
+      this.lastValidatedTime = Date.now();
+    }
     this.initSessionCheck();
   }
 
@@ -500,6 +553,7 @@ class AppwriteAuthClient {
     try {
       const u = await this.getAccount();
       this.cachedUser = this.formatUser(u);
+      this.lastValidatedTime = Date.now();
       this.saveLocalAuth(this.cachedUser);
     } catch (_) {
       this.cachedUser = null;
@@ -550,9 +604,18 @@ class AppwriteAuthClient {
   }
 
   async getUser(): Promise<{ data: { user: any }; error: any }> {
+    // Instant response if user session was validated within the last 60 seconds
+    if (this.cachedUser && Date.now() - this.lastValidatedTime < 60000) {
+      return { data: { user: this.cachedUser }, error: null };
+    }
+    // If recently verified unauthenticated (within 20s) and no cachedUser, return null instantly without network roundtrip
+    if (!this.cachedUser && Date.now() - this.last401Time < 20000) {
+      return { data: { user: null }, error: null };
+    }
     try {
       const u = await this.getAccount();
       this.cachedUser = this.formatUser(u);
+      this.lastValidatedTime = Date.now();
       this.saveLocalAuth(this.cachedUser);
       return { data: { user: this.cachedUser }, error: null };
     } catch (err: any) {
@@ -563,9 +626,22 @@ class AppwriteAuthClient {
   }
 
   async getSession(): Promise<{ data: { session: any }; error: any }> {
+    if (this.cachedUser && Date.now() - this.lastValidatedTime < 60000) {
+      return {
+        data: {
+          session: { user: this.cachedUser, access_token: 'appwrite-active-session', expires_at: 9999999999 }
+        },
+        error: null
+      };
+    }
+    if (!this.cachedUser && Date.now() - this.last401Time < 20000) {
+      return { data: { session: null }, error: null };
+    }
     try {
       const u = await this.getAccount();
       const user = this.formatUser(u);
+      this.cachedUser = user;
+      this.lastValidatedTime = Date.now();
       this.saveLocalAuth(user);
       return {
         data: {
@@ -877,6 +953,7 @@ class AppwriteRealtimeChannel {
             const match = String(filter.filter).match(/^([^.]+)=eq\.(.+)$/);
             if (match && String(payload.new?.[match[1]]) !== match[2]) return;
           }
+          invalidateCollectionCache(table === '*' ? undefined : table);
           callback(payload);
         });
         this.unsubscribeFns.push(unsub);

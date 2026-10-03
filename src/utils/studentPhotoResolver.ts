@@ -601,33 +601,37 @@ export async function prefetchStudentCoverPhotos(userIds?: string[]): Promise<vo
     const { data: profiles } = await query.limit(200);
 
     if (profiles) {
-      for (const p of profiles) {
-        const url = (p as any)?.photo_url || (p as any)?.avatar_url;
-        if (url) {
-          const resolved = await resolveStudentPhotoUrl(url);
-          if (resolved) {
-            if (p.user_id) coverPhotoCache.set(p.user_id, resolved);
-            if (p.id) coverPhotoCache.set(p.id, resolved);
+      await Promise.all(
+        profiles.map(async (p: any) => {
+          const url = p?.photo_url || p?.avatar_url;
+          if (url) {
+            const resolved = await resolveStudentPhotoUrl(url);
+            if (resolved) {
+              if (p.user_id) coverPhotoCache.set(p.user_id, resolved);
+              if (p.id) coverPhotoCache.set(p.id, resolved);
+            }
           }
-        }
-      }
+        })
+      );
     }
 
-    // Also get enrolled descriptors
+    // Also get enrolled descriptors in parallel
     const { data: descriptors } = await supabase
       .from('face_descriptors')
       .select('user_id, image_url')
       .not('image_url', 'is', null)
       .order('created_at', { ascending: true })
-      .limit(200);
+      .limit(100);
 
     if (descriptors) {
-      for (const d of descriptors) {
-        if (d.user_id && !coverPhotoCache.has(d.user_id) && d.image_url) {
-          const resolved = await resolveStudentPhotoUrl(d.image_url);
-          if (resolved) coverPhotoCache.set(d.user_id, resolved);
-        }
-      }
+      await Promise.all(
+        descriptors.map(async (d: any) => {
+          if (d.user_id && !coverPhotoCache.has(d.user_id) && d.image_url) {
+            const resolved = await resolveStudentPhotoUrl(d.image_url);
+            if (resolved) coverPhotoCache.set(d.user_id, resolved);
+          }
+        })
+      );
     }
   } catch (e) {
     console.warn('Prefetching student cover photos failed:', e);

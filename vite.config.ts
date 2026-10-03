@@ -104,13 +104,50 @@ export default defineConfig(({ mode }) => {
           ],
         },
         workbox: {
-          globPatterns: ["**/*.{js,css,html,ico,png,svg,woff2}"],
-          maximumFileSizeToCacheInBytes: 8 * 1024 * 1024, // 8 MB limit
+          globPatterns: ["**/*.{css,html,ico,png,svg,woff2}"],
+          maximumFileSizeToCacheInBytes: 8 * 1024 * 1024,
           navigateFallbackDenylist: [/^\/~oauth/, /^\/assets\/.*/],
           cleanupOutdatedCaches: true,
           clientsClaim: true,
           skipWaiting: true,
-          runtimeCaching: [],
+          runtimeCaching: [
+            {
+              urlPattern: ({ request }) => request.destination === "script",
+              handler: "StaleWhileRevalidate",
+              options: {
+                cacheName: "js-chunks-cache",
+                expiration: {
+                  maxEntries: 60,
+                  maxAgeSeconds: 30 * 24 * 60 * 60,
+                },
+              },
+            },
+            {
+              urlPattern: ({ request }) => request.destination === "style" || request.destination === "font",
+              handler: "CacheFirst",
+              options: {
+                cacheName: "static-assets-cache",
+                expiration: {
+                  maxEntries: 40,
+                  maxAgeSeconds: 30 * 24 * 60 * 60,
+                },
+              },
+            },
+            {
+              urlPattern: ({ url }) => url.origin.includes("cloud.appwrite.io") && url.pathname.includes("/storage/buckets/"),
+              handler: "CacheFirst",
+              options: {
+                cacheName: "appwrite-storage-cache",
+                expiration: {
+                  maxEntries: 100,
+                  maxAgeSeconds: 7 * 24 * 60 * 60,
+                },
+                cacheableResponse: {
+                  statuses: [0, 200],
+                },
+              },
+            },
+          ],
         },
       }),
     ].filter(Boolean),
@@ -135,9 +172,11 @@ export default defineConfig(({ mode }) => {
           manualChunks(id) {
             if (!id.includes("node_modules")) return undefined;
             if (/[\\/]react[\\/]|react-dom|react-router|scheduler/.test(id)) return "vendor";
+            if (id.includes("appwrite")) return "appwrite";
             if (id.includes("@supabase")) return "supabase";
             if (id.includes("framer-motion") || id.includes("popmotion")) return "motion";
             if (id.includes("@radix-ui")) return "ui";
+            if (id.includes("lucide-react")) return "icons";
             return undefined;
           },
         },
