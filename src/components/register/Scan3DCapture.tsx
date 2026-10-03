@@ -45,10 +45,10 @@ const MAX_SAMPLES = 24;
 // Head-pose tuning. Values are RELATIVE to the user's own neutral pose
 // (calibrated when the profile photo is taken), so camera height / face
 // shape no longer decides whether a turn is detected.
-const YAW_THRESHOLD = 0.08; // jaw-based yaw delta that counts as a left/right turn
-const PITCH_THRESHOLD = 0.025; // nose-height delta that counts as an up/down tilt
+const YAW_THRESHOLD = 0.35; // jaw-based yaw delta that counts as a left/right turn
+const PITCH_THRESHOLD = 0.25; // nose-height delta that counts as an up/down tilt
 const POSE_SMOOTHING = 0.5; // EMA factor (higher = more responsive)
-const PROFILE_FRONT_YAW = 0.18; // max |yaw| accepted for the frontal profile photo
+const PROFILE_FRONT_YAW = 0.20; // max |yaw| accepted for the frontal profile photo
 const PROFILE_HOLD_MS = 500; // how long the face must be still & frontal
 const PROFILE_FALLBACK_MS = 3500; // auto-take profile if face is roughly frontal this long
 const SAMPLE_INTERVAL_MS = 180;
@@ -286,7 +286,7 @@ const Scan3DCapture: React.FC<Scan3DCaptureProps> = ({ onComplete, isModelLoadin
   }, []);
 
   useEffect(() => {
-    loadRegistrationModels().catch((e) => console.error('Model load error:', e));
+    loadRegistrationModels().catch((e) => console.error('Model load error:', e)); warmupFaceLandmarker().catch((e) => console.error('MediaPipe load error:', e));
   }, []);
 
   const nextNeededSector = (counts: Record<PoseSector, number>): PoseSector | null => {
@@ -494,7 +494,7 @@ const Scan3DCapture: React.FC<Scan3DCaptureProps> = ({ onComplete, isModelLoadin
         liveLandmarksRef.current = detection.landmarks.positions;
 
         // Smoothed pose
-        const raw = measurePose(detection.landmarks.positions);
+        const mpPose = await detectFacePose(video, performance.now()); const raw = mpPose.faceDetected ? { yaw: mpPose.yaw, pitch: mpPose.pitch } : measurePose(detection.landmarks.positions);
         const prev = smoothPoseRef.current;
         const pose = prev
           ? {
