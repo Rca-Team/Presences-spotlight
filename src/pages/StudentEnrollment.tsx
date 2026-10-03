@@ -6,6 +6,7 @@ import { Input } from '@/components/ui/input';
 import GuidedFaceCapture from '@/components/enrollment/GuidedFaceCapture';
 import { enrollmentApi } from '@/services/enrollment/api';
 import { fieldLabels, studentFields, type CaptureResult, type EnrollmentSession, type StudentDetails } from '@/services/enrollment/types';
+import DobDatePicker from '@/components/enrollment/DobDatePicker';
 import '@/components/enrollment/enrollment.css';
 
 export default function StudentEnrollment() {
@@ -150,14 +151,11 @@ export default function StudentEnrollment() {
 
                     <label className="enrollment-label">
                       Student date of birth
-                      <Input
-                        required
+                      <DobDatePicker
                         value={dob}
-                        onChange={e => setDob(e.target.value)}
-                        placeholder="DD/MM/YYYY or YYYY-MM-DD"
-                        autoComplete="off"
+                        onChange={setDob}
+                        required
                       />
-                      <small>Accepted formats: DD/MM/YYYY or YYYY-MM-DD</small>
                     </label>
 
                     <Button disabled={busy} className="enrollment-primary w-full mt-2">
