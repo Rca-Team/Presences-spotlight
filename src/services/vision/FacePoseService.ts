@@ -19,7 +19,7 @@ async function initLandmarker(): Promise<FaceLandmarker> {
       outputFaceBlendshapes: false,
       outputFacialTransformationMatrixes: true,
       runningMode: 'VIDEO',
-      numFaces: 1,
+      numFaces: 5,
     });
     landmarker = m;
     return m;
@@ -104,4 +104,69 @@ export async function detectFacePose(
     faceDetected: true,
     box: { x, y, width, height }
   };
+}
+
+export interface MultiFacePoseResult {
+  poses: AdvancedPose[];
+  landmarks: { x: number, y: number, z: number }[][];
+}
+
+export async function detectMultiFacePose(
+  video: HTMLVideoElement,
+  timestampMs: number,
+): Promise<MultiFacePoseResult> {
+  const m = await initLandmarker();
+  if (video.readyState < 2 || video.videoWidth === 0) {
+    return { poses: [], landmarks: [] };
+  }
+
+  const result = m.detectForVideo(video, timestampMs);
+  
+  if (!result.facialTransformationMatrixes || !result.faceLandmarks) {
+    return { poses: [], landmarks: [] };
+  }
+
+  const poses: AdvancedPose[] = [];
+  
+  for (let i = 0; i < result.facialTransformationMatrixes.length; i++) {
+    const matrix = result.facialTransformationMatrixes[i].data;
+    const landmarks = result.faceLandmarks[i];
+    
+    if (!matrix || !landmarks) continue;
+
+    const m00 = matrix[0], m01 = matrix[1], m02 = matrix[2];
+    const m10 = matrix[4], m11 = matrix[5], m12 = matrix[6];
+    const m20 = matrix[8], m21 = matrix[9], m22 = matrix[10];
+
+    const sy = Math.sqrt(m00 * m00 + m10 * m10);
+    const singular = sy < 1e-6;
+
+    let pitch, yaw, roll;
+    if (!singular) {
+      pitch = Math.atan2(m21, m22);
+      yaw = Math.atan2(-m20, sy);
+      roll = Math.atan2(m10, m00);
+    } else {
+      pitch = Math.atan2(-m12, m11);
+      yaw = Math.atan2(-m20, sy);
+      roll = 0;
+    }
+
+    let minX = 1, minY = 1, maxX = 0, maxY = 0;
+    for (const p of landmarks) {
+      if (p.x < minX) minX = p.x;
+      if (p.x > maxX) maxX = p.x;
+      if (p.y < minY) minY = p.y;
+      if (p.y > maxY) maxY = p.y;
+    }
+    
+    const width = (maxX - minX) * video.videoWidth;
+    const height = (maxY - minY) * video.videoHeight;
+    const x = minX * video.videoWidth;
+    const y = minY * video.videoHeight;
+
+    poses.push({ yaw, pitch, roll, faceDetected: true, box: { x, y, width, height } });
+  }
+
+  return { poses, landmarks: result.faceLandmarks };
 }
