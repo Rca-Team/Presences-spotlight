@@ -17,7 +17,7 @@ const db = {
   },
 };
 let smsFails = true;
-const files = { async put(id) { if (failUpload) throw err(500); }, async remove(id) { deleted.push(id); }, async portrait() { return 'portrait'; }, url: id => 'https://private/' + id };
+const files = { async put(id) { if (failUpload) throw err(500); }, async remove(id) { deleted.push(id); }, async portrait() { return 'portrait'; }, async read() { return '/9j/'; }, url: id => 'https://private/' + id };
 const service = createEnrollmentService({ db, now: () => clock, files, sms: { async send() { if (smsFails) throw err(503); return { userId: 'parent', expire: new Date(clock + 900000).toISOString() }; }, async verify(_, secret) { if (secret !== '123456') throw err(401); } } });
 const admin = { user: { $id: 'admin', labels: ['admin'] }, ip: 'admin' };
 const row = { name: 'Student One', admission_number: 'A100', class: '5', section: 'B', father_name: 'Ravi Kumar', mother_name: '', parent_phone: '9876543210', date_of_birth: '', address: '' };
@@ -70,7 +70,7 @@ await test('Partial capture cannot activate recognition; uploads can retry', asy
   assert.equal(writes.filter(w => w.table === 'face_descriptors').length, 0);
 });
 await test('All angles save once, activate compatible 128-value descriptor and queue corrections', async () => {
-  for (const p of ['left', 'right', 'up', 'down', 'up-left', 'up-right', 'down-left', 'down-right']) await service({ action: 'sample', session: session.session, sample: sample(p), student: 'OTHER' });
+  for (const p of ['left', 'right', 'up', 'down']) await service({ action: 'sample', session: session.session, sample: sample(p), student: 'OTHER' });
   const input = { action: 'submit', session: session.session, consent: true, blinked: true, challenge: session.challenge, changes: { address: 'New address', admission_number: 'OTHER' } };
   assert.equal((await service(input)).completed, true); assert.equal((await service(input)).completed, true);
   const descriptors = [...documents.entries()].filter(([key]) => key.startsWith('face_descriptors:'));
@@ -80,6 +80,29 @@ await test('All angles save once, activate compatible 128-value descriptor and q
   assert.equal((await service({ action: 'staff.preview', student: row }, admin)).existing.address, '');
   await service({ action: 'staff.review', id: corrections[0].id, approve: true }, admin);
   assert.equal((await service({ action: 'staff.preview', student: row }, admin)).existing.address, 'New address');
+});
+await test('Monitor shows the whole school to admins with masked contacts and capture review data', async () => {
+  await assert.rejects(() => service({ action: 'staff.monitor' }), e => e.status === 401);
+  const m = await service({ action: 'staff.monitor' }, admin);
+  const s = m.students.find(x => x.admission_number === 'A100');
+  assert.equal(m.scope.all, true); assert.equal(s.status, 'completed'); assert.equal(s.samples.length, 5); assert.equal(s.faceOnFile, true);
+  assert.equal(s.parent_phone, '•••• 3210'); assert.equal(s.userId, undefined);
+  assert.ok(m.activity.some(a => a.event === 'enrollment-completed')); assert.ok(m.activity.every(a => a.method !== 'admin'));
+  const photo = await service({ action: 'staff.photo', admission: 'A100', fileId: s.samples[0].fileId }, admin);
+  assert.ok(photo.image.startsWith('data:image/jpeg;base64,'));
+});
+await test('Teachers only see their assigned classes; unassigned staff are refused', async () => {
+  documents.set('class_teachers:ct1', { $id: 'ct1', teacher_id: 't-5b', class: '5', section: 'B' });
+  documents.set('teacher_permissions:tp1', { $id: 'tp1', teacher_id: 't-6a', permission: 'class_access:VI-A' });
+  documents.set('teacher_permissions:tp2', { $id: 'tp2', teacher_id: 't-6a', permission: 'can_take_attendance' });
+  const own = await service({ action: 'staff.monitor' }, { user: { $id: 't-5b', labels: ['teacher'] } });
+  assert.deepEqual(own.scope.classes, ['5-B']); assert.equal(own.students.length, 1); assert.equal(own.canManage, false);
+  const other = await service({ action: 'staff.monitor' }, { user: { $id: 't-6a', labels: ['teacher'] } });
+  assert.deepEqual(other.scope.classes, ['6-A']); assert.equal(other.students.length, 0); assert.equal(other.activity.length, 0); assert.equal(other.corrections.length, 0);
+  const fileId = own.students[0].samples[0].fileId;
+  await assert.rejects(() => service({ action: 'staff.photo', admission: 'A100', fileId }, { user: { $id: 't-6a', labels: ['teacher'] } }), e => e.status === 403);
+  await assert.rejects(() => service({ action: 'staff.monitor' }, { user: { $id: 'nobody', labels: ['teacher'] } }), e => e.status === 403);
+  await assert.rejects(() => service({ action: 'staff.corrections' }, { user: { $id: 't-5b', labels: ['teacher'] } }), e => e.status === 403);
 });
 await test('Session expiry rejects further access', async () => { clock = session.expires + 1; await assert.rejects(() => service({ action: 'sample', session: session.session, sample: sample('front') }), e => e.status === 401); });
 await test('Incorrect OTP blocks fallback, and repeated guesses are rate limited', async () => {
