@@ -214,24 +214,7 @@ export const useOptimizedFaceRecognition = () => {
               confidence >= AUTO_MARK_MIN_CONFIDENCE && qualityScore >= AUTO_MARK_MIN_QUALITY_SCORE
             );
             
-            // Capture the current frame as data URL for the notification email
-            let capturedImageDataUrl: string | undefined;
-            if (mediaElement instanceof HTMLVideoElement) {
-              const capCanvas = document.createElement('canvas');
-              capCanvas.width = mediaElement.videoWidth;
-              capCanvas.height = mediaElement.videoHeight;
-              const capCtx = capCanvas.getContext('2d');
-              capCtx?.drawImage(mediaElement, 0, 0);
-              capturedImageDataUrl = capCanvas.toDataURL('image/jpeg', 0.85);
-            } else if (mediaElement instanceof HTMLImageElement) {
-              const capCanvas = document.createElement('canvas');
-              capCanvas.width = mediaElement.naturalWidth;
-              capCanvas.height = mediaElement.naturalHeight;
-              const capCtx = capCanvas.getContext('2d');
-              capCtx?.drawImage(mediaElement, 0, 0);
-              capturedImageDataUrl = capCanvas.toDataURL('image/jpeg', 0.85);
-            }
-            
+            // Attendance is marked purely from face vectors (zero-photo retention)
             if (autoMarked) {
               await recordAttendance(
                 recognitionResult.employee.id,
@@ -246,37 +229,9 @@ export const useOptimizedFaceRecognition = () => {
                       },
                     }
                   : undefined,
-                capturedImageDataUrl,
+                undefined,
                 'ai-scan'
               );
-            }
-
-            // Store face sample for progressive training (if enabled in admin settings)
-            if (isSaveAttendanceFaceSamplesEnabledSync() && recognitionResult.confidence && recognitionResult.confidence > 0.75) {
-              try {
-                let imageBlob: Blob | null = null;
-                if (mediaElement instanceof HTMLVideoElement) {
-                  const canvas = document.createElement('canvas');
-                  canvas.width = mediaElement.videoWidth;
-                  canvas.height = mediaElement.videoHeight;
-                  const ctx = canvas.getContext('2d');
-                  ctx?.drawImage(mediaElement, 0, 0, canvas.width, canvas.height);
-                  imageBlob = await new Promise<Blob | null>((resolve) => {
-                    canvas.toBlob((blob) => resolve(blob), 'image/jpeg', 0.85);
-                  });
-                }
-                
-                await storeFaceSample(
-                  recognitionResult.employee.id,
-                  detection.descriptor,
-                  imageBlob,
-                  recognitionResult.employee.name,
-                  recognitionResult.confidence
-                );
-                console.log('Progressive training sample stored');
-              } catch (trainError) {
-                console.error('Failed to store training sample:', trainError);
-              }
             }
 
             result = {

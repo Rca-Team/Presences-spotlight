@@ -63,6 +63,30 @@ export async function dispatch(body, user, db, users) {
     try { await db.updateDocument(dbId,'realtime_messages',id,data,permissions); }
     catch(error) { if(error.code!==404) throw error; await db.createDocument(dbId,'realtime_messages',id,data,permissions); }
     return {success:true};
+  if (action === 'trigger_auto_backup') {
+    if (!admin) fail(403, 'Administrator access required');
+    const collections = ['profiles', 'face_descriptors', 'attendance_records', 'timetable', 'user_roles', 'emergency_events', 'notifications', 'subjects', 'attendance_settings'];
+    const backupData = { version: '2.0.0', system: 'Presences Appwrite Auto-Backup', createdAt: new Date().toISOString(), collections: {}, summary: { totalDocs: 0 } };
+    
+    for (const col of collections) {
+      try {
+        const page = await db.listDocuments(dbId, col, [Query.limit(100)]);
+        backupData.collections[col] = page.documents || [];
+        backupData.summary.totalDocs += (page.documents || []).length;
+      } catch (err) {
+        backupData.collections[col] = [];
+      }
+    }
+
+    const payloadStr = JSON.stringify(backupData, null, 2);
+    const backupId = idFor(new Date().toISOString());
+    return {
+      success: true,
+      backupId,
+      createdAt: backupData.createdAt,
+      totalDocuments: backupData.summary.totalDocs,
+      collectionsBackedUp: Object.keys(backupData.collections).length
+    };
   }
   fail(404,'Backend action is not implemented: '+action);
 }

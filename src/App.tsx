@@ -28,6 +28,7 @@ const Features = lazyWithRetry(() => import('./pages/Features'), 'features');
 const GateMode = lazyWithRetry(() => import('./pages/GateMode'), 'gate-mode');
 const GateVisionMode = lazyWithRetry(() => import('./pages/GateVisionMode'), 'gate-vision-mode');
 const ParentPortal = lazyWithRetry(() => import('./pages/ParentPortal'), 'parent-portal');
+const StudentEnrollment = lazyWithRetry(() => import('./pages/StudentEnrollment'), 'student-enrollment');
 const Unsubscribe = lazyWithRetry(() => import('./pages/Unsubscribe'), 'unsubscribe');
 const Backup = lazyWithRetry(() => import('./pages/Backup'), 'backup');
 const FaceModelValidator = lazyWithRetry(() => import('./pages/FaceModelValidator'), 'face-model-validator');
@@ -284,6 +285,7 @@ function AnimatedRoutes() {
           </ProtectedRoute>
         } />
         <Route path="/parent" element={bound(<ParentPortal />, "Parent Portal")} />
+        <Route path="/enroll" element={bound(<StudentEnrollment />, "Student Enrollment")} />
         <Route path="/teacher" element={
           <ProtectedRoute requireRoles={["admin", "principal", "teacher"]}>
             {bound(<TeacherPortal />, "Teacher Portal")}

@@ -239,12 +239,18 @@ export function useParentPortal() {
 
           const idMatches =
             empId === cleanIdLower ||
-            name.includes(cleanIdLower) ||
+            (cleanIdLower.length >= 3 && name === cleanIdLower) ||
             r.id === cleanId ||
             r.user_id === cleanId;
 
-          // Forgiving phone check: accepts matching phone or demo/fallback
-          const phoneMatches = !pPhone || pPhone.endsWith(phoneLast10) || phoneLast10.length >= 4 || cleanPhone.includes('9876543210');
+          // Strict phone check for privacy and student security:
+          // Parent phone must match the registered contact number (last 10 digits)
+          const pPhoneLast10 = pPhone.slice(-10);
+          const phoneMatches = Boolean(
+            pPhone &&
+            phoneLast10.length >= 7 &&
+            (pPhoneLast10 === phoneLast10 || pPhone.endsWith(phoneLast10) || phoneLast10.endsWith(pPhoneLast10))
+          );
           return idMatches && phoneMatches;
         });
 

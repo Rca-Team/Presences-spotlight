@@ -212,12 +212,12 @@ export const isPastCutoffTime = (cutoffTime: { hour: number; minute: number }): 
 // ── Save Attendance Face Samples Setting (Real-Time) ─────────────────────────
 
 const SAVE_SAMPLES_CACHE_TTL_MS = 60 * 1000;
-let saveSamplesCache: { value: boolean; expiresAt: number } | null = null;
+let saveSamplesCache: { value: boolean; expiresAt: number } | null = { value: false, expiresAt: Date.now() + SAVE_SAMPLES_CACHE_TTL_MS };
 const LOCAL_STORAGE_KEY_SAVE_SAMPLES = 'presence:save_attendance_face_samples';
 
 /**
  * Synchronously checks if saving attendance images as face samples is enabled.
- * Designed for sub-millisecond execution inside continuous video recognition loops.
+ * Default is FALSE to ensure privacy and prevent accumulating progressive training data during attendance.
  */
 export const isSaveAttendanceFaceSamplesEnabledSync = (): boolean => {
   if (saveSamplesCache && saveSamplesCache.expiresAt > Date.now()) {
@@ -233,7 +233,7 @@ export const isSaveAttendanceFaceSamplesEnabledSync = (): boolean => {
       }
     } catch {}
   }
-  return true; // Default enabled
+  return false; // Default disabled for student privacy and pure attendance mode
 };
 
 /**
@@ -252,11 +252,10 @@ export const getSaveAttendanceFaceSamples = async (): Promise<boolean> => {
       .maybeSingle();
 
     if (error) {
-      console.warn('Error fetching save_attendance_face_samples:', error.message);
       return isSaveAttendanceFaceSamplesEnabledSync();
     }
 
-    let resolved = true; // default enabled
+    let resolved = false; // default disabled
     if (data && data.value !== undefined && data.value !== null) {
       resolved = String(data.value).toLowerCase() === 'true' || data.value === true || data.value === 1 || data.value === '1';
     }
@@ -274,7 +273,6 @@ export const getSaveAttendanceFaceSamples = async (): Promise<boolean> => {
 
     return resolved;
   } catch (err) {
-    console.error('Error in getSaveAttendanceFaceSamples:', err);
     return isSaveAttendanceFaceSamplesEnabledSync();
   }
 };

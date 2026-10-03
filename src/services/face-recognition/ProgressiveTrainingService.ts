@@ -67,9 +67,8 @@ export async function storeFaceSample(
   }
 ): Promise<boolean> {
   try {
-    // 0. Setting check: if saving attendance images to face samples is turned off, skip automatic samples
-    if (confidence !== 1.0 && !isSaveAttendanceFaceSamplesEnabledSync()) {
-      console.log('Skipping training sample — saving attendance images to face samples is turned OFF in admin settings');
+    // Attendance-time progressive training is disabled for privacy and pure attendance operations
+    if (confidence !== 1.0) {
       return false;
     }
 

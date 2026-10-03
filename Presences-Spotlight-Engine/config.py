@@ -10,9 +10,20 @@ load_dotenv(BASE_DIR / ".env")
 load_dotenv(BASE_DIR.parent / ".env")
 load_dotenv(BASE_DIR.parent.parent / ".env")
 
-# ─── 1. Supabase Cloud Configuration ──────────────────────────────────────────
-SUPABASE_URL = os.getenv("SUPABASE_URL", "https://your-project-id.supabase.co")
-SUPABASE_KEY = os.getenv("SUPABASE_KEY", "your-supabase-service-or-anon-key")
+# ─── 1. Cloud Backend Configuration (Appwrite SDK & Supabase Support) ─────────
+BACKEND_TYPE = os.getenv("BACKEND_TYPE", "auto").lower()  # "appwrite", "supabase", or "auto"
+
+# Appwrite Official Cloud / Self-Hosted Configuration
+APPWRITE_ENDPOINT = os.getenv("APPWRITE_ENDPOINT", os.getenv("VITE_APPWRITE_ENDPOINT", "https://sgp.cloud.appwrite.io/v1")).rstrip('/')
+APPWRITE_PROJECT_ID = os.getenv("APPWRITE_PROJECT_ID", os.getenv("VITE_APPWRITE_PROJECT_ID", "6abfd34f000604fcf074"))
+APPWRITE_API_KEY = os.getenv("APPWRITE_API_KEY", "")
+APPWRITE_DATABASE_ID = os.getenv("APPWRITE_DATABASE_ID", os.getenv("VITE_APPWRITE_DATABASE_ID", "presences_db"))
+APPWRITE_BUCKET_ID = os.getenv("APPWRITE_BUCKET_ID", "face-images")
+
+# Supabase Fallback Configuration
+SUPABASE_URL = os.getenv("SUPABASE_URL", os.getenv("VITE_SUPABASE_URL", "https://your-project-id.supabase.co")).rstrip('/')
+SUPABASE_KEY = os.getenv("SUPABASE_KEY", os.getenv("VITE_SUPABASE_ANON_KEY", "your-supabase-service-or-anon-key"))
+
 
 # ─── 2. Camera & Video Stream Settings ────────────────────────────────────────
 # RTSP URL from IP camera (e.g., rtsp://admin:pass@192.168.1.50:554/Streaming/Channels/101)

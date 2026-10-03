@@ -191,57 +191,15 @@ export const useFaceRecognition = () => {
       const status: 'present' | 'late' = isPastCutoff ? 'late' : 'present';
       console.log(`Attendance status determined: ${status} (past cutoff: ${isPastCutoff})`);
       
-      // Capture the frame for notification email
-      let capturedImageDataUrl: string | undefined;
-      if (mediaElement instanceof HTMLVideoElement) {
-        const capCanvas = document.createElement('canvas');
-        capCanvas.width = mediaElement.videoWidth;
-        capCanvas.height = mediaElement.videoHeight;
-        const capCtx = capCanvas.getContext('2d');
-        capCtx?.drawImage(mediaElement, 0, 0);
-        capturedImageDataUrl = capCanvas.toDataURL('image/jpeg', 0.85);
-      }
-      
+      // Attendance is marked purely from face vectors (zero-photo retention)
       await recordAttendance(
         recognitionResult.employee.id, 
         status, 
         recognitionResult.confidence,
         undefined,
-        capturedImageDataUrl,
+        undefined,
         'ai-scan'
       );
-      
-      // Store face sample for progressive training (improves accuracy over time)
-      if (recognitionResult.confidence && recognitionResult.confidence > 0.75) {
-        try {
-          // Capture current frame as blob for training
-          let imageBlob: Blob | null = null;
-          if (mediaElement instanceof HTMLVideoElement) {
-            const canvas = document.createElement('canvas');
-            canvas.width = mediaElement.videoWidth;
-            canvas.height = mediaElement.videoHeight;
-            const ctx = canvas.getContext('2d');
-            ctx?.drawImage(mediaElement, 0, 0, canvas.width, canvas.height);
-            imageBlob = await new Promise<Blob | null>((resolve) => {
-              canvas.toBlob((blob) => resolve(blob), 'image/jpeg', 0.85);
-            });
-          }
-          
-          if (isSaveAttendanceFaceSamplesEnabledSync()) {
-            await storeFaceSample(
-              recognitionResult.employee.id,
-              faceDescriptor,
-              imageBlob,
-              recognitionResult.employee.name,
-              recognitionResult.confidence
-            );
-            console.log('Progressive training sample stored successfully');
-          }
-        } catch (trainError) {
-          console.error('Failed to store training sample:', trainError);
-          // Don't fail the main flow if training fails
-        }
-      }
       
       const timestamp = new Date().toISOString();
       

@@ -669,43 +669,10 @@ export async function recordAttendance(
   const timestamp = new Date().toISOString();
   const dateStr = timestamp.split('T')[0];
 
-  // Fast non-blocking image upload
-  let uploadedImageUrl: string | null = null;
-  let trainingAttendancePath: string | null = null;
-  const imageUploadPromise = (async () => {
-    if (!capturedImageDataUrl) return;
-    try {
-      const blob = await dataUrlToBlob(capturedImageDataUrl);
-      if (blob) {
-        const fileName = `attendance/${validUserId || 'anon'}/${Date.now()}.jpg`;
-        const { data: up, error: upErr } = await supabase.storage
-          .from('face-images')
-          .upload(fileName, blob, { contentType: 'image/jpeg', upsert: false });
-        if (!upErr && up) {
-          const { data: urlData } = supabase.storage.from('face-images').getPublicUrl(fileName);
-          uploadedImageUrl = urlData?.publicUrl ?? null;
-        }
-        if (isSaveAttendanceFaceSamplesEnabledSync()) {
-          trainingAttendancePath = await uploadAttendanceTrainingImage({
-            imageBlob: blob,
-            studentId: userId,
-            status: adjustedStatus as 'present' | 'late' | 'absent' | 'unauthorized',
-            mode:    captureMode,
-            confidence,
-            employeeId: deviceInfo?.metadata?.employee_id,
-            category:   deviceInfo?.metadata?.category,
-          });
-        }
-      }
-    } catch (uploadErr) {
-      console.warn('Image upload error:', uploadErr);
-    }
-  })();
-
-  await Promise.race([
-    imageUploadPromise,
-    new Promise((resolve) => setTimeout(resolve, 120)),
-  ]);
+  // Zero-photo retention policy: Daily attendance is marked purely from face vectors in memory.
+  // No photo snapshot files are saved or uploaded during daily attendance marking.
+  const uploadedImageUrl: string | null = null;
+  const trainingAttendancePath: string | null = null;
 
   const resolvedSource: 'ai-scan' | 'qr-scan' | 'gate-mode' =
     captureMode === 'gate-mode' ? 'gate-mode' :
@@ -978,21 +945,7 @@ export async function recordAttendance(
     }
   }
 
-  // If image upload completed after the initial record insert, update image_url in background
-  if (!uploadedImageUrl && capturedImageDataUrl && data?.id && !String(data.id).startsWith('local-')) {
-    void imageUploadPromise.then(async () => {
-      if (uploadedImageUrl && data?.id) {
-        try {
-          await supabase
-            .from('attendance_records')
-            .update({ image_url: uploadedImageUrl })
-            .eq('id', data.id);
-        } catch {}
-      }
-    });
-  }
-
-  console.log('Attendance successfully recorded in database:', data);
+  console.log('Attendance successfully recorded in database (vector-only, zero-photo retention):', data);
 
   // Class-session event
   const meta      = (fullDeviceInfo?.metadata ?? {}) as Record<string, unknown>;

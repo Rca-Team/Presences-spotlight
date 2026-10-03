@@ -9,7 +9,9 @@ import {
   realtime,
   APPWRITE_CONFIG,
   getAppwriteStorageViewUrl,
-  getAppwriteStorageDownloadUrl
+  getAppwriteStorageDownloadUrl,
+  getAppwriteStoragePreviewUrl,
+  type ImageTransformOptions
 } from './client';
 
 const DATABASE_ID = APPWRITE_CONFIG.databaseId;
@@ -623,12 +625,37 @@ class AppwriteStorageBucketClient {
     this.bucketId = bucketId;
   }
 
-  getPublicUrl(path: string): { data: { publicUrl: string } } {
+  getPublicUrl(path: string, options?: { transform?: ImageTransformOptions }): { data: { publicUrl: string } } {
     const fileId = storageFileId(path);
+    if (options?.transform) {
+      return {
+        data: {
+          publicUrl: getAppwriteStoragePreviewUrl(this.bucketId, fileId, options.transform)
+        }
+      };
+    }
     return {
       data: {
         publicUrl: getAppwriteStorageViewUrl(this.bucketId, fileId)
       }
+    };
+  }
+
+  async createSignedUrl(path: string, _expiresIn = 3600, options?: { transform?: ImageTransformOptions }): Promise<{ data: { signedUrl: string } | null; error: any }> {
+    const fileId = storageFileId(path);
+    if (options?.transform) {
+      return {
+        data: {
+          signedUrl: getAppwriteStoragePreviewUrl(this.bucketId, fileId, options.transform)
+        },
+        error: null
+      };
+    }
+    return {
+      data: {
+        signedUrl: getAppwriteStorageViewUrl(this.bucketId, fileId)
+      },
+      error: null
     };
   }
 
@@ -881,7 +908,7 @@ export class AppwriteUnifiedClient {
   }
 
   async rpc(fnName: string, params?: any): Promise<{ data: any; error: any }> {
-    if (['upsert_class_attendance_event', 'get_all_auth_users'].includes(fnName)) {
+    if (['upsert_class_attendance_event', 'get_all_auth_users', 'trigger_auto_backup'].includes(fnName)) {
       return this.functions.invoke('presences-backend', { body: { action: fnName, ...params } });
     }
     return this.functions.invoke(fnName, { body: params });

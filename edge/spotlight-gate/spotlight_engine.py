@@ -325,7 +325,252 @@ class LocalDatabase:
             conn.commit()
 
 
-# ─── 3. Supabase Cloud Sync & Parent Notification Client ──────────────────────
+# ─── Appwrite Python SDK Initialization ──────────────────────────────────────
+APPWRITE_SDK_AVAILABLE = False
+try:
+    from appwrite.client import Client as AppwriteClient
+    from appwrite.services.databases import Databases as AppwriteDatabases
+    from appwrite.services.storage import Storage as AppwriteStorage
+    from appwrite.query import Query as AppwriteQuery
+    from appwrite.id import ID as AppwriteID
+    from appwrite.input_file import InputFile as AppwriteInputFile
+    APPWRITE_SDK_AVAILABLE = True
+except ImportError:
+    pass
+
+
+# ─── 3. Appwrite Official Python SDK Backend Client ──────────────────────────
+class AppwriteSync:
+    """Communicates directly with Appwrite Cloud / Self-Hosted using the official Python SDK."""
+    def __init__(self, db: LocalDatabase):
+        self.db = db
+        self.endpoint = config.APPWRITE_ENDPOINT
+        self.project_id = config.APPWRITE_PROJECT_ID
+        self.api_key = config.APPWRITE_API_KEY
+        self.db_id = config.APPWRITE_DATABASE_ID
+        self.bucket_id = config.APPWRITE_BUCKET_ID
+
+        self.client = None
+        self.databases = None
+        self.storage = None
+
+        if APPWRITE_SDK_AVAILABLE and self.project_id:
+            try:
+                self.client = AppwriteClient()
+                self.client.set_endpoint(self.endpoint)
+                self.client.set_project(self.project_id)
+                if self.api_key:
+                    self.client.set_key(self.api_key)
+                self.databases = AppwriteDatabases(self.client)
+                self.storage = AppwriteStorage(self.client)
+                print(f"[Spotlight AppwriteSDK] Native Python SDK connected to project {self.project_id[:6]}... ({self.endpoint})")
+            except Exception as e:
+                print(f"[Spotlight AppwriteSDK Warning] Init failed: {e}")
+
+    def fetch_enrolled_faces(self) -> List[Dict]:
+        """Loads all student face vector models from Appwrite face_descriptors collection."""
+        enrolled = []
+        try:
+            if self.databases:
+                # 1. Fetch profiles mapping
+                profile_map = {}
+                try:
+                    prof_resp = self.databases.list_documents(
+                        database_id=self.db_id,
+                        collection_id='profiles',
+                        queries=[AppwriteQuery.limit(100)]
+                    )
+                    for p in prof_resp.get('documents', []):
+                        p_name = p.get('full_name') or p.get('display_name') or p.get('email')
+                        uid = p.get('user_id') or p.get('$id')
+                        if uid and p_name:
+                            profile_map[uid] = p_name
+                except Exception:
+                    pass
+
+                # 2. Paginated face descriptors fetch
+                offset = 0
+                limit = 100
+                total_docs = []
+                while True:
+                    resp = self.databases.list_documents(
+                        database_id=self.db_id,
+                        collection_id='face_descriptors',
+                        queries=[AppwriteQuery.limit(limit), AppwriteQuery.offset(offset)]
+                    )
+                    docs = resp.get('documents', [])
+                    if not docs:
+                        break
+                    total_docs.extend(docs)
+                    offset += len(docs)
+                    if offset >= resp.get('total', 0):
+                        break
+
+                for item in total_docs:
+                    raw_desc = item.get("descriptor") or item.get("descriptors")
+                    if not raw_desc:
+                        continue
+                    if isinstance(raw_desc, str):
+                        try:
+                            raw_desc = json.loads(raw_desc)
+                        except Exception:
+                            continue
+
+                    vectors = []
+                    if isinstance(raw_desc, list) and len(raw_desc) > 0:
+                        if isinstance(raw_desc[0], list):
+                            for v in raw_desc:
+                                if len(v) in (128, 512):
+                                    vectors.append(v)
+                        elif len(raw_desc) in (128, 512):
+                            vectors.append(raw_desc)
+
+                    if not vectors:
+                        continue
+
+                    uid = item.get("user_id")
+                    meta = item.get("metadata")
+                    if isinstance(meta, str):
+                        try:
+                            meta = json.loads(meta)
+                        except Exception:
+                            meta = {}
+                    meta_name = meta.get("name") if isinstance(meta, dict) else None
+
+                    resolved_name = (
+                        item.get("student_name")
+                        or item.get("label")
+                        or meta_name
+                        or profile_map.get(uid)
+                        or (f"Student {item.get('student_id')}" if item.get("student_id") else "Student")
+                    )
+
+                    for idx, vec in enumerate(vectors):
+                        enrolled.append({
+                            "id": f"{item.get('$id', item.get('id', 'doc'))}_{idx}",
+                            "user_id": uid if is_valid_uuid(uid) else None,
+                            "student_id": item.get("student_id") or uid,
+                            "student_name": resolved_name,
+                            "class_name": item.get("class"),
+                            "section": item.get("section"),
+                            "descriptor": np.array(vec, dtype=np.float32)
+                        })
+
+                distinct_names = set(s["student_name"] for s in enrolled)
+                print(f"[Spotlight AppwriteSDK] Loaded {len(distinct_names)} students ({len(enrolled)} models) via official Python SDK.")
+                return enrolled
+
+            # Fallback to Appwrite REST API if SDK not available
+            headers = {
+                "X-Appwrite-Project": self.project_id,
+                "Content-Type": "application/json"
+            }
+            if self.api_key:
+                headers["X-Appwrite-Key"] = self.api_key
+
+            res = requests.get(
+                f"{self.endpoint}/databases/{self.db_id}/collections/face_descriptors/documents?limit=100",
+                headers=headers,
+                timeout=8
+            )
+            if res.status_code == 200:
+                data = res.json().get('documents', [])
+                for item in data:
+                    raw_desc = item.get("descriptor") or item.get("descriptors")
+                    if not raw_desc:
+                        continue
+                    if isinstance(raw_desc, str):
+                        try:
+                            raw_desc = json.loads(raw_desc)
+                        except Exception:
+                            continue
+                    vectors = []
+                    if isinstance(raw_desc, list) and len(raw_desc) > 0:
+                        if isinstance(raw_desc[0], list):
+                            for v in raw_desc:
+                                if len(v) in (128, 512):
+                                    vectors.append(v)
+                        elif len(raw_desc) in (128, 512):
+                            vectors.append(raw_desc)
+                    if not vectors:
+                        continue
+                    name = item.get("student_name") or item.get("label") or "Student"
+                    for idx, vec in enumerate(vectors):
+                        enrolled.append({
+                            "id": f"{item.get('$id')}_{idx}",
+                            "student_id": item.get("student_id"),
+                            "student_name": name,
+                            "class_name": item.get("class"),
+                            "section": item.get("section"),
+                            "descriptor": np.array(vec, dtype=np.float32)
+                        })
+                return enrolled
+        except Exception as err:
+            print(f"[Spotlight AppwriteSDK Error] {err}")
+        return []
+
+    def post_attendance(self, payload: Dict) -> bool:
+        """Records attendance directly into Appwrite attendance_records collection."""
+        try:
+            clean_payload = dict(payload)
+            if isinstance(clean_payload.get("device_info"), dict):
+                clean_payload["device_info"] = json.dumps(clean_payload["device_info"])
+
+            if self.databases:
+                doc_id = AppwriteID.unique() if APPWRITE_SDK_AVAILABLE else str(uuid.uuid4()).replace('-', '')[:36]
+                self.databases.create_document(
+                    database_id=self.db_id,
+                    collection_id='attendance_records',
+                    document_id=doc_id,
+                    data=clean_payload
+                )
+                return True
+
+            headers = {
+                "X-Appwrite-Project": self.project_id,
+                "Content-Type": "application/json"
+            }
+            if self.api_key:
+                headers["X-Appwrite-Key"] = self.api_key
+
+            body = {
+                "documentId": "unique()",
+                "data": clean_payload
+            }
+            res = requests.post(
+                f"{self.endpoint}/databases/{self.db_id}/collections/attendance_records/documents",
+                headers=headers,
+                json=body,
+                timeout=6
+            )
+            return res.status_code in (200, 201)
+        except Exception as err:
+            print(f"[Spotlight Appwrite Post Error] {err}")
+            return False
+
+    def upload_face_frame(self, frame: np.ndarray, student_id: str) -> Optional[str]:
+        """Encodes frame to JPEG and saves snapshot to Appwrite face-images storage bucket."""
+        try:
+            if not APPWRITE_SDK_AVAILABLE or not self.storage:
+                return None
+            ret, buf = cv2.imencode('.jpg', frame, [int(cv2.IMWRITE_JPEG_QUALITY), 85])
+            if not ret:
+                return None
+            jpg_bytes = buf.tobytes()
+            file_id = AppwriteID.unique()
+            uploaded = self.storage.create_file(
+                bucket_id=self.bucket_id,
+                file_id=file_id,
+                file=AppwriteInputFile.from_bytes(jpg_bytes, filename=f"gate_{student_id}_{int(time.time())}.jpg", mime_type="image/jpeg")
+            )
+            if uploaded:
+                return f"{self.endpoint}/storage/buckets/{self.bucket_id}/files/{file_id}/view?project={self.project_id}"
+        except Exception as e:
+            print(f"[Spotlight Appwrite Storage Warning] Could not upload frame: {e}")
+        return None
+
+
+# ─── 4. Supabase Cloud Sync Client ───────────────────────────────────────────
 class SupabaseSync:
     """Communicates with Supabase REST and Edge Functions asynchronously."""
     def __init__(self, db: LocalDatabase):
@@ -357,7 +602,6 @@ class SupabaseSync:
             desc_endpoint = f"{self.url}/rest/v1/face_descriptors?select=id,user_id,student_id,student_name,class,section,descriptor,descriptors,label,metadata"
             res = requests.get(desc_endpoint, headers=self.headers, timeout=10)
             if res.status_code != 200:
-                print(f"[Spotlight CloudSync] Supabase face query error ({res.status_code}): {res.text}")
                 return []
 
             data = res.json()
@@ -407,25 +651,59 @@ class SupabaseSync:
                         "descriptor": np.array(vec, dtype=np.float32)
                     })
 
-            print(f"[Spotlight CloudSync] Loaded {len(enrolled)} face vector models from Supabase.")
             return enrolled
-
         except Exception as e:
-            print(f"[Spotlight CloudSync] Supabase sync exception: {e}")
+            print(f"[Spotlight Supabase Error] {e}")
             return []
 
     def post_attendance(self, payload: Dict) -> bool:
-        """Sends an attendance record to Supabase."""
         try:
             clean_payload = dict(payload)
             if not is_valid_uuid(clean_payload.get("user_id")):
                 clean_payload["user_id"] = None
-
             endpoint = f"{self.url}/rest/v1/attendance_records"
             res = requests.post(endpoint, headers=self.headers, json=clean_payload, timeout=6)
             return res.status_code in (200, 201)
         except Exception:
             return False
+
+
+# ─── 5. Unified Multi-Cloud Synchronizer ─────────────────────────────────────
+class UnifiedCloudSync:
+    """Seamlessly connects camera nodes to Appwrite Python SDK or Supabase."""
+    def __init__(self, db: LocalDatabase):
+        self.db = db
+        self.appwrite = AppwriteSync(db)
+        self.supabase = SupabaseSync(db)
+
+    def is_appwrite_primary(self) -> bool:
+        if config.BACKEND_TYPE == "appwrite":
+            return True
+        if config.BACKEND_TYPE == "supabase":
+            return False
+        # Auto-detect: if Appwrite project ID configured and not default supabase
+        return bool(config.APPWRITE_PROJECT_ID and (not config.SUPABASE_URL or "your-project" in config.SUPABASE_URL))
+
+    def fetch_enrolled_faces(self) -> List[Dict]:
+        if self.is_appwrite_primary():
+            faces = self.appwrite.fetch_enrolled_faces()
+            if faces:
+                return faces
+            # Fallback to supabase if appwrite empty
+            return self.supabase.fetch_enrolled_faces()
+        else:
+            faces = self.supabase.fetch_enrolled_faces()
+            if faces:
+                return faces
+            return self.appwrite.fetch_enrolled_faces()
+
+    def post_attendance(self, payload: Dict) -> bool:
+        if self.is_appwrite_primary():
+            return self.appwrite.post_attendance(payload)
+        return self.supabase.post_attendance(payload)
+
+    def upload_frame(self, frame: np.ndarray, student_id: str) -> Optional[str]:
+        return self.appwrite.upload_face_frame(frame, student_id)
 
     def send_parent_notification_with_rate_limit(self, student: Dict, status: str):
         """Dispatches automated parent notification adhering strictly to 1-email-per-student-per-day."""
@@ -439,7 +717,7 @@ class SupabaseSync:
             if self.db.was_notified_today(student_key, today_date):
                 return
 
-            notif_endpoint = f"{self.url}/functions/v1/auto-parent-notification"
+            notif_endpoint = f"{config.SUPABASE_URL}/functions/v1/auto-parent-notification"
             notif_payload = {
                 "studentId": user_id or student_id,
                 "studentName": student_name,
@@ -448,7 +726,7 @@ class SupabaseSync:
                 "timestamp": datetime.now().strftime("%I:%M %p")
             }
             try:
-                requests.post(notif_endpoint, headers=self.headers, json=notif_payload, timeout=6)
+                requests.post(notif_endpoint, headers={"apikey": config.SUPABASE_KEY, "Authorization": f"Bearer {config.SUPABASE_KEY}", "Content-Type": "application/json"}, json=notif_payload, timeout=6)
             except Exception:
                 pass
 
@@ -457,7 +735,7 @@ class SupabaseSync:
             print(f"[Spotlight Notification Error] {err}")
 
     def process_offline_queue(self):
-        """Flushes locally stored offline queue to Supabase."""
+        """Flushes locally stored offline queue to cloud."""
         queued = self.db.get_queued_records(limit=10)
         if not queued:
             return
@@ -469,6 +747,7 @@ class SupabaseSync:
                 print(f"[Spotlight Sync] Flushed offline record (ID: {record_id}) for {payload.get('student_name')}")
             else:
                 break
+
 
 
 # ─── 4. Audio Feedback Player ────────────────────────────────────────────────
@@ -554,7 +833,7 @@ class SpotlightEngine:
 
         Path(config.UNKNOWN_LOG_DIR).mkdir(parents=True, exist_ok=True)
         self.db = LocalDatabase()
-        self.cloud = SupabaseSync(self.db)
+        self.cloud = UnifiedCloudSync(self.db)
         self.enrolled_students: List[Dict] = []
         self.descriptors_matrix: Optional[np.ndarray] = None
         self.last_sync_time = 0
@@ -702,7 +981,7 @@ class SpotlightEngine:
 
         return associations
 
-    def handle_confirmed_attendance(self, student: Dict, confidence_score: float):
+    def handle_confirmed_attendance(self, student: Dict, confidence_score: float, verified_frame: Optional[np.ndarray] = None):
         """Executes instant attendance logging, cooldown enforcement, chime, and cloud synchronization."""
         student_id_val = str(student.get("student_id") or student.get("user_id") or "")
         student_name = student.get("student_name")
@@ -766,11 +1045,11 @@ class SpotlightEngine:
             }
         }
 
-        # Asynchronous Cloud Push
+        # Asynchronous Cloud Push (Zero-photo retention policy: vectors only)
         def _async_push():
             success = self.cloud.post_attendance(payload)
             if success:
-                print(f"[Spotlight Cloud] Attendance synced to Supabase for {student_name}.")
+                print(f"[Spotlight Cloud] Attendance synced to cloud for {student_name}.")
             else:
                 print(f"[Spotlight Cloud] Queued record locally for background sync.")
                 self.db.enqueue_attendance(payload)
@@ -836,7 +1115,7 @@ class SpotlightEngine:
                                 if consensus and not trk.committed:
                                     win_student, win_dist, win_votes = consensus
                                     trk.committed = True
-                                    self.handle_confirmed_attendance(win_student, conf)
+                                    self.handle_confirmed_attendance(win_student, conf, frame)
 
                                 detections.append({
                                     "bbox": bbox,

@@ -1,1 +1,0 @@
-DROP POLICY IF EXISTS "Face images are publicly viewable" ON storage.objects;

@@ -21,6 +21,15 @@ try:
 except ImportError:
     print("[Enrollment Warning] 'face_recognition' (dlib) library is recommended for real embedding generation.")
 
+APPWRITE_SDK_AVAILABLE = False
+try:
+    from appwrite.client import Client as AppwriteClient
+    from appwrite.services.databases import Databases as AppwriteDatabases
+    from appwrite.id import ID as AppwriteID
+    APPWRITE_SDK_AVAILABLE = True
+except ImportError:
+    pass
+
 def is_valid_uuid(val):
     if not val:
         return False
@@ -40,6 +49,17 @@ class FaceEnrollmentStation:
             "Content-Type": "application/json",
             "Prefer": "return=minimal"
         }
+        self.appwrite_db = None
+        if APPWRITE_SDK_AVAILABLE and config.APPWRITE_PROJECT_ID:
+            try:
+                client = AppwriteClient()
+                client.set_endpoint(config.APPWRITE_ENDPOINT)
+                client.set_project(config.APPWRITE_PROJECT_ID)
+                if config.APPWRITE_API_KEY:
+                    client.set_key(config.APPWRITE_API_KEY)
+                self.appwrite_db = AppwriteDatabases(client)
+            except Exception as e:
+                print(f"[Enrollment Appwrite Warning] {e}")
 
     def enroll_student_live(self):
         print("\n" + "=" * 60)
@@ -129,7 +149,7 @@ class FaceEnrollmentStation:
         cv2.destroyAllWindows()
 
         if len(captured_embeddings) == 3:
-            print(f"\n[Uploading] Saving 3 face vector models for {student_name} to Supabase...")
+            print(f"\n[Uploading] Saving 3 face vector models for {student_name} to cloud...")
             payload = {
                 "student_id": student_id,
                 "student_name": student_name,
@@ -144,14 +164,34 @@ class FaceEnrollmentStation:
                     "created_at": time.time()
                 }
             }
-            try:
-                res = requests.post(f"{self.url}/rest/v1/face_descriptors", headers=self.headers, json=payload, timeout=10)
-                if res.status_code in (200, 201):
-                    print(f"🎉 SUCCESS! {student_name} is successfully enrolled into Presences Spotlight AI!")
-                else:
-                    print(f"Upload response ({res.status_code}): {res.text}")
-            except Exception as e:
-                print(f"Failed to upload enrollment to cloud: {e}")
+
+            uploaded = False
+            if self.appwrite_db:
+                try:
+                    appwrite_payload = dict(payload)
+                    appwrite_payload["descriptor"] = json.dumps(captured_embeddings[0])
+                    appwrite_payload["descriptors"] = json.dumps(captured_embeddings)
+                    appwrite_payload["metadata"] = json.dumps(payload["metadata"])
+                    self.appwrite_db.create_document(
+                        database_id=config.APPWRITE_DATABASE_ID,
+                        collection_id='face_descriptors',
+                        document_id=AppwriteID.unique(),
+                        data=appwrite_payload
+                    )
+                    print(f"🎉 SUCCESS! {student_name} enrolled via official Appwrite Python SDK!")
+                    uploaded = True
+                except Exception as err:
+                    print(f"[Appwrite Upload Note] {err}")
+
+            if not uploaded:
+                try:
+                    res = requests.post(f"{self.url}/rest/v1/face_descriptors", headers=self.headers, json=payload, timeout=10)
+                    if res.status_code in (200, 201):
+                        print(f"🎉 SUCCESS! {student_name} is successfully enrolled into Presences Spotlight AI!")
+                    else:
+                        print(f"Upload response ({res.status_code}): {res.text}")
+                except Exception as e:
+                    print(f"Failed to upload enrollment to cloud: {e}")
 
 
 if __name__ == "__main__":

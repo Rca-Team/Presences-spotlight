@@ -462,19 +462,6 @@ const FuturisticFaceScanner: React.FC<FuturisticFaceScannerProps> = ({ onScanCom
       } catch (err) {
         console.warn('Auto notification follow-up failed:', err);
       }
-
-      // 3 — high-quality face sample photo saved to Supabase storage & progressive training
-      try {
-        const isHighQuality =
-          job.confidence >= 0.65 && !!job.crop && job.crop.blurScore >= AUTO_SAMPLE_MIN_SHARPNESS;
-        if (isSaveAttendanceFaceSamplesEnabledSync() && job.descriptor && isHighQuality && job.crop) {
-          const blob = await (await fetch(job.crop.dataUrl)).blob();
-          const stored = await storeFaceSample(job.userId, job.descriptor, blob, job.name, job.confidence);
-          patchAutoMarked(job.entryId, { sampleSaved: stored });
-        }
-      } catch (err) {
-        console.warn('Auto face-sample capture failed:', err);
-      }
     },
     [patchAutoMarked]
   );
@@ -1195,7 +1182,7 @@ const FuturisticFaceScanner: React.FC<FuturisticFaceScannerProps> = ({ onScanCom
                         force_attendance_save: true,
                       },
                     },
-                    faceCaptureImageDataUrl,
+                    undefined,
                     'ai-scan'
                   ),
                   5000,
@@ -1380,7 +1367,7 @@ const FuturisticFaceScanner: React.FC<FuturisticFaceScannerProps> = ({ onScanCom
             force_attendance_save: true,
           },
         },
-        review.capturedImageDataUrl,
+        undefined,
       );
 
       sendAutoParentNotification(

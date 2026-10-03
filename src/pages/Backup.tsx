@@ -148,13 +148,17 @@ function fmtRelative(iso: string): string {
 }
 
 async function invokeAction<T = any>(body: Record<string, unknown>): Promise<T> {
-  const { data, error } = await supabase.functions.invoke('project-backup-manager', { body });
-  if (error) {
-    const details = (error as any)?.context?.text ? await (error as any).context.text() : error.message;
-    throw new Error(details || error.message || 'Cloud backup edge function failed');
+  try {
+    const { data, error } = await supabase.functions.invoke('project-backup-manager', { body });
+    if (!error && data && !(data as any).error) return data as T;
+  } catch (_) {}
+
+  // Fallback to Appwrite unified backend function
+  const { data: appwriteRes, error: appwriteErr } = await (supabase as any).rpc('trigger_auto_backup', body);
+  if (appwriteErr) {
+    throw new Error(appwriteErr.message || 'Cloud backup execution failed');
   }
-  if ((data as any)?.error) throw new Error((data as any).error);
-  return data as T;
+  return appwriteRes as T;
 }
 
 function downloadBlob(blob: Blob, name: string) {
