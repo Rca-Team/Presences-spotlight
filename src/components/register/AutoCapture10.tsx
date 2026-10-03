@@ -2,7 +2,10 @@ import React, { useRef, useEffect, useState, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Camera, CheckCircle2, RotateCcw, Sparkles } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { getFaceDescriptorFromImage } from '@/services/face-recognition/OptimizedRegistrationService';
+import {
+  getFaceDescriptorFromImage,
+  getFaceBoxFromImage,
+} from '@/services/face-recognition/OptimizedRegistrationService';
 
 interface AutoCapture10Props {
   onComplete: (
@@ -71,7 +74,7 @@ const AutoCapture10: React.FC<AutoCapture10Props> = ({
     'Almost done…',
   ];
 
-  const captureOne = useCallback(async (): Promise<{ image: string; descriptor: Float32Array } | null> => {
+  const captureOne = useCallback(async (isProfilePhoto = false): Promise<{ image: string; descriptor: Float32Array } | null> => {
     if (!videoRef.current || !canvasRef.current) return null;
     const video = videoRef.current;
     const canvas = canvasRef.current;
@@ -80,7 +83,30 @@ const AutoCapture10: React.FC<AutoCapture10Props> = ({
     const ctx = canvas.getContext('2d');
     if (!ctx) return null;
     ctx.drawImage(video, 0, 0);
-    const image = canvas.toDataURL('image/jpeg', 0.9);
+
+    let image = canvas.toDataURL('image/jpeg', 0.9);
+    if (isProfilePhoto) {
+      try {
+        const faceBox = await getFaceBoxFromImage(video);
+        if (faceBox) {
+          const pad = Math.round(Math.max(faceBox.width, faceBox.height) * 0.38);
+          const sx = Math.max(0, Math.floor(faceBox.x - pad));
+          const sy = Math.max(0, Math.floor(faceBox.y - pad));
+          const sw = Math.min(video.videoWidth - sx, Math.floor(faceBox.width + pad * 2));
+          const sh = Math.min(video.videoHeight - sy, Math.floor(faceBox.height + pad * 2));
+
+          const out = document.createElement('canvas');
+          out.width = 400;
+          out.height = 400;
+          const outCtx = out.getContext('2d');
+          if (outCtx) {
+            outCtx.drawImage(canvas, sx, sy, sw, sh, 0, 0, 400, 400);
+            image = out.toDataURL('image/jpeg', 0.94);
+          }
+        }
+      } catch {}
+    }
+
     try {
       const descriptor = await getFaceDescriptorFromImage(video);
       if (!descriptor) return null;
@@ -109,7 +135,7 @@ const AutoCapture10: React.FC<AutoCapture10Props> = ({
       );
       setHint(HINTS[hintIdx]);
 
-      const shot = await captureOne();
+      const shot = await captureOne(collected.length === 0);
       if (shot) {
         collected.push(shot);
         setShots([...collected]);

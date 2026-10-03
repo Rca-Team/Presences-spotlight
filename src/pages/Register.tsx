@@ -128,7 +128,7 @@ const Register = () => {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isModelLoading, setIsModelLoading] = useState(true);
   const [faceCaptured, setFaceCaptured] = useState(false);
-  const [captureMode, setCaptureMode] = useState<'auto' | '3d'>('auto');
+  const [captureMode, setCaptureMode] = useState<'auto' | '3d'>('3d');
   const [drafts, setDrafts] = useState<RegistrationDraft[]>([]);
   const activeDraftIdRef = useRef<string>(`tmp-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`);
   const lastPersistedFingerprintRef = useRef<string>('');
@@ -1057,14 +1057,14 @@ const Register = () => {
                     <motion.div key="step2" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }} transition={{ duration: 0.3 }} className="space-y-6">
                       <div className="relative rounded-2xl overflow-hidden bg-gradient-to-br from-blue-600 to-blue-500 p-1 shadow-xl shadow-blue-500/20">
                         <div className="bg-background rounded-xl overflow-hidden">
-                          <div className="p-4 bg-gradient-to-r from-blue-600 to-blue-500">
+                          <div className="p-4 bg-gradient-to-r from-emerald-600 via-teal-600 to-cyan-600">
                             <div className="flex items-center gap-3">
                               <div className="w-10 h-10 rounded-xl bg-white/20 flex items-center justify-center">
-                                <Camera className="w-5 h-5 text-white" />
+                                <Scan className="w-5 h-5 text-white" />
                               </div>
                               <div>
-                                <h3 className="font-semibold text-white">3D Face Scanner</h3>
-                                <p className="text-sm text-blue-100">Continuous 3D depth scan of your face</p>
+                                <h3 className="font-semibold text-white">Apple Face ID Scanner</h3>
+                                <p className="text-sm text-emerald-100">Profile photo + 360° multi-angle face enrollment</p>
                               </div>
                             </div>
                           </div>
@@ -1072,24 +1072,35 @@ const Register = () => {
                             {faceCaptured && faceImage ? (
                               <motion.div initial={{ scale: 0.9, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} className="text-center space-y-4">
                                 <div className="relative inline-block">
-                                  <img src={faceImage} alt="Captured" className="w-48 h-48 rounded-full object-cover mx-auto border-4 border-blue-500 shadow-lg" style={{ transform: 'scaleX(-1)' }} />
+                                  <img src={faceImage} alt="Captured" className="w-48 h-48 rounded-full object-cover mx-auto border-4 border-emerald-500 shadow-xl shadow-emerald-500/20" />
                                   <motion.div initial={{ scale: 0 }} animate={{ scale: 1 }} transition={{ delay: 0.2, type: "tween" }}
-                                    className="absolute -bottom-2 -right-2 w-12 h-12 rounded-full bg-green-500 flex items-center justify-center shadow-lg">
+                                    className="absolute -bottom-2 -right-2 w-12 h-12 rounded-full bg-emerald-500 flex items-center justify-center shadow-lg">
                                     <CheckCircle2 className="w-7 h-7 text-white" />
                                   </motion.div>
                                 </div>
                                 <div>
-                                  <p className="font-semibold text-lg text-green-600 dark:text-green-400">3D Scan Complete!</p>
-                                <p className="text-sm text-muted-foreground">{allDescriptors.length} samples saved for high-accuracy face model</p>
+                                  <p className="font-semibold text-lg text-emerald-600 dark:text-emerald-400">Apple Face ID Enrolled!</p>
+                                  <p className="text-sm text-muted-foreground">Front profile photo saved · {allDescriptors.length} 3D angle vectors calibrated</p>
                                 </div>
                                 <Button type="button" variant="outline" onClick={() => { setFaceCaptured(false); setFaceImage(null); setFaceDescriptor(null); }}>
-                                  <Camera className="w-4 h-4 mr-2" />Retake Scan
+                                  <Camera className="w-4 h-4 mr-2" />Retake Face ID Scan
                                 </Button>
                               </motion.div>
                             ) : (
                                 <div className="space-y-3">
                                   {/* Mode toggle - Apple Nano-Segmented Switcher */}
                                   <div className="grid grid-cols-2 gap-1.5 p-1 nano-glass-dock rounded-full">
+                                    <button
+                                      type="button"
+                                      onClick={() => setCaptureMode('3d')}
+                                      className={`flex items-center justify-center gap-1.5 py-2 px-3 rounded-full text-xs font-bold transition-all duration-200 active:scale-95 ${
+                                        captureMode === '3d'
+                                          ? 'bg-gradient-to-r from-emerald-600 to-teal-600 text-white shadow-md shadow-emerald-600/30'
+                                          : 'text-muted-foreground hover:text-foreground'
+                                      }`}
+                                    >
+                                      <Scan className="h-3.5 w-3.5" /> Face ID (Apple)
+                                    </button>
                                     <button
                                       type="button"
                                       onClick={() => setCaptureMode('auto')}
@@ -1099,24 +1110,13 @@ const Register = () => {
                                           : 'text-muted-foreground hover:text-foreground'
                                       }`}
                                     >
-                                      <Zap className="h-3.5 w-3.5" /> Auto (10 photos · 5s)
-                                    </button>
-                                    <button
-                                      type="button"
-                                      onClick={() => setCaptureMode('3d')}
-                                      className={`flex items-center justify-center gap-1.5 py-2 px-3 rounded-full text-xs font-bold transition-all duration-200 active:scale-95 ${
-                                        captureMode === '3d'
-                                          ? 'bg-gradient-to-r from-blue-600 to-indigo-600 text-white shadow-md shadow-blue-600/30'
-                                          : 'text-muted-foreground hover:text-foreground'
-                                      }`}
-                                    >
-                                      <Scan className="h-3.5 w-3.5" /> 3D Scan (guided)
+                                      <Zap className="h-3.5 w-3.5" /> Rapid Auto (10 photos)
                                     </button>
                                   </div>
-                                  {captureMode === 'auto' ? (
-                                    <AutoCapture10 onComplete={handleMultiAngleComplete} isModelLoading={isModelLoading} />
-                                  ) : (
+                                  {captureMode === '3d' ? (
                                     <Scan3DCapture onComplete={handleMultiAngleComplete} isModelLoading={isModelLoading} />
+                                  ) : (
+                                    <AutoCapture10 onComplete={handleMultiAngleComplete} isModelLoading={isModelLoading} />
                                   )}
                                 </div>
                             )}

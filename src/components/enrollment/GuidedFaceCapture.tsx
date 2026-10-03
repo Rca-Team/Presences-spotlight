@@ -5,7 +5,7 @@ import { Button } from '@/components/ui/button';
 import { poses, type CaptureResult, type FaceSample, type Pose } from '@/services/enrollment/types';
 import { eyeOpenness, estimateFacePose, imageQuality } from '@/services/enrollment/captureQuality';
 
-type Phase = 'prepare' | 'glasses' | 'blink' | 'turn' | 'capture' | 'replace-glasses' | 'done';
+type Phase = 'prepare' | 'glasses' | 'turn' | 'capture' | 'replace-glasses' | 'done';
 
 const directions: Record<Pose, string> = {
   front: 'Look straight ahead',
@@ -144,7 +144,7 @@ export default function GuidedFaceCapture({
   const [classifying, setClassifying] = useState(false);
   const [generation, setGeneration] = useState(0);
   const [soundMuted, setSoundMuted] = useState(false);
-  const [activeTargetPose, setActiveTargetPose] = useState<Pose | 'blink' | null>(null);
+  const [activeTargetPose, setActiveTargetPose] = useState<Pose | null>(null);
 
   const reduced = useReducedMotion();
 
@@ -560,22 +560,7 @@ export default function GuidedFaceCapture({
             }
 
             if (!reference && currentPose === 'front') reference = descriptor;
-
-            // Phase: Blink
-            if (phase.current === 'blink') {
-              setActiveTargetPose('blink');
-              setMessage('Look straight ahead, then blink slowly');
-              if (currentPose !== 'front') return;
-              const openness = eyeOpenness(face.landmarks.positions);
-              openBaseline = Math.max(openBaseline, openness);
-              if (openBaseline > 0.2 && openness < openBaseline * 0.65) closed = true;
-              if (closed && openness > openBaseline * 0.85) {
-                blinked = true;
-                soundRef.current.playSectorComplete();
-                change('turn');
-              }
-              return;
-            }
+            blinked = true;
 
             // Phase: Turn Challenge
             if (phase.current === 'turn') {
@@ -741,18 +726,12 @@ export default function GuidedFaceCapture({
             <ArrowDown size={24} className="animate-pulse" />
           </div>
         )}
-        {activeTargetPose === 'blink' && (
-          <div className="faceid-viewport-arrow pos-up" title="Blink Eyes">
-            <Eye size={22} className="animate-bounce" />
-          </div>
-        )}
-
         {/* Apple Face ID 36-tick HUD & Particle Canvas */}
         <canvas ref={overlayCanvasRef} className="faceid-canvas-overlay" />
       </div>
 
       {/* AI Visual 3D Action Guidance with Animated Head Model */}
-      {(stage === 'capture' || stage === 'turn' || stage === 'blink') && (
+      {(stage === 'capture' || stage === 'turn') && (
         <div className="faceid-action-guide">
           <div className="faceid-head-avatar-wrapper">
             <div
@@ -801,7 +780,6 @@ export default function GuidedFaceCapture({
               {activeTargetPose === 'up' && 'Follow arrow: lift chin up slightly'}
               {activeTargetPose === 'down' && 'Follow arrow: lower chin slightly'}
               {activeTargetPose === 'front' && 'Center position: look straight ahead'}
-              {activeTargetPose === 'blink' && 'Liveness check: slow blink once'}
               {!activeTargetPose && 'Calibrating facial landmarks…'}
             </p>
           </div>
@@ -853,7 +831,7 @@ export default function GuidedFaceCapture({
               onClick={() => {
                 glasses.current = true;
                 worker.current?.terminate();
-                change('blink');
+                change('turn');
               }}
             >
               Yes — remove for 1st view
@@ -864,7 +842,7 @@ export default function GuidedFaceCapture({
               onClick={() => {
                 glasses.current = false;
                 worker.current?.terminate();
-                change('blink');
+                change('turn');
               }}
             >
               No glasses

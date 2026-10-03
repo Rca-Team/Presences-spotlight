@@ -12,6 +12,9 @@ import {
   Sparkles,
   ShieldCheck,
   Check,
+  Volume2,
+  VolumeX,
+  Scan,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import * as faceapi from 'face-api.js';
@@ -32,6 +35,8 @@ interface Scan3DCaptureProps {
 
 type PoseSector = 'front' | 'left' | 'right' | 'up' | 'down';
 
+type CaptureStage = 'aligning' | 'capturing_profile' | 'profile_done' | 'rotating_angles' | 'complete';
+
 const TOTAL_TICKS = 36;
 const TARGET_SAMPLES_PER_SECTOR: Record<PoseSector, number> = {
   front: 3,
@@ -42,12 +47,13 @@ const TARGET_SAMPLES_PER_SECTOR: Record<PoseSector, number> = {
 };
 const TOTAL_REQUIRED_SAMPLES = 11;
 
-// Web Audio API sound engine
+// Web Audio API sound engine for Apple Face ID cues
 class AppleStyleSoundEngine {
   private ctx: AudioContext | null = null;
+  public enabled = true;
 
   private getCtx() {
-    if (!this.ctx) {
+    if (!this.ctx && typeof window !== 'undefined') {
       const AudioContextClass = window.AudioContext || (window as any).webkitAudioContext;
       if (AudioContextClass) this.ctx = new AudioContextClass();
     }
@@ -57,7 +63,51 @@ class AppleStyleSoundEngine {
     return this.ctx;
   }
 
+  playShutter() {
+    if (!this.enabled) return;
+    try {
+      const ctx = this.getCtx();
+      if (!ctx) return;
+      const now = ctx.currentTime;
+
+      // Realistic mechanical camera shutter sound
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.type = 'triangle';
+      osc.frequency.setValueAtTime(800, now);
+      osc.frequency.exponentialRampToValueAtTime(120, now + 0.08);
+
+      gain.gain.setValueAtTime(0.25, now);
+      gain.gain.exponentialRampToValueAtTime(0.001, now + 0.09);
+
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      osc.start(now);
+      osc.stop(now + 0.09);
+
+      // Shutter click echo
+      setTimeout(() => {
+        try {
+          if (!this.enabled || !this.ctx) return;
+          const now2 = this.ctx.currentTime;
+          const osc2 = this.ctx.createOscillator();
+          const gain2 = this.ctx.createGain();
+          osc2.type = 'sine';
+          osc2.frequency.setValueAtTime(1400, now2);
+          osc2.frequency.exponentialRampToValueAtTime(400, now2 + 0.06);
+          gain2.gain.setValueAtTime(0.18, now2);
+          gain2.gain.exponentialRampToValueAtTime(0.001, now2 + 0.07);
+          osc2.connect(gain2);
+          gain2.connect(this.ctx.destination);
+          osc2.start(now2);
+          osc2.stop(now2 + 0.07);
+        } catch {}
+      }, 70);
+    } catch {}
+  }
+
   playTickPop(frequency = 750) {
+    if (!this.enabled) return;
     try {
       const ctx = this.getCtx();
       if (!ctx) return;
@@ -68,17 +118,18 @@ class AppleStyleSoundEngine {
 
       osc.type = 'sine';
       osc.frequency.setValueAtTime(frequency, ctx.currentTime);
-      osc.frequency.exponentialRampToValueAtTime(frequency + 250, ctx.currentTime + 0.05);
+      osc.frequency.exponentialRampToValueAtTime(frequency + 260, ctx.currentTime + 0.04);
 
-      gain.gain.setValueAtTime(0.12, ctx.currentTime);
-      gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.06);
+      gain.gain.setValueAtTime(0.14, ctx.currentTime);
+      gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.05);
 
       osc.start(ctx.currentTime);
-      osc.stop(ctx.currentTime + 0.06);
+      osc.stop(ctx.currentTime + 0.05);
     } catch {}
   }
 
   playSectorComplete() {
+    if (!this.enabled) return;
     try {
       const ctx = this.getCtx();
       if (!ctx) return;
@@ -89,7 +140,7 @@ class AppleStyleSoundEngine {
         gain.connect(ctx.destination);
         osc.type = 'sine';
         osc.frequency.setValueAtTime(freq, ctx.currentTime + idx * 0.06);
-        gain.gain.setValueAtTime(0.14, ctx.currentTime + idx * 0.06);
+        gain.gain.setValueAtTime(0.15, ctx.currentTime + idx * 0.06);
         gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + idx * 0.06 + 0.14);
         osc.start(ctx.currentTime + idx * 0.06);
         osc.stop(ctx.currentTime + idx * 0.06 + 0.14);
@@ -98,6 +149,7 @@ class AppleStyleSoundEngine {
   }
 
   playScanStart() {
+    if (!this.enabled) return;
     try {
       const ctx = this.getCtx();
       if (!ctx) return;
@@ -117,10 +169,11 @@ class AppleStyleSoundEngine {
   }
 
   playComplete() {
+    if (!this.enabled) return;
     try {
       const ctx = this.getCtx();
       if (!ctx) return;
-      // Apple Pay / Face ID signature chime
+      // Apple Pay / Face ID signature celebration chime
       [587.33, 880, 1174.66].forEach((freq, i) => {
         const osc = ctx.createOscillator();
         const gain = ctx.createGain();
@@ -129,15 +182,16 @@ class AppleStyleSoundEngine {
         osc.frequency.value = freq;
         osc.type = 'sine';
         const start = ctx.currentTime + i * 0.11;
-        gain.gain.setValueAtTime(0.2, start);
-        gain.gain.exponentialRampToValueAtTime(0.001, start + 0.4);
+        gain.gain.setValueAtTime(0.22, start);
+        gain.gain.exponentialRampToValueAtTime(0.001, start + 0.45);
         osc.start(start);
-        osc.stop(start + 0.4);
+        osc.stop(start + 0.45);
       });
     } catch {}
   }
 
   playFail() {
+    if (!this.enabled) return;
     try {
       const ctx = this.getCtx();
       if (!ctx) return;
@@ -173,15 +227,18 @@ const Scan3DCapture: React.FC<Scan3DCaptureProps> = ({ onComplete, isModelLoadin
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const overlayCanvasRef = useRef<HTMLCanvasElement>(null);
 
-  const [stream, setStream] = useState<MediaStream | null>(null);
   const [cameraReady, setCameraReady] = useState(false);
   const [scanning, setScanning] = useState(false);
+  const [stage, setStage] = useState<CaptureStage>('aligning');
   const [progress, setProgress] = useState(0);
   const [scanComplete, setScanComplete] = useState(false);
   const [primaryImage, setPrimaryImage] = useState<string | null>(null);
   const [faceDetected, setFaceDetected] = useState(false);
-  const [statusText, setStatusText] = useState('Position your face in the center frame');
+  const [statusText, setStatusText] = useState('Position your face inside the circle');
   const [activeSector, setActiveSector] = useState<PoseSector>('front');
+  const [soundEnabled, setSoundEnabled] = useState(true);
+  const [flashActive, setFlashActive] = useState(false);
+
   const [sectorCounts, setSectorCounts] = useState<Record<PoseSector, number>>({
     front: 0,
     left: 0,
@@ -199,18 +256,28 @@ const Scan3DCapture: React.FC<Scan3DCaptureProps> = ({ onComplete, isModelLoadin
   const liveCursorAngleRef = useRef<number | null>(null);
   const liveLandmarksRef = useRef<faceapi.Point[] | null>(null);
   const lastCaptureTimeRef = useRef<number>(0);
+  const frontFaceStableStartRef = useRef<number>(0);
+  const primaryCapturedRef = useRef<boolean>(false);
 
   const scanningRef = useRef(false);
   const scanCompleteRef = useRef(false);
   const faceDetectedRef = useRef(false);
   const sectorCountsRef = useRef(sectorCounts);
+  const stageRef = useRef<CaptureStage>('aligning');
 
   useEffect(() => { scanningRef.current = scanning; }, [scanning]);
   useEffect(() => { scanCompleteRef.current = scanComplete; }, [scanComplete]);
   useEffect(() => { faceDetectedRef.current = faceDetected; }, [faceDetected]);
   useEffect(() => { sectorCountsRef.current = sectorCounts; }, [sectorCounts]);
+  useEffect(() => { stageRef.current = stage; }, [stage]);
 
   const streamRef = useRef<MediaStream | null>(null);
+
+  // Toggle sound
+  const toggleSound = () => {
+    soundRef.current.enabled = !soundRef.current.enabled;
+    setSoundEnabled(soundRef.current.enabled);
+  };
 
   // Start Camera
   useEffect(() => {
@@ -238,9 +305,9 @@ const Scan3DCapture: React.FC<Scan3DCaptureProps> = ({ onComplete, isModelLoadin
           }
           setCameraReady(true);
         }
-        setStream(mediaStream);
       } catch (err) {
         console.error('Camera access failed:', err);
+        setStatusText('Camera permission required. Please allow camera access.');
       }
     };
 
@@ -259,13 +326,8 @@ const Scan3DCapture: React.FC<Scan3DCaptureProps> = ({ onComplete, isModelLoadin
     loadRegistrationModels().catch((e) => console.error('Model load error:', e));
   }, []);
 
-  // Determine current guidance prompt and target sector
+  // Update dynamic guidance prompt based on completed sectors
   const updateGuidancePrompt = (counts: Record<PoseSector, number>) => {
-    if (counts.front < TARGET_SAMPLES_PER_SECTOR.front) {
-      setActiveSector('front');
-      setStatusText('Look directly into the camera');
-      return 'front';
-    }
     if (counts.left < TARGET_SAMPLES_PER_SECTOR.left) {
       setActiveSector('left');
       setStatusText('Slowly turn your head left ⬅️');
@@ -286,22 +348,22 @@ const Scan3DCapture: React.FC<Scan3DCaptureProps> = ({ onComplete, isModelLoadin
       setStatusText('Tilt your chin slightly down ⬇️');
       return 'down';
     }
-    setStatusText('Finishing 3D face map...');
+    setStatusText('Finishing Apple Face ID calibration…');
     return 'front';
   };
 
   // Apple Face ID Particle Burst
-  const triggerParticleBurst = (cx: number, cy: number, count = 25) => {
+  const triggerParticleBurst = (cx: number, cy: number, count = 28) => {
     for (let i = 0; i < count; i++) {
       const angle = Math.random() * Math.PI * 2;
-      const speed = 2 + Math.random() * 5;
+      const speed = 2.5 + Math.random() * 5.5;
       particlesRef.current.push({
         x: cx,
         y: cy,
         vx: Math.cos(angle) * speed,
         vy: Math.sin(angle) * speed,
-        size: 2 + Math.random() * 3,
-        hue: 142 + (Math.random() * 30 - 15), // Apple emerald green
+        size: 2.5 + Math.random() * 3.5,
+        hue: 142 + (Math.random() * 26 - 13), // Emerald Apple Green
         alpha: 1,
         life: 0,
         maxLife: 35 + Math.random() * 25,
@@ -309,7 +371,41 @@ const Scan3DCapture: React.FC<Scan3DCaptureProps> = ({ onComplete, isModelLoadin
     }
   };
 
-  // Finish and L2 Normalize Scan
+  // Helper to capture crystal clear 1:1 square front portrait for student profile
+  const captureFrontProfilePhoto = async (): Promise<string | null> => {
+    if (!videoRef.current || !canvasRef.current) return null;
+    const video = videoRef.current;
+    if (video.readyState < 2 || video.videoWidth === 0) return null;
+
+    const canvas = canvasRef.current;
+    canvas.width = video.videoWidth;
+    canvas.height = video.videoHeight;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return null;
+    ctx.drawImage(video, 0, 0);
+
+    const faceBox = await getFaceBoxFromImage(video);
+    if (faceBox) {
+      // Ideal square portrait crop with 35% margin for student ID card
+      const pad = Math.round(Math.max(faceBox.width, faceBox.height) * 0.38);
+      const sx = Math.max(0, Math.floor(faceBox.x - pad));
+      const sy = Math.max(0, Math.floor(faceBox.y - pad));
+      const sw = Math.min(video.videoWidth - sx, Math.floor(faceBox.width + pad * 2));
+      const sh = Math.min(video.videoHeight - sy, Math.floor(faceBox.height + pad * 2));
+
+      const out = document.createElement('canvas');
+      out.width = 400;
+      out.height = 400;
+      const outCtx = out.getContext('2d');
+      if (outCtx) {
+        outCtx.drawImage(canvas, sx, sy, sw, sh, 0, 0, 400, 400);
+        return out.toDataURL('image/jpeg', 0.94);
+      }
+    }
+    return canvas.toDataURL('image/jpeg', 0.92);
+  };
+
+  // Finish scan, fuse descriptors, L2 normalize
   const finishScan = useCallback(async () => {
     setScanning(false);
     scanningRef.current = false;
@@ -317,31 +413,22 @@ const Scan3DCapture: React.FC<Scan3DCaptureProps> = ({ onComplete, isModelLoadin
 
     if (descriptors.length < 3) {
       soundRef.current.playFail();
-      setStatusText('Insufficient face data captured. Please hold still and rescan.');
+      setStatusText('Insufficient 3D face data. Hold still and rescan.');
       setProgress(0);
+      setStage('aligning');
       return;
     }
 
-    // Capture fallback primary image if not captured yet
-    let finalImage = primaryImage;
-    if (!finalImage && videoRef.current && canvasRef.current) {
-      const video = videoRef.current;
-      if (video.readyState >= 2 && video.videoWidth > 0) {
-        const canvas = canvasRef.current;
-        canvas.width = video.videoWidth;
-        canvas.height = video.videoHeight;
-        const ctx = canvas.getContext('2d');
-        if (ctx) {
-          ctx.drawImage(video, 0, 0);
-          finalImage = canvas.toDataURL('image/jpeg', 0.92);
-          setPrimaryImage(finalImage);
-        }
-      }
+    let finalProfile = primaryImage;
+    if (!finalProfile) {
+      finalProfile = await captureFrontProfilePhoto();
+      if (finalProfile) setPrimaryImage(finalProfile);
     }
 
-    if (!finalImage) {
+    if (!finalProfile) {
       soundRef.current.playFail();
-      setStatusText('Failed to capture clear face image. Please try again.');
+      setStatusText('Failed to capture profile photo. Please retry.');
+      setStage('aligning');
       return;
     }
 
@@ -352,7 +439,7 @@ const Scan3DCapture: React.FC<Scan3DCaptureProps> = ({ onComplete, isModelLoadin
       averaged[i] = descriptors.reduce((sum, d) => sum + d[i], 0) / descriptors.length;
     }
 
-    // 2. L2 Normalization so Euclidean and Cosine distances are strictly on unit sphere
+    // 2. L2 Normalization onto unit sphere
     let norm = 0;
     for (let i = 0; i < dim; i++) {
       norm += averaged[i] * averaged[i];
@@ -364,22 +451,31 @@ const Scan3DCapture: React.FC<Scan3DCaptureProps> = ({ onComplete, isModelLoadin
       }
     }
 
+    // Complete celebration
     soundRef.current.playComplete();
     setScanComplete(true);
     scanCompleteRef.current = true;
+    setStage('complete');
     setProgress(100);
-    setStatusText(`3D Scan Complete! ${descriptors.length} multi-angle samples calibrated.`);
+    setStatusText(`Apple Face ID Complete! ${descriptors.length} 3D angle vectors calibrated.`);
 
-    if ('vibrate' in navigator) {
-      try { navigator.vibrate([60, 50, 90]); } catch {}
+    if (overlayCanvasRef.current) {
+      const ow = overlayCanvasRef.current.width;
+      const oh = overlayCanvasRef.current.height;
+      triggerParticleBurst(ow / 2, oh / 2, 45);
     }
 
-    onComplete(averaged, finalImage, descriptors, sampleImagesRef.current.slice());
+    if ('vibrate' in navigator) {
+      try { navigator.vibrate([60, 40, 80, 50, 100]); } catch {}
+    }
+
+    onComplete(averaged, finalProfile, descriptors, sampleImagesRef.current.slice());
   }, [onComplete, primaryImage]);
 
-  // Start 3D Scan
+  // Start Apple Face ID Capture Workflow
   const startScan = useCallback(() => {
     if (!cameraReady || isModelLoading || !faceDetected) return;
+
     setScanning(true);
     scanningRef.current = true;
     setScanComplete(false);
@@ -390,6 +486,9 @@ const Scan3DCapture: React.FC<Scan3DCaptureProps> = ({ onComplete, isModelLoadin
     activeTicksRef.current.clear();
     particlesRef.current = [];
     lastCaptureTimeRef.current = Date.now();
+    frontFaceStableStartRef.current = 0;
+    primaryCapturedRef.current = false;
+    setPrimaryImage(null);
 
     const initialCounts: Record<PoseSector, number> = {
       front: 0,
@@ -400,50 +499,15 @@ const Scan3DCapture: React.FC<Scan3DCaptureProps> = ({ onComplete, isModelLoadin
     };
     setSectorCounts(initialCounts);
     sectorCountsRef.current = initialCounts;
-    updateGuidancePrompt(initialCounts);
+
+    // Stage 1: Capturing Frontal Profile Photo First
+    setStage('capturing_profile');
+    stageRef.current = 'capturing_profile';
+    setStatusText('Look straight at the camera for your profile photo 📸');
     soundRef.current.playScanStart();
-
-    // Capture centered primary image right away
-    const capturePrimaryFace = async () => {
-      if (videoRef.current && canvasRef.current) {
-        const video = videoRef.current;
-        if (video.readyState >= 2 && video.videoWidth > 0) {
-          const canvas = canvasRef.current;
-          canvas.width = video.videoWidth;
-          canvas.height = video.videoHeight;
-          const ctx = canvas.getContext('2d');
-          if (ctx) {
-            ctx.drawImage(video, 0, 0);
-            const faceBox = await getFaceBoxFromImage(video);
-            if (faceBox) {
-              const pad = Math.round(Math.max(faceBox.width, faceBox.height) * 0.35);
-              const sx = Math.max(0, Math.floor(faceBox.x - pad));
-              const sy = Math.max(0, Math.floor(faceBox.y - pad));
-              const sw = Math.min(video.videoWidth - sx, Math.floor(faceBox.width + pad * 2));
-              const sh = Math.min(video.videoHeight - sy, Math.floor(faceBox.height + pad * 2));
-
-              const out = document.createElement('canvas');
-              out.width = 400;
-              out.height = 400;
-              const outCtx = out.getContext('2d');
-              if (outCtx) {
-                outCtx.drawImage(canvas, sx, sy, sw, sh, 0, 0, 400, 400);
-                return out.toDataURL('image/jpeg', 0.92);
-              }
-            }
-            return canvas.toDataURL('image/jpeg', 0.92);
-          }
-        }
-      }
-      return null;
-    };
-
-    capturePrimaryFace().then((img) => {
-      if (img) setPrimaryImage(img);
-    });
   }, [cameraReady, isModelLoading, faceDetected]);
 
-  // Real-Time Detection & 3D Pose Estimation Engine
+  // Real-Time Detection & Apple Face ID Continuous Rotation Engine
   useEffect(() => {
     if (!cameraReady || scanComplete || isModelLoading) return;
     let cancelled = false;
@@ -458,7 +522,6 @@ const Scan3DCapture: React.FC<Scan3DCaptureProps> = ({ onComplete, isModelLoadin
 
       isProcessing = true;
       try {
-        // Fast TinyFaceDetector with landmarks & descriptor
         let detection = await faceapi
           .detectSingleFace(
             video,
@@ -468,9 +531,8 @@ const Scan3DCapture: React.FC<Scan3DCaptureProps> = ({ onComplete, isModelLoadin
           .withFaceDescriptor();
 
         if (!detection && scanningRef.current) {
-          // Fallback to SSD MobileNet if TinyFace missed an extreme angle
           detection = await faceapi
-            .detectSingleFace(video, new faceapi.SsdMobilenetv1Options({ minConfidence: 0.4 }))
+            .detectSingleFace(video, new faceapi.SsdMobilenetv1Options({ minConfidence: 0.38 }))
             .withFaceLandmarks()
             .withFaceDescriptor();
         }
@@ -494,7 +556,6 @@ const Scan3DCapture: React.FC<Scan3DCaptureProps> = ({ onComplete, isModelLoadin
           const faceH = Math.max(Math.hypot(chin.x - eyeMidX, chin.y - eyeMidY), 1);
 
           // Video is mirrored on screen via scaleX(-1)
-          // Physically turning to user's left -> nose moves to camera right (positive X)
           const yaw = (noseTip.x - eyeMidX) / eyeDist;
           const pitchRatio = (noseTip.y - eyeMidY) / faceH;
 
@@ -511,7 +572,7 @@ const Scan3DCapture: React.FC<Scan3DCaptureProps> = ({ onComplete, isModelLoadin
 
           // Detect discrete pose sector
           let detectedSector: PoseSector = 'front';
-          const isFront = Math.abs(yaw) < 0.16 && pitchRatio >= 0.35 && pitchRatio <= 0.48;
+          const isFront = Math.abs(yaw) < 0.15 && pitchRatio >= 0.35 && pitchRatio <= 0.48;
           if (isFront) {
             detectedSector = 'front';
           } else if (yaw > 0.18) {
@@ -524,37 +585,90 @@ const Scan3DCapture: React.FC<Scan3DCaptureProps> = ({ onComplete, isModelLoadin
             detectedSector = 'down';
           }
 
-          // If scanning, record descriptor samples
-          if (scanningRef.current && !scanCompleteRef.current) {
+          const currentStage = stageRef.current;
+
+          // ── STAGE 1: FIRST PHOTO FOR PROFILE ──
+          if (scanningRef.current && currentStage === 'capturing_profile' && !primaryCapturedRef.current) {
+            if (isFront) {
+              if (!frontFaceStableStartRef.current) {
+                frontFaceStableStartRef.current = Date.now();
+              }
+              const stableDuration = Date.now() - frontFaceStableStartRef.current;
+
+              if (stableDuration >= 450) {
+                // Snap official front profile photo
+                primaryCapturedRef.current = true;
+                soundRef.current.playShutter();
+                setFlashActive(true);
+                setTimeout(() => setFlashActive(false), 220);
+
+                if ('vibrate' in navigator) {
+                  try { navigator.vibrate(40); } catch {}
+                }
+
+                const profileImg = await captureFrontProfilePhoto();
+                if (profileImg) {
+                  setPrimaryImage(profileImg);
+                }
+
+                // Add front descriptor sample
+                descriptorsRef.current.push(detection.descriptor);
+                if (profileImg) sampleImagesRef.current.push(profileImg);
+
+                const counts = { ...sectorCountsRef.current, front: 1 };
+                sectorCountsRef.current = counts;
+                setSectorCounts(counts);
+
+                // Fill center ticks
+                [0, 1, TOTAL_TICKS - 1].forEach((t) => activeTicksRef.current.add(t));
+
+                soundRef.current.playSectorComplete();
+                setStage('rotating_angles');
+                stageRef.current = 'rotating_angles';
+                setStatusText('Profile photo saved! Now slowly rotate your head in a circle 🔄');
+              } else {
+                setStatusText('Hold still for profile photo… 📸');
+              }
+            } else {
+              frontFaceStableStartRef.current = 0;
+              setStatusText('Look straight at the camera to take profile photo 📸');
+            }
+            return;
+          }
+
+          // ── STAGE 2: 360° APPLE FACE ID CIRCULAR HEAD ROTATION ──
+          if (scanningRef.current && currentStage === 'rotating_angles' && !scanCompleteRef.current) {
             const now = Date.now();
             const timeSinceLast = now - lastCaptureTimeRef.current;
 
-            // Capture sample if sector still needs samples & throttle 160ms
             const currentCounts = { ...sectorCountsRef.current };
             const neededForSector = TARGET_SAMPLES_PER_SECTOR[detectedSector];
             const currentInSector = currentCounts[detectedSector];
 
-            // Mark radial ticks around this angle
+            // Activate radial ticks around user's continuous angle
+            const prevSize = activeTicksRef.current.size;
             activeTicksRef.current.add(tickIdx);
             activeTicksRef.current.add((tickIdx + 1) % TOTAL_TICKS);
             activeTicksRef.current.add((tickIdx - 1 + TOTAL_TICKS) % TOTAL_TICKS);
 
-            if (timeSinceLast > 160) {
+            if (activeTicksRef.current.size > prevSize) {
+              const beepPitch = 700 + activeTicksRef.current.size * 18;
+              soundRef.current.playTickPop(beepPitch);
+              if ('vibrate' in navigator) {
+                try { navigator.vibrate(20); } catch {}
+              }
+            }
+
+            // Capture sample if sector needs samples & throttle 150ms
+            if (timeSinceLast > 150 && currentInSector < neededForSector + 1) {
               descriptorsRef.current.push(detection.descriptor);
               currentCounts[detectedSector] = currentInSector + 1;
               sectorCountsRef.current = currentCounts;
               setSectorCounts(currentCounts);
               lastCaptureTimeRef.current = now;
 
-              // Audio & Haptic feedback
-              const beepPitch = 700 + descriptorsRef.current.length * 40;
-              soundRef.current.playTickPop(beepPitch);
-              if ('vibrate' in navigator) {
-                try { navigator.vibrate(30); } catch {}
-              }
-
-              // Take snapshot for training archive
-              if (canvasRef.current) {
+              // Save snapshot
+              if (canvasRef.current && video) {
                 const c = canvasRef.current;
                 c.width = video.videoWidth;
                 c.height = video.videoHeight;
@@ -571,24 +685,24 @@ const Scan3DCapture: React.FC<Scan3DCaptureProps> = ({ onComplete, isModelLoadin
                 if (overlayCanvasRef.current) {
                   const ow = overlayCanvasRef.current.width;
                   const oh = overlayCanvasRef.current.height;
-                  triggerParticleBurst(ow / 2, oh / 2, 20);
+                  triggerParticleBurst(ow / 2, oh / 2, 22);
                 }
               }
 
-              // Calculate overall progress
+              // Calculate overall radial progress
               const totalCollected = descriptorsRef.current.length;
               const completedSectors = (Object.keys(currentCounts) as PoseSector[]).filter(
                 (k) => currentCounts[k] >= TARGET_SAMPLES_PER_SECTOR[k]
               ).length;
 
-              const tickProg = (activeTicksRef.current.size / TOTAL_TICKS) * 50;
-              const sampleProg = Math.min((totalCollected / TOTAL_REQUIRED_SAMPLES) * 50, 50);
+              const tickProg = (activeTicksRef.current.size / TOTAL_TICKS) * 60;
+              const sampleProg = Math.min((totalCollected / TOTAL_REQUIRED_SAMPLES) * 40, 40);
               const totalProg = Math.min(tickProg + sampleProg, 100);
               setProgress(totalProg);
 
               updateGuidancePrompt(currentCounts);
 
-              // Finish when all sectors met OR overall criteria fulfilled
+              // Complete when either all 5 sectors satisfied OR 11+ samples across 4+ sectors
               if (completedSectors >= 5 || (totalCollected >= TOTAL_REQUIRED_SAMPLES && completedSectors >= 4)) {
                 void finishScan();
               }
@@ -607,14 +721,14 @@ const Scan3DCapture: React.FC<Scan3DCaptureProps> = ({ onComplete, isModelLoadin
       }
     };
 
-    const interval = setInterval(runDetectionStep, 110);
+    const interval = setInterval(runDetectionStep, 100);
     return () => {
       cancelled = true;
       clearInterval(interval);
     };
   }, [cameraReady, scanComplete, isModelLoading, finishScan]);
 
-  // Canvas HUD & Particle Animation
+  // Apple Face ID Canvas Overlay Render Loop
   useEffect(() => {
     if (!overlayCanvasRef.current || !cameraReady) return;
     const canvas = overlayCanvasRef.current;
@@ -629,32 +743,36 @@ const Scan3DCapture: React.FC<Scan3DCaptureProps> = ({ onComplete, isModelLoadin
 
       const cx = w / 2;
       const cy = h / 2;
-      const rx = w * 0.32;
-      const ry = h * 0.4;
+      const radius = Math.min(w, h) * 0.38; // Circular Face ID Ring
       const isScan = scanningRef.current;
       const isFace = faceDetectedRef.current;
       const isDone = scanCompleteRef.current;
       const activeTicks = activeTicksRef.current;
       const cursorAngle = liveCursorAngleRef.current;
+      const currentStage = stageRef.current;
       const t = Date.now() / 1000;
 
-      // 1. Draw subtle 3D Landmark Mesh
+      // 1. Face Landmark Wireframe Mesh
       const landmarks = liveLandmarksRef.current;
       if (landmarks && landmarks.length >= 68 && videoRef.current) {
         const vw = videoRef.current.videoWidth || 640;
         const vh = videoRef.current.videoHeight || 480;
 
         ctx.save();
-        ctx.strokeStyle = isScan ? 'hsla(142, 85%, 55%, 0.45)' : 'hsla(185, 80%, 55%, 0.35)';
-        ctx.lineWidth = 1.5;
+        ctx.strokeStyle = isDone
+          ? 'hsla(142, 85%, 55%, 0.6)'
+          : isScan
+          ? 'hsla(142, 85%, 55%, 0.45)'
+          : 'hsla(185, 80%, 55%, 0.35)';
+        ctx.lineWidth = 1.4;
 
-        // Note: video is mirrored with scaleX(-1), so mirroredX = w * (1 - x / vw)
+        // video is mirrored via scaleX(-1)
         const mapPoint = (p: faceapi.Point) => ({
           x: (1 - p.x / vw) * w,
           y: (p.y / vh) * h,
         });
 
-        // Jawline curve
+        // Jawline
         ctx.beginPath();
         for (let i = 0; i <= 16; i++) {
           const pt = mapPoint(landmarks[i]);
@@ -663,7 +781,7 @@ const Scan3DCapture: React.FC<Scan3DCaptureProps> = ({ onComplete, isModelLoadin
         }
         ctx.stroke();
 
-        // Nose Bridge & Base
+        // Nose Bridge
         ctx.beginPath();
         for (let i = 27; i <= 35; i++) {
           const pt = mapPoint(landmarks[i]);
@@ -673,10 +791,7 @@ const Scan3DCapture: React.FC<Scan3DCaptureProps> = ({ onComplete, isModelLoadin
         ctx.stroke();
 
         // Eye Contours
-        [
-          [36, 37, 38, 39, 40, 41],
-          [42, 43, 44, 45, 46, 47],
-        ].forEach((indices) => {
+        [[36, 37, 38, 39, 40, 41], [42, 43, 44, 45, 46, 47]].forEach((indices) => {
           ctx.beginPath();
           indices.forEach((idx, i) => {
             const pt = mapPoint(landmarks[idx]);
@@ -686,52 +801,50 @@ const Scan3DCapture: React.FC<Scan3DCaptureProps> = ({ onComplete, isModelLoadin
           ctx.closePath();
           ctx.stroke();
         });
-
         ctx.restore();
       }
 
-      // 2. Base Guide Oval
+      // 2. Base Guide Ring Circle (Apple Viewport)
       ctx.save();
       ctx.strokeStyle = isDone
-        ? 'hsla(142, 80%, 50%, 0.9)'
+        ? 'hsla(142, 85%, 50%, 0.95)'
         : isScan
-        ? 'hsla(142, 80%, 50%, 0.6)'
+        ? 'hsla(142, 80%, 50%, 0.65)'
         : isFace
         ? 'hsla(185, 75%, 50%, 0.6)'
         : 'hsla(220, 20%, 65%, 0.35)';
-      ctx.lineWidth = 2;
-      ctx.setLineDash(isScan ? [] : [6, 8]);
+      ctx.lineWidth = 2.5;
       ctx.beginPath();
-      ctx.ellipse(cx, cy, rx, ry, 0, 0, Math.PI * 2);
+      ctx.arc(cx, cy, radius, 0, Math.PI * 2);
       ctx.stroke();
       ctx.restore();
 
-      // 3. Apple Face ID Circular Radial Ticks
+      // 3. Apple Face ID 360° Radial Ticks Ring
       for (let i = 0; i < TOTAL_TICKS; i++) {
         const tickAngle = (i / TOTAL_TICKS) * Math.PI * 2 - Math.PI / 2;
         const isTickActive = activeTicks.has(i) || isDone;
 
-        const innerR = isTickActive ? rx + 8 : rx + 10;
-        const outerR = isTickActive ? rx + 24 : rx + 18;
+        const innerR = isTickActive ? radius + 8 : radius + 10;
+        const outerR = isTickActive ? radius + 25 : radius + 19;
 
         const x1 = cx + Math.cos(tickAngle) * innerR;
-        const y1 = cy + Math.sin(tickAngle) * (ry * (innerR / rx));
+        const y1 = cy + Math.sin(tickAngle) * innerR;
         const x2 = cx + Math.cos(tickAngle) * outerR;
-        const y2 = cy + Math.sin(tickAngle) * (ry * (outerR / rx));
+        const y2 = cy + Math.sin(tickAngle) * outerR;
 
         ctx.beginPath();
         ctx.moveTo(x1, y1);
         ctx.lineTo(x2, y2);
 
         if (isTickActive) {
-          ctx.shadowColor = 'hsla(142, 85%, 50%, 0.8)';
-          ctx.shadowBlur = 10;
-          ctx.strokeStyle = 'hsla(142, 85%, 52%, 0.95)';
-          ctx.lineWidth = 3.5;
+          ctx.shadowColor = 'hsla(142, 85%, 50%, 0.85)';
+          ctx.shadowBlur = 12;
+          ctx.strokeStyle = 'hsla(142, 85%, 52%, 0.98)';
+          ctx.lineWidth = 4;
           ctx.lineCap = 'round';
         } else {
           ctx.shadowBlur = 0;
-          ctx.strokeStyle = 'hsla(0, 0%, 100%, 0.25)';
+          ctx.strokeStyle = 'hsla(0, 0%, 100%, 0.28)';
           ctx.lineWidth = 2;
           ctx.lineCap = 'butt';
         }
@@ -739,51 +852,29 @@ const Scan3DCapture: React.FC<Scan3DCaptureProps> = ({ onComplete, isModelLoadin
         ctx.shadowBlur = 0;
       }
 
-      // 4. Live Cursor Beacon
-      if (isScan && cursorAngle !== null) {
-        const cursorR = rx + 16;
+      // 4. Live Rotation Cursor Beacon (Apple Direction Radar)
+      if (isScan && currentStage === 'rotating_angles' && cursorAngle !== null) {
+        const cursorR = radius + 17;
         const bx = cx + Math.cos(cursorAngle) * cursorR;
-        const by = cy + Math.sin(cursorAngle) * (ry * (cursorR / rx));
+        const by = cy + Math.sin(cursorAngle) * cursorR;
 
         ctx.save();
-        ctx.shadowColor = 'hsla(185, 95%, 60%, 0.9)';
+        ctx.shadowColor = 'hsla(185, 95%, 60%, 0.95)';
         ctx.shadowBlur = 14;
         ctx.fillStyle = 'hsla(185, 95%, 65%, 1)';
         ctx.beginPath();
-        ctx.arc(bx, by, 5.5, 0, Math.PI * 2);
+        ctx.arc(bx, by, 6, 0, Math.PI * 2);
         ctx.fill();
 
-        ctx.strokeStyle = 'hsla(185, 95%, 70%, 0.5)';
-        ctx.lineWidth = 2;
+        ctx.strokeStyle = 'hsla(185, 95%, 70%, 0.6)';
+        ctx.lineWidth = 2.2;
         ctx.beginPath();
-        ctx.arc(bx, by, 8.5 + Math.sin(t * 8) * 2, 0, Math.PI * 2);
+        ctx.arc(bx, by, 9.5 + Math.sin(t * 8) * 2, 0, Math.PI * 2);
         ctx.stroke();
         ctx.restore();
       }
 
-      // 5. Idle corner bracket guides when not scanning
-      if (!isScan && !isDone) {
-        const cornerLen = 22;
-        ctx.strokeStyle = isFace ? 'hsla(142, 70%, 50%, 0.8)' : 'hsla(220, 40%, 65%, 0.4)';
-        ctx.lineWidth = 3;
-        const corners = [
-          [cx - rx, cy - ry],
-          [cx + rx, cy - ry],
-          [cx - rx, cy + ry],
-          [cx + rx, cy + ry],
-        ];
-        corners.forEach(([x, y]) => {
-          const dx = x < cx ? 1 : -1;
-          const dy = y < cy ? 1 : -1;
-          ctx.beginPath();
-          ctx.moveTo(x + dx * cornerLen, y);
-          ctx.lineTo(x, y);
-          ctx.lineTo(x, y + dy * cornerLen);
-          ctx.stroke();
-        });
-      }
-
-      // 6. Particle Physics & Rendering
+      // 5. Particle Physics & Rendering
       const particles = particlesRef.current;
       for (let i = particles.length - 1; i >= 0; i--) {
         const p = particles[i];
@@ -800,7 +891,7 @@ const Scan3DCapture: React.FC<Scan3DCaptureProps> = ({ onComplete, isModelLoadin
 
         const alpha = (1 - p.life / p.maxLife) * p.alpha;
         ctx.shadowColor = `hsla(${p.hue}, 90%, 60%, ${alpha})`;
-        ctx.shadowBlur = 6;
+        ctx.shadowBlur = 8;
         ctx.fillStyle = `hsla(${p.hue}, 85%, 60%, ${alpha})`;
         ctx.beginPath();
         ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
@@ -823,12 +914,15 @@ const Scan3DCapture: React.FC<Scan3DCaptureProps> = ({ onComplete, isModelLoadin
     scanCompleteRef.current = false;
     setScanning(false);
     scanningRef.current = false;
+    setStage('aligning');
     setProgress(0);
     descriptorsRef.current = [];
     sampleImagesRef.current = [];
     activeTicksRef.current.clear();
     setPrimaryImage(null);
-    setStatusText('Position your face in the center frame');
+    primaryCapturedRef.current = false;
+    frontFaceStableStartRef.current = 0;
+    setStatusText('Position your face inside the circle');
     const initialCounts: Record<PoseSector, number> = {
       front: 0,
       left: 0,
@@ -857,14 +951,15 @@ const Scan3DCapture: React.FC<Scan3DCaptureProps> = ({ onComplete, isModelLoadin
 
   return (
     <div className="space-y-3 sm:space-y-4">
-      {/* Video Viewport */}
-      <div className="relative rounded-2xl overflow-hidden bg-black aspect-[3/4] sm:aspect-[4/3] max-h-[46vh] sm:max-h-[55vh] shadow-2xl border border-white/10 mx-auto">
+      {/* Apple Face ID Circular Viewport */}
+      <div className="relative rounded-3xl overflow-hidden bg-black aspect-square max-w-[420px] max-h-[50vh] sm:max-h-[54vh] shadow-2xl border border-white/10 mx-auto flex items-center justify-center">
+        {/* Mirror Camera Feed */}
         <video
           ref={videoRef}
           autoPlay
           muted
           playsInline
-          className="w-full h-full object-cover"
+          className="w-full h-full object-cover scale-x-[-1]"
           style={{ transform: 'scaleX(-1) translateZ(0)' }}
         />
         <canvas ref={canvasRef} className="hidden" />
@@ -873,21 +968,58 @@ const Scan3DCapture: React.FC<Scan3DCaptureProps> = ({ onComplete, isModelLoadin
           className="absolute inset-0 w-full h-full pointer-events-none"
         />
 
-        {/* 5-Sector Progress Pills Top Bar */}
-        {scanning && (
-          <div className="absolute top-2 inset-x-2 sm:top-3 sm:inset-x-4 flex items-center justify-between gap-1 sm:gap-2 z-10">
+        {/* Shutter Flash Animation */}
+        <AnimatePresence>
+          {flashActive && (
+            <motion.div
+              initial={{ opacity: 0.95 }}
+              animate={{ opacity: 0 }}
+              exit={{ opacity: 0 }}
+              transition={{ duration: 0.22 }}
+              className="absolute inset-0 bg-white pointer-events-none z-30"
+            />
+          )}
+        </AnimatePresence>
+
+        {/* Sound Mute/Unmute Icon Top Left */}
+        <button
+          type="button"
+          onClick={toggleSound}
+          className="absolute top-3 left-3 p-2 rounded-full bg-black/50 text-white/80 hover:text-white backdrop-blur-md border border-white/10 transition-all z-20"
+          title={soundEnabled ? 'Mute Face ID audio' : 'Unmute Face ID audio'}
+        >
+          {soundEnabled ? <Volume2 className="w-4 h-4 text-emerald-400" /> : <VolumeX className="w-4 h-4 text-slate-400" />}
+        </button>
+
+        {/* Profile Photo Thumbnail Badge Top Right (First Photo) */}
+        {primaryImage && (
+          <motion.div
+            initial={{ scale: 0, opacity: 0 }}
+            animate={{ scale: 1, opacity: 1 }}
+            className="absolute top-3 right-3 flex items-center gap-2 px-2.5 py-1 rounded-full bg-emerald-950/80 border border-emerald-500/50 backdrop-blur-md shadow-lg z-20"
+          >
+            <div className="relative w-6 h-6 rounded-full overflow-hidden border border-emerald-400">
+              <img src={primaryImage} alt="Profile" className="w-full h-full object-cover" />
+            </div>
+            <span className="text-[11px] font-bold text-emerald-300">Profile Photo ✓</span>
+          </motion.div>
+        )}
+
+        {/* 5-Sector Progress Bar at Top during Angle Rotation */}
+        {scanning && stage === 'rotating_angles' && (
+          <div className="absolute top-12 inset-x-3 flex items-center justify-between gap-1 z-10">
             {(['front', 'left', 'right', 'up', 'down'] as PoseSector[]).map((sec) => {
               const isCompleted = sectorCounts[sec] >= TARGET_SAMPLES_PER_SECTOR[sec];
               const isCurrent = activeSector === sec;
               return (
                 <div
                   key={sec}
-                  className={`flex-1 flex items-center justify-center gap-1 py-1 px-1.5 rounded-lg text-[10px] sm:text-xs font-bold uppercase transition-all backdrop-blur-md ${
+                  className={`flex-1 flex items-center justify-center gap-1 py-1 px-1.5 rounded-lg text-[10px] font-bold uppercase transition-all backdrop-blur-md ${
                     isCompleted
                       ? 'bg-emerald-500/30 text-emerald-300 border border-emerald-500/50'
                       : isCurrent
                       ? 'bg-cyan-500/30 text-cyan-200 border border-cyan-400 animate-pulse'
-                      : 'bg-black/40 text-white/50 border border-white/10'
+                      : 'bg-black/50 text-white/50 border border-white/10'
                   }`}
                 >
                   {isCompleted ? (
@@ -902,53 +1034,53 @@ const Scan3DCapture: React.FC<Scan3DCaptureProps> = ({ onComplete, isModelLoadin
           </div>
         )}
 
-        {/* Face Detection Pill */}
+        {/* Face Detection Status Pill (when not scanning) */}
         {!scanning && !scanComplete && cameraReady && (
           <div
-            className={`absolute top-3 left-3 flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium backdrop-blur-md transition-all ${
+            className={`absolute top-3 right-3 flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium backdrop-blur-md transition-all z-20 ${
               faceDetected
-                ? 'bg-green-500/20 text-green-300 border border-green-500/40'
+                ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40'
                 : 'bg-yellow-500/20 text-yellow-300 border border-yellow-500/40'
             }`}
           >
             <span
               className={`h-2 w-2 rounded-full ${
-                faceDetected ? 'bg-green-400 animate-pulse' : 'bg-yellow-400'
+                faceDetected ? 'bg-emerald-400 animate-pulse' : 'bg-yellow-400'
               }`}
             />
-            {faceDetected ? 'Face in Position' : 'Looking for face...'}
+            {faceDetected ? 'Face in Position' : 'Align face in circle'}
           </div>
         )}
 
         {/* Model Loading State */}
         {isModelLoading && (
-          <div className="absolute inset-0 flex items-center justify-center bg-black/80 backdrop-blur-md z-20">
+          <div className="absolute inset-0 flex items-center justify-center bg-black/80 backdrop-blur-md z-30">
             <div className="text-center text-white space-y-2">
-              <Loader2 className="w-8 h-8 animate-spin mx-auto text-cyan-400" />
-              <p className="text-sm font-semibold">Initializing Apple TrueDepth 3D Models...</p>
+              <Loader2 className="w-8 h-8 animate-spin mx-auto text-emerald-400" />
+              <p className="text-sm font-semibold">Initializing Apple Face ID 3D Engine...</p>
             </div>
           </div>
         )}
 
-        {/* Dynamic iOS Guidance Bottom Banner */}
-        <div className="absolute bottom-0 inset-x-0 bg-gradient-to-t from-black/90 via-black/50 to-transparent p-3 sm:p-5 pt-12">
+        {/* Dynamic Guidance Bottom Banner */}
+        <div className="absolute bottom-0 inset-x-0 bg-gradient-to-t from-black/95 via-black/60 to-transparent p-3 sm:p-4 pt-10 z-10">
           <AnimatePresence mode="wait">
             <motion.div
               key={statusText}
-              initial={{ opacity: 0, y: 6 }}
+              initial={{ opacity: 0, y: 5 }}
               animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -6 }}
+              exit={{ opacity: 0, y: -5 }}
               className="flex items-center justify-center gap-2"
             >
-              {scanning && getSectorIcon(activeSector)}
+              {scanning && stage === 'rotating_angles' && getSectorIcon(activeSector)}
               <p className="text-center text-white font-semibold text-xs sm:text-sm tracking-wide drop-shadow">
                 {statusText}
               </p>
             </motion.div>
           </AnimatePresence>
 
-          {/* Progress Bar & Sample Count */}
-          {scanning && (
+          {/* Progress Bar during Rotation */}
+          {scanning && stage === 'rotating_angles' && (
             <div className="mt-2.5 flex items-center gap-3">
               <div className="flex-1 h-2 bg-white/20 rounded-full overflow-hidden p-0.5 backdrop-blur-sm">
                 <motion.div
@@ -957,9 +1089,9 @@ const Scan3DCapture: React.FC<Scan3DCaptureProps> = ({ onComplete, isModelLoadin
                     width: `${progress}%`,
                     background:
                       'linear-gradient(90deg, hsl(185, 95%, 50%), hsl(142, 85%, 50%))',
-                    boxShadow: '0 0 10px hsla(142, 85%, 50%, 0.6)',
+                    boxShadow: '0 0 10px hsla(142, 85%, 50%, 0.7)',
                   }}
-                  transition={{ ease: 'easeOut', duration: 0.2 }}
+                  transition={{ ease: 'easeOut', duration: 0.15 }}
                 />
               </div>
               <span className="text-[11px] sm:text-xs font-mono font-bold text-white/80 tabular-nums">
@@ -969,12 +1101,12 @@ const Scan3DCapture: React.FC<Scan3DCaptureProps> = ({ onComplete, isModelLoadin
           )}
         </div>
 
-        {/* Success Overlay */}
+        {/* Success Completion Overlay */}
         {scanComplete && primaryImage && (
           <motion.div
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
-            className="absolute inset-0 bg-black/75 backdrop-blur-md flex items-center justify-center z-20"
+            className="absolute inset-0 bg-black/85 backdrop-blur-md flex items-center justify-center z-20"
           >
             <motion.div
               initial={{ scale: 0.7, opacity: 0 }}
@@ -986,27 +1118,27 @@ const Scan3DCapture: React.FC<Scan3DCaptureProps> = ({ onComplete, isModelLoadin
                 <img
                   src={primaryImage}
                   alt="Scanned Face"
-                  className="w-24 h-24 sm:w-32 sm:h-32 rounded-full object-cover border-4 shadow-2xl"
+                  className="w-28 h-28 sm:w-36 sm:h-36 rounded-full object-cover border-4 shadow-2xl"
                   style={{
                     borderColor: 'hsl(142, 80%, 50%)',
-                    boxShadow: '0 0 30px hsla(142, 80%, 50%, 0.4)',
+                    boxShadow: '0 0 32px hsla(142, 80%, 50%, 0.5)',
                   }}
                 />
                 <motion.div
                   initial={{ scale: 0 }}
                   animate={{ scale: 1 }}
                   transition={{ delay: 0.2, type: 'spring' }}
-                  className="absolute -bottom-1 -right-1 w-8 h-8 sm:w-9 sm:h-9 rounded-full flex items-center justify-center shadow-lg"
+                  className="absolute -bottom-1 -right-1 w-9 h-9 sm:w-10 sm:h-10 rounded-full flex items-center justify-center shadow-lg"
                   style={{ background: 'hsl(142, 80%, 45%)' }}
                 >
-                  <CheckCircle2 className="w-5 h-5 text-white" />
+                  <CheckCircle2 className="w-6 h-6 text-white" />
                 </motion.div>
               </div>
               <h4 className="font-extrabold text-base sm:text-lg text-emerald-400">
-                3D TrueDepth Face Captured
+                Face ID Enrollment Complete
               </h4>
               <p className="text-white/70 text-xs mt-0.5">
-                {descriptorsRef.current.length} multi-angle descriptors L2-normalized
+                Front profile photo saved · {descriptorsRef.current.length} 3D angle vectors calibrated
               </p>
             </motion.div>
           </motion.div>
@@ -1019,17 +1151,19 @@ const Scan3DCapture: React.FC<Scan3DCaptureProps> = ({ onComplete, isModelLoadin
           <Button
             onClick={startScan}
             disabled={!cameraReady || isModelLoading || scanning || !faceDetected}
-            className="w-full h-12 sm:h-12 text-sm sm:text-base font-bold shadow-xl active:scale-[0.98] transition-all touch-manipulation rounded-xl bg-gradient-to-r from-cyan-600 via-emerald-600 to-teal-600 hover:from-cyan-500 hover:to-teal-500 text-white"
+            className="w-full h-12 text-sm sm:text-base font-bold shadow-xl active:scale-[0.98] transition-all touch-manipulation rounded-xl bg-gradient-to-r from-emerald-600 via-teal-600 to-cyan-600 hover:from-emerald-500 hover:to-cyan-500 text-white"
           >
             {scanning ? (
               <>
                 <Loader2 className="h-4 w-4 animate-spin mr-2" />
-                Scanning 3D Angles ({Math.round(progress)}%)
+                {stage === 'capturing_profile'
+                  ? 'Capturing Profile Photo…'
+                  : `Calibrating 3D Angles (${Math.round(progress)}%)`}
               </>
             ) : (
               <>
-                <Camera className="h-4 w-4 mr-2" />
-                {faceDetected ? 'Start 3D Face Scan' : 'Position face to start'}
+                <Scan className="h-4 w-4 mr-2" />
+                {faceDetected ? 'Start Apple Face ID Scan' : 'Position face inside circle'}
               </>
             )}
           </Button>
@@ -1053,7 +1187,7 @@ const Scan3DCapture: React.FC<Scan3DCaptureProps> = ({ onComplete, isModelLoadin
           className="w-full h-12 active:scale-[0.98] transition-transform touch-manipulation rounded-xl border-border font-semibold text-sm"
         >
           <RotateCcw className="h-4 w-4 mr-2" />
-          Rescan Face
+          Rescan Face ID
         </Button>
       )}
     </div>
@@ -1061,4 +1195,3 @@ const Scan3DCapture: React.FC<Scan3DCaptureProps> = ({ onComplete, isModelLoadin
 };
 
 export default Scan3DCapture;
-
