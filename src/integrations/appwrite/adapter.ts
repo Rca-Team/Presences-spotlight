@@ -593,17 +593,39 @@ class AppwriteAuthClient {
     } catch (error: any) { return { data: null, error }; }
   }
 
-  async signInWithOAuth({ provider, options }: { provider: string; options?: { redirectTo?: string } }) {
+  signInWithOAuth = async (
+    paramsOrProvider: string | { provider: string; options?: { redirectTo?: string; queryParams?: any } },
+    maybeOptions?: { redirectTo?: string; queryParams?: any }
+  ): Promise<{ data: { url: string } | null; error: any }> => {
     this.last401Time = 0;
     try {
-      const supported = { google: OAuthProvider.Google, github: OAuthProvider.Github, apple: OAuthProvider.Apple, azure: OAuthProvider.Microsoft, facebook: OAuthProvider.Facebook };
-      const selected = supported[provider as keyof typeof supported];
-      if (!selected) throw new Error('Unsupported sign-in provider');
-      const redirect = options?.redirectTo || window.location.origin + '/login';
+      let providerName: string;
+      let options: { redirectTo?: string; queryParams?: any } | undefined;
+
+      if (typeof paramsOrProvider === 'object' && paramsOrProvider !== null && 'provider' in paramsOrProvider) {
+        providerName = paramsOrProvider.provider;
+        options = paramsOrProvider.options;
+      } else {
+        providerName = String(paramsOrProvider || 'google');
+        options = maybeOptions;
+      }
+
+      const supported: Record<string, OAuthProvider> = {
+        google: OAuthProvider.Google,
+        github: OAuthProvider.Github,
+        apple: OAuthProvider.Apple,
+        azure: OAuthProvider.Microsoft,
+        microsoft: OAuthProvider.Microsoft,
+        facebook: OAuthProvider.Facebook,
+      };
+      const selected = supported[providerName?.toLowerCase()] || (providerName as any) || OAuthProvider.Google;
+      const redirect = options?.redirectTo || (typeof window !== 'undefined' ? `${window.location.origin}/login` : '');
       await account.createOAuth2Session(selected, redirect, redirect);
       return { data: { url: redirect }, error: null };
-    } catch (error: any) { return { data: null, error }; }
-  }
+    } catch (error: any) {
+      return { data: null, error };
+    }
+  };
 
   async signUp({ email, password, options }: { email: string; password: string; options?: any }): Promise<{ data: any; error: any }> {
     this.last401Time = 0;
@@ -949,6 +971,7 @@ export class AppwriteUnifiedClient {
   public auth = new AppwriteAuthClient();
   public storage = new AppwriteStorageClient();
   public functions = new AppwriteFunctionsBridge();
+  public signInWithOAuth = (paramsOrProvider: any, options?: any) => this.auth.signInWithOAuth(paramsOrProvider, options);
   private channels = new Map<string, AppwriteRealtimeChannel>();
 
   from<T = any>(collectionName: string): AppwriteQueryBuilder<T> {

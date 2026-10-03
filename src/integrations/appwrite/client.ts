@@ -1,4 +1,5 @@
-import { Client, Account, Databases, Storage, Avatars, Functions, Realtime } from 'appwrite';
+import { Client, Account, Databases, Storage, Avatars, Functions, Realtime, OAuthProvider } from 'appwrite';
+export { OAuthProvider };
 
 const APPWRITE_ENDPOINT = import.meta.env.VITE_APPWRITE_ENDPOINT || 'https://sgp.cloud.appwrite.io/v1';
 const APPWRITE_PROJECT_ID = import.meta.env.VITE_APPWRITE_PROJECT_ID || '6abfd34f000604fcf074';

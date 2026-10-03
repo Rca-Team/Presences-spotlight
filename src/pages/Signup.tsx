@@ -11,6 +11,7 @@ import Logo from '@/components/Logo';
 import { Lock, Mail, User, ShieldCheck, ArrowLeft, Scan, BookOpen, Shield, Bell, GraduationCap, School } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import { lovable } from '@/integrations/lovable/index';
+import { account, OAuthProvider } from '@/integrations/appwrite/client';
 import { motion } from 'framer-motion';
 
 const Signup = () => {
@@ -114,14 +115,25 @@ const Signup = () => {
 
   const handleGoogleSignUp = async () => {
     try {
+      setIsLoading(true);
       const targetRoute = accountType === 'teacher' ? '/teacher' : from;
       sessionStorage.setItem('auth_redirect_to', targetRoute);
-      const result = await lovable.auth.signInWithOAuth('google', {
-        redirect_uri: `${window.location.origin}/login?redirectTo=${encodeURIComponent(targetRoute)}`,
-      });
-      if (result?.error) throw result.error;
+      try { localStorage.setItem('auth_redirect_to', targetRoute); } catch (_) {}
+      const redirectUri = `${window.location.origin}/login?redirectTo=${encodeURIComponent(targetRoute)}`;
+
+      if (lovable?.auth?.signInWithOAuth) {
+        const result = await lovable.auth.signInWithOAuth('google', {
+          redirect_uri: redirectUri,
+        });
+        if (result?.error) throw result.error;
+      } else if (account?.createOAuth2Session) {
+        await account.createOAuth2Session(OAuthProvider.Google, redirectUri, redirectUri);
+      } else {
+        throw new Error('Authentication service is initializing. Please try again.');
+      }
     } catch (error: any) {
-      toast({ title: "Error", description: error.message, variant: "destructive" });
+      setIsLoading(false);
+      toast({ title: "Error", description: error?.message || 'Failed to sign up with Google', variant: "destructive" });
     }
   };
 
@@ -295,7 +307,7 @@ const Signup = () => {
               </div>
             </div>
 
-            <Button type="button" variant="outline" className="w-full h-12 text-base rounded-xl active:scale-[0.98] transition-transform" onClick={handleGoogleSignUp}>
+            <Button type="button" variant="outline" className="w-full h-12 text-base rounded-xl active:scale-[0.98] transition-transform" onClick={handleGoogleSignUp} disabled={isLoading}>
               <svg className="mr-2 h-5 w-5" viewBox="0 0 24 24">
                 <path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" fill="#4285F4"/>
                 <path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#34A853"/>
