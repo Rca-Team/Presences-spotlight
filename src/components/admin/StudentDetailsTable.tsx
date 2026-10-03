@@ -59,13 +59,13 @@ const StudentDetailsTable: React.FC = () => {
           .order('timestamp', { ascending: false }),
         supabase
           .from('face_descriptors')
-          .select('id, user_id, student_id, label, image_url, created_at')
+          .select('id, user_id, student_id, label, image_url, metadata, created_at')
           .not('image_url', 'is', null)
           .order('created_at', { ascending: true }),
         supabase
           .from('profiles')
-          .select('user_id, avatar_url')
-          .not('avatar_url', 'is', null),
+          .select('id, user_id, admission_number, employee_id, roll_number, avatar_url, photo_url')
+          .or('avatar_url.not.is.null,photo_url.not.is.null'),
       ]);
 
       if (attendanceRes.error) throw attendanceRes.error;
@@ -75,21 +75,48 @@ const StudentDetailsTable: React.FC = () => {
       const data = attendanceRes.data || [];
 
       const profileImageByUserId = new Map<string, string>();
+      const profileImageByEmpId = new Map<string, string>();
       (profilesRes.data || []).forEach((profile: any) => {
-        if (profile?.user_id && profile?.avatar_url && !profileImageByUserId.has(profile.user_id)) {
-          profileImageByUserId.set(profile.user_id, profile.avatar_url);
+        const img = (profile?.avatar_url || profile?.photo_url || '').toString().trim();
+        if (!img) return;
+        if (profile?.user_id && !profileImageByUserId.has(profile.user_id)) {
+          profileImageByUserId.set(profile.user_id, img);
+        }
+        if (profile?.id && !profileImageByUserId.has(profile.id)) {
+          profileImageByUserId.set(profile.id, img);
+        }
+        const emp = (profile?.admission_number || profile?.employee_id || profile?.roll_number || '').toString().trim().toLowerCase();
+        if (emp && !profileImageByEmpId.has(emp)) {
+          profileImageByEmpId.set(emp, img);
         }
       });
 
       const descriptorImageByUserId = new Map<string, string>();
       const descriptorImageByStudentKey = new Map<string, string>();
+      // First pass: prefer registration primary/front photos
+      (descriptorsRes.data || []).forEach((descriptor: any) => {
+        const descriptorImg = descriptor?.image_url?.toString().trim();
+        if (!descriptorImg) return;
+        const meta = descriptor?.metadata || {};
+        const isPrimary = meta.registration === 'true' || meta.registration === true || descriptor?.label === 'registration-primary' || (descriptor?.label && descriptor.label.toLowerCase().includes('front'));
+        if (isPrimary) {
+          if (descriptor?.user_id && !descriptorImageByUserId.has(descriptor.user_id)) {
+            descriptorImageByUserId.set(descriptor.user_id, descriptorImg);
+          }
+          const studentKey = (descriptor?.student_id || '').toString().trim().toLowerCase();
+          if (studentKey && !descriptorImageByStudentKey.has(studentKey)) {
+            descriptorImageByStudentKey.set(studentKey, descriptorImg);
+          }
+        }
+      });
+      // Second pass: fill in earliest created descriptor
       (descriptorsRes.data || []).forEach((descriptor: any) => {
         const descriptorImg = descriptor?.image_url?.toString().trim();
         if (!descriptorImg) return;
         if (descriptor?.user_id && !descriptorImageByUserId.has(descriptor.user_id)) {
           descriptorImageByUserId.set(descriptor.user_id, descriptorImg);
         }
-        const studentKey = (descriptor?.student_id || '').toString().trim();
+        const studentKey = (descriptor?.student_id || '').toString().trim().toLowerCase();
         if (studentKey && !descriptorImageByStudentKey.has(studentKey)) {
           descriptorImageByStudentKey.set(studentKey, descriptorImg);
         }
@@ -183,15 +210,19 @@ const StudentDetailsTable: React.FC = () => {
         const canonicalUserId = r.user_id || (empKey ? employeeToUserId.get(empKey) : null);
         const key = empKey ? `emp:${empKey}` : `rec:${r.id}`;
 
+        const profilePhoto = (canonicalUserId && profileImageByUserId.get(canonicalUserId)) ||
+          (empKey && profileImageByEmpId.get(empKey)) ||
+          '';
+
         const avatar = pickPreferredPhotoCandidate(
-          canonicalUserId ? profileImageByUserId.get(canonicalUserId) : '',
+          profilePhoto,
           meta?.face_model?.id_card_photo_url,
           meta?.id_card_photo_url,
-          canonicalUserId ? descriptorImageByUserId.get(canonicalUserId) : '',
-          empKey ? descriptorImageByStudentKey.get(empKey) : '',
           r.image_url,
           meta.firebase_image_url,
           meta.image,
+          canonicalUserId ? descriptorImageByUserId.get(canonicalUserId) : '',
+          empKey ? descriptorImageByStudentKey.get(empKey) : '',
         );
 
         upsertStudent({
@@ -220,10 +251,14 @@ const StudentDetailsTable: React.FC = () => {
         const descriptorStudentId = normKey(descriptor?.student_id);
         const descriptorKey = descriptorStudentId ? `emp:${descriptorStudentId}` : `fd:${descriptor?.id || Math.random().toString(36).slice(2)}`;
 
+        const profilePhoto = (descriptorUserId && profileImageByUserId.get(descriptorUserId)) ||
+          (descriptorStudentId && profileImageByEmpId.get(descriptorStudentId)) ||
+          '';
+
         const avatar = pickPreferredPhotoCandidate(
-          descriptorUserId ? profileImageByUserId.get(descriptorUserId) : '',
-          descriptorUserId ? descriptorImageByUserId.get(descriptorUserId) : '',
+          profilePhoto,
           descriptorStudentId ? descriptorImageByStudentKey.get(descriptorStudentId) : '',
+          descriptorUserId ? descriptorImageByUserId.get(descriptorUserId) : '',
           descriptor?.image_url,
         );
 

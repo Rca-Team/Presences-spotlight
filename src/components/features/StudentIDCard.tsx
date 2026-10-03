@@ -84,9 +84,9 @@ const StudentIDCard: React.FC<StudentIDCardProps> = ({
 
     const fallbackCandidate = pickPreferredPhotoCandidate(
       student.avatar_url,
-      student.descriptor_image_url,
       student.registration_image_url,
       student.image_url,
+      student.descriptor_image_url,
     );
 
     resolveStudentPhotoUrl(fallbackCandidate)

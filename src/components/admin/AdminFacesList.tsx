@@ -248,27 +248,56 @@ const AdminFacesList: React.FC<AdminFacesListProps> = ({
         const [{ data: profileRows }, { data: descriptorRows }] = await Promise.all([
           supabase
             .from('profiles')
-            .select('user_id, avatar_url')
-            .not('avatar_url', 'is', null),
+            .select('id, user_id, admission_number, employee_id, roll_number, avatar_url, photo_url')
+            .or('avatar_url.not.is.null,photo_url.not.is.null'),
           supabase
             .from('face_descriptors')
-            .select('user_id, student_id, image_url')
-            .not('image_url', 'is', null),
+            .select('user_id, student_id, image_url, metadata, label, created_at')
+            .not('image_url', 'is', null)
+            .order('created_at', { ascending: true }),
         ]);
 
         const profileImageByUserId = new Map<string, string>();
+        const profileImageByEmpId = new Map<string, string>();
         (profileRows || []).forEach((profile: any) => {
-          if (profile?.user_id && profile?.avatar_url && !profileImageByUserId.has(profile.user_id)) {
-            profileImageByUserId.set(profile.user_id, profile.avatar_url);
+          const img = (profile?.avatar_url || profile?.photo_url || '').toString().trim();
+          if (!img) return;
+          if (profile?.user_id && !profileImageByUserId.has(profile.user_id)) {
+            profileImageByUserId.set(profile.user_id, img);
+          }
+          if (profile?.id && !profileImageByUserId.has(profile.id)) {
+            profileImageByUserId.set(profile.id, img);
+          }
+          const emp = (profile?.admission_number || profile?.employee_id || profile?.roll_number || '').toString().trim().toLowerCase();
+          if (emp && !profileImageByEmpId.has(emp)) {
+            profileImageByEmpId.set(emp, img);
           }
         });
 
         const descriptorImageByUserId = new Map<string, string>();
         const descriptorImageByStudentKey = new Map<string, string>();
+        // First pass: prefer registration primary/front photos
         (descriptorRows || []).forEach((row: any) => {
           const descriptorImg = (row?.image_url || '').toString().trim();
           const descriptorUserId = (row?.user_id || '').toString().trim();
-          const descriptorStudentId = (row?.student_id || '').toString().trim();
+          const descriptorStudentId = (row?.student_id || '').toString().trim().toLowerCase();
+          if (!descriptorImg) return;
+          const meta = row?.metadata || {};
+          const isPrimary = meta.registration === 'true' || meta.registration === true || row?.label === 'registration-primary' || (row?.label && row.label.toLowerCase().includes('front'));
+          if (isPrimary) {
+            if (descriptorUserId && !descriptorImageByUserId.has(descriptorUserId)) {
+              descriptorImageByUserId.set(descriptorUserId, descriptorImg);
+            }
+            if (descriptorStudentId && !descriptorImageByStudentKey.has(descriptorStudentId)) {
+              descriptorImageByStudentKey.set(descriptorStudentId, descriptorImg);
+            }
+          }
+        });
+        // Second pass: fill in earliest created descriptor if no primary found
+        (descriptorRows || []).forEach((row: any) => {
+          const descriptorImg = (row?.image_url || '').toString().trim();
+          const descriptorUserId = (row?.user_id || '').toString().trim();
+          const descriptorStudentId = (row?.student_id || '').toString().trim().toLowerCase();
           if (!descriptorImg) return;
           if (descriptorUserId && !descriptorImageByUserId.has(descriptorUserId)) {
             descriptorImageByUserId.set(descriptorUserId, descriptorImg);
@@ -297,23 +326,33 @@ const AdminFacesList: React.FC<AdminFacesListProps> = ({
               const name = metadata.name || di.name || record.student_name || 'Unknown';
               const employeeId = (metadata.employee_id || di.employee_id || record.student_id || '').toString().trim();
               const category = record.category || metadata.department || 'A';
+              const empKey = employeeId.toLowerCase();
               const key = employeeId
-                ? `emp:${employeeId.toLowerCase()}`
+                ? `emp:${empKey}`
                 : `name:${name.toLowerCase().trim()}#${category.toLowerCase()}#${record.id}`;
               const canonicalUserId = (record.user_id || '').toString().trim();
               if (!name || name === 'Unknown' || name === 'User') return null;
               if (seenKeys.has(key)) return null;
               seenKeys.add(key);
 
+              // Correct precedence:
+              // 1. Profile avatar / photo
+              // 2. ID card photo crop
+              // 3. Primary registration portrait photo (record.image_url / firebase_image_url)
+              // 4. Last resort: registered descriptor sample (never preferred over actual portrait)
+              const profilePhoto = (canonicalUserId && profileImageByUserId.get(canonicalUserId)) ||
+                (empKey && profileImageByEmpId.get(empKey)) ||
+                '';
+
               const imageCandidate = pickPreferredPhotoCandidate(
-                canonicalUserId ? profileImageByUserId.get(canonicalUserId) : '',
+                profilePhoto,
                 metadata?.face_model?.id_card_photo_url,
                 metadata?.id_card_photo_url,
-                canonicalUserId ? descriptorImageByUserId.get(canonicalUserId) : '',
-                employeeId ? descriptorImageByStudentKey.get(employeeId) : '',
                 record.image_url,
                 metadata.firebase_image_url,
                 metadata.image,
+                canonicalUserId ? descriptorImageByUserId.get(canonicalUserId) : '',
+                empKey ? descriptorImageByStudentKey.get(empKey) : '',
               );
 
               return {

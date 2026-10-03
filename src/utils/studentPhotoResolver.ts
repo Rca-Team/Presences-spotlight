@@ -615,10 +615,35 @@ export async function prefetchStudentCoverPhotos(userIds?: string[]): Promise<vo
       );
     }
 
-    // Also get enrolled descriptors in parallel
+    // Pre-warm registered attendance portrait photos
+    const { data: registeredRecords } = await supabase
+      .from('attendance_records')
+      .select('user_id, student_id, image_url, device_info')
+      .eq('status', 'registered')
+      .limit(200);
+
+    if (registeredRecords) {
+      await Promise.all(
+        registeredRecords.map(async (r: any) => {
+          const di = (r.device_info as any) || {};
+          const meta = di?.metadata || di || {};
+          const candidate = meta.firebase_image_url || meta.id_card_photo_url || meta.avatar_url || meta.photo_url || r.image_url;
+          if (candidate) {
+            const resolved = await resolveStudentPhotoUrl(candidate);
+            if (resolved) {
+              if (r.user_id && !coverPhotoCache.has(r.user_id)) coverPhotoCache.set(r.user_id, resolved);
+              const empId = meta.employee_id || meta.roll_number || r.student_id;
+              if (empId && !coverPhotoCache.has(String(empId).trim())) coverPhotoCache.set(String(empId).trim(), resolved);
+            }
+          }
+        })
+      );
+    }
+
+    // Also get enrolled descriptors in parallel as last resort
     const { data: descriptors } = await supabase
       .from('face_descriptors')
-      .select('user_id, image_url')
+      .select('user_id, student_id, image_url, metadata, label')
       .not('image_url', 'is', null)
       .order('created_at', { ascending: true })
       .limit(100);
@@ -626,9 +651,15 @@ export async function prefetchStudentCoverPhotos(userIds?: string[]): Promise<vo
     if (descriptors) {
       await Promise.all(
         descriptors.map(async (d: any) => {
-          if (d.user_id && !coverPhotoCache.has(d.user_id) && d.image_url) {
+          const uId = d.user_id ? String(d.user_id).trim() : '';
+          const sId = d.student_id ? String(d.student_id).trim() : '';
+          const hasCache = (uId && coverPhotoCache.has(uId)) || (sId && coverPhotoCache.has(sId));
+          if (!hasCache && d.image_url) {
             const resolved = await resolveStudentPhotoUrl(d.image_url);
-            if (resolved) coverPhotoCache.set(d.user_id, resolved);
+            if (resolved) {
+              if (uId && !coverPhotoCache.has(uId)) coverPhotoCache.set(uId, resolved);
+              if (sId && !coverPhotoCache.has(sId)) coverPhotoCache.set(sId, resolved);
+            }
           }
         })
       );

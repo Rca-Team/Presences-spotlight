@@ -118,7 +118,9 @@ const WidgetsPage: React.FC = () => {
           .order('timestamp', { ascending: false }),
         supabase
           .from('face_descriptors')
-          .select('id, user_id, student_id, image_url'),
+          .select('id, user_id, student_id, image_url, metadata, label, created_at')
+          .not('image_url', 'is', null)
+          .order('created_at', { ascending: true }),
         supabase
           .from('attendance_records')
           .select('id, user_id, student_id, student_name, class, section, category, status, timestamp, device_info, capture_mode, source')
@@ -155,8 +157,8 @@ const WidgetsPage: React.FC = () => {
         if (uId) enrolledFaceIds.add(uId);
         if (sId) enrolledFaceIds.add(sId);
         if (f.image_url) {
-          if (uId) facePhotoMap.set(uId, f.image_url);
-          if (sId) facePhotoMap.set(sId, f.image_url);
+          if (uId && !facePhotoMap.has(uId)) facePhotoMap.set(uId, f.image_url);
+          if (sId && !facePhotoMap.has(sId)) facePhotoMap.set(sId, f.image_url);
         }
       });
 

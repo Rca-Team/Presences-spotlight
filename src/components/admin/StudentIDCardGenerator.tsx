@@ -134,13 +134,13 @@ const StudentIDCardGenerator: React.FC<StudentIDCardGeneratorProps> = ({ student
           .order('created_at', { ascending: false }),
         supabase
           .from('face_descriptors')
-          .select('id, user_id, student_id, label, image_url, created_at')
+          .select('id, user_id, student_id, label, image_url, metadata, created_at')
           .not('image_url', 'is', null)
-          .order('created_at', { ascending: false }),
+          .order('created_at', { ascending: true }),
         supabase
           .from('profiles')
-          .select('user_id, avatar_url')
-          .not('avatar_url', 'is', null),
+          .select('id, user_id, admission_number, employee_id, roll_number, avatar_url, photo_url')
+          .or('avatar_url.not.is.null,photo_url.not.is.null'),
       ]);
 
       if (attendanceRes.error) throw attendanceRes.error;
@@ -150,21 +150,48 @@ const StudentIDCardGenerator: React.FC<StudentIDCardGeneratorProps> = ({ student
       const data = attendanceRes.data || [];
 
       const profileImageByUserId = new Map<string, string>();
+      const profileImageByEmpId = new Map<string, string>();
       (profilesRes.data || []).forEach((profile: any) => {
-        if (profile?.user_id && profile?.avatar_url && !profileImageByUserId.has(profile.user_id)) {
-          profileImageByUserId.set(profile.user_id, profile.avatar_url);
+        const img = (profile?.avatar_url || profile?.photo_url || '').toString().trim();
+        if (!img) return;
+        if (profile?.user_id && !profileImageByUserId.has(profile.user_id)) {
+          profileImageByUserId.set(profile.user_id, img);
+        }
+        if (profile?.id && !profileImageByUserId.has(profile.id)) {
+          profileImageByUserId.set(profile.id, img);
+        }
+        const emp = (profile?.admission_number || profile?.employee_id || profile?.roll_number || '').toString().trim().toLowerCase();
+        if (emp && !profileImageByEmpId.has(emp)) {
+          profileImageByEmpId.set(emp, img);
         }
       });
 
       const descriptorImageByUserId = new Map<string, string>();
       const descriptorImageByStudentKey = new Map<string, string>();
+      // First pass: prefer registration primary/front photos
+      (descriptorsRes.data || []).forEach((descriptor: any) => {
+        const descriptorImg = descriptor?.image_url?.toString().trim();
+        if (!descriptorImg) return;
+        const meta = descriptor?.metadata || {};
+        const isPrimary = meta.registration === 'true' || meta.registration === true || descriptor?.label === 'registration-primary' || (descriptor?.label && descriptor.label.toLowerCase().includes('front'));
+        if (isPrimary) {
+          if (descriptor?.user_id && !descriptorImageByUserId.has(descriptor.user_id)) {
+            descriptorImageByUserId.set(descriptor.user_id, descriptorImg);
+          }
+          const studentKey = (descriptor?.student_id || '').toString().trim().toLowerCase();
+          if (studentKey && !descriptorImageByStudentKey.has(studentKey)) {
+            descriptorImageByStudentKey.set(studentKey, descriptorImg);
+          }
+        }
+      });
+      // Second pass: fill in earliest created descriptor
       (descriptorsRes.data || []).forEach((descriptor: any) => {
         const descriptorImg = descriptor?.image_url?.toString().trim();
         if (!descriptorImg) return;
         if (descriptor?.user_id && !descriptorImageByUserId.has(descriptor.user_id)) {
           descriptorImageByUserId.set(descriptor.user_id, descriptorImg);
         }
-        const studentKey = (descriptor?.student_id || '').toString().trim();
+        const studentKey = (descriptor?.student_id || '').toString().trim().toLowerCase();
         if (studentKey && !descriptorImageByStudentKey.has(studentKey)) {
           descriptorImageByStudentKey.set(studentKey, descriptorImg);
         }
@@ -237,17 +264,22 @@ const StudentIDCardGenerator: React.FC<StudentIDCardGeneratorProps> = ({ student
             (canonicalUserId && dedupeKeyByUserId.get(canonicalUserId)) ||
             (nameMatchIsSafe ? nameMatchKey : '') ||
             '';
-
           const dedupeKey = existingKey || pickIdentityKey(empKey, studentKey, canonicalUserId) || `name:${nameKey}`;
           if (!uniqueStudents.has(dedupeKey)) {
+            const profilePhoto = (canonicalUserId && profileImageByUserId.get(canonicalUserId)) ||
+              (empKey && profileImageByEmpId.get(empKey)) ||
+              (studentKey && profileImageByEmpId.get(studentKey)) ||
+              '';
+
             const imageCandidate = pickPreferredPhotoCandidate(
-              canonicalUserId ? profileImageByUserId.get(canonicalUserId) : '',
-               metadata?.face_model?.id_card_photo_url,
-               metadata?.id_card_photo_url,
-              canonicalUserId ? descriptorImageByUserId.get(canonicalUserId) : '',
-              studentKey ? descriptorImageByStudentKey.get(studentKey) : (empKey ? descriptorImageByStudentKey.get(empKey) : ''),
+              profilePhoto,
+              metadata?.face_model?.id_card_photo_url,
+              metadata?.id_card_photo_url,
               record.image_url,
               metadata?.firebase_image_url,
+              metadata?.image,
+              canonicalUserId ? descriptorImageByUserId.get(canonicalUserId) : '',
+              studentKey ? descriptorImageByStudentKey.get(studentKey) : (empKey ? descriptorImageByStudentKey.get(empKey) : ''),
             );
 
             uniqueStudents.set(dedupeKey, {
@@ -312,11 +344,14 @@ const StudentIDCardGenerator: React.FC<StudentIDCardGeneratorProps> = ({ student
           existing._descriptorIds = pushUnique(existing._descriptorIds, descriptor.id);
           if (descriptorUserId) existing._userIds = pushUnique(existing._userIds, descriptorUserId);
           if (!existing.avatar_url) {
+            const profilePhoto = (descriptorUserId && profileImageByUserId.get(descriptorUserId)) ||
+              (descriptorStudentId && profileImageByEmpId.get(descriptorStudentId)) ||
+              '';
             const enrichedImage = pickPreferredPhotoCandidate(
               existing.avatar_url,
-              descriptorUserId ? profileImageByUserId.get(descriptorUserId) : '',
-              descriptorUserId ? descriptorImageByUserId.get(descriptorUserId) : '',
+              profilePhoto,
               descriptorStudentId ? descriptorImageByStudentKey.get(descriptorStudentId) : '',
+              descriptorUserId ? descriptorImageByUserId.get(descriptorUserId) : '',
               descriptor?.image_url,
             );
             existing.avatar_url = enrichedImage;
@@ -332,10 +367,14 @@ const StudentIDCardGenerator: React.FC<StudentIDCardGeneratorProps> = ({ student
           return;
         }
 
+        const profilePhoto = (descriptorUserId && profileImageByUserId.get(descriptorUserId)) ||
+          (descriptorStudentId && profileImageByEmpId.get(descriptorStudentId)) ||
+          '';
+
         const imageCandidate = pickPreferredPhotoCandidate(
-          descriptorUserId ? profileImageByUserId.get(descriptorUserId) : '',
-          descriptorUserId ? descriptorImageByUserId.get(descriptorUserId) : '',
+          profilePhoto,
           descriptorStudentId ? descriptorImageByStudentKey.get(descriptorStudentId) : '',
+          descriptorUserId ? descriptorImageByUserId.get(descriptorUserId) : '',
           descriptor?.image_url,
         );
 
