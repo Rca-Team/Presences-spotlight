@@ -8,7 +8,8 @@
 __pycache__
 replit.nix
 /scratch
-/scripts
+/scripts/*
+!/scripts/update-version.js
 /appwrite
 /supabase
 /self-hosted-supabase
