@@ -1,5 +1,6 @@
 import { Query, Permission, Role } from 'node-appwrite';
 import { hash, token, reject, normalizeName, normalizeDob, phoneNumber, cleanStudent, fields, validateSample, validateCapture } from './enrollment-domain.js';
+import { createEnrollmentMonitor } from './enrollment-monitor.js';
 
 export const STATE = 'student_enrollment';
 export const BUCKET = 'enrollment-private';
@@ -83,10 +84,16 @@ export function createEnrollmentService({ db, databaseId = 'presences_db', sms, 
     await save(c._id, 'challenge', c, c.expires);
     return { challenge: c.secret, fallback: c.failures >= 3 && !c.blockFallback, retryAt: c.nextSend, message: 'If the details match a registered student, a code will be sent to the saved parent phone.' };
   }
+  const monitor = createEnrollmentMonitor({ db, databaseId, files, now });
   return async function dispatch(body, { user = null, ip = 'unknown' } = {}) {
     const action = body.action;
     const admin = user?.labels?.some(l => ['admin', 'principal', 'superadmin'].includes(l));
     const staff = admin; // Import/contact changes affect authentication; school administrators own them.
+    // Read-only monitoring: admins see everything, teachers only their assigned classes.
+    if (action === 'staff.monitor' || action === 'staff.photo') {
+      if (!user?.$id) reject(401, 'Sign in with your school account.');
+      return action === 'staff.monitor' ? monitor.overview(user) : monitor.photo(user, body);
+    }
     if (action.startsWith('staff.')) {
       if (!staff) reject(403, 'School administrator access required.');
       if (action === 'staff.preview') {

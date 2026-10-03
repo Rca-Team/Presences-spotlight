@@ -47,6 +47,21 @@ const ChangeCategoryDialog: React.FC<ChangeCategoryDialogProps> = ({
         .update({ category: newCategory })
         .eq('id', userId);
       if (error) throw error;
+
+      // Also sync to profiles table
+      try {
+        const [cls, sec] = isTeacher ? ['Teacher', ''] : [selectedClass, selectedSection];
+        await (supabase as any)
+          .from('profiles')
+          .update({
+            class: cls,
+            section: sec,
+            category: newCategory,
+            role: isTeacher ? 'teacher' : 'student'
+          })
+          .eq('user_id', userId);
+      } catch (_) {}
+
       toast({ title: 'Category Updated', description: `${userName} moved to ${getCategoryLabel(newCategory)}` });
       onCategoryChanged?.();
       setOpen(false);

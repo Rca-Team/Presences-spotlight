@@ -15,8 +15,9 @@ import {
   Search, FolderKanban, CalendarDays,
   QrCode, Bell, BarChart3,
   ArrowRight, ChevronRight, Mail,
-  Building2, Eye, ShieldCheck, Sparkles, Send
+  Building2, Eye, ShieldCheck, Sparkles, Send, ScanFace
 } from 'lucide-react';
+import { Link } from 'react-router-dom';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
 import { format, eachDayOfInterval, subDays } from 'date-fns';
@@ -717,6 +718,16 @@ const PrincipalDashboard: React.FC<PrincipalDashboardProps> = ({ onNavigateTab }
                 className="text-xs h-9 px-3 gap-1.5 rounded-xl border-border hover:bg-muted font-semibold"
               >
                 <QrCode className="w-3.5 h-3.5 text-purple-600" /> Gate Passes ({gatePassStats.active})
+              </Button>
+              <Button
+                asChild
+                size="sm"
+                variant="outline"
+                className="text-xs h-9 px-3 gap-1.5 rounded-xl border-border hover:bg-muted font-semibold"
+              >
+                <Link to="/enrollment-monitor">
+                  <ScanFace className="w-3.5 h-3.5 text-sky-600" /> Enrollment Monitor
+                </Link>
               </Button>
             </div>
 

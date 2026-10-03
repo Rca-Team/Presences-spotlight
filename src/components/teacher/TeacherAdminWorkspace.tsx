@@ -1426,6 +1426,10 @@ export const TeacherAdminWorkspace: React.FC<TeacherAdminWorkspaceProps> = ({ in
           isRefreshing={isRefreshing}
         />
 
+        <Button variant="outline" size="sm" className="w-full h-9 text-xs rounded-xl gap-1.5" onClick={() => navigate('/enrollment-monitor')}>
+          <ScanFace className="h-3.5 w-3.5" /> Face enrollment status
+        </Button>
+
         {selectedFaceStudent && (
           <CaptureFaceDialog
             open={Boolean(selectedFaceStudent)}
@@ -1514,6 +1518,12 @@ export const TeacherAdminWorkspace: React.FC<TeacherAdminWorkspaceProps> = ({ in
                 <Zap className="h-4 w-4" />
               </div>
             </div>
+          </div>
+
+          <div className="flex justify-end -mb-2">
+            <Button variant="ghost" size="sm" className="h-8 text-xs text-muted-foreground hover:text-foreground gap-1.5" onClick={() => navigate('/enrollment-monitor')}>
+              <ScanFace className="h-3.5 w-3.5" /> Face enrollment status
+            </Button>
           </div>
 
           {/* Main Navigation Tabs */}

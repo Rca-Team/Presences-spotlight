@@ -31,6 +31,7 @@ const ParentPortal = lazyWithRetry(() => import('./pages/ParentPortal'), 'parent
 const StudentEnrollment = lazyWithRetry(() => import('./pages/StudentEnrollment'), 'student-enrollment');
 const Unsubscribe = lazyWithRetry(() => import('./pages/Unsubscribe'), 'unsubscribe');
 const Backup = lazyWithRetry(() => import('./pages/Backup'), 'backup');
+const EnrollmentMonitor = lazyWithRetry(() => import('./pages/EnrollmentMonitor'), 'enrollment-monitor');
 const FaceModelValidator = lazyWithRetry(() => import('./pages/FaceModelValidator'), 'face-model-validator');
 const TeacherPortal = lazyWithRetry(() => import('./pages/TeacherPortal'), 'teacher-portal');
 const Portfolio = lazyWithRetry(() => import('./pages/Portfolio'), 'portfolio');
@@ -142,6 +143,11 @@ const ROUTE_SEO: Record<string, { title: string; description: string }> = {
     title: "Data Backup & Recovery | Presences",
     description:
       "Save a safe backup of your school records, student photos, and accounts with one simple click.",
+  },
+  "/enrollment-monitor": {
+    title: "Enrollment Monitor | Presences",
+    description:
+      "Track face registration, parent verification, and record corrections for every student.",
   },
   "/data": {
     title: "Data Backup | Presences",
@@ -286,6 +292,11 @@ function AnimatedRoutes() {
         } />
         <Route path="/parent" element={bound(<ParentPortal />, "Parent Portal")} />
         <Route path="/enroll" element={bound(<StudentEnrollment />, "Student Enrollment")} />
+        <Route path="/enrollment-monitor" element={
+          <ProtectedRoute requireRoles={["admin", "principal", "teacher"]}>
+            {bound(<EnrollmentMonitor />, "Enrollment Monitor")}
+          </ProtectedRoute>
+        } />
         <Route path="/teacher" element={
           <ProtectedRoute requireRoles={["admin", "principal", "teacher"]}>
             {bound(<TeacherPortal />, "Teacher Portal")}

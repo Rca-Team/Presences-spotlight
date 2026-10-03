@@ -29,6 +29,7 @@ export default async ({ req, res, error }) => {
       },
       async remove(id) { try { await storage.deleteFile({ bucketId: BUCKET, fileId: id }); } catch (e) { if (e.code !== 404) throw e; } },
       url(id) { return `${endpoint}/storage/buckets/${BUCKET}/files/${id}/view?project=${project}`; },
+      async read(id) { return Buffer.from(await storage.getFileView({ bucketId: BUCKET, fileId: id })).toString('base64'); },
       async portrait(id, image) {
         if (typeof image !== 'string' || !/^data:image\/jpeg;base64,[A-Za-z0-9+/=]+$/.test(image) || image.length > 550000) reject(400, 'Invalid portrait.');
         const bytes = Buffer.from(image.split(',')[1], 'base64');
