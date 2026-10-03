@@ -7,13 +7,17 @@ import GuidedFaceCapture from '@/components/enrollment/GuidedFaceCapture';
 import { enrollmentApi } from '@/services/enrollment/api';
 import { fieldLabels, studentFields, type CaptureResult, type EnrollmentSession, type StudentDetails } from '@/services/enrollment/types';
 import '@/components/enrollment/enrollment.css';
+import { RecaptchaVerifier, signInWithPhoneNumber, ConfirmationResult } from 'firebase/auth';
+import { auth } from '@/lib/firebase';
 
+declare global { interface Window { recaptchaVerifier: any; } }
 type Verification = { challenge?: string; fallback?: boolean; retryAt?: number; needsAdmission?: boolean; message?: string };
+
 export default function StudentEnrollment() {
-  const [mode, setMode] = useState<'admission' | 'phone'>('admission');
   const [identifier, setIdentifier] = useState('');
   const [admission, setAdmission] = useState('');
   const [verification, setVerification] = useState<Verification>();
+  const [confirmation, setConfirmation] = useState<ConfirmationResult>();
   const [code, setCode] = useState('');
   const [fatherName, setFatherName] = useState('');
   const [dob, setDob] = useState('');
@@ -52,14 +56,28 @@ export default function StudentEnrollment() {
       <section className="enrollment-glass">
         <AnimatePresence mode="wait"><motion.div key={phase} initial={reduced ? false : { opacity: 0, x: 24 }} animate={{ opacity: 1, x: 0 }} exit={reduced ? undefined : { opacity: 0, x: -16 }} transition={{ duration: 0.25 }}>
           {phase === 'verify' && <><div className="enrollment-icon"><Fingerprint /></div><h2>Let’s find your student</h2><p className="enrollment-muted">Use the details already registered with your school.</p>
-            {!verification?.challenge ? <form onSubmit={e => { e.preventDefault(); void run(async () => setVerification(await enrollmentApi<Verification>('start', { identifier, mode, admission }))); }} className="space-y-4 mt-6">
-              <div className="enrollment-toggle">{(['admission', 'phone'] as const).map(value => <button type="button" key={value} aria-pressed={mode === value} onClick={() => { setMode(value); setVerification(undefined); }}>{value === 'admission' ? 'Admission number' : 'Parent phone'}</button>)}</div>
-              <label className="enrollment-label">{mode === 'admission' ? 'Admission number' : 'Registered parent phone'}<Input required value={identifier} onChange={e => setIdentifier(e.target.value)} inputMode={mode === 'phone' ? 'tel' : 'text'} autoComplete={mode === 'phone' ? 'tel' : 'off'} /></label>
-              {mode === 'phone' && <label className="enrollment-label">Student admission number<Input required value={admission} onChange={e => setAdmission(e.target.value)} /><small>Identifies the correct child when a family shares a phone.</small></label>}
-              <Button disabled={busy} className="enrollment-primary w-full">{busy ? <Loader2 className="animate-spin" /> : <>Send verification code<ArrowRight className="ml-2 h-4 w-4" /></>}</Button>
-            </form> : <div className="space-y-4 mt-6"><p className="enrollment-inset text-sm">{verification.message}</p><form onSubmit={e => { e.preventDefault(); void run(async () => acceptSession(await enrollmentApi<EnrollmentSession>('verify-otp', { challenge: verification.challenge, code }))); }} className="space-y-3"><label className="enrollment-label">Six-digit code<Input required value={code} onChange={e => setCode(e.target.value.replace(/\D/g, '').slice(0, 6))} pattern="[0-9]{6}" inputMode="numeric" autoComplete="one-time-code" className="text-center text-2xl tracking-[0.45em]" /></label><Button disabled={busy} className="w-full enrollment-primary">Verify code</Button></form><Button variant="ghost" disabled={busy || wait > 0} onClick={() => void run(async () => setVerification(await enrollmentApi<Verification>('resend', { challenge: verification.challenge })))} className="w-full">{wait ? `Request another code in ${wait}s` : 'Request another code'}</Button>
-              {verification.fallback && <form className="enrollment-inset space-y-3" onSubmit={e => { e.preventDefault(); void run(async () => acceptSession(await enrollmentApi<EnrollmentSession>('verify-father', { challenge: verification.challenge, fatherName, dob }))); }}><p className="text-sm">SMS has failed three times. You can verify using the student’s recorded father’s name and date of birth.</p><label className="enrollment-label">Father’s full name<Input required value={fatherName} onChange={e => setFatherName(e.target.value)} autoComplete="off" placeholder="e.g. Ramesh Kumar" /></label><label className="enrollment-label">Student date of birth<Input required value={dob} onChange={e => setDob(e.target.value)} placeholder="DD/MM/YYYY or YYYY-MM-DD" autoComplete="off" /></label><Button variant="outline" disabled={busy} className="w-full">Verify registered details</Button></form>}
-              <Button variant="ghost" disabled={busy} onClick={() => { setVerification(undefined); setCode(''); setFatherName(''); setDob(''); }}>Use different details</Button></div>}
+            {!verification?.challenge ? <form onSubmit={e => { e.preventDefault(); void run(async () => {
+                if (!window.recaptchaVerifier) window.recaptchaVerifier = new RecaptchaVerifier(auth, 'recaptcha-container', { size: 'invisible' });
+                const v = await enrollmentApi<Verification>('start', { identifier, mode: 'phone', admission });
+                const conf = await signInWithPhoneNumber(auth, identifier, window.recaptchaVerifier);
+                setConfirmation(conf); setVerification(v);
+              }); }} className="space-y-4 mt-6">
+                <div id="recaptcha-container"></div>
+                <label className="enrollment-label">Registered parent phone<Input required value={identifier} onChange={e => setIdentifier(e.target.value)} inputMode="tel" autoComplete="tel" placeholder="+919876543210" /></label>
+                <label className="enrollment-label">Student admission number<Input required value={admission} onChange={e => setAdmission(e.target.value)} /><small>Required to verify identity securely.</small></label>
+                <Button disabled={busy} className="enrollment-primary w-full">{busy ? <Loader2 className="animate-spin" /> : <>Send verification code<ArrowRight className="ml-2 h-4 w-4" /></>}</Button>
+              </form> : <div className="space-y-4 mt-6"><p className="enrollment-inset text-sm">{verification.message}</p><form onSubmit={e => { e.preventDefault(); void run(async () => {
+                if (!confirmation) throw new Error('No SMS session found');
+                const result = await confirmation.confirm(code);
+                const token = await result.user.getIdToken();
+                acceptSession(await enrollmentApi<EnrollmentSession>('verify-otp', { challenge: verification.challenge, code: token }));
+              }); }} className="space-y-3"><label className="enrollment-label">Six-digit code<Input required value={code} onChange={e => setCode(e.target.value.replace(/\D/g, '').slice(0, 6))} pattern="[0-9]{6}" inputMode="numeric" autoComplete="one-time-code" className="text-center text-2xl tracking-[0.45em]" /></label><Button disabled={busy} className="w-full enrollment-primary">Verify code</Button></form><Button variant="ghost" disabled={busy || wait > 0} onClick={() => void run(async () => {
+                 if (!window.recaptchaVerifier) window.recaptchaVerifier = new RecaptchaVerifier(auth, 'recaptcha-container', { size: 'invisible' });
+                 const conf = await signInWithPhoneNumber(auth, identifier, window.recaptchaVerifier);
+                 setConfirmation(conf); setVerification(await enrollmentApi<Verification>('resend', { challenge: verification.challenge }));
+              })} className="w-full">{wait ? `Request another code in ${wait}s` : 'Request another code'}</Button>
+                {verification.fallback && <form className="enrollment-inset space-y-3" onSubmit={e => { e.preventDefault(); void run(async () => acceptSession(await enrollmentApi<EnrollmentSession>('verify-father', { challenge: verification.challenge, fatherName, dob }))); }}><p className="text-sm">SMS has failed three times. You can verify using the student's recorded father's name and date of birth.</p><label className="enrollment-label">Father's full name<Input required value={fatherName} onChange={e => setFatherName(e.target.value)} autoComplete="off" placeholder="e.g. Ramesh Kumar" /></label><label className="enrollment-label">Student date of birth<Input required value={dob} onChange={e => setDob(e.target.value)} placeholder="DD/MM/YYYY or YYYY-MM-DD" autoComplete="off" /></label><Button variant="outline" disabled={busy} className="w-full">Verify registered details</Button></form>}
+                <Button variant="ghost" disabled={busy} onClick={() => { setVerification(undefined); setCode(''); setFatherName(''); setDob(''); }}>Use different details</Button></div>}
           </>}
           {phase === 'consent' && <><div className="enrollment-icon"><ShieldCheck /></div><h2>Ready, {session?.student.name.split(' ')[0]}?</h2><p className="enrollment-muted">A parent or school staff member should help the student complete this step.</p><div className="enrollment-inset space-y-4 my-6"><p>Face a soft light and keep the camera at eye level. Follow the ring as we capture each angle automatically.</p><p className="flex gap-3"><Glasses className="shrink-0" size={20} />If the student wears glasses, we’ll take one photo without them, then the remaining views with them on.</p></div><label className="flex gap-3 text-sm leading-relaxed"><input type="checkbox" checked={consent} onChange={e => setConsent(e.target.checked)} className="mt-1" />I am the parent, guardian, or authorized school staff member. I agree to save these face samples for school attendance and confirm the student is present.</label><Button className="w-full enrollment-primary mt-6" disabled={!consent || expired} onClick={() => setPhase('capture')}>Start guided capture<ArrowRight className="ml-2 h-4 w-4" /></Button></>}
           {phase === 'capture' && session && <GuidedFaceCapture challenge={session.challenge} onComplete={onCapture} onCancel={() => void cancelCapture()} />}

@@ -1,7 +1,19 @@
+import { initializeApp, cert } from 'firebase-admin/app';
+import { getAuth } from 'firebase-admin/auth';
+import CryptoJS from 'crypto-js';
 import { Client, Account, Databases, Storage, Users } from 'node-appwrite';
 import { InputFile } from 'node-appwrite/file';
 import { createEnrollmentService, BUCKET } from './enrollment.js';
 import { hash, reject } from './enrollment-domain.js';
+
+let firebaseApp;
+function getFirebase() {
+  if (!firebaseApp) {
+    if (!process.env.FIREBASE_SERVICE_ACCOUNT) throw new Error('Firebase Service Account is missing');
+    firebaseApp = initializeApp({ credential: cert(JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT)) });
+  }
+  return getAuth(firebaseApp);
+}
 
 export default async ({ req, res, error }) => {
   try {
@@ -14,7 +26,14 @@ export default async ({ req, res, error }) => {
     const storage = new Storage(service);
     const account = new Account(publicClient);
     const users = new Users(service);
-    const body = req.bodyJson || JSON.parse(req.bodyText || '{}');
+    let body = req.bodyJson || JSON.parse(req.bodyText || '{}');
+    const E2E_SECRET = process.env.E2E_SECRET || process.env.VITE_E2E_SECRET || 'secure-e2e-secret-key-123!';
+    let isE2E = false;
+    if (body.e2e) {
+      isE2E = true;
+      const bytes = CryptoJS.AES.decrypt(body.e2e, E2E_SECRET);
+      body = JSON.parse(bytes.toString(CryptoJS.enc.Utf8));
+    }
     if (typeof body.action !== 'string') reject(400, 'An action is required.');
     let user = null;
     if (body.action.startsWith('staff.')) {
@@ -40,19 +59,21 @@ export default async ({ req, res, error }) => {
     };
     const dispatch = createEnrollmentService({ db: new Databases(service), files, sms: {
       async send(phone) {
-        if (!phone || process.env.ENROLLMENT_SMS_ENABLED !== 'true') throw new Error('SMS is unavailable');
-        const result = await account.createPhoneToken({ userId: hash('parent-phone:' + phone), phone });
-        return { userId: result.userId, expire: result.expire };
+        return { userId: 'firebase', expire: Date.now() + 600000 };
       },
       async verify(userId, secret) {
-        const result = await account.createSession({ userId, secret });
-        // Never return a general Appwrite session to an enrollment browser.
-        await users.deleteSession({ userId, sessionId: result.$id });
+        const decoded = await getFirebase().verifyIdToken(secret);
+        return decoded.phone_number;
       },
     } });
     // Appwrite supplies x-appwrite-client-ip; do not trust caller-supplied forwarded headers.
     const ip = req.headers['x-appwrite-client-ip'] || 'unknown';
-    return res.json(await dispatch(body, { user, ip }), 200, { 'Cache-Control': 'no-store' });
+    const responseData = await dispatch(body, { user, ip });
+    if (isE2E) {
+      const encrypted = CryptoJS.AES.encrypt(JSON.stringify(responseData), E2E_SECRET).toString();
+      return res.json({ e2e: encrypted }, 200, { 'Cache-Control': 'no-store' });
+    }
+    return res.json(responseData, 200, { 'Cache-Control': 'no-store' });
   } catch (failure) {
     const status = failure.status || (failure.code >= 400 && failure.code < 600 ? failure.code : 500);
     error('Enrollment request failed (' + status + ')');

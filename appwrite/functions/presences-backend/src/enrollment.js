@@ -186,8 +186,12 @@ export function createEnrollmentService({ db, databaseId = 'presences_db', sms, 
           const matchDob = !student?.date_of_birth || (Boolean(body.dob) && normalizeDob(body.dob) === normalizeDob(student.date_of_birth));
           valid = matchFather && matchDob;
         } else {
-          if (student && current.otpExpires > now() && /^\d{6}$/.test(body.code || '')) {
-            try { await sms.verify(current.otpUser, body.code); valid = true; } catch { valid = false; }
+          if (student && current.otpExpires > now() && body.code) {
+            try {
+              const verifiedPhone = await sms.verify(current.otpUser, body.code);
+              if (verifiedPhone && verifiedPhone !== current.phone && verifiedPhone !== current.phone.replace('+', '')) throw new Error('Phone mismatch');
+              valid = true;
+            } catch { valid = false; }
           }
           if (!valid) { current.wrongCode = true; current.blockFallback = true; await save(current._id, 'challenge', current, current.expires); }
         }
