@@ -1,5 +1,703 @@
-.enrollment-shell{--enroll-line:rgba(255,255,255,.12);min-height:100dvh;color:#f3f6fc;background:radial-gradient(ellipse at 15% 20%,#10383f88,transparent 50%),radial-gradient(ellipse at 85% 70%,#29204b77,transparent 50%),#090f18;padding:28px clamp(18px,5vw,80px);font-family:inherit;color-scheme:dark}
-.enrollment-header{max-width:1150px;margin:auto;display:flex;align-items:center;justify-content:space-between}.enrollment-layout{max-width:1100px;margin:70px auto;display:grid;grid-template-columns:1fr 1.12fr;gap:80px;align-items:start}.enrollment-intro{padding-top:45px}.enrollment-eyebrow{font-size:11px;letter-spacing:.17em;text-transform:uppercase;color:#81c9bf}.enrollment-intro h1{font-size:clamp(32px,4vw,52px);line-height:1.12;letter-spacing:-.045em;font-weight:600;margin:23px 0}.enrollment-intro h1 span{color:#94a6b6}.enrollment-intro>p{font-size:15px;line-height:1.8;color:#a0b0c3;max-width:360px}.enrollment-steps{margin-top:40px;display:grid;gap:20px}.enrollment-steps>div{display:flex;gap:13px;align-items:center;font-size:13px;color:#66788d}.enrollment-steps span{display:grid;place-items:center;border:1px solid #ffffff18;border-radius:50%;height:28px;width:28px;font-size:11px}.enrollment-steps .active{color:#ccfcef}.enrollment-steps .active span{background:#6bf3c918;border-color:#6bf3c94d}.enrollment-assurance{display:flex;gap:12px;color:#8296a9;margin-top:50px;max-width:320px;font-size:12px;line-height:1.7}.enrollment-assurance svg{flex-shrink:0;margin-top:3px}
-.enrollment-glass{padding:32px;border:1px solid var(--enroll-line);border-radius:32px;background:linear-gradient(135deg,#ffffff0c,#ffffff04),#111a24dd;box-shadow:0 24px 80px #0005,inset 0 1px #ffffff10;backdrop-filter:blur(18px);position:relative;overflow:hidden}.enrollment-glass:before{content:"";position:absolute;inset:0;pointer-events:none;opacity:.035;background-image:url("data:image/svg+xml,%3Csvg viewBox='0 0 180 180' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.8' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Cpath fill='%23fff' filter='url(%23n)' opacity='.7' d='M0 0h180v180H0z'/%3E%3C/svg%3E")}.enrollment-glass>div{position:relative}.enrollment-glass h2{font-size:24px;letter-spacing:-.025em;font-weight:600;line-height:1.25}.enrollment-muted{font-size:13px;color:#94a7bb;line-height:1.7;margin-top:10px}.enrollment-icon{display:grid;place-items:center;width:48px;height:48px;border-radius:16px;background:#7cf9cf12;border:1px solid #7cf9cf24;color:#90f6d5;margin-bottom:24px}.enrollment-label{display:block;color:#94a7bb;font-size:12px}.enrollment-label input{margin-top:7px;border-color:#ffffff1a;background:#080e1766;color:#f4f8ff;border-radius:12px;height:44px}.enrollment-label small{display:block;line-height:1.5;margin-top:6px}.enrollment-primary{background:#abf9de!important;color:#092c26!important;border-radius:14px!important;min-height:46px;font-weight:600}.enrollment-toggle{display:flex;background:#0003;border-radius:12px;padding:4px;gap:4px}.enrollment-toggle button{flex:1;padding:10px;font-size:12px;border-radius:9px;color:#91a5b7}.enrollment-toggle button[aria-pressed=true]{background:#ffffff12;color:#fff;box-shadow:0 1px 5px #0003}.enrollment-inset{padding:16px;border:1px solid #ffffff0d;background:#ffffff04;border-radius:18px;color:#b3c3d1;font-size:13px;line-height:1.7}.enrollment-error{margin-top:18px;padding:14px;background:#fb71851a;border:1px solid #fb718540;border-radius:12px;font-size:13px;color:#fecdd3}.enrollment-camera{position:relative;aspect-ratio:1;max-width:370px;margin:auto;border-radius:50%;overflow:hidden;background:#05090f;border:1px solid #ffffff12}.enrollment-video{height:100%;width:100%;object-fit:cover;transform:scaleX(-1)}.enrollment-ring{position:absolute;inset:0;width:100%;height:100%;filter:drop-shadow(0 0 4px #64f5ca44)}.enrollment-camera-loading{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:16px;color:#92a4b6;background:#0c1424c9}.enrollment-idcard{border-radius:23px;border:1px solid #baffdf33;background:radial-gradient(ellipse at 0 0,#6fffc62b,transparent 65%),linear-gradient(140deg,#233547,#151c2e);padding:24px;box-shadow:0 18px 35px #0003}.enrollment-idcard h2{font-size:22px}.enrollment-footer{text-align:center;color:#637b90;font-size:11px;margin:30px auto}.enrollment-shell button:focus-visible,.enrollment-shell a:focus-visible{outline:2px solid #91f8d4;outline-offset:3px}
-@media(max-width:800px){.enrollment-layout{grid-template-columns:1fr;gap:26px;margin:34px auto;max-width:520px}.enrollment-intro{padding-top:0}.enrollment-intro h1{font-size:32px;margin:14px 0}.enrollment-intro>p,.enrollment-assurance{display:none}.enrollment-steps{display:flex;margin-top:20px;gap:15px;justify-content:space-between}.enrollment-steps>div{font-size:10px;gap:6px}.enrollment-steps span{width:23px;height:23px}.enrollment-glass{padding:24px;border-radius:26px}.enrollment-shell{padding:20px 16px}.enrollment-footer{font-size:10px}}
-@media(prefers-reduced-motion:reduce){.enrollment-shell *{animation:none!important;transition:none!important;scroll-behavior:auto!important}}@media(max-width:380px){.enrollment-glass{padding:18px}.enrollment-idcard{padding:18px}.enrollment-steps>div{font-size:9px}}
+.enrollment-shell {
+  --enroll-line: rgba(255, 255, 255, 0.12);
+  --neon-emerald: #10b981;
+  --neon-emerald-glow: rgba(52, 211, 153, 0.45);
+  --neon-cyan: #06b6d4;
+  --neon-cyan-glow: rgba(34, 211, 238, 0.4);
+  min-height: 100dvh;
+  color: #f3f6fc;
+  background: radial-gradient(ellipse at 15% 15%, #0d383b99, transparent 55%),
+              radial-gradient(ellipse at 85% 75%, #231b4688, transparent 55%),
+              radial-gradient(circle at 50% 50%, #06111f, #03070d);
+  padding: 28px clamp(18px, 5vw, 80px);
+  font-family: inherit;
+  color-scheme: dark;
+  position: relative;
+  overflow-x: hidden;
+}
+
+.enrollment-shell::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  opacity: 0.035;
+  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 180 180' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.8' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Cpath fill='%23fff' filter='url(%23n)' opacity='.7' d='M0 0h180v180H0z'/%3E%3C/svg%3E");
+  z-index: 0;
+}
+
+.enrollment-header {
+  max-width: 1150px;
+  margin: auto;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  position: relative;
+  z-index: 1;
+}
+
+.enrollment-layout {
+  max-width: 1100px;
+  margin: 60px auto;
+  display: grid;
+  grid-template-columns: 1fr 1.15fr;
+  gap: 70px;
+  align-items: start;
+  position: relative;
+  z-index: 1;
+}
+
+.enrollment-intro {
+  padding-top: 35px;
+}
+
+.enrollment-eyebrow {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: #6ee7b7;
+  font-weight: 600;
+  background: rgba(16, 185, 129, 0.12);
+  border: 1px solid rgba(110, 231, 183, 0.25);
+  padding: 4px 12px;
+  border-radius: 999px;
+  backdrop-filter: blur(8px);
+}
+
+.enrollment-intro h1 {
+  font-size: clamp(32px, 4vw, 50px);
+  line-height: 1.12;
+  letter-spacing: -0.04em;
+  font-weight: 600;
+  margin: 22px 0;
+}
+
+.enrollment-intro h1 span {
+  color: #94a6b6;
+}
+
+.enrollment-intro > p {
+  font-size: 15px;
+  line-height: 1.8;
+  color: #a0b0c3;
+  max-width: 380px;
+}
+
+.enrollment-steps {
+  margin-top: 40px;
+  display: grid;
+  gap: 18px;
+}
+
+.enrollment-steps > div {
+  display: flex;
+  gap: 13px;
+  align-items: center;
+  font-size: 13px;
+  color: #66788d;
+  transition: all 0.3s ease;
+}
+
+.enrollment-steps span {
+  display: grid;
+  place-items: center;
+  border: 1px solid #ffffff18;
+  border-radius: 50%;
+  height: 28px;
+  width: 28px;
+  font-size: 11px;
+  transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.enrollment-steps .active {
+  color: #ccfcef;
+}
+
+.enrollment-steps .active span {
+  background: rgba(16, 185, 129, 0.18);
+  border-color: #34d399;
+  box-shadow: 0 0 12px var(--neon-emerald-glow);
+  color: #6ee7b7;
+}
+
+.enrollment-assurance {
+  display: flex;
+  gap: 12px;
+  color: #8296a9;
+  margin-top: 50px;
+  max-width: 340px;
+  font-size: 12px;
+  line-height: 1.7;
+  padding: 12px 16px;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 16px;
+  backdrop-filter: blur(12px);
+}
+
+.enrollment-assurance svg {
+  flex-shrink: 0;
+  margin-top: 2px;
+  color: #34d399;
+}
+
+/* Glassmorphism Panel with iOS Texture */
+.enrollment-glass {
+  padding: 34px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 36px;
+  background: linear-gradient(135deg, rgba(255, 255, 255, 0.07), rgba(255, 255, 255, 0.02)), #0d1522dd;
+  box-shadow: 0 30px 90px rgba(0, 0, 0, 0.65), inset 0 1px 0 rgba(255, 255, 255, 0.18);
+  backdrop-filter: blur(24px);
+  -webkit-backdrop-filter: blur(24px);
+  position: relative;
+  overflow: hidden;
+}
+
+.enrollment-glass::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, rgba(52, 211, 153, 0.5), rgba(34, 211, 238, 0.4), transparent);
+  pointer-events: none;
+}
+
+.enrollment-glass > div {
+  position: relative;
+}
+
+.enrollment-glass h2 {
+  font-size: 24px;
+  letter-spacing: -0.025em;
+  font-weight: 600;
+  line-height: 1.25;
+}
+
+.enrollment-muted {
+  font-size: 13px;
+  color: #94a7bb;
+  line-height: 1.7;
+  margin-top: 8px;
+}
+
+.enrollment-icon {
+  display: grid;
+  place-items: center;
+  width: 50px;
+  height: 50px;
+  border-radius: 18px;
+  background: rgba(16, 185, 129, 0.12);
+  border: 1px solid rgba(52, 211, 153, 0.3);
+  color: #6ee7b7;
+  margin-bottom: 22px;
+  box-shadow: 0 0 20px rgba(16, 185, 129, 0.18);
+}
+
+.enrollment-label {
+  display: block;
+  color: #94a7bb;
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.enrollment-label input {
+  margin-top: 7px;
+  border-color: rgba(255, 255, 255, 0.12);
+  background: rgba(6, 11, 20, 0.7);
+  color: #f4f8ff;
+  border-radius: 14px;
+  height: 46px;
+  font-size: 14px;
+  transition: all 0.2s ease;
+}
+
+.enrollment-label input:focus {
+  border-color: #34d399;
+  box-shadow: 0 0 0 3px rgba(52, 211, 153, 0.2);
+}
+
+.enrollment-label small {
+  display: block;
+  line-height: 1.5;
+  margin-top: 6px;
+  color: #72869c;
+}
+
+.enrollment-primary {
+  background: linear-gradient(135deg, #6ee7b7, #34d399) !important;
+  color: #03251e !important;
+  border-radius: 16px !important;
+  min-height: 48px;
+  font-weight: 600;
+  box-shadow: 0 4px 18px rgba(16, 185, 129, 0.35);
+  transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1) !important;
+}
+
+.enrollment-primary:hover:not(:disabled) {
+  transform: translateY(-1px);
+  box-shadow: 0 6px 24px rgba(16, 185, 129, 0.5);
+  background: linear-gradient(135deg, #a7f3d0, #6ee7b7) !important;
+}
+
+.enrollment-primary:active:not(:disabled) {
+  transform: translateY(0);
+}
+
+.enrollment-toggle {
+  display: flex;
+  background: rgba(0, 0, 0, 0.35);
+  border-radius: 14px;
+  padding: 4px;
+  gap: 4px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.enrollment-toggle button {
+  flex: 1;
+  padding: 10px;
+  font-size: 12px;
+  border-radius: 10px;
+  color: #91a5b7;
+  font-weight: 500;
+  transition: all 0.2s ease;
+}
+
+.enrollment-toggle button[aria-pressed=true] {
+  background: rgba(255, 255, 255, 0.12);
+  color: #fff;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+}
+
+.enrollment-inset {
+  padding: 18px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.03);
+  border-radius: 20px;
+  color: #b3c3d1;
+  font-size: 13px;
+  line-height: 1.7;
+  backdrop-filter: blur(12px);
+}
+
+.enrollment-error {
+  margin-top: 18px;
+  padding: 14px 18px;
+  background: rgba(244, 63, 94, 0.12);
+  border: 1px solid rgba(244, 63, 94, 0.35);
+  border-radius: 14px;
+  font-size: 13px;
+  color: #fecdd3;
+  backdrop-filter: blur(8px);
+}
+
+/* ========================================================= */
+/* Apple iPhone Face ID 3D Scan Viewport & Radial HUD */
+/* ========================================================= */
+.faceid-stage {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+}
+
+.faceid-viewport {
+  position: relative;
+  width: 320px;
+  height: 320px;
+  max-width: 82vw;
+  max-height: 82vw;
+  margin: 12px auto 6px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.faceid-circle-mask {
+  position: absolute;
+  width: 220px;
+  height: 220px;
+  border-radius: 50%;
+  overflow: hidden;
+  background: #000;
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.12),
+              0 12px 40px rgba(0, 0, 0, 0.7);
+  z-index: 1;
+}
+
+.faceid-video {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  transform: scaleX(-1);
+}
+
+.faceid-canvas-overlay {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  z-index: 3;
+}
+
+.faceid-loading-scrim {
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  background: rgba(10, 16, 26, 0.88);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  color: #a0b2c6;
+  z-index: 2;
+  backdrop-filter: blur(8px);
+}
+
+/* Direction Guidance Chip */
+.faceid-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 16px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  backdrop-filter: blur(14px);
+  font-size: 12px;
+  font-weight: 500;
+  color: #e2e8f0;
+  margin-top: 14px;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.3);
+}
+
+.faceid-chip.active {
+  background: rgba(16, 185, 129, 0.15);
+  border-color: rgba(52, 211, 153, 0.4);
+  color: #a7f3d0;
+  box-shadow: 0 0 18px rgba(16, 185, 129, 0.25);
+}
+
+/* Sliding Apple-Inspired Student ID Card */
+.enrollment-idcard {
+  border-radius: 26px;
+  border: 1px solid rgba(110, 231, 183, 0.25);
+  background: radial-gradient(ellipse at 15% 15%, rgba(16, 185, 129, 0.22), transparent 70%),
+              radial-gradient(ellipse at 85% 85%, rgba(6, 182, 212, 0.15), transparent 70%),
+              linear-gradient(145deg, #18283a, #0d1624);
+  padding: 26px;
+  box-shadow: 0 24px 50px rgba(0, 0, 0, 0.45),
+              inset 0 1px 0 rgba(255, 255, 255, 0.2);
+  position: relative;
+  overflow: hidden;
+}
+
+.enrollment-idcard::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 2px;
+  background: linear-gradient(90deg, #10b981, #06b6d4, #8b5cf6);
+}
+
+.enrollment-idcard h2 {
+  font-size: 22px;
+}
+
+.enrollment-footer {
+  text-align: center;
+  color: #637b90;
+  font-size: 11px;
+  margin: 30px auto;
+}
+
+.enrollment-shell button:focus-visible,
+.enrollment-shell a:focus-visible {
+  outline: 2px solid #6ee7b7;
+  outline-offset: 3px;
+}
+
+/* ========================================================= */
+/* AI Visual 3D Action Guidance & Direction Indicators */
+/* ========================================================= */
+.faceid-action-guide {
+  margin-top: 14px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 16px;
+  padding: 10px 18px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(52, 211, 153, 0.25);
+  border-radius: 20px;
+  backdrop-filter: blur(16px);
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4), inset 0 1px 0 rgba(255, 255, 255, 0.1);
+}
+
+.faceid-head-avatar-wrapper {
+  position: relative;
+  width: 52px;
+  height: 52px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  perspective: 400px;
+}
+
+.faceid-head-model {
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  background: radial-gradient(circle at 35% 35%, #10b981 0%, #065f46 60%, #022c22 100%);
+  border: 2px solid #34d399;
+  box-shadow: 0 0 16px rgba(52, 211, 153, 0.5), inset 0 2px 6px rgba(255, 255, 255, 0.4);
+  position: relative;
+  transition: transform 0.35s cubic-bezier(0.34, 1.56, 0.64, 1);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* 3D Facial Features on Avatar */
+.faceid-avatar-face {
+  position: relative;
+  width: 100%;
+  height: 100%;
+}
+
+.faceid-avatar-eye-left,
+.faceid-avatar-eye-right {
+  position: absolute;
+  top: 14px;
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: #ffffff;
+  box-shadow: 0 0 6px #6ee7b7;
+}
+
+.faceid-avatar-eye-left { left: 12px; }
+.faceid-avatar-eye-right { right: 12px; }
+
+.faceid-avatar-nose {
+  position: absolute;
+  top: 20px;
+  left: 20px;
+  width: 4px;
+  height: 6px;
+  border-radius: 2px;
+  background: #a7f3d0;
+}
+
+.faceid-avatar-smile {
+  position: absolute;
+  bottom: 10px;
+  left: 15px;
+  width: 14px;
+  height: 5px;
+  border-bottom: 2px solid #ffffff;
+  border-radius: 0 0 8px 8px;
+}
+
+/* Pose Rotations for the 3D Head Avatar */
+.faceid-head-model.pose-front {
+  transform: rotateY(0deg) rotateX(0deg) scale(1);
+}
+.faceid-head-model.pose-left {
+  transform: rotateY(-36deg) rotateZ(-4deg) translateX(-4px) scale(1.05);
+  box-shadow: -8px 0 20px rgba(52, 211, 153, 0.7);
+}
+.faceid-head-model.pose-right {
+  transform: rotateY(36deg) rotateZ(4deg) translateX(4px) scale(1.05);
+  box-shadow: 8px 0 20px rgba(52, 211, 153, 0.7);
+}
+.faceid-head-model.pose-up {
+  transform: rotateX(-32deg) translateY(-4px) scale(1.05);
+  box-shadow: 0 -8px 20px rgba(52, 211, 153, 0.7);
+}
+.faceid-head-model.pose-down {
+  transform: rotateX(32deg) translateY(4px) scale(1.05);
+  box-shadow: 0 8px 20px rgba(52, 211, 153, 0.7);
+}
+.faceid-head-model.pose-blink {
+  animation: avatarBlinkAnim 1.6s infinite ease-in-out;
+}
+
+@keyframes avatarBlinkAnim {
+  0%, 100% { transform: scale(1); }
+  50% { transform: scaleY(0.85); }
+}
+
+/* Animated 3D Floating Arrow */
+.faceid-arrow-beacon {
+  position: absolute;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #34d399;
+  filter: drop-shadow(0 0 8px #10b981);
+  pointer-events: none;
+  z-index: 5;
+}
+
+.faceid-arrow-beacon.dir-left {
+  left: -22px;
+  animation: pulseArrowLeft 1s infinite alternate ease-in-out;
+}
+.faceid-arrow-beacon.dir-right {
+  right: -22px;
+  animation: pulseArrowRight 1s infinite alternate ease-in-out;
+}
+.faceid-arrow-beacon.dir-up {
+  top: -22px;
+  animation: pulseArrowUp 1s infinite alternate ease-in-out;
+}
+.faceid-arrow-beacon.dir-down {
+  bottom: -22px;
+  animation: pulseArrowDown 1s infinite alternate ease-in-out;
+}
+
+@keyframes pulseArrowLeft {
+  0% { transform: translateX(0); opacity: 0.6; }
+  100% { transform: translateX(-6px); opacity: 1; filter: drop-shadow(0 0 12px #34d399); }
+}
+@keyframes pulseArrowRight {
+  0% { transform: translateX(0); opacity: 0.6; }
+  100% { transform: translateX(6px); opacity: 1; filter: drop-shadow(0 0 12px #34d399); }
+}
+@keyframes pulseArrowUp {
+  0% { transform: translateY(0); opacity: 0.6; }
+  100% { transform: translateY(-6px); opacity: 1; filter: drop-shadow(0 0 12px #34d399); }
+}
+@keyframes pulseArrowDown {
+  0% { transform: translateY(0); opacity: 0.6; }
+  100% { transform: translateY(6px); opacity: 1; filter: drop-shadow(0 0 12px #34d399); }
+}
+
+/* Circular HUD Inset Floating Direction Indicator inside the camera */
+.faceid-viewport-arrow {
+  position: absolute;
+  width: 48px;
+  height: 48px;
+  border-radius: 50%;
+  background: rgba(16, 185, 129, 0.25);
+  border: 1.5px solid #34d399;
+  backdrop-filter: blur(12px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #ffffff;
+  box-shadow: 0 0 20px rgba(52, 211, 153, 0.6);
+  z-index: 4;
+  pointer-events: none;
+}
+
+.faceid-viewport-arrow.pos-left {
+  left: 12px;
+  top: calc(50% - 24px);
+  animation: pulseArrowLeft 0.9s infinite alternate ease-in-out;
+}
+.faceid-viewport-arrow.pos-right {
+  right: 12px;
+  top: calc(50% - 24px);
+  animation: pulseArrowRight 0.9s infinite alternate ease-in-out;
+}
+.faceid-viewport-arrow.pos-up {
+  top: 12px;
+  left: calc(50% - 24px);
+  animation: pulseArrowUp 0.9s infinite alternate ease-in-out;
+}
+.faceid-viewport-arrow.pos-down {
+  bottom: 12px;
+  left: calc(50% - 24px);
+  animation: pulseArrowDown 0.9s infinite alternate ease-in-out;
+}
+
+@media (max-width: 800px) {
+  .enrollment-layout {
+    grid-template-columns: 1fr;
+    gap: 26px;
+    margin: 24px auto;
+    max-width: 520px;
+  }
+  .enrollment-intro {
+    padding-top: 0;
+  }
+  .enrollment-intro h1 {
+    font-size: 30px;
+    margin: 12px 0;
+  }
+  .enrollment-intro > p,
+  .enrollment-assurance {
+    display: none;
+  }
+  .enrollment-steps {
+    display: flex;
+    margin-top: 18px;
+    gap: 12px;
+    justify-content: space-between;
+  }
+  .enrollment-steps > div {
+    font-size: 10px;
+    gap: 6px;
+  }
+  .enrollment-steps span {
+    width: 24px;
+    height: 24px;
+  }
+  .enrollment-glass {
+    padding: 24px;
+    border-radius: 28px;
+  }
+  .enrollment-shell {
+    padding: 20px 16px;
+  }
+  .faceid-viewport {
+    width: 290px;
+    height: 290px;
+  }
+  .faceid-circle-mask {
+    width: 200px;
+    height: 200px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .enrollment-shell * {
+    animation: none !important;
+    transition: none !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+@media (max-width: 380px) {
+  .enrollment-glass {
+    padding: 18px;
+  }
+  .enrollment-idcard {
+    padding: 18px;
+  }
+  .enrollment-steps > div {
+    font-size: 9px;
+  }
+  .faceid-viewport {
+    width: 260px;
+    height: 260px;
+  }
+  .faceid-circle-mask {
+    width: 180px;
+    height: 180px;
+  }
+}
+
