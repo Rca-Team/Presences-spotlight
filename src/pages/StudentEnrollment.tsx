@@ -5,6 +5,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import GuidedFaceCapture from '@/components/enrollment/GuidedFaceCapture';
 import IdCardPhotoStep from '@/components/enrollment/IdCardPhotoStep';
+import InteractiveIdCard from '@/components/enrollment/InteractiveIdCard';
 import { enrollmentApi } from '@/services/enrollment/api';
 import { fieldLabels, studentFields, type CaptureResult, type EnrollmentSession, type StudentDetails } from '@/services/enrollment/types';
 import DobDatePicker from '@/components/enrollment/DobDatePicker';
@@ -224,35 +225,22 @@ export default function StudentEnrollment() {
 
               {phase === 'review' && result && details && (
                 <>
-                  <div className="flex items-center gap-2 text-emerald-300 text-sm mb-5">
-                    <CheckCircle2 size={18} />Capture checks complete
+                  <div className="flex items-center gap-2 text-emerald-300 text-sm mb-4">
+                    <CheckCircle2 size={18} />
+                    <span>Capture & ID Photo Ready</span>
                   </div>
-                  <motion.div className="enrollment-idcard" initial={reduced ? false : { y: 35, rotate: -2 }} animate={{ y: 0, rotate: 0 }}>
-                    <div className="flex justify-between text-xs uppercase tracking-[0.2em] mb-5">
-                      <span>Student identity</span><span>Presences</span>
-                    </div>
-                    <div className="flex gap-5 items-center">
-                      <img
-                        src={result.samples.find(s => s.pose === 'front' && s.glasses === (result.wearsGlasses ? 'with' : 'without'))?.image}
-                        alt="Captured student portrait"
-                        className="w-24 h-28 rounded-2xl object-cover ring-2 ring-emerald-400/30 shadow-md"
-                      />
-                      <div>
-                        <h2>{details.name}</h2>
-                        <p className="mt-2 text-slate-300">Class {details.class} {details.section}</p>
-                        <p className="text-sm font-mono mt-1 text-slate-400">{details.admission_number}</p>
-                        {details.date_of_birth && <p className="text-xs text-emerald-300/80 mt-1">DOB: {details.date_of_birth}</p>}
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          onClick={() => setPhase('idphoto')}
-                          className="text-xs text-emerald-300 hover:text-emerald-200 mt-2 h-7 px-2"
-                        >
-                          Change / Edit ID Photo
-                        </Button>
-                      </div>
-                    </div>
-                  </motion.div>
+
+                  {/* Ultra-Modern Interactive 3D Student ID Card */}
+                  <InteractiveIdCard
+                    student={details}
+                    photoUrl={
+                      result.samples.find(
+                        (s) => s.pose === 'front' && s.glasses === (result.wearsGlasses ? 'with' : 'without')
+                      )?.image || result.samples[0]?.image || ''
+                    }
+                    onEditPhoto={() => setPhase('idphoto')}
+                  />
+
                   <h2 className="mt-7">Does everything look right?</h2>
                   <p className="enrollment-muted">Corrections are sent to your school for approval.</p>
                   <div className="grid grid-cols-2 gap-3 my-5">
