@@ -184,16 +184,16 @@ export default function InteractiveIdCard({
               {/* Card Header */}
               <div className="flex justify-between items-start pt-1.5 relative z-10">
                 <div className="flex items-center gap-2.5">
-                  <div className="w-8 h-8 rounded-xl bg-gradient-to-tr from-emerald-400 to-teal-300 text-slate-950 flex items-center justify-center font-black text-sm shadow-md shadow-emerald-500/20">
-                    <Building2 size={18} />
+                  <div className="w-8 h-8 rounded-xl bg-white p-0.5 flex items-center justify-center shadow-md shadow-emerald-500/20 shrink-0 border border-white/20">
+                    <img src="/kvs-logo.png" alt="Kendriya Vidyalaya Sangathan" className="w-full h-full object-contain" />
                   </div>
                   <div>
-                    <div className="text-[11px] font-black uppercase tracking-[0.16em] text-slate-100 flex items-center gap-1.5">
-                      <span>Presences Campus</span>
+                    <div className="text-[11px] font-black uppercase tracking-[0.14em] text-slate-100 flex items-center gap-1.5 leading-tight">
+                      <span>PM SHRI KENDRIYA VIDYALAYA</span>
                       <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-ping" />
                     </div>
-                    <p className="text-[9px] font-medium tracking-widest text-slate-400 uppercase">
-                      {identity.isTeacher ? 'Faculty Identity Pass · 2026-27' : 'Student Identity Pass · 2026-27'}
+                    <p className="text-[9px] font-medium tracking-wider text-slate-300 uppercase">
+                      NFC Vigyan Vihar · {identity.isTeacher ? 'Faculty Pass' : 'Student Pass'} 2026-27
                     </p>
                   </div>
                 </div>
@@ -309,8 +309,9 @@ export default function InteractiveIdCard({
 
               {/* Back Header */}
               <div className="flex justify-between items-center pt-2 border-b border-white/10 pb-2">
-                <div className="text-[11px] font-bold uppercase tracking-wider text-slate-200">
-                  Campus Regulations & Policy
+                <div className="text-[11px] font-bold uppercase tracking-wider text-slate-200 flex items-center gap-1.5">
+                  <img src="/kvs-logo.png" alt="KVS" className="w-3.5 h-3.5 object-contain rounded-full bg-white p-0.5" />
+                  <span>KVS Regulations & Policy</span>
                 </div>
                 <div className="text-[9px] font-mono text-emerald-400 font-semibold bg-emerald-950/80 px-2 py-0.5 rounded-md border border-emerald-500/30">
                   VALID 2026-27

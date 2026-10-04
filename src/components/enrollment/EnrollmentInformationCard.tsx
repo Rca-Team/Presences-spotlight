@@ -57,14 +57,17 @@ export default function EnrollmentInformationCard({
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-4 border-b border-white/10">
         <div className="flex items-center gap-3">
-          <div className="w-10 h-10 rounded-2xl bg-emerald-500/15 border border-emerald-400/30 flex items-center justify-center text-emerald-400 shadow-md shadow-emerald-500/10">
-            {isTeacher ? <Shield className="w-5 h-5" /> : <GraduationCap className="w-5 h-5" />}
+          <div className="w-10 h-10 rounded-2xl bg-white p-1 border border-white/20 flex items-center justify-center shadow-md shadow-emerald-500/10 shrink-0">
+            <img src="/kvs-logo.png" alt="Kendriya Vidyalaya Sangathan" className="w-full h-full object-contain" />
           </div>
           <div>
             <div className="flex items-center gap-2">
               <h3 className="text-base sm:text-lg font-black text-white">
                 Official Information Record
               </h3>
+              <Badge variant="outline" className="text-[10px] font-bold px-2 py-0.5 bg-blue-500/20 text-blue-300 border-blue-400/40">
+                PM Shri KV
+              </Badge>
               {isTeacher ? (
                 <Badge variant="outline" className="text-[10px] font-bold px-2 py-0.5 bg-purple-500/20 text-purple-300 border-purple-400/40">
                   ★ Faculty
@@ -76,7 +79,7 @@ export default function EnrollmentInformationCard({
               )}
             </div>
             <p className="text-xs text-slate-400 mt-0.5">
-              Verified identity details linked to campus records
+              Verified identity details linked to PM Shri Kendriya Vidyalaya NFC Vigyan Vihar records
             </p>
           </div>
         </div>

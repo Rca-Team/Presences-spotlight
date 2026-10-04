@@ -4,6 +4,7 @@ import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
 import { ArrowLeft, ArrowRight, Check, CheckCircle2, Fingerprint, Glasses, Loader2, LockKeyhole, ShieldCheck } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { Badge } from '@/components/ui/badge';
 import GuidedFaceCapture from '@/components/enrollment/GuidedFaceCapture';
 import IdCardPhotoStep from '@/components/enrollment/IdCardPhotoStep';
 import InteractiveIdCard from '@/components/enrollment/InteractiveIdCard';
@@ -276,11 +277,34 @@ export default function StudentEnrollment() {
   return (
     <main className="enrollment-shell">
       <header className="enrollment-header">
-        <div className="flex items-center gap-3">
-          <a href="/" className="font-semibold tracking-tight text-white flex items-center gap-1.5">
+        <div className="flex items-center gap-2.5 sm:gap-3 flex-wrap">
+          <a href="/" className="font-semibold tracking-tight text-white flex items-center gap-1.5 shrink-0">
             <span className="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-pulse" />
             <span>presences<span className="text-emerald-300 font-bold">.</span></span>
           </a>
+
+          <span className="text-white/25 hidden sm:inline">×</span>
+
+          {/* PM Shri Kendriya Vidyalaya Official Collaboration Badge */}
+          <div className="flex items-center gap-2 bg-white/[0.08] hover:bg-white/10 transition-colors border border-white/10 px-2.5 py-1 rounded-2xl backdrop-blur-md shadow-sm">
+            <img
+              src="/kvs-logo.png"
+              alt="Kendriya Vidyalaya Sangathan"
+              className="h-5 w-5 object-contain rounded-full bg-white p-0.5 shadow-sm shrink-0"
+            />
+            <div className="text-left hidden sm:block">
+              <p className="text-[10px] font-black tracking-wide text-white leading-tight">
+                PM SHRI KENDRIYA VIDYALAYA
+              </p>
+              <p className="text-[8px] font-semibold text-emerald-400 tracking-wider leading-none">
+                NFC VIGYAN VIHAR
+              </p>
+            </div>
+            <span className="text-[9px] font-bold text-emerald-300 sm:hidden">
+              PM Shri KV
+            </span>
+          </div>
+
           {(isStaffBypass || returnTo !== '/') && (
             <Link
               to={returnTo}
@@ -291,9 +315,9 @@ export default function StudentEnrollment() {
             </Link>
           )}
         </div>
-        <div className="flex items-center gap-2 text-xs font-semibold px-2.5 py-1 rounded-full bg-white/5 border border-white/10 text-slate-300">
+        <div className="flex items-center gap-2 text-xs font-semibold px-2.5 py-1 rounded-full bg-white/5 border border-white/10 text-slate-300 shrink-0">
           <LockKeyhole size={12} className="text-emerald-400" />
-          <span>{isStaffBypass ? 'Staff Direct Studio' : 'Private Enrollment'}</span>
+          <span>{isStaffBypass ? 'Staff Direct Studio' : 'Official KV Enrollment'}</span>
         </div>
       </header>
 
@@ -331,9 +355,41 @@ export default function StudentEnrollment() {
       <div className={cn('enrollment-layout', (phase === 'idphoto' || phase === 'capture' || phase === 'review') && 'is-wide')}>
         {phase !== 'idphoto' && phase !== 'capture' && phase !== 'review' && (
           <aside className="enrollment-intro hidden lg:block">
-            <span className="enrollment-eyebrow">A familiar face. A simpler day.</span>
+            <div className="flex items-center gap-2 mb-3">
+              <span className="enrollment-eyebrow">Smart School Biometrics</span>
+              <Badge variant="outline" className="text-[9px] font-bold px-2 py-0.5 bg-blue-500/20 text-blue-300 border-blue-400/40">
+                KVS Affiliated
+              </Badge>
+            </div>
             <h1>Your school day,<br /><span>ready in a few turns.</span></h1>
-            <p>Help your child get ready for effortless attendance. Verify your details, follow the camera, and confirm their student card.</p>
+            <p>Help your student get ready for seamless facial recognition attendance at PM Shri Kendriya Vidyalaya. Verify details, follow the camera, and confirm their digital student ID.</p>
+
+            {/* Official KVS Campus Collaboration Banner Card */}
+            <div className="p-4 rounded-3xl bg-gradient-to-br from-white/[0.07] via-slate-900/60 to-emerald-950/40 border border-emerald-500/30 backdrop-blur-xl shadow-xl my-6 space-y-3">
+              <div className="flex items-center gap-3">
+                <div className="h-12 w-12 rounded-2xl bg-white p-1.5 shadow-md flex items-center justify-center shrink-0 border border-white/20">
+                  <img src="/kvs-logo.png" alt="Kendriya Vidyalaya Sangathan" className="h-full w-full object-contain" />
+                </div>
+                <div className="min-w-0 flex-1">
+                  <Badge variant="outline" className="text-[9px] font-extrabold px-1.5 py-0 bg-emerald-500/20 text-emerald-300 border-emerald-400/40 uppercase tracking-wider mb-1">
+                    Official Campus Partner
+                  </Badge>
+                  <h4 className="text-xs font-black text-white leading-snug">
+                    PM SHRI KENDRIYA VIDYALAYA
+                  </h4>
+                  <p className="text-[10px] text-slate-300 font-medium">
+                    NFC Vigyan Vihar · Delhi Region
+                  </p>
+                </div>
+              </div>
+              <div className="text-[11px] text-slate-400 border-t border-white/10 pt-2.5 flex items-center justify-between">
+                <span className="text-emerald-400 font-semibold flex items-center gap-1.5 text-[10px]">
+                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" /> Kendriya Vidyalaya Sangathan
+                </span>
+                <span className="text-[10px] text-slate-400 font-mono">CBSE Affiliated</span>
+              </div>
+            </div>
+
             <div className="enrollment-steps">
               {stepsList.map((st, i) => (
                 <div key={st.step} className={currentStepIndex >= i ? 'active' : ''}>
@@ -341,9 +397,9 @@ export default function StudentEnrollment() {
                 </div>
               ))}
             </div>
-            <div className="enrollment-assurance">
+            <div className="enrollment-assurance mt-6">
               <ShieldCheck size={20} />
-              <p>Your child’s photos are saved privately for school attendance. Your camera turns off when capture finishes.</p>
+              <p>Biometric samples are securely processed and private to PM Shri Kendriya Vidyalaya attendance records. Your camera automatically shuts down after scan.</p>
             </div>
           </aside>
         )}
@@ -359,9 +415,25 @@ export default function StudentEnrollment() {
             >
               {phase === 'verify' && (
                 <>
+                  {/* Institutional Co-Branding Banner */}
+                  <div className="flex items-center justify-between gap-3 mb-6 p-3 rounded-2xl bg-white/5 border border-white/10 backdrop-blur-md">
+                    <div className="flex items-center gap-2.5">
+                      <div className="w-10 h-10 rounded-xl bg-white p-1 flex items-center justify-center shadow-sm shrink-0">
+                        <img src="/kvs-logo.png" alt="Kendriya Vidyalaya Sangathan" className="w-full h-full object-contain" />
+                      </div>
+                      <div className="text-left">
+                        <p className="text-xs font-black text-white leading-tight">PM SHRI KENDRIYA VIDYALAYA</p>
+                        <p className="text-[10px] text-emerald-400 font-medium">NFC Vigyan Vihar · KVS Delhi Region</p>
+                      </div>
+                    </div>
+                    <Badge variant="outline" className="hidden sm:inline-flex text-[9px] font-bold px-2 py-0.5 bg-emerald-500/15 border-emerald-400/30 text-emerald-300">
+                      Biometric Portal
+                    </Badge>
+                  </div>
+
                   <div className="enrollment-icon"><Fingerprint /></div>
                   <h2>Let’s find your student</h2>
-                  <p className="enrollment-muted">Verify using your student’s admission number, registered parent phone, and date of birth.</p>
+                  <p className="enrollment-muted">Verify using your PM Shri KV admission number, registered parent phone, and date of birth.</p>
 
                   <form
                     onSubmit={e => {
@@ -613,7 +685,19 @@ export default function StudentEnrollment() {
           {error && <p role="alert" className="enrollment-error">{error}</p>}
         </section>
       </div>
-      <footer className="enrollment-footer">Private enrollment · Guided camera capture · School-reviewed corrections</footer>
+      <footer className="enrollment-footer py-6 mt-8 border-t border-white/10">
+        <div className="max-w-4xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-3 text-xs text-slate-400">
+          <div className="flex items-center gap-2">
+            <img src="/kvs-logo.png" alt="KVS" className="h-5 w-5 object-contain rounded-full bg-white p-0.5 shadow-sm" />
+            <span className="font-bold text-slate-200">PM Shri Kendriya Vidyalaya NFC Vigyan Vihar</span>
+          </div>
+          <div className="flex items-center gap-3 text-[11px] text-slate-400">
+            <span>Kendriya Vidyalaya Sangathan (Delhi)</span>
+            <span className="text-white/20">•</span>
+            <span className="text-emerald-400 font-semibold">Collaboration with Presences AI</span>
+          </div>
+        </div>
+      </footer>
     </main>
   );
 }
