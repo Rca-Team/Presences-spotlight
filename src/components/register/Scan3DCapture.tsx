@@ -17,6 +17,7 @@ import {
 import { Button } from '@/components/ui/button';
 import * as faceapi from 'face-api.js';
 import { loadRegistrationModels } from '@/services/face-recognition/OptimizedRegistrationService';
+import { warmupFaceLandmarker, detectFacePose } from '@/services/vision/FacePoseService';
 
 interface Scan3DCaptureProps {
   onComplete: (
