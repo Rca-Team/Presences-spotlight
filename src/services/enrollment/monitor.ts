@@ -55,23 +55,38 @@ export interface MonitorOverview {
 }
 
 export const fetchMonitor = async (): Promise<MonitorOverview> => {
-  const [backendResult, profilesRes, descriptorsRes] = await Promise.all([
+  const fetchProfiles = async () => {
+    try {
+      const { data } = await supabase
+        .from('profiles')
+        .select('id, user_id, full_name, display_name, admission_number, employee_id, roll_number, class, section, category, parent_phone, phone, parent_name, date_of_birth, father_name, avatar_url, photo_url, role, updated_at, created_at');
+      return (data || []) as any[];
+    } catch (err) {
+      console.warn('[EnrollmentMonitor] Profiles fetch fallback:', err);
+      return [] as any[];
+    }
+  };
+
+  const fetchDescriptors = async () => {
+    try {
+      const { data } = await supabase
+        .from('face_descriptors')
+        .select('student_id, user_id, label, image_url, created_at');
+      return (data || []) as any[];
+    } catch (err) {
+      console.warn('[EnrollmentMonitor] Descriptors fetch fallback:', err);
+      return [] as any[];
+    }
+  };
+
+  const [backendResult, rawProfiles, rawDescriptors] = await Promise.all([
     enrollmentApi<MonitorOverview>('staff.monitor').catch((err) => {
       console.warn('[EnrollmentMonitor] Backend monitor API note:', err?.message || err);
       return null;
     }),
-    supabase
-      .from('profiles')
-      .select('id, user_id, full_name, display_name, admission_number, employee_id, roll_number, class, section, category, parent_phone, phone, parent_name, date_of_birth, father_name, avatar_url, photo_url, role, updated_at, created_at')
-      .catch(() => ({ data: [] })),
-    supabase
-      .from('face_descriptors')
-      .select('student_id, user_id, label, image_url, created_at')
-      .catch(() => ({ data: [] })),
+    fetchProfiles(),
+    fetchDescriptors(),
   ]);
-
-  const rawProfiles = (profilesRes?.data || []) as any[];
-  const rawDescriptors = (descriptorsRes?.data || []) as any[];
 
   const descriptorKeys = new Set<string>();
   const descriptorPhotos = new Map<string, string>();

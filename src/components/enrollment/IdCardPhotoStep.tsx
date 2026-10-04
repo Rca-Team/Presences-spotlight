@@ -282,13 +282,13 @@ export default function IdCardPhotoStep({
         <div>
           <div className="flex items-center gap-2 text-emerald-400 text-xs font-bold uppercase tracking-wider">
             <ShieldCheck size={16} />
-            <span>Step 3 of 4: ID Card Photo Calibration</span>
+            <span>Step 3 of 4: School ID Photo</span>
           </div>
           <h2 className="text-xl sm:text-2xl font-black text-white mt-1">
-            {identity.isTeacher ? 'Faculty / Staff ID Badge Portrait' : 'Student ID Card Portrait'}
+            Choose School ID Photo
           </h2>
           <p className="text-xs sm:text-sm text-slate-400 mt-0.5">
-            Crop, frame, and enhance {student.name}’s official school badge photo.
+            Crop or adjust the picture for {student.name}’s student ID card.
           </p>
         </div>
         <Button
@@ -298,7 +298,7 @@ export default function IdCardPhotoStep({
           onClick={handleSkip}
           className="text-xs font-semibold h-8 rounded-xl border-white/15 bg-white/5 hover:bg-white/10 text-slate-300 self-start sm:self-auto shrink-0"
         >
-          Skip & Use Raw Capture
+          Keep Original Photo
         </Button>
       </div>
 
@@ -669,7 +669,7 @@ export default function IdCardPhotoStep({
               onClick={handleSaveAndContinue}
               className="w-full h-11 sm:h-12 rounded-2xl bg-gradient-to-r from-emerald-400 via-teal-400 to-emerald-500 hover:from-emerald-300 hover:to-teal-300 text-slate-950 font-black text-sm sm:text-base shadow-xl shadow-emerald-500/25 flex items-center justify-center gap-2 border-0 transition-all cursor-pointer active:scale-[0.98] select-none"
             >
-              <span>Save & Continue to Review</span>
+              <span>Continue to Final Step</span>
               <ArrowRight size={18} className="stroke-[3]" />
             </button>
 
@@ -679,7 +679,7 @@ export default function IdCardPhotoStep({
               className="w-full h-9 rounded-xl text-xs font-semibold text-slate-400 hover:text-white hover:bg-white/5 flex items-center justify-center gap-2 transition-all cursor-pointer select-none"
             >
               <ArrowLeft size={14} /> 
-              <span>Back to Face Capture</span>
+              <span>Retake Photos</span>
             </button>
           </div>
 

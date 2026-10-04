@@ -414,7 +414,7 @@ export default function InteractiveIdCard({
               className="h-8 px-2.5 text-xs text-slate-300 border-slate-700 hover:border-emerald-500/40"
             >
               <RotateCw size={13} className="mr-1 text-emerald-400" />
-              <span>{isFlipped ? 'Show Front' : 'Flip 3D'}</span>
+              <span>{isFlipped ? 'Front' : 'Flip Card'}</span>
             </Button>
 
             <Button
@@ -429,7 +429,7 @@ export default function InteractiveIdCard({
               className="h-8 px-2.5 text-xs text-slate-300 border-slate-700 hover:border-emerald-500/40"
             >
               <Download size={13} className="mr-1 text-cyan-400" />
-              <span>{isDownloading ? 'Saving…' : 'Save ID'}</span>
+              <span>{isDownloading ? 'Saving…' : 'Download ID'}</span>
             </Button>
 
             {onEditPhoto && (
@@ -444,7 +444,7 @@ export default function InteractiveIdCard({
                 className="h-8 px-2.5 text-xs text-emerald-400 hover:text-emerald-300 hover:bg-emerald-950/30"
               >
                 <Edit3 size={13} className="mr-1" />
-                <span>Recrop Photo</span>
+                <span>Change Photo</span>
               </Button>
             )}
           </div>

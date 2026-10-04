@@ -301,23 +301,29 @@ export async function universalDeleteStudent(
     const userKeys = Array.from(candidateUserIds);
     const nameKeys = Array.from(candidateNames);
 
+    const safeDelete = async (table: string, col: string, vals: string[]) => {
+      try {
+        await supabase.from(table as any).delete().in(col, vals);
+      } catch {}
+    };
+
     if (empKeys.length > 0) {
-      secondaryOps.push(supabase.from('gate_entries').delete().in('student_id', empKeys).catch(() => {}));
-      secondaryOps.push(supabase.from('late_entries').delete().in('student_id', empKeys).catch(() => {}));
-      secondaryOps.push(supabase.from('attendance_predictions').delete().in('student_id', empKeys).catch(() => {}));
-      secondaryOps.push(supabase.from('attendance_points').delete().in('student_id', empKeys).catch(() => {}));
-      secondaryOps.push(supabase.from('student_badges').delete().in('student_id', empKeys).catch(() => {}));
-      secondaryOps.push(supabase.from('wellness_scores').delete().in('student_id', empKeys).catch(() => {}));
+      secondaryOps.push(safeDelete('gate_entries', 'student_id', empKeys));
+      secondaryOps.push(safeDelete('late_entries', 'student_id', empKeys));
+      secondaryOps.push(safeDelete('attendance_predictions', 'student_id', empKeys));
+      secondaryOps.push(safeDelete('attendance_points', 'student_id', empKeys));
+      secondaryOps.push(safeDelete('student_badges', 'student_id', empKeys));
+      secondaryOps.push(safeDelete('wellness_scores', 'student_id', empKeys));
     }
     if (nameKeys.length > 0) {
-      secondaryOps.push(supabase.from('gate_entries').delete().in('student_name', nameKeys).catch(() => {}));
-      secondaryOps.push(supabase.from('late_entries').delete().in('student_name', nameKeys).catch(() => {}));
+      secondaryOps.push(safeDelete('gate_entries', 'student_name', nameKeys));
+      secondaryOps.push(safeDelete('late_entries', 'student_name', nameKeys));
     }
     if (userKeys.length > 0) {
-      secondaryOps.push(supabase.from('emotion_events').delete().in('user_id', userKeys).catch(() => {}));
-      secondaryOps.push(supabase.from('notifications').delete().in('user_id', userKeys).catch(() => {}));
-      secondaryOps.push(supabase.from('notification_log').delete().in('user_id', userKeys).catch(() => {}));
-      secondaryOps.push(supabase.from('user_roles').delete().in('user_id', userKeys).catch(() => {}));
+      secondaryOps.push(safeDelete('emotion_events', 'user_id', userKeys));
+      secondaryOps.push(safeDelete('notifications', 'user_id', userKeys));
+      secondaryOps.push(safeDelete('notification_log', 'user_id', userKeys));
+      secondaryOps.push(safeDelete('user_roles', 'user_id', userKeys));
     }
 
     await Promise.allSettled(secondaryOps);

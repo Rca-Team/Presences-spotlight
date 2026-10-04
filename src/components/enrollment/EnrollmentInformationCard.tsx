@@ -63,17 +63,17 @@ export default function EnrollmentInformationCard({
           <div>
             <div className="flex items-center gap-2">
               <h3 className="text-base sm:text-lg font-black text-white">
-                Official Information Record
+                Student Profile Details
               </h3>
               <Badge variant="outline" className="text-[10px] font-bold px-2 py-0.5 bg-blue-500/20 text-blue-300 border-blue-400/40">
                 PM Shri KV
               </Badge>
               <Badge variant="outline" className="hidden sm:inline-flex text-[10px] font-bold px-2 py-0.5 bg-emerald-500/15 text-emerald-300 border-emerald-400/40 gap-1 items-center">
-                <img src="/logo.png" alt="" className="w-3 h-3 object-contain inline" /> Presences Secured
+                <img src="/logo.png" alt="" className="w-3 h-3 object-contain inline" /> Presences
               </Badge>
               {isTeacher ? (
                 <Badge variant="outline" className="text-[10px] font-bold px-2 py-0.5 bg-purple-500/20 text-purple-300 border-purple-400/40">
-                  ★ Faculty
+                  Faculty
                 </Badge>
               ) : (
                 <Badge variant="outline" className="text-[10px] font-bold px-2 py-0.5 bg-emerald-500/20 text-emerald-300 border-emerald-400/40">
@@ -82,7 +82,7 @@ export default function EnrollmentInformationCard({
               )}
             </div>
             <p className="text-xs text-slate-400 mt-0.5">
-              Verified identity details linked to PM Shri Kendriya Vidyalaya NFC Vigyan Vihar records
+              Review details below before saving
             </p>
           </div>
         </div>
@@ -101,11 +101,11 @@ export default function EnrollmentInformationCard({
         >
           {editing ? (
             <>
-              <Check className="w-3.5 h-3.5 stroke-[3]" /> Done Editing
+              <Check className="w-3.5 h-3.5 stroke-[3]" /> Done
             </>
           ) : (
             <>
-              <Edit3 className="w-3.5 h-3.5 text-emerald-400" /> Request Corrections
+              <Edit3 className="w-3.5 h-3.5 text-emerald-400" /> Edit Details
             </>
           )}
         </Button>
@@ -113,7 +113,7 @@ export default function EnrollmentInformationCard({
 
       {/* Action Required Alert if Email is Missing */}
       {!hasEmailFilled && (
-        <div className="mt-4 p-3.5 rounded-2xl bg-amber-500/15 border-2 border-amber-400/60 text-amber-200 text-xs flex items-start sm:items-center gap-3 shadow-lg shadow-amber-500/10 animate-pulse">
+        <div className="mt-4 p-3.5 rounded-2xl bg-amber-500/15 border-2 border-amber-400/60 text-amber-200 text-xs flex items-start sm:items-center gap-3 shadow-lg shadow-amber-500/10">
           <div className="p-1.5 rounded-xl bg-amber-500/20 text-amber-300 shrink-0">
             <AlertCircle className="w-5 h-5 text-amber-400" />
           </div>
@@ -121,11 +121,11 @@ export default function EnrollmentInformationCard({
             <p className="font-extrabold text-amber-100 text-xs sm:text-sm flex items-center gap-2">
               <span>Email Address Required</span>
               <Badge variant="outline" className="text-[9px] font-bold px-1.5 py-0 bg-amber-500/25 border-amber-400/60 text-amber-200">
-                Mandatory
+                Required
               </Badge>
             </p>
             <p className="text-[11px] text-amber-200/90 mt-0.5 leading-relaxed">
-              An email address is required to complete enrollment. Please provide a valid {isTeacher ? 'faculty' : 'student or parent'} email below.
+              Please enter a valid {isTeacher ? 'faculty' : 'student or parent'} email address below for school notifications.
             </p>
           </div>
         </div>
@@ -136,7 +136,7 @@ export default function EnrollmentInformationCard({
         {/* Section 1: Core Identity */}
         <div>
           <span className="text-[10px] font-extrabold uppercase tracking-wider text-emerald-400/90 block mb-2">
-            1. Core Identity
+            Student Information
           </span>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             {/* Full Name */}
@@ -284,7 +284,7 @@ export default function EnrollmentInformationCard({
                   {!hasEmailFilled && (
                     <p className="text-[10px] text-amber-300 font-medium flex items-center gap-1">
                       <AlertCircle className="w-3 h-3 shrink-0" />
-                      Must be filled before saving enrollment.
+                      Please enter an email before saving.
                     </p>
                   )}
                 </div>
