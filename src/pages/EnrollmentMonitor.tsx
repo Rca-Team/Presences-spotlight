@@ -65,9 +65,10 @@ import {
   type MonitorCorrection,
 } from '@/services/enrollment/monitor';
 import CaptureFaceDialog, { type RecaptureStudent } from '@/components/admin/CaptureFaceDialog';
+import { ClassPDFIDCardImporter, type ExtractedStudentCard } from '@/components/register/ClassPDFIDCardImporter';
+import { supabase } from '@/integrations/supabase/client';
+import { enrollmentApi } from '@/services/enrollment/api';
 import '@/components/enrollment/enrollment.css';
-
-const StudentEnrollmentManager = lazy(() => import('@/components/admin/StudentEnrollmentManager'));
 
 type Filter = 'all' | 'not_started' | 'in_progress' | 'failed' | 'completed' | 'attention';
 
@@ -620,6 +621,94 @@ export default function EnrollmentMonitor() {
     }, 45000);
     return () => window.clearInterval(id);
   }, [load]);
+
+  const handleImportClassCards = async (cards: ExtractedStudentCard[], batchName: string) => {
+    if (!cards.length) return;
+    toast({
+      title: 'Processing ID Cards...',
+      description: `Saving ${cards.length} students into Biometric Radar database...`,
+    });
+
+    try {
+      const profileRows = cards
+        .map((c) => {
+          const rawDept = (c.department || (c.class && c.section ? `${c.class}-${c.section}` : c.class || '')).trim();
+          const adm = (c.employee_id || c.student_id_kv || '').trim();
+          return {
+            full_name: c.name.trim(),
+            display_name: c.name.trim(),
+            admission_number: adm,
+            employee_id: adm,
+            category: rawDept || 'Unassigned',
+            class: c.class || '',
+            section: c.section || '',
+            parent_phone: c.parent_phone || c.phone || '',
+            parent_name: c.parent_name || c.father_name || c.mother_name || '',
+            parent_email: c.parent_email || '',
+            date_of_birth: c.date_of_birth || '',
+            father_name: c.father_name || '',
+            mother_name: c.mother_name || '',
+            roll_number: c.roll_number || '',
+            role: 'student',
+            phone: c.parent_phone || c.phone || '',
+            address: c.address || '',
+          };
+        })
+        .filter((r) => Boolean(r.admission_number && r.full_name));
+
+      if (profileRows.length > 0) {
+        await supabase.from('profiles').upsert(profileRows, {
+          onConflict: 'admission_number',
+          ignoreDuplicates: false,
+        });
+      }
+
+      // Sync into Appwrite monitor roster
+      for (const c of cards) {
+        const rawDept = (c.department || (c.class && c.section ? `${c.class}-${c.section}` : c.class || '')).trim();
+        const adm = (c.employee_id || c.student_id_kv || '').trim();
+        if (!adm || !c.name) continue;
+        try {
+          await enrollmentApi('staff.import', {
+            student: {
+              name: c.name.trim(),
+              admission_number: adm,
+              class: c.class || '',
+              section: c.section || '',
+              category: rawDept || 'Unassigned',
+              parent_phone: c.parent_phone || c.phone || '',
+              parent_name: c.parent_name || c.father_name || c.mother_name || '',
+              parent_email: c.parent_email || '',
+              date_of_birth: c.date_of_birth || '',
+              father_name: c.father_name || '',
+              mother_name: c.mother_name || '',
+              address: c.address || '',
+              role: 'student',
+            },
+          });
+        } catch (apiErr) {
+          console.warn('Appwrite staff.import non-fatal note for student:', adm, apiErr);
+        }
+      }
+
+      toast({
+        title: 'Class ID Cards Imported! 🚀',
+        description: `Successfully added ${cards.length} students to the Biometric Enrollment Radar.`,
+      });
+
+      await load(true);
+      setUploadOpen(false);
+    } catch (err: any) {
+      console.error('Import failed:', err);
+      toast({
+        title: 'Import Partial Failure',
+        description: err.message || 'Some records could not be saved. Please refresh.',
+        variant: 'destructive',
+      });
+      await load(true);
+      setUploadOpen(false);
+    }
+  };
 
   useEffect(() => setLimit(PAGE), [query, category, filter]);
 
@@ -1259,18 +1348,13 @@ export default function EnrollmentMonitor() {
           }}
         />
 
-        {/* Upload ID Cards Modal */}
+        {/* Class PDF Bulk ID Cards Importer Modal */}
         {uploadOpen && (
-          <Suspense fallback={null}>
-            <StudentEnrollmentManager
-              open={uploadOpen}
-              onOpenChange={setUploadOpen}
-              onImportComplete={() => {
-                void load(true);
-                setUploadOpen(false);
-              }}
-            />
-          </Suspense>
+          <ClassPDFIDCardImporter
+            isOpen={uploadOpen}
+            onClose={() => setUploadOpen(false)}
+            onImportDrafts={handleImportClassCards}
+          />
         )}
       </div>
     </PageTransition>
