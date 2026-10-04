@@ -163,7 +163,6 @@ const Admin = () => {
   const { role, isLoading: isRoleLoading, isAdminOrPrincipal, isTeacher } = useUserRole();
   const [selectedFaceId, setSelectedFaceId] = useState<string | null>(null);
   const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
-  const [activeTab, setActiveTab] = useState('');
   const [attendanceUpdated, setAttendanceUpdated] = useState(false);
   const [nameFilter, setNameFilter] = useState<string>('all');
   const [availableFaces, setAvailableFaces] = useState<{id: string; user_id?: string; name: string; employee_id: string;}[]>([]);
@@ -242,19 +241,43 @@ const Admin = () => {
     { label: 'Total', value: stats.todayAttendance, icon: Activity, color: 'text-blue-600 dark:text-blue-400' }
   ], [stats.totalFaces, stats.presentToday, stats.lateToday, stats.todayAttendance]);
 
-  const [searchParams] = useSearchParams();
-  const requestedTab = searchParams.get('tab');
+  const [searchParams, setSearchParams] = useSearchParams();
+  const requestedTab = searchParams.get('tab') || searchParams.get('section');
+
+  const [activeTab, setActiveTab] = useState(() => {
+    const urlTab = new URLSearchParams(window.location.search).get('tab') || new URLSearchParams(window.location.search).get('section');
+    if (urlTab) return urlTab;
+    try {
+      const saved = sessionStorage.getItem('presences_admin_active_tab');
+      if (saved) return saved;
+    } catch {}
+    return '';
+  });
 
   useEffect(() => {
     if (!isRoleLoading && !activeTab) {
-      setActiveTab(isTeacher && !isAdminOrPrincipal ? 'teacher' : 'dashboard');
-    }
-  }, [isRoleLoading, isTeacher, isAdminOrPrincipal, activeTab]);
+      const initial = requestedTab || (() => {
+        try { return sessionStorage.getItem('presences_admin_active_tab'); } catch { return null; }
+      })() || (isTeacher && !isAdminOrPrincipal ? 'teacher' : 'dashboard');
 
-  // Deep-link support: /admin?tab=timetable opens that section directly.
+      setActiveTab(initial);
+      setSearchParams((prev) => {
+        const next = new URLSearchParams(prev);
+        if (!next.has('tab')) next.set('tab', initial);
+        return next;
+      }, { replace: true });
+    }
+  }, [isRoleLoading, isTeacher, isAdminOrPrincipal, activeTab, requestedTab, setSearchParams]);
+
+  // Deep-link / browser back-forward support: sync activeTab when URL search param changes
   useEffect(() => {
-    if (requestedTab) setActiveTab(requestedTab);
-  }, [requestedTab]);
+    if (requestedTab && requestedTab !== activeTab) {
+      setActiveTab(requestedTab);
+      try {
+        sessionStorage.setItem('presences_admin_active_tab', requestedTab);
+      } catch {}
+    }
+  }, [requestedTab, activeTab]);
 
 
   const fetchData = useCallback(async () => {
@@ -368,10 +391,18 @@ const Admin = () => {
     }
   }, [attendanceUpdated]);
 
-  const handleTabChange = (tab: string) => {
+  const handleTabChange = useCallback((tab: string) => {
     haptic('selection');
     setActiveTab(tab);
-  };
+    try {
+      sessionStorage.setItem('presences_admin_active_tab', tab);
+    } catch {}
+    setSearchParams((prev) => {
+      const next = new URLSearchParams(prev);
+      next.set('tab', tab);
+      return next;
+    }, { replace: true });
+  }, [haptic, setSearchParams]);
 
   const handleRefresh = async () => {
     invalidateUnifiedStatsCache();

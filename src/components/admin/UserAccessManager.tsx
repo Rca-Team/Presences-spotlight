@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -101,8 +102,37 @@ const UserAccessManager: React.FC = () => {
   const { toast } = useToast();
   const [users, setUsers] = useState<RegisteredUser[]>(() => cachedUsers || []);
   const [matrix, setMatrix] = useState<ClassMatrixSlot[]>(() => cachedMatrix || []);
-  const [isLoading, setIsLoading] = useState(() => !cachedMatrix || !cachedUsers);
-  const [activeTab, setActiveTab] = useState<'matrix' | 'teachers' | 'users' | 'create'>('matrix');
+  const [searchParams, setSearchParams] = useSearchParams();
+  const subtabParam = searchParams.get('subtab') as 'matrix' | 'teachers' | 'users' | 'create' | null;
+
+  const [activeTab, setActiveTab] = useState<'matrix' | 'teachers' | 'users' | 'create'>(() => {
+    if (subtabParam && ['matrix', 'teachers', 'users', 'create'].includes(subtabParam)) {
+      return subtabParam;
+    }
+    try {
+      const saved = sessionStorage.getItem('presences_admin_access_subtab') as any;
+      if (saved && ['matrix', 'teachers', 'users', 'create'].includes(saved)) return saved;
+    } catch {}
+    return 'matrix';
+  });
+
+  useEffect(() => {
+    if (subtabParam && ['matrix', 'teachers', 'users', 'create'].includes(subtabParam) && subtabParam !== activeTab) {
+      setActiveTab(subtabParam);
+    }
+  }, [subtabParam, activeTab]);
+
+  const handleSubTabChange = (tab: 'matrix' | 'teachers' | 'users' | 'create') => {
+    setActiveTab(tab);
+    try {
+      sessionStorage.setItem('presences_admin_access_subtab', tab);
+    } catch {}
+    setSearchParams((prev) => {
+      const next = new URLSearchParams(prev);
+      next.set('subtab', tab);
+      return next;
+    }, { replace: true });
+  };
 
   const [searchQuery, setSearchQuery] = useState('');
   const [wingFilter, setWingFilter] = useState<'all' | 'Middle' | 'Secondary' | 'Senior Secondary'>('all');
@@ -566,7 +596,7 @@ const UserAccessManager: React.FC = () => {
       </div>
 
       {/* Main Tabs Container */}
-      <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as any)} className="space-y-5">
+      <Tabs value={activeTab} onValueChange={(v) => handleSubTabChange(v as any)} className="space-y-5">
         <TabsList className="bg-muted/40 p-1 rounded-2xl border flex-wrap">
           <TabsTrigger value="matrix" className="rounded-xl font-bold text-xs gap-1.5">
             <BookOpen className="h-3.5 w-3.5" /> Class Assignment Matrix ({matrix.length})
