@@ -38,6 +38,13 @@ import {
   RefreshCw,
   Server,
   Cloud,
+  CheckSquare,
+  Square,
+  FileText,
+  Check,
+  ShieldCheck,
+  SlidersHorizontal,
+  ArrowRight,
 } from 'lucide-react';
 import {
   deleteSnapshot,
@@ -594,37 +601,33 @@ async function createFullCloudZipBackup(
   return { zipBlob, backupObj, stats };
 }
 
-// ---------- Full Cloud ZIP Import & Restore Engine ----------
-async function restoreFromCloudZipOrJson(
-  file: File,
-  settings: Settings,
-  onProgress: (p: Partial<BackupProgress>) => void,
-): Promise<RestoreReport> {
-  const report: RestoreReport = {
-    tablesRestored: 0,
-    rowsRestored: 0,
-    authUsersCreated: 0,
-    authUsersSkipped: 0,
-    storageFilesRestored: 0,
-    skippedTables: [],
-    errors: [],
-  };
+export type PackageInspection = {
+  filename: string;
+  sizeBytes: number;
+  format: 'zip' | 'json';
+  createdAt: string;
+  system: string;
+  tables: Array<{ name: string; count: number }>;
+  authUsersCount: number;
+  storageFilesCount: number;
+  storageBuckets: Array<{ name: string; filesCount: number }>;
+  parsedBackup: FullBackup;
+};
 
-  onProgress({ phase: 'preparing', label: `Inspecting backup package: ${file.name}...`, pct: 3 });
-
+// ---------- Backup Package Pre-Inspection Engine ----------
+async function inspectBackupFile(file: File): Promise<PackageInspection> {
   let backup: FullBackup;
+  let format: 'zip' | 'json' = 'json';
 
   if (file.name.endsWith('.zip') || file.type.includes('zip')) {
-    // Parse ZIP package
+    format = 'zip';
     const zip = await JSZip.loadAsync(file);
 
-    // 1. Try reading backup_full.json
     const fullJsonEntry = zip.file('backup_full.json');
     if (fullJsonEntry) {
       const rawText = await fullJsonEntry.async('text');
       backup = JSON.parse(rawText);
     } else {
-      // Reconstruct from folders
       const manifestEntry = zip.file('manifest.json');
       let manifest: Manifest = {
         version: '3.0-cloud-zip',
@@ -635,7 +638,9 @@ async function restoreFromCloudZipOrJson(
         restoreOrder: [],
       };
       if (manifestEntry) {
-        manifest = JSON.parse(await manifestEntry.async('text'));
+        try {
+          manifest = JSON.parse(await manifestEntry.async('text'));
+        } catch (_) {}
       }
 
       backup = {
@@ -648,24 +653,21 @@ async function restoreFromCloudZipOrJson(
         storageBuckets: [],
       };
 
-      // Read database table JSONs
-      const dbFolder = zip.folder('database');
-      if (dbFolder) {
-        const tableFiles = Object.keys(zip.files).filter((k) => k.startsWith('database/') && k.endsWith('.json'));
-        for (const tf of tableFiles) {
-          const tableName = tf.replace('database/', '').replace('.json', '');
-          const tableData = JSON.parse(await zip.file(tf)!.async('text'));
-          backup.tables[tableName] = tableData;
-        }
+      const tableFiles = Object.keys(zip.files).filter((k) => k.startsWith('database/') && k.endsWith('.json'));
+      for (const tf of tableFiles) {
+        const tableName = tf.replace('database/', '').replace('.json', '');
+        try {
+          backup.tables[tableName] = JSON.parse(await zip.file(tf)!.async('text'));
+        } catch (_) {}
       }
 
-      // Read auth users
       const authFile = zip.file('auth/users.json') || zip.file('auth_users.json');
       if (authFile) {
-        backup.authUsers = JSON.parse(await authFile.async('text'));
+        try {
+          backup.authUsers = JSON.parse(await authFile.async('text'));
+        } catch (_) {}
       }
 
-      // Read storage files from ZIP
       const storageFiles = Object.keys(zip.files).filter((k) => k.startsWith('storage/') && !zip.files[k].dir);
       for (const sf of storageFiles) {
         const parts = sf.split('/');
@@ -683,31 +685,71 @@ async function restoreFromCloudZipOrJson(
       }
     }
   } else {
-    // Parse JSON
+    format = 'json';
     const text = await file.text();
     backup = JSON.parse(text);
   }
 
-  // Get allowed public tables from Cloud
-  let allowedTables: Set<string>;
-  try {
-    const liveManifest = await invokeAction<Manifest>({ action: 'list_public_tables' });
-    allowedTables = new Set(liveManifest.tables.map((t) => t.table));
-  } catch (e: any) {
-    throw new Error(`Cannot reach Cloud database: ${e?.message || 'Check network connection'}`);
+  // Extract table statistics
+  const tablesList: Array<{ name: string; count: number }> = [];
+  const rawTables = backup.tables || {};
+  for (const [name, rows] of Object.entries(rawTables)) {
+    const count = Array.isArray(rows) ? rows.length : 0;
+    tablesList.push({ name, count });
   }
 
-  const restoreOrderRaw = backup.manifest?.restoreOrder?.length
-    ? backup.manifest.restoreOrder
-    : Object.keys(backup.tables || {});
-
-  const restoreOrder = restoreOrderRaw.filter((t) => {
-    if (!allowedTables.has(t)) {
-      report.skippedTables.push(t);
-      return false;
+  let storageTotalFiles = 0;
+  const storageBucketsList: Array<{ name: string; filesCount: number }> = [];
+  if (backup.storage) {
+    for (const [bucket, files] of Object.entries(backup.storage)) {
+      const count = Array.isArray(files) ? files.length : 0;
+      storageBucketsList.push({ name: bucket, filesCount: count });
+      storageTotalFiles += count;
     }
-    return true;
-  });
+  }
+
+  return {
+    filename: file.name,
+    sizeBytes: file.size,
+    format,
+    createdAt: backup.createdAt || new Date().toISOString(),
+    system: backup.manifest?.system || 'Presences AI Cloud Engine',
+    tables: tablesList,
+    authUsersCount: backup.authUsers?.length || 0,
+    storageFilesCount: storageTotalFiles,
+    storageBuckets: storageBucketsList,
+    parsedBackup: backup,
+  };
+}
+
+// ---------- Full Cloud ZIP Import & Restore Engine ----------
+async function restoreFromCloudZipOrJson(
+  inspection: PackageInspection,
+  settings: Settings,
+  selectedTableNames: Set<string>,
+  onProgress: (p: Partial<BackupProgress>) => void,
+): Promise<RestoreReport> {
+  const report: RestoreReport = {
+    tablesRestored: 0,
+    rowsRestored: 0,
+    authUsersCreated: 0,
+    authUsersSkipped: 0,
+    storageFilesRestored: 0,
+    skippedTables: [],
+    errors: [],
+  };
+
+  onProgress({ phase: 'preparing', label: `Preparing restoration: ${inspection.filename}...`, pct: 3 });
+
+  const backup = inspection.parsedBackup;
+
+  // Compute exact restoration order for selected tables
+  const restoreOrder = RESTORE_ORDER.filter((t) => selectedTableNames.has(t) && backup.tables[t]);
+  for (const t of selectedTableNames) {
+    if (!restoreOrder.includes(t) && backup.tables[t]) {
+      restoreOrder.push(t);
+    }
+  }
 
   const totalDbRows = restoreOrder.reduce((s, t) => s + ((backup.tables[t] as unknown[])?.length || 0), 0);
   const totalAuthUsers = settings.includeAuthUsers ? backup.authUsers?.length || 0 : 0;
@@ -752,21 +794,6 @@ async function restoreFromCloudZipOrJson(
     const rows = (backup.tables[table] as unknown[]) || [];
     if (rows.length === 0) continue;
 
-    onProgress({
-      phase: 'importing_db',
-      currentScope: table,
-      label: `Clearing table: ${table}...`,
-      done,
-      total: grandTotal,
-      pct: Math.min(95, Math.round((done / Math.max(1, grandTotal)) * 100)),
-    });
-
-    try {
-      await invokeAction({ action: 'clear_table', table });
-    } catch (e: any) {
-      report.errors.push({ scope: `clear ${table}`, message: e?.message || 'clear failed' });
-    }
-
     let tableRowsInserted = 0;
     for (let i = 0; i < rows.length; i += CHUNK_SIZE) {
       const chunk = rows.slice(i, i + CHUNK_SIZE);
@@ -783,8 +810,8 @@ async function restoreFromCloudZipOrJson(
         await invokeAction({ action: 'import_table_chunk', table, rows: chunk });
         tableRowsInserted += chunk.length;
       } catch (e: any) {
-        // Retry with smaller batch
-        const smaller = 100;
+        // Retry with smaller micro-batches for error isolation
+        const smaller = 50;
         let recovered = 0;
         for (let j = 0; j < chunk.length; j += smaller) {
           const mini = chunk.slice(j, j + smaller);
@@ -794,7 +821,7 @@ async function restoreFromCloudZipOrJson(
           } catch (e2: any) {
             report.errors.push({
               scope: `${table} rows ${i + j}-${i + j + mini.length}`,
-              message: e2?.message || e?.message || 'chunk failed',
+              message: e2?.message || 'micro-chunk failed',
             });
           }
         }
@@ -813,21 +840,6 @@ async function restoreFromCloudZipOrJson(
   if (settings.includeStorage && backup.storage) {
     for (const [bucket, files] of Object.entries(backup.storage)) {
       if (!files || files.length === 0) continue;
-
-      onProgress({
-        phase: 'importing_storage',
-        currentScope: `storage:${bucket}`,
-        label: `Clearing storage bucket: ${bucket}...`,
-        done,
-        total: grandTotal,
-        pct: Math.min(95, Math.round((done / Math.max(1, grandTotal)) * 100)),
-      });
-
-      try {
-        await invokeAction({ action: 'clear_storage_bucket', bucket });
-      } catch (e: any) {
-        report.errors.push({ scope: `clear bucket ${bucket}`, message: e?.message || 'clear failed' });
-      }
 
       for (let i = 0; i < files.length; i++) {
         const fileItem = files[i];
@@ -876,6 +888,13 @@ const Backup = () => {
   const [busy, setBusy] = useState<null | 'backup' | 'snapshot' | 'restore'>(null);
   const [snapshots, setSnapshots] = useState<SnapshotMeta[]>([]);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [inspectedPackage, setInspectedPackage] = useState<PackageInspection | null>(null);
+  const [isInspecting, setIsInspecting] = useState(false);
+  const [selectedTables, setSelectedTables] = useState<Set<string>>(new Set());
+  const [restoreAuthUsers, setRestoreAuthUsers] = useState(true);
+  const [restoreStorage, setRestoreStorage] = useState(true);
+  const [restoreReport, setRestoreReport] = useState<RestoreReport | null>(null);
+  const [isDragging, setIsDragging] = useState(false);
   const [lastBackupAt, setLastBackupAt] = useState<string | null>(null);
   const [liveManifest, setLiveManifest] = useState<Manifest | null>(null);
   const [isLoadingManifest, setIsLoadingManifest] = useState(false);
@@ -993,10 +1012,83 @@ const Backup = () => {
     }
   };
 
-  // Restore from ZIP/JSON Action
+  // Inspect and analyze selected backup package
+  const handleFileSelected = async (file: File | null) => {
+    setSelectedFile(file);
+    setRestoreReport(null);
+    if (!file) {
+      setInspectedPackage(null);
+      setSelectedTables(new Set());
+      return;
+    }
+
+    try {
+      setIsInspecting(true);
+      const inspection = await inspectBackupFile(file);
+      setInspectedPackage(inspection);
+      // Automatically enable all tables that contain rows
+      const activeTables = new Set(inspection.tables.filter((t) => t.count > 0).map((t) => t.name));
+      // If all tables have 0 rows, enable all available anyway
+      if (activeTables.size === 0) {
+        inspection.tables.forEach((t) => activeTables.add(t.name));
+      }
+      setSelectedTables(activeTables);
+      setRestoreAuthUsers(inspection.authUsersCount > 0);
+      setRestoreStorage(inspection.storageFilesCount > 0);
+
+      const totalFoundRows = inspection.tables.reduce((s, t) => s + t.count, 0);
+      toast({
+        title: 'Backup Package Analyzed 📦',
+        description: `Found ${totalFoundRows.toLocaleString()} rows in ${inspection.tables.length} tables, ${inspection.authUsersCount} user accounts, and ${inspection.storageFilesCount} storage files.`,
+      });
+    } catch (err: any) {
+      console.error('Inspection failed:', err);
+      toast({
+        title: 'Could not inspect backup package',
+        description: err.message || 'The selected file is not a valid Presences backup archive.',
+        variant: 'destructive',
+      });
+      setSelectedFile(null);
+      setInspectedPackage(null);
+    } finally {
+      setIsInspecting(false);
+    }
+  };
+
+  const handleToggleTable = (name: string) => {
+    setSelectedTables((prev) => {
+      const next = new Set(prev);
+      if (next.has(name)) {
+        next.delete(name);
+      } else {
+        next.add(name);
+      }
+      return next;
+    });
+  };
+
+  const handleSelectAllTables = () => {
+    if (!inspectedPackage) return;
+    setSelectedTables(new Set(inspectedPackage.tables.map((t) => t.name)));
+  };
+
+  const handleDeselectAllTables = () => {
+    setSelectedTables(new Set());
+  };
+
+  // Restore from analyzed package
   const handleRestoreFromPackage = async () => {
-    if (!selectedFile) {
+    if (!inspectedPackage) {
       toast({ title: 'No backup package selected', variant: 'destructive' });
+      return;
+    }
+
+    if (selectedTables.size === 0 && !restoreAuthUsers && !restoreStorage) {
+      toast({
+        title: 'Nothing selected to restore',
+        description: 'Please check at least one table, user accounts, or storage files.',
+        variant: 'destructive',
+      });
       return;
     }
 
@@ -1012,16 +1104,21 @@ const Backup = () => {
         console.warn('Pre-restore rollback snapshot skipped:', err);
       }
 
-      const report = await restoreFromCloudZipOrJson(selectedFile, settings, updateProgress);
+      const effectiveSettings: Settings = {
+        ...settings,
+        includeAuthUsers: restoreAuthUsers,
+        includeStorage: restoreStorage,
+      };
+
+      const report = await restoreFromCloudZipOrJson(inspectedPackage, effectiveSettings, selectedTables, updateProgress);
+      setRestoreReport(report);
 
       const hasErrors = report.errors.length > 0;
       toast({
-        title: hasErrors ? 'Restoration finished with notes' : 'Restoration Complete',
+        title: hasErrors ? 'Restoration finished with notes' : 'Restoration Complete 🚀',
         description: `Restored ${report.rowsRestored.toLocaleString()} rows across ${report.tablesRestored} tables, ${report.authUsersCreated} auth users, & ${report.storageFilesRestored} storage files.`,
       });
 
-      setSelectedFile(null);
-      if (fileInputRef.current) fileInputRef.current.value = '';
       void refreshLiveStats();
     } catch (e: any) {
       updateProgress({ phase: 'failed', label: e?.message || 'Restoration failed', pct: 0 });
@@ -1039,12 +1136,15 @@ const Backup = () => {
       const snap = await getSnapshot(id);
       if (!snap) throw new Error('Snapshot record not found');
 
-      // Convert stored snapshot to virtual JSON file
+      // Convert stored snapshot to virtual JSON file and inspect
       const jsonBlob = new Blob([JSON.stringify(snap.backup)], { type: 'application/json' });
       const virtualFile = new File([jsonBlob], `${snap.label}.json`, { type: 'application/json' });
+      const inspection = await inspectBackupFile(virtualFile);
+      const allTables = new Set(inspection.tables.map((t) => t.name));
 
-      const report = await restoreFromCloudZipOrJson(virtualFile, settings, updateProgress);
-      toast({ title: 'Snapshot Restored', description: `Successfully restored ${snap.label}` });
+      const report = await restoreFromCloudZipOrJson(inspection, settings, allTables, updateProgress);
+      setRestoreReport(report);
+      toast({ title: 'Snapshot Restored 🚀', description: `Successfully restored ${snap.label}` });
       void refreshLiveStats();
     } catch (e: any) {
       updateProgress({ phase: 'failed', label: e?.message || 'Restore failed', pct: 0 });
@@ -1347,78 +1447,308 @@ const Backup = () => {
 
             {/* TAB 2: IMPORT & RESTORE */}
             <TabsContent value="import" className="space-y-6">
-              <Card className="rounded-3xl border border-border/60 bg-card/70 backdrop-blur-xl shadow-xl">
+              <Card className="rounded-3xl border border-border/60 bg-card/70 backdrop-blur-xl shadow-xl overflow-hidden">
                 <CardHeader>
                   <div className="flex items-center gap-3">
                     <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-primary/15 text-primary">
                       <Upload className="h-6 w-6" />
                     </div>
                     <div>
-                      <CardTitle className="text-xl font-bold">Restore Cloud from ZIP or JSON</CardTitle>
+                      <CardTitle className="text-xl font-bold">Import & Restore School Backup</CardTitle>
                       <CardDescription>
-                        Select or drop your previously exported <code className="text-xs font-mono font-bold text-primary">.zip</code> or <code className="text-xs font-mono font-bold text-primary">.json</code> backup file to restore your entire school system.
+                        Inspect, verify, and selectively restore student data, login accounts, and face photos from <code className="text-xs font-mono font-bold text-primary">.zip</code> or <code className="text-xs font-mono font-bold text-primary">.json</code> backups.
                       </CardDescription>
                     </div>
                   </div>
                 </CardHeader>
 
                 <CardContent className="space-y-6">
-                  {/* File Upload Box */}
-                  <div
-                    onClick={() => fileInputRef.current?.click()}
-                    className={`relative flex flex-col items-center justify-center p-8 md:p-12 rounded-3xl border-2 border-dashed transition-all cursor-pointer ${
-                      selectedFile ? 'border-primary/60 bg-primary/5' : 'border-border/70 hover:border-primary/40 bg-muted/10 hover:bg-muted/20'
-                    }`}
-                  >
-                    <input
-                      ref={fileInputRef}
-                      type="file"
-                      accept=".zip,.json,application/zip,application/json"
-                      disabled={!!busy}
-                      onChange={(e) => setSelectedFile(e.target.files?.[0] || null)}
-                      className="hidden"
-                    />
+                  {/* File Upload / Drop Area */}
+                  {!inspectedPackage && !isInspecting && (
+                    <div
+                      onClick={() => fileInputRef.current?.click()}
+                      onDragOver={(e) => {
+                        e.preventDefault();
+                        setIsDragging(true);
+                      }}
+                      onDragLeave={() => setIsDragging(false)}
+                      onDrop={(e) => {
+                        e.preventDefault();
+                        setIsDragging(false);
+                        const dropped = e.dataTransfer.files?.[0];
+                        if (dropped) void handleFileSelected(dropped);
+                      }}
+                      className={`relative flex flex-col items-center justify-center p-8 md:p-14 rounded-3xl border-2 border-dashed transition-all cursor-pointer ${
+                        isDragging
+                          ? 'border-primary bg-primary/10 scale-[0.99]'
+                          : 'border-border/70 hover:border-primary/50 bg-muted/10 hover:bg-muted/20'
+                      }`}
+                    >
+                      <input
+                        ref={fileInputRef}
+                        type="file"
+                        accept=".zip,.json,application/zip,application/json"
+                        disabled={!!busy}
+                        onChange={(e) => {
+                          const file = e.target.files?.[0] || null;
+                          void handleFileSelected(file);
+                        }}
+                        className="hidden"
+                      />
 
-                    <div className="flex h-16 w-16 items-center justify-center rounded-3xl bg-primary/15 text-primary mb-4">
-                      {selectedFile ? <FileCheck2 className="h-8 w-8 text-primary" /> : <Upload className="h-8 w-8 text-primary" />}
-                    </div>
+                      <div className="flex h-20 w-20 items-center justify-center rounded-3xl bg-primary/15 text-primary mb-4 shadow-inner">
+                        <FileArchive className="h-10 w-10 text-primary" />
+                      </div>
 
-                    {selectedFile ? (
-                      <div className="text-center space-y-1">
-                        <p className="text-base font-bold text-foreground">{selectedFile.name}</p>
-                        <p className="text-xs text-muted-foreground font-mono">
-                          Size: {fmtBytes(selectedFile.size)} · Type: {selectedFile.name.endsWith('.zip') ? 'ZIP Archive' : 'JSON Document'}
+                      <div className="text-center space-y-2">
+                        <p className="text-lg font-extrabold text-foreground">
+                          Drop backup ZIP or JSON here
                         </p>
-                        <p className="text-xs text-primary font-semibold pt-2">Click to choose a different file</p>
+                        <p className="text-xs md:text-sm text-muted-foreground max-w-md">
+                          Click to browse from your device. Supports complete cloud packages (<code className="text-xs font-mono text-primary">.zip</code>) and database snapshots (<code className="text-xs font-mono text-primary">.json</code>).
+                        </p>
+                        <div className="pt-2 flex items-center justify-center gap-2">
+                          <Badge variant="outline" className="text-[11px] font-mono border-primary/30 text-primary bg-primary/5">
+                            📦 Complete Cloud ZIP
+                          </Badge>
+                          <Badge variant="outline" className="text-[11px] font-mono border-border/70 text-muted-foreground">
+                            📄 Database JSON
+                          </Badge>
+                        </div>
                       </div>
-                    ) : (
+                    </div>
+                  )}
+
+                  {/* Inspection Loading State */}
+                  {isInspecting && (
+                    <div className="flex flex-col items-center justify-center py-16 space-y-4 rounded-3xl border border-primary/20 bg-primary/5">
+                      <Loader2 className="h-10 w-10 animate-spin text-primary" />
                       <div className="text-center space-y-1">
-                        <p className="text-base font-bold text-foreground">Drop backup ZIP here or click to browse</p>
-                        <p className="text-xs text-muted-foreground">Supports .ZIP (complete cloud package) and .JSON (database document)</p>
+                        <p className="text-base font-bold text-foreground">Analyzing Backup Package...</p>
+                        <p className="text-xs text-muted-foreground">Reading manifests, validating table schemas, and indexing files.</p>
                       </div>
-                    )}
-                  </div>
+                    </div>
+                  )}
 
-                  <Alert className="rounded-2xl border-amber-500/30 bg-amber-500/10">
-                    <AlertTriangle className="h-4 w-4 text-amber-500" />
-                    <AlertDescription className="text-xs font-medium text-foreground">
-                      Restoring will overwrite current tables and upload storage files. A safety snapshot of your live database will automatically be taken before restoration begins.
-                    </AlertDescription>
-                  </Alert>
+                  {/* Analyzed Package Inspector Dashboard */}
+                  {inspectedPackage && !isInspecting && (
+                    <div className="space-y-6">
+                      {/* Package Header Banner */}
+                      <div className="rounded-2xl border border-primary/25 bg-gradient-to-r from-primary/10 via-card to-card p-4 md:p-5 flex flex-col md:flex-row md:items-center justify-between gap-4">
+                        <div className="flex items-center gap-3.5">
+                          <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-primary/20 text-primary shrink-0">
+                            {inspectedPackage.format === 'zip' ? <Archive className="h-6 w-6" /> : <FileText className="h-6 w-6" />}
+                          </div>
+                          <div className="space-y-1 min-w-0">
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <span className="font-extrabold text-base text-foreground truncate">{inspectedPackage.filename}</span>
+                              <Badge variant="secondary" className="text-[10px] font-mono uppercase tracking-wider font-bold">
+                                {inspectedPackage.format.toUpperCase()}
+                              </Badge>
+                              <Badge variant="outline" className="text-[10px] font-mono border-border/60">
+                                {fmtBytes(inspectedPackage.sizeBytes)}
+                              </Badge>
+                            </div>
+                            <p className="text-xs text-muted-foreground">
+                              Created {fmtRelative(inspectedPackage.createdAt)} · Source: {inspectedPackage.system}
+                            </p>
+                          </div>
+                        </div>
 
-                  <Button
-                    size="lg"
-                    onClick={handleRestoreFromPackage}
-                    disabled={!selectedFile || !!busy}
-                    className="w-full rounded-2xl h-14 bg-primary text-primary-foreground font-bold shadow-lg shadow-primary/25 hover:bg-primary/90 btn-spring gap-2 text-base"
-                  >
-                    {busy === 'restore' ? (
-                      <Loader2 className="h-5 w-5 animate-spin" />
-                    ) : (
-                      <Upload className="h-5 w-5" />
-                    )}
-                    {busy === 'restore' ? 'Restoring Cloud System...' : 'Start 1-Click Cloud Restore'}
-                  </Button>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          disabled={!!busy}
+                          onClick={() => {
+                            setSelectedFile(null);
+                            setInspectedPackage(null);
+                            if (fileInputRef.current) fileInputRef.current.value = '';
+                          }}
+                          className="rounded-xl text-xs text-muted-foreground hover:text-foreground shrink-0"
+                        >
+                          Choose Different File
+                        </Button>
+                      </div>
+
+                      {/* Discovered Collections & Selective Table Picker */}
+                      <div className="space-y-3">
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center gap-2">
+                            <Database className="h-4 w-4 text-primary" />
+                            <h4 className="text-sm font-extrabold text-foreground">Select Tables to Restore</h4>
+                            <Badge variant="outline" className="text-xs font-bold text-primary border-primary/30 bg-primary/5">
+                              {inspectedPackage.tables.reduce((s, t) => s + t.count, 0).toLocaleString()} Total Records Found
+                            </Badge>
+                          </div>
+
+                          <div className="flex items-center gap-2">
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              disabled={!!busy}
+                              onClick={handleSelectAllTables}
+                              className="h-7 px-2.5 rounded-lg text-xs font-bold text-primary hover:bg-primary/10"
+                            >
+                              Select All
+                            </Button>
+                            <span className="text-border/60">|</span>
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              disabled={!!busy}
+                              onClick={handleDeselectAllTables}
+                              className="h-7 px-2.5 rounded-lg text-xs font-semibold text-muted-foreground hover:text-foreground"
+                            >
+                              Clear
+                            </Button>
+                          </div>
+                        </div>
+
+                        {/* Table Cards Grid */}
+                        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2.5">
+                          {inspectedPackage.tables.map((table) => {
+                            const isSelected = selectedTables.has(table.name);
+                            return (
+                              <div
+                                key={table.name}
+                                onClick={() => !busy && handleToggleTable(table.name)}
+                                className={`flex items-center justify-between p-3 rounded-2xl border transition-all cursor-pointer select-none ${
+                                  isSelected
+                                    ? 'border-primary/50 bg-primary/10 shadow-sm'
+                                    : 'border-border/50 bg-muted/20 opacity-60 hover:opacity-100 hover:border-border/80'
+                                }`}
+                              >
+                                <div className="flex items-center gap-2 min-w-0">
+                                  {isSelected ? (
+                                    <CheckSquare className="h-4 w-4 text-primary shrink-0" />
+                                  ) : (
+                                    <Square className="h-4 w-4 text-muted-foreground shrink-0" />
+                                  )}
+                                  <span className="text-xs font-bold text-foreground font-mono truncate">{table.name}</span>
+                                </div>
+                                <Badge
+                                  variant={table.count > 0 ? 'secondary' : 'outline'}
+                                  className="text-[10px] font-mono font-bold shrink-0 ml-1.5"
+                                >
+                                  {table.count.toLocaleString()} rows
+                                </Badge>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </div>
+
+                      {/* Authentication & Cloud Storage Options */}
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div className="p-4 rounded-2xl border border-border/60 bg-muted/20 flex items-center justify-between gap-4">
+                          <div className="space-y-0.5">
+                            <div className="flex items-center gap-2">
+                              <Users className="h-4 w-4 text-blue-500" />
+                              <Label className="font-bold text-sm text-foreground">User Login Accounts</Label>
+                            </div>
+                            <p className="text-xs text-muted-foreground">
+                              Restore {inspectedPackage.authUsersCount} authentication profiles and role permissions.
+                            </p>
+                          </div>
+                          <Switch
+                            checked={restoreAuthUsers}
+                            onCheckedChange={setRestoreAuthUsers}
+                            disabled={inspectedPackage.authUsersCount === 0 || !!busy}
+                          />
+                        </div>
+
+                        <div className="p-4 rounded-2xl border border-border/60 bg-muted/20 flex items-center justify-between gap-4">
+                          <div className="space-y-0.5">
+                            <div className="flex items-center gap-2">
+                              <FolderArchive className="h-4 w-4 text-amber-500" />
+                              <Label className="font-bold text-sm text-foreground">Storage Files & Face Samples</Label>
+                            </div>
+                            <p className="text-xs text-muted-foreground">
+                              Restore {inspectedPackage.storageFilesCount} face samples across {inspectedPackage.storageBuckets.length} storage buckets.
+                            </p>
+                          </div>
+                          <Switch
+                            checked={restoreStorage}
+                            onCheckedChange={setRestoreStorage}
+                            disabled={inspectedPackage.storageFilesCount === 0 || !!busy}
+                          />
+                        </div>
+                      </div>
+
+                      {/* Safety Alert */}
+                      <Alert className="rounded-2xl border-emerald-500/30 bg-emerald-500/10">
+                        <ShieldCheck className="h-4 w-4 text-emerald-500" />
+                        <AlertDescription className="text-xs font-medium text-foreground">
+                          <strong>Safety Rollback Protection Active:</strong> An automatic IndexedDB snapshot of your live database will be created before any changes are written. You can rollback at any time from the "Backup History" tab.
+                        </AlertDescription>
+                      </Alert>
+
+                      {/* Action Trigger Button */}
+                      <div className="flex flex-col sm:flex-row gap-3 pt-2">
+                        <Button
+                          size="lg"
+                          onClick={handleRestoreFromPackage}
+                          disabled={!!busy || (selectedTables.size === 0 && !restoreAuthUsers && !restoreStorage)}
+                          className="flex-1 rounded-2xl h-14 bg-primary text-primary-foreground font-bold shadow-lg shadow-primary/25 hover:bg-primary/90 btn-spring gap-2 text-base"
+                        >
+                          {busy === 'restore' ? (
+                            <Loader2 className="h-5 w-5 animate-spin" />
+                          ) : (
+                            <Upload className="h-5 w-5" />
+                          )}
+                          {busy === 'restore'
+                            ? 'Restoring Selected Data...'
+                            : `Start Restore (${selectedTables.size} Tables, ${inspectedPackage.tables
+                                .filter((t) => selectedTables.has(t.name))
+                                .reduce((s, t) => s + t.count, 0)
+                                .toLocaleString()} Records)`}
+                        </Button>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Post-Restore Detailed Audit Report Card */}
+                  {restoreReport && (
+                    <div className="rounded-2xl border border-emerald-500/40 bg-emerald-500/5 p-5 space-y-4">
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-2.5">
+                          <CheckCircle2 className="h-5 w-5 text-emerald-500" />
+                          <h4 className="font-extrabold text-base text-foreground">Restoration Audit Report</h4>
+                        </div>
+                        <Badge variant="outline" className="border-emerald-500/40 text-emerald-400 text-xs font-bold">
+                          Success
+                        </Badge>
+                      </div>
+
+                      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                        <div className="p-3 rounded-xl bg-card border border-border/50">
+                          <span className="text-[11px] uppercase font-bold text-muted-foreground block">Tables Restored</span>
+                          <span className="text-xl font-extrabold text-foreground">{restoreReport.tablesRestored}</span>
+                        </div>
+                        <div className="p-3 rounded-xl bg-card border border-border/50">
+                          <span className="text-[11px] uppercase font-bold text-muted-foreground block">Rows Inserted</span>
+                          <span className="text-xl font-extrabold text-foreground">{restoreReport.rowsRestored.toLocaleString()}</span>
+                        </div>
+                        <div className="p-3 rounded-xl bg-card border border-border/50">
+                          <span className="text-[11px] uppercase font-bold text-muted-foreground block">Auth Users</span>
+                          <span className="text-xl font-extrabold text-foreground">{restoreReport.authUsersCreated}</span>
+                        </div>
+                        <div className="p-3 rounded-xl bg-card border border-border/50">
+                          <span className="text-[11px] uppercase font-bold text-muted-foreground block">Storage Files</span>
+                          <span className="text-xl font-extrabold text-foreground">{restoreReport.storageFilesRestored}</span>
+                        </div>
+                      </div>
+
+                      {restoreReport.errors.length > 0 && (
+                        <div className="p-3 rounded-xl bg-destructive/10 border border-destructive/30 text-xs text-destructive space-y-1">
+                          <span className="font-bold block">Notes & Skipped Items:</span>
+                          {restoreReport.errors.map((err, i) => (
+                            <p key={i} className="font-mono">{err.scope}: {err.message}</p>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  )}
                 </CardContent>
               </Card>
             </TabsContent>
