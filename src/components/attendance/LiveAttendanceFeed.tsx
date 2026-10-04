@@ -53,6 +53,7 @@ import {
   prefetchStudentIdentities,
   resolveStudentAdmissionId,
   resolveStudentClass,
+  resolveIdentityDisplay,
   registerStudentIdentity,
   normalizeClassSection,
 } from '@/utils/studentIdentityResolver';
@@ -800,11 +801,24 @@ const LiveAttendanceFeed: React.FC<LiveAttendanceFeedProps> = ({
                     ID: {getStudentAdmissionId(latestRecord)}
                   </span>
                 ) : null}
-                {getStudentClass(latestRecord) ? (
-                  <span className="font-semibold px-1.5 py-0.5 rounded-md bg-emerald-500/10 text-emerald-700 dark:text-emerald-300 border border-emerald-500/20 text-[10px]">
-                    Class {getStudentClass(latestRecord)}
-                  </span>
-                ) : null}
+                {(() => {
+                  const idInfo = resolveIdentityDisplay(latestRecord);
+                  if (idInfo.isTeacher) {
+                    return (
+                      <span className="font-bold px-1.5 py-0.5 rounded-md bg-purple-500/15 text-purple-700 dark:text-purple-300 border border-purple-500/30 text-[10px]">
+                        ★ {idInfo.roleLabel}
+                      </span>
+                    );
+                  }
+                  if (idInfo.classBadge) {
+                    return (
+                      <span className="font-semibold px-1.5 py-0.5 rounded-md bg-emerald-500/10 text-emerald-700 dark:text-emerald-300 border border-emerald-500/20 text-[10px]">
+                        Class {idInfo.classBadge}
+                      </span>
+                    );
+                  }
+                  return null;
+                })()}
                 <span className="text-[10px] text-muted-foreground ml-auto">
                   {format(new Date(latestRecord.timestamp), 'h:mm a')}
                 </span>
@@ -821,7 +835,7 @@ const LiveAttendanceFeed: React.FC<LiveAttendanceFeedProps> = ({
             const studentName = getStudentName(record);
             const studentImage = getStudentImage(record);
             const admissionId = getStudentAdmissionId(record);
-            const studentClass = getStudentClass(record);
+            const identity = resolveIdentityDisplay(record);
             const isPresent = record.status === 'present';
             const isLate = record.status === 'late';
             const timeStr = format(new Date(record.timestamp), 'h:mm a');
@@ -878,9 +892,13 @@ const LiveAttendanceFeed: React.FC<LiveAttendanceFeedProps> = ({
                           ID: {admissionId}
                         </span>
                       ) : null}
-                      {studentClass ? (
+                      {identity.isTeacher ? (
+                        <span className="px-1.5 py-0.2 rounded-md bg-purple-500/10 border border-purple-500/25 font-bold text-purple-600 dark:text-purple-400 text-[10px]">
+                          ★ {identity.roleLabel}
+                        </span>
+                      ) : identity.classBadge ? (
                         <span className="px-1.5 py-0.2 rounded-md bg-slate-100 dark:bg-white/10 font-bold text-slate-700 dark:text-slate-300 text-[10px]">
-                          Class {studentClass}
+                          Class {identity.classBadge}
                         </span>
                       ) : null}
                     </div>
@@ -1023,14 +1041,32 @@ const LiveAttendanceFeed: React.FC<LiveAttendanceFeedProps> = ({
                 <h3 className="text-base font-black text-slate-900 dark:text-white mt-1">
                   {getStudentName(selectedRecord)}
                 </h3>
-                <p className="text-xs font-mono font-bold text-blue-600 dark:text-blue-400 mt-0.5">
-                  ID: {getStudentAdmissionId(selectedRecord)}
-                </p>
-                {getStudentClass(selectedRecord) && (
-                  <span className="mt-1 px-2.5 py-0.5 rounded-full bg-slate-100 dark:bg-white/10 text-xs font-bold text-slate-700 dark:text-slate-300">
-                    Class {getStudentClass(selectedRecord)}
-                  </span>
-                )}
+                {(() => {
+                  const idInfo = resolveIdentityDisplay(selectedRecord);
+                  return (
+                    <p className="text-xs font-mono font-bold text-blue-600 dark:text-blue-400 mt-0.5">
+                      {idInfo.admissionOrEmpLabel}: {getStudentAdmissionId(selectedRecord)}
+                    </p>
+                  );
+                })()}
+                {(() => {
+                  const idInfo = resolveIdentityDisplay(selectedRecord);
+                  if (idInfo.isTeacher) {
+                    return (
+                      <span className="mt-1 px-2.5 py-0.5 rounded-full bg-purple-500/15 text-purple-700 dark:text-purple-300 text-xs font-bold border border-purple-500/30">
+                        ★ {idInfo.roleLabel}
+                      </span>
+                    );
+                  }
+                  if (idInfo.classBadge) {
+                    return (
+                      <span className="mt-1 px-2.5 py-0.5 rounded-full bg-slate-100 dark:bg-white/10 text-xs font-bold text-slate-700 dark:text-slate-300">
+                        Class {idInfo.classBadge}
+                      </span>
+                    );
+                  }
+                  return null;
+                })()}
               </div>
 
               {/* Detail Metrics Grid */}

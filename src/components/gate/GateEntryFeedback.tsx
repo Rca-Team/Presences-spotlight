@@ -2,6 +2,7 @@ import React, { useEffect } from 'react';
 import { motion } from 'framer-motion';
 import { CheckCircle2, AlertTriangle, Clock, UserCircle } from 'lucide-react';
 import type { GateEntry } from '@/pages/GateMode';
+import { resolveIdentityDisplay } from '@/utils/studentIdentityResolver';
 
 interface GateEntryFeedbackProps {
   entry: GateEntry;
@@ -17,6 +18,13 @@ const GateEntryFeedback = ({ entry, onDismiss }: GateEntryFeedbackProps) => {
   }, [onDismiss, entry.id]);
 
   const { isRecognized, isLate, studentName, confidence, time, photoUrl } = entry;
+  const identity = resolveIdentityDisplay({
+    user_id: entry.studentId,
+    student_name: entry.studentName,
+    class: entry.className,
+    section: entry.section,
+    category: entry.className,
+  });
 
   const status = isRecognized ? (isLate ? 'late' : 'present') : 'unknown';
 
@@ -86,9 +94,22 @@ const GateEntryFeedback = ({ entry, onDismiss }: GateEntryFeedbackProps) => {
 
           <div className="flex-1 min-w-0">
             <div className="flex items-start justify-between gap-2">
-              <p className="font-bold text-base text-foreground truncate leading-tight">
-                {isRecognized ? studentName : 'Unknown Person'}
-              </p>
+              <div className="min-w-0">
+                <p className="font-bold text-base text-foreground truncate leading-tight">
+                  {isRecognized ? studentName : 'Unknown Person'}
+                </p>
+                {isRecognized && (
+                  identity.isTeacher ? (
+                    <span className="inline-block mt-1 text-[10px] font-bold px-1.5 py-0.5 rounded bg-purple-500/20 text-purple-700 dark:text-purple-300 border border-purple-400/40">
+                      ★ {identity.roleLabel}
+                    </span>
+                  ) : identity.classBadge ? (
+                    <span className="inline-block mt-1 text-[10px] font-bold px-1.5 py-0.5 rounded bg-blue-500/20 text-blue-700 dark:text-blue-300 border border-blue-400/40">
+                      Class {identity.classBadge}
+                    </span>
+                  ) : null
+                )}
+              </div>
               {palette.icon}
             </div>
             <p className="text-xs text-muted-foreground mt-0.5">

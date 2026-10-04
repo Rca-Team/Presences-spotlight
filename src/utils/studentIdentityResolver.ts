@@ -290,3 +290,73 @@ export function resolveStudentClass(record: any, fallback?: string | null): stri
 
   return fallback !== undefined ? fallback : null;
 }
+
+/**
+ * Universal Teacher / Faculty Classifier
+ * Returns true if the person is a Teacher, Faculty, or Staff member
+ */
+export function isTeacherIdentity(recordOrMeta: any): boolean {
+  if (!recordOrMeta) return false;
+
+  const role = String(recordOrMeta.role || recordOrMeta.user_role || recordOrMeta.userRole || '').trim().toLowerCase();
+  if (role === 'teacher' || role === 'staff' || role === 'faculty' || role === 'admin' || role === 'principal') return true;
+
+  const category = String(recordOrMeta.category || recordOrMeta.department || recordOrMeta.class || '').trim().toLowerCase();
+  if (category === 'teacher' || category === 'staff' || category === 'faculty' || category.startsWith('teacher-') || category.startsWith('staff-')) return true;
+
+  const position = String(recordOrMeta.position || '').trim().toLowerCase();
+  if (position.includes('teacher') || position.includes('faculty') || position.includes('staff') || position.includes('instructor') || position.includes('professor')) return true;
+
+  const devMeta = recordOrMeta.device_info?.metadata || recordOrMeta.device_info;
+  if (devMeta) {
+    const metaCat = String(devMeta.category || devMeta.department || devMeta.class || devMeta.role || '').trim().toLowerCase();
+    if (metaCat === 'teacher' || metaCat === 'staff' || metaCat === 'faculty' || metaCat.includes('teacher')) return true;
+  }
+
+  // Check cache by user_id
+  if (recordOrMeta.user_id && identityCacheByUserId.has(recordOrMeta.user_id)) {
+    const cached = identityCacheByUserId.get(recordOrMeta.user_id);
+    if (cached?.classSection?.toLowerCase() === 'teacher' || cached?.classSection?.toLowerCase() === 'staff') return true;
+  }
+
+  return false;
+}
+
+export interface IdentityDisplayInfo {
+  isTeacher: boolean;
+  roleLabel: string;
+  classBadge: string | null;
+  fullTag: string;
+  admissionOrEmpLabel: string;
+}
+
+/**
+ * Cleanly separates Teacher vs Student presentation and badges across whole website.
+ * Never outputs "Class Teacher" or class validation errors for teachers.
+ */
+export function resolveIdentityDisplay(recordOrMeta: any): IdentityDisplayInfo {
+  const isTeacher = isTeacherIdentity(recordOrMeta);
+  if (isTeacher) {
+    const dept = recordOrMeta?.department || recordOrMeta?.device_info?.metadata?.department;
+    const roleLabel = dept && dept.toLowerCase() !== 'teacher' && dept.toLowerCase() !== 'faculty' && dept.toLowerCase() !== 'staff'
+      ? `Faculty · ${dept}` 
+      : 'Faculty / Teacher';
+    return {
+      isTeacher: true,
+      roleLabel,
+      classBadge: null,
+      fullTag: roleLabel,
+      admissionOrEmpLabel: 'Staff / Faculty ID',
+    };
+  }
+
+  const rawCls = resolveStudentClass(recordOrMeta);
+  const classBadge = rawCls && rawCls.toLowerCase() !== 'teacher' && rawCls.toLowerCase() !== 'staff' && rawCls !== '—' && rawCls !== '?' ? rawCls : null;
+  return {
+    isTeacher: false,
+    roleLabel: 'Student',
+    classBadge,
+    fullTag: classBadge ? `Class ${classBadge}` : 'Student',
+    admissionOrEmpLabel: 'Admission No.',
+  };
+}

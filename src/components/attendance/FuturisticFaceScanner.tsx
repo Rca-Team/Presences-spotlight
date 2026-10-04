@@ -22,7 +22,7 @@ import { storeFaceSample } from '@/services/face-recognition/ProgressiveTraining
 import { supabase } from '@/integrations/supabase/client';
 
 import { getCutoffTime, isPastCutoffTime, getAttendanceCutoffTime, isSaveAttendanceFaceSamplesEnabledSync } from '@/services/attendance/AttendanceSettingsService';
-import { resolveStudentAdmissionId, resolveStudentClass } from '@/utils/studentIdentityResolver';
+import { resolveStudentAdmissionId, resolveStudentClass, resolveIdentityDisplay, isTeacherIdentity } from '@/utils/studentIdentityResolver';
 import { playSuccessChime, playLateChime } from '@/utils/audioFeedback';
 import * as faceapi from 'face-api.js';
 import { loadNet } from '@/services/face-recognition/NetLoaderService';
@@ -192,6 +192,9 @@ const FuturisticFaceScanner: React.FC<FuturisticFaceScannerProps> = ({ onScanCom
     confidence: number;
     time: string;
     imageUrl?: string;
+    isTeacher?: boolean;
+    roleLabel?: string;
+    classBadge?: string | null;
   } | null>(null);
 
   const [modelsLoaded, setModelsLoaded] = useState(areAttendanceModelsLoaded());
@@ -722,7 +725,22 @@ const FuturisticFaceScanner: React.FC<FuturisticFaceScannerProps> = ({ onScanCom
             /* ignore */
           }
 
-          // Set celebration HUD for student immediately
+          // Resolve identity details (Student vs Teacher/Faculty separation)
+          const resolvedStudentId = resolveStudentAdmissionId({
+            user_id: face.userId,
+            student_name: face.name,
+          });
+          const resolvedStudentClass = resolveStudentClass({
+            user_id: face.userId,
+            student_name: face.name,
+          });
+          const identityInfo = resolveIdentityDisplay({
+            user_id: face.userId,
+            student_name: face.name,
+            category: resolvedStudentClass,
+          });
+
+          // Set celebration HUD for person immediately
           setLastVerifiedStudent({
             id: face.userId,
             name: face.name,
@@ -730,6 +748,9 @@ const FuturisticFaceScanner: React.FC<FuturisticFaceScannerProps> = ({ onScanCom
             confidence: face.confidence,
             time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
             imageUrl: cachedCover || undefined,
+            isTeacher: identityInfo.isTeacher,
+            roleLabel: identityInfo.roleLabel,
+            classBadge: identityInfo.classBadge,
           });
           setTimeout(() => {
             setLastVerifiedStudent((prev) => (prev?.id === face.userId ? null : prev));
@@ -759,16 +780,6 @@ const FuturisticFaceScanner: React.FC<FuturisticFaceScannerProps> = ({ onScanCom
               }
             });
           }
-
-          // Resolve real human student ID and class from local identity cache
-          const resolvedStudentId = resolveStudentAdmissionId({
-            user_id: face.userId,
-            student_name: face.name,
-          });
-          const resolvedStudentClass = resolveStudentClass({
-            user_id: face.userId,
-            student_name: face.name,
-          });
 
           // Direct persistent cloud write to Supabase
           let outcome: any = null;
@@ -1719,10 +1730,19 @@ const FuturisticFaceScanner: React.FC<FuturisticFaceScannerProps> = ({ onScanCom
                 </div>
               </div>
               <div className="flex-1 min-w-0">
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-1.5 flex-wrap">
                   <h4 className="text-xs sm:text-sm font-extrabold text-white truncate">
                     {lastVerifiedStudent.name}
                   </h4>
+                  {lastVerifiedStudent.isTeacher ? (
+                    <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-md border uppercase bg-purple-500/25 text-purple-200 border-purple-400/50">
+                      ★ {lastVerifiedStudent.roleLabel || 'Faculty'}
+                    </span>
+                  ) : lastVerifiedStudent.classBadge ? (
+                    <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-md border uppercase bg-blue-500/25 text-blue-200 border-blue-400/50">
+                      Class {lastVerifiedStudent.classBadge}
+                    </span>
+                  ) : null}
                   <span
                     className={`text-[10px] font-bold px-1.5 py-0.5 rounded-md border uppercase ${
                       lastVerifiedStudent.status === 'late'

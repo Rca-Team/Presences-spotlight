@@ -33,7 +33,7 @@ import { getAttendanceCutoffTime, isSaveAttendanceFaceSamplesEnabledSync } from 
 import { getAllTrainedDescriptors } from './ProgressiveTrainingService';
 import { buildVectorIndex, searchVectorIndex } from './VectorIndexService';
 import { dataUrlToBlob, uploadAttendanceTrainingImage } from './TrainingDataStorageService';
-import { resolveStudentAdmissionId, resolveStudentClass, normalizeClassSection } from '@/utils/studentIdentityResolver';
+import { resolveStudentAdmissionId, resolveStudentClass, normalizeClassSection, isTeacherIdentity } from '@/utils/studentIdentityResolver';
 import { parseClassSection } from '@/utils/teacherAccess';
 import { ensureActiveClassSession, upsertClassAttendanceEvent } from '../attendance/ClassSessionService';
 
@@ -778,17 +778,34 @@ export async function recordAttendance(
     }
   }
 
-  // ── Normalize & decompose Class, Section & Category (guarantees NO "11-A-A") ───
-  const normalizedCategoryString = normalizeClassSection(resolvedClass, resolvedSection, resolvedCategory);
-  if (normalizedCategoryString) {
-    const parsed = parseClassSection(normalizedCategoryString);
-    if (parsed) {
-      resolvedClass = parsed.className;
-      resolvedSection = parsed.section;
-      resolvedCategory = normalizedCategoryString;
-    } else {
-      resolvedCategory = normalizedCategoryString;
-      if (!resolvedClass) resolvedClass = normalizedCategoryString;
+  // Check if recognized person is a Teacher or Faculty member
+  const isTeacher = isTeacherIdentity({
+    user_id: validUserId,
+    role: userProfile?.role,
+    category: resolvedCategory || userProfile?.category || deviceInfo?.metadata?.category,
+    department: deviceInfo?.metadata?.department || userProfile?.department,
+    class: resolvedClass || userProfile?.class,
+    position: userProfile?.position || deviceInfo?.metadata?.position,
+    device_info: deviceInfo,
+  });
+
+  if (isTeacher) {
+    resolvedClass = 'Teacher';
+    resolvedSection = null;
+    resolvedCategory = 'Teacher';
+  } else {
+    // ── Normalize & decompose Class, Section & Category (guarantees NO "11-A-A") ───
+    const normalizedCategoryString = normalizeClassSection(resolvedClass, resolvedSection, resolvedCategory);
+    if (normalizedCategoryString) {
+      const parsed = parseClassSection(normalizedCategoryString);
+      if (parsed) {
+        resolvedClass = parsed.className;
+        resolvedSection = parsed.section;
+        resolvedCategory = normalizedCategoryString;
+      } else {
+        resolvedCategory = normalizedCategoryString;
+        if (!resolvedClass) resolvedClass = normalizedCategoryString;
+      }
     }
   }
 
@@ -796,7 +813,7 @@ export async function recordAttendance(
     humanStudentId ||
     (resolvedStudentId && !isUuid(resolvedStudentId) ? String(resolvedStudentId) : null) ||
     (userProfile?.admission_number ? String(userProfile.admission_number) : null) ||
-    'STUDENT';
+    (isTeacher ? 'FACULTY' : 'STUDENT');
 
   const fullDeviceInfo = {
     type: 'webcam',

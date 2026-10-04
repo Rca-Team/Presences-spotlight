@@ -35,11 +35,11 @@ import { z } from 'zod';
 
 const registrationSchema = z.object({
   name: z.string().trim().min(1, 'Name is required').max(100, 'Name is too long'),
-  employeeId: z.string().trim().min(1, 'Admission No. is required').max(50, 'Admission No. is too long'),
-  department: z.string().trim().min(1, 'Class-Section is required').max(50, 'Class-Section is too long'),
+  employeeId: z.string().trim().min(1, 'ID / Admission No. is required').max(50, 'ID is too long'),
+  department: z.string().trim().max(50, 'Class/Department is too long').default(''),
   parentName: z.string().trim().max(100, 'Parent name is too long').optional().default(''),
   parentPhone: z.string().trim().max(20, 'Parent phone is too long').optional().default(''),
-  email: z.union([z.literal(''), z.string().trim().email('Invalid student email').max(255)]),
+  email: z.union([z.literal(''), z.string().trim().email('Invalid email').max(255)]),
   parentEmail: z.union([z.literal(''), z.string().trim().email('Invalid parent email').max(255)]),
   phone: z.string().trim().max(20, 'Phone is too long').optional(),
   rollNumber: z.string().trim().max(30, 'Roll number is too long').optional(),
@@ -48,6 +48,18 @@ const registrationSchema = z.object({
   transportMode: z.string().trim().max(30).optional(),
   position: z.string().trim().max(50).optional(),
   address: z.string().trim().max(300, 'Address is too long').optional(),
+}).superRefine((data, ctx) => {
+  const isTeacher = data.department === 'Teacher' || 
+    data.department.toLowerCase().includes('teacher') || 
+    data.department.toLowerCase().includes('faculty') || 
+    data.department.toLowerCase().includes('staff');
+  if (!isTeacher && !data.department.trim()) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: 'Class-Section is required for student registration',
+      path: ['department'],
+    });
+  }
 });
 
 const REGISTER_DRAFTS_KEY = 'presence_register_drafts_v1';
@@ -579,9 +591,14 @@ const Register = () => {
     }
   };
 
+  const isTeacherMode = formData.department === 'Teacher' || 
+    formData.department.toLowerCase().includes('teacher') || 
+    formData.department.toLowerCase().includes('faculty') || 
+    formData.department.toLowerCase().includes('staff');
+
   const steps = [
-    { number: 1, title: "Student Info", icon: User },
-    { number: 2, title: "Student Photo", icon: Camera }
+    { number: 1, title: isTeacherMode ? "Staff Details" : "Student Info", icon: User },
+    { number: 2, title: isTeacherMode ? "Staff Photo" : "Student Photo", icon: Camera }
   ];
 
   return (
@@ -807,12 +824,21 @@ const Register = () => {
                               <div className="min-w-0">
                                 <div className="flex items-center gap-1.5 flex-wrap">
                                   <p className="truncate text-xs sm:text-sm font-bold text-foreground">
-                                    {draft.formData.name || 'Unnamed student'}
+                                    {draft.formData.name || 'Unnamed person'}
                                   </p>
                                   {draft.formData.department && (
-                                    <Badge variant="outline" className="text-[10px] font-mono px-1 py-0 h-4">
-                                      {draft.formData.department}
-                                    </Badge>
+                                    draft.formData.department === 'Teacher' || 
+                                    draft.formData.department.toLowerCase().includes('teacher') || 
+                                    draft.formData.department.toLowerCase().includes('faculty') || 
+                                    draft.formData.department.toLowerCase().includes('staff') ? (
+                                      <Badge variant="outline" className="text-[10px] font-bold px-1.5 py-0 h-4 bg-purple-500/15 text-purple-700 dark:text-purple-300 border-purple-400/40">
+                                        ★ Faculty / Staff
+                                      </Badge>
+                                    ) : (
+                                      <Badge variant="outline" className="text-[10px] font-mono px-1 py-0 h-4">
+                                        Class {draft.formData.department}
+                                      </Badge>
+                                    )
                                   )}
                                   {draft.formData.bloodGroup && (
                                     <span className="text-[10px] px-1 py-0 rounded bg-muted text-muted-foreground font-mono">
@@ -821,7 +847,8 @@ const Register = () => {
                                   )}
                                 </div>
                                 <p className="text-[11px] text-muted-foreground truncate">
-                                  Admn No: <strong className="text-foreground">{draft.formData.employeeId || 'N/A'}</strong>
+                                  {draft.formData.department === 'Teacher' || draft.formData.department?.toLowerCase().includes('teacher') ? 'Staff ID: ' : 'Admn No: '}
+                                  <strong className="text-foreground">{draft.formData.employeeId || 'N/A'}</strong>
                                   {draft.formData.parentPhone ? ` · Ph: ${draft.formData.parentPhone}` : ''}
                                   {draft.formData.rollNumber ? ` · Roll: ${draft.formData.rollNumber}` : ''}
                                 </p>
@@ -937,26 +964,27 @@ const Register = () => {
                           }
                         }}
                       />
-                      {/* Student Details */}
+                      {/* Person Details */}
                       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                         <div className="space-y-2">
                           <Label htmlFor="name" className="flex items-center gap-2"><User className="w-4 h-4 text-blue-500" />Full Name *</Label>
-                          <Input id="name" name="name" value={formData.name} onChange={handleInputChange} placeholder="Student name" className="h-11 bg-white/50 dark:bg-slate-800/50 border-blue-100 dark:border-blue-900" required />
+                          <Input id="name" name="name" value={formData.name} onChange={handleInputChange} placeholder={isTeacherMode ? "Teacher / Faculty name" : "Student name"} className="h-11 bg-white/50 dark:bg-slate-800/50 border-blue-100 dark:border-blue-900" required />
                         </div>
                         <div className="space-y-2">
-                          <Label htmlFor="employeeId" className="flex items-center gap-2"><GraduationCap className="w-4 h-4 text-blue-500" />Admission No. *</Label>
-                          <Input id="employeeId" name="employeeId" value={formData.employeeId} onChange={handleInputChange} placeholder="ADM-12345" className="h-11 bg-white/50 dark:bg-slate-800/50 border-blue-100 dark:border-blue-900" required />
+                          <Label htmlFor="employeeId" className="flex items-center gap-2"><GraduationCap className="w-4 h-4 text-blue-500" />{isTeacherMode ? 'Teacher / Staff ID *' : 'Admission No. *'}</Label>
+                          <Input id="employeeId" name="employeeId" value={formData.employeeId} onChange={handleInputChange} placeholder={isTeacherMode ? "EMP-1001" : "ADM-12345"} className="h-11 bg-white/50 dark:bg-slate-800/50 border-blue-100 dark:border-blue-900" required />
                         </div>
                       </div>
 
                       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                         <div className="space-y-2">
-                          <Label className="flex items-center gap-2"><Building2 className="w-4 h-4 text-blue-500" />Class-Section *</Label>
+                          <Label className="flex items-center gap-2"><Building2 className="w-4 h-4 text-blue-500" />{isTeacherMode ? 'Role / Department *' : 'Class-Section *'}</Label>
                           <Select value={formData.department} onValueChange={v => handleSelectChange('department', v)}>
                             <SelectTrigger className="h-11 bg-white/50 dark:bg-slate-800/50 border-blue-100 dark:border-blue-900">
-                              <SelectValue placeholder="Select class" />
+                              <SelectValue placeholder={isTeacherMode ? "Teacher / Staff" : "Select class"} />
                             </SelectTrigger>
                             <SelectContent>
+                              <SelectItem value="Teacher" className="font-bold text-primary">★ Teacher / Faculty / Staff</SelectItem>
                               {CLASSES.flatMap(cls => [
                                 <SelectItem key={`label_${cls}`} value={`__label_${cls}`} disabled className="font-bold text-xs text-muted-foreground">
                                   — Class {cls} —
@@ -967,13 +995,12 @@ const Register = () => {
                                   </SelectItem>
                                 ))
                               ])}
-                              <SelectItem value="Teacher">Teacher / Staff</SelectItem>
                             </SelectContent>
                           </Select>
                         </div>
                         <div className="space-y-2">
-                          <Label htmlFor="rollNumber">Roll Number</Label>
-                          <Input id="rollNumber" name="rollNumber" value={formData.rollNumber} onChange={handleInputChange} placeholder="e.g. 01" className="h-11 bg-white/50 dark:bg-slate-800/50 border-blue-100 dark:border-blue-900" />
+                          <Label htmlFor="rollNumber">{isTeacherMode ? 'Designation / Subject (optional)' : 'Roll Number'}</Label>
+                          <Input id="rollNumber" name="rollNumber" value={formData.rollNumber} onChange={handleInputChange} placeholder={isTeacherMode ? "e.g. PGT Physics" : "e.g. 01"} className="h-11 bg-white/50 dark:bg-slate-800/50 border-blue-100 dark:border-blue-900" />
                         </div>
                       </div>
 
