@@ -40,6 +40,9 @@ import {
   GraduationCap,
   Sliders,
   Search,
+  Mail,
+  Clock,
+  Shield,
 } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
@@ -140,14 +143,15 @@ const UserAccessManager: React.FC = () => {
     }
     try {
       // 1. Fetch EVERYTHING in parallel in ONE round-trip (no sequential N+1 loops)
-      const [batchTeacherData, authUsersRes, profilesRes, rolesRes] = await Promise.all([
+      const [batchTeacherData, authUsersRes, profilesRes, rolesRes, currentUserRes] = await Promise.all([
         fetchAllTeacherDataBatch(),
         supabase.rpc('get_all_auth_users').catch((e) => {
           console.warn('[UserAccessManager] get_all_auth_users RPC not found, falling back to profiles/roles:', e);
           return { data: [] };
         }),
-        supabase.from('profiles').select('id, user_id, display_name, avatar_url, parent_email, username, created_at, updated_at'),
+        supabase.from('profiles').select('id, user_id, display_name, full_name, email, avatar_url, parent_email, username, role, employee_id, admission_number, created_at, updated_at'),
         supabase.from('user_roles').select('user_id, role'),
+        supabase.auth.getUser().catch(() => ({ data: { user: null } })),
       ]);
 
       // 2. Build class teacher matrix using already-fetched class_teachers rows
@@ -156,21 +160,63 @@ const UserAccessManager: React.FC = () => {
       cachedMatrix = matrixData;
 
       const authUsers = (authUsersRes && !authUsersRes.error && Array.isArray(authUsersRes.data))
-        ? authUsersRes.data
+        ? [...authUsersRes.data]
         : [];
 
-      const profileMap = new Map((profilesRes.data || []).map((p) => [p.user_id, p]));
+      // Ensure current logged-in auth user is included
+      const currentAuthUser = currentUserRes?.data?.user;
+      if (currentAuthUser && !authUsers.some((au: any) => (au.user_id || au.id) === currentAuthUser.id)) {
+        authUsers.push({
+          user_id: currentAuthUser.id,
+          id: currentAuthUser.id,
+          email: currentAuthUser.email,
+          last_sign_in_at: currentAuthUser.last_sign_in_at,
+          created_at: currentAuthUser.created_at,
+          user_metadata: currentAuthUser.user_metadata,
+        });
+      }
+
+      const profileMap = new Map((profilesRes.data || []).map((p) => [p.user_id || p.id, p]));
       const roleMap = new Map((rolesRes.data || []).map((r) => [r.user_id, r.role]));
-      const authUserMap = new Map(authUsers.map((au: any) => [au.user_id, au]));
+      const authUserMap = new Map(authUsers.map((au: any) => [au.user_id || au.id, au]));
 
-      const allUserIds = new Set<string>();
-      authUsers.forEach((au: any) => au.user_id && allUserIds.add(au.user_id));
-      (profilesRes.data || []).forEach((p) => p.user_id && allUserIds.add(p.user_id));
-      (rolesRes.data || []).forEach((r) => r.user_id && allUserIds.add(r.user_id));
+      // 3. Collect STRICTLY authentic / signed-in accounts (Exclude student attendance records)
+      const authenticUserIds = new Set<string>();
 
-      // 3. Process users completely synchronously in-memory (0ms)
+      // a. Real auth users
+      authUsers.forEach((au: any) => {
+        const uid = au.user_id || au.id;
+        if (uid) authenticUserIds.add(uid);
+      });
+
+      // b. Assigned system roles (admin, principal, teacher, staff, guard, etc. - exclude student)
+      (rolesRes.data || []).forEach((r) => {
+        if (r.user_id && r.role && r.role !== 'student') {
+          authenticUserIds.add(r.user_id);
+        }
+      });
+
+      // c. Assigned teachers in class_teachers or teacher_permissions
+      batchTeacherData.classTeachersRows.forEach((ct: any) => {
+        if (ct.teacher_id) authenticUserIds.add(ct.teacher_id);
+      });
+      batchTeacherData.categoriesByUser.forEach((_, uId) => {
+        if (uId) authenticUserIds.add(uId);
+      });
+
+      // d. Profiles with verified staff roles or staff login emails
+      (profilesRes.data || []).forEach((p: any) => {
+        const role = String(p.role || '').toLowerCase();
+        const isStaffRole = ['admin', 'principal', 'teacher', 'staff', 'guard', 'security'].includes(role);
+        const hasRealStaffEmail = Boolean(p.email && p.email.includes('@') && !p.admission_number && role !== 'student');
+        if (p.user_id && (isStaffRole || hasRealStaffEmail)) {
+          authenticUserIds.add(p.user_id);
+        }
+      });
+
+      // 4. Process users completely synchronously in-memory (0ms)
       const processedUsers: RegisteredUser[] = [];
-      for (const userId of Array.from(allUserIds)) {
+      for (const userId of Array.from(authenticUserIds)) {
         if (!userId) continue;
         const au: any = authUserMap.get(userId) || {};
         const profile: any = profileMap.get(userId) || {};
@@ -178,13 +224,27 @@ const UserAccessManager: React.FC = () => {
         const categories = batchTeacherData.categoriesByUser.get(userId) || [];
         const perms = batchTeacherData.permissionsByUser.get(userId) || DEFAULT_TEACHER_PERMISSIONS;
         const hasTeacherPerms = categories.length > 0;
-        const computedRole = assignedRole || (hasTeacherPerms ? 'teacher' : 'user');
+        const computedRole = assignedRole || (hasTeacherPerms ? 'teacher' : (profile.role && profile.role !== 'student' ? profile.role : 'user'));
+
+        const userName = 
+          profile.display_name || 
+          profile.full_name || 
+          profile.username || 
+          au.user_metadata?.name || 
+          au.user_metadata?.full_name || 
+          (au.email ? au.email.split('@')[0] : 'System User');
+
+        const userEmail = 
+          au.email || 
+          profile.email || 
+          profile.parent_email || 
+          '';
 
         processedUsers.push({
           id: profile.id || userId,
           user_id: userId,
-          name: profile.display_name || profile.username || (au.email ? au.email.split('@')[0] : 'Unnamed User'),
-          email: au.email || profile.parent_email || profile.username || '',
+          name: userName,
+          email: userEmail,
           avatar_url: profile.avatar_url || '',
           role: computedRole,
           isTeacher: hasTeacherPerms || computedRole === 'teacher',
@@ -194,6 +254,16 @@ const UserAccessManager: React.FC = () => {
           signedUpAt: au.created_at || profile.created_at || null,
         });
       }
+
+      // Sort: Admins first, then Principals, Teachers, Staff, Users
+      const roleOrder: Record<string, number> = { admin: 1, principal: 2, teacher: 3, staff: 4, guard: 5, user: 6 };
+      processedUsers.sort((a, b) => {
+        const orderA = roleOrder[a.role.toLowerCase()] || 99;
+        const orderB = roleOrder[b.role.toLowerCase()] || 99;
+        if (orderA !== orderB) return orderA - orderB;
+        return a.name.localeCompare(b.name);
+      });
+
       setUsers(processedUsers);
       cachedUsers = processedUsers;
     } catch (error: any) {
@@ -227,6 +297,21 @@ const UserAccessManager: React.FC = () => {
     if (statusFilter === 'assigned' && !slot.isAssigned) return false;
     return true;
   }), [matrix, wingFilter, statusFilter]);
+
+  const filteredUsers = useMemo(() => {
+    return users.filter((u) => {
+      if (roleFilter !== 'all' && u.role.toLowerCase() !== roleFilter.toLowerCase()) return false;
+      if (searchQuery.trim()) {
+        const q = searchQuery.toLowerCase();
+        return (
+          u.name.toLowerCase().includes(q) ||
+          u.email.toLowerCase().includes(q) ||
+          u.role.toLowerCase().includes(q)
+        );
+      }
+      return true;
+    });
+  }, [users, roleFilter, searchQuery]);
 
   const openUserEdit = (user: RegisteredUser) => {
     setSelectedUser(user);
@@ -715,56 +800,108 @@ const UserAccessManager: React.FC = () => {
             <CardHeader className="pb-3">
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                 <div>
-                  <CardTitle className="text-base font-bold">System Users & Roles</CardTitle>
-                  <CardDescription>Full audit list of authenticated accounts</CardDescription>
+                  <div className="flex items-center gap-2">
+                    <CardTitle className="text-base font-bold">System Users & Roles</CardTitle>
+                    <Badge variant="outline" className="text-xs font-mono font-bold">
+                      {filteredUsers.length} {filteredUsers.length === 1 ? 'account' : 'accounts'}
+                    </Badge>
+                  </div>
+                  <CardDescription>Verified signed-in accounts and provisioned staff with system access</CardDescription>
                 </div>
-                <Select value={roleFilter} onValueChange={(v) => setRoleFilter(v as any)}>
-                  <SelectTrigger className="h-8 w-[140px] text-xs rounded-xl">
-                    <SelectValue placeholder="Role Filter" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all">All Roles</SelectItem>
-                    <SelectItem value="admin">Admins</SelectItem>
-                    <SelectItem value="principal">Principals</SelectItem>
-                    <SelectItem value="teacher">Teachers</SelectItem>
-                    <SelectItem value="user">Users</SelectItem>
-                  </SelectContent>
-                </Select>
+                <div className="flex items-center gap-2">
+                  <div className="relative min-w-[180px]">
+                    <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
+                    <Input
+                      placeholder="Search accounts..."
+                      value={searchQuery}
+                      onChange={(e) => setSearchQuery(e.target.value)}
+                      className="h-8 pl-8 text-xs rounded-xl"
+                    />
+                  </div>
+                  <Select value={roleFilter} onValueChange={(v) => setRoleFilter(v as any)}>
+                    <SelectTrigger className="h-8 w-[130px] text-xs rounded-xl font-bold">
+                      <SelectValue placeholder="Role Filter" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">All Roles</SelectItem>
+                      <SelectItem value="admin">Admins</SelectItem>
+                      <SelectItem value="principal">Principals</SelectItem>
+                      <SelectItem value="teacher">Teachers</SelectItem>
+                      <SelectItem value="staff">Staff</SelectItem>
+                      <SelectItem value="user">Users</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
               </div>
             </CardHeader>
             <CardContent>
-              <div className="space-y-2 max-h-[500px] overflow-y-auto">
-                {users.map((user) => {
-                  const roleConfig = getRoleConfig(user.role);
-                  const RoleIcon = roleConfig.icon;
-                  return (
-                    <div key={user.id} className="flex items-center justify-between p-3 rounded-xl border bg-card/50 hover:bg-card/80 transition">
-                      <div className="flex items-center gap-3 min-w-0">
-                        <Avatar className="h-9 w-9 rounded-xl border">
-                          {user.avatar_url ? <AvatarImage src={user.avatar_url} /> : null}
-                          <AvatarFallback className="font-bold text-xs">
-                            {user.name.slice(0, 2).toUpperCase()}
-                          </AvatarFallback>
-                        </Avatar>
-                        <div className="min-w-0">
-                          <p className="text-xs font-bold text-foreground truncate">{user.name}</p>
-                          <p className="text-[11px] text-muted-foreground truncate">{user.email}</p>
+              {filteredUsers.length === 0 ? (
+                <div className="py-12 text-center text-muted-foreground space-y-2">
+                  <ShieldCheck className="h-8 w-8 mx-auto text-muted-foreground/60" />
+                  <p className="text-sm font-semibold text-foreground">No authenticated accounts found</p>
+                  <p className="text-xs">No signed-in users or staff roles match your current search criteria.</p>
+                </div>
+              ) : (
+                <div className="space-y-2 max-h-[540px] overflow-y-auto pr-1">
+                  {filteredUsers.map((user) => {
+                    const roleConfig = getRoleConfig(user.role);
+                    const RoleIcon = roleConfig.icon;
+                    return (
+                      <div key={user.id} className="flex items-center justify-between p-3.5 rounded-2xl border bg-card/60 hover:bg-card hover:border-primary/30 transition-all shadow-xs">
+                        <div className="flex items-center gap-3.5 min-w-0">
+                          <Avatar className="h-10 w-10 rounded-2xl border shadow-xs">
+                            {user.avatar_url ? <AvatarImage src={user.avatar_url} /> : null}
+                            <AvatarFallback className="font-extrabold text-xs bg-primary/10 text-primary">
+                              {user.name.slice(0, 2).toUpperCase()}
+                            </AvatarFallback>
+                          </Avatar>
+                          <div className="min-w-0 space-y-0.5">
+                            <div className="flex items-center gap-2">
+                              <p className="text-sm font-bold text-foreground truncate">{user.name}</p>
+                              {user.lastSignIn && (
+                                <Badge variant="secondary" className="text-[9px] px-1.5 py-0 font-medium text-emerald-600 bg-emerald-500/10 border-emerald-500/20">
+                                  ● Signed in
+                                </Badge>
+                              )}
+                            </div>
+                            <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+                              {user.email ? (
+                                <span className="flex items-center gap-1 font-mono text-[11px] text-foreground/80">
+                                  <Mail className="h-3 w-3 text-muted-foreground" />
+                                  {user.email}
+                                </span>
+                              ) : (
+                                <span className="text-[11px] text-muted-foreground italic">Authenticated ID Account</span>
+                              )}
+                              {user.teacherCategories.length > 0 && (
+                                <span className="text-[10px] text-primary font-bold">
+                                  • Classes: {user.teacherCategories.join(', ')}
+                                </span>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+
+                        <div className="flex items-center gap-2 shrink-0">
+                          <Badge className={`${roleConfig.color} text-xs font-bold px-2.5 py-1 rounded-xl`}>
+                            <RoleIcon className="h-3.5 w-3.5 mr-1" />
+                            {roleConfig.label}
+                          </Badge>
+                          <Button 
+                            size="sm" 
+                            variant="outline" 
+                            onClick={() => openUserEdit(user)} 
+                            className="h-8 px-2.5 text-xs rounded-xl font-bold gap-1 hover:bg-primary/10 hover:text-primary"
+                          >
+                            <Edit className="h-3.5 w-3.5" />
+                            <span className="hidden sm:inline">Permissions</span>
+                          </Button>
                         </div>
                       </div>
-
-                      <div className="flex items-center gap-2">
-                        <Badge className={`${roleConfig.color} text-[10px] font-bold`}>
-                          <RoleIcon className="h-3 w-3 mr-1" />
-                          {roleConfig.label}
-                        </Badge>
-                        <Button size="sm" variant="ghost" onClick={() => openUserEdit(user)} className="h-7 px-2 text-xs rounded-lg">
-                          <Edit className="h-3.5 w-3.5" />
-                        </Button>
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
+                    );
+                  })}
+                </div>
+              )}
             </CardContent>
           </Card>
         </TabsContent>
