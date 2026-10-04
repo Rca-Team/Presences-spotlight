@@ -1,5 +1,5 @@
 import React, { lazy, Suspense, useCallback, useEffect, useMemo, useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { formatDistanceToNow, format } from 'date-fns';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
@@ -52,7 +52,7 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { useToast } from '@/hooks/use-toast';
 import { useUserRole } from '@/hooks/useUserRole';
 import { cn } from '@/lib/utils';
-import { fieldLabels, type StudentDetails } from '@/services/enrollment/types';
+import { fieldLabels, type StudentDetails, type EnrollmentSession } from '@/services/enrollment/types';
 import {
   fetchMonitor,
   fetchMonitorPhoto,
@@ -66,7 +66,6 @@ import {
   type MonitorStatus,
   type MonitorCorrection,
 } from '@/services/enrollment/monitor';
-import CaptureFaceDialog, { type RecaptureStudent } from '@/components/admin/CaptureFaceDialog';
 import { ClassPDFIDCardImporter, type ExtractedStudentCard } from '@/components/register/ClassPDFIDCardImporter';
 import { supabase } from '@/integrations/supabase/client';
 import { enrollmentApi } from '@/services/enrollment/api';
@@ -343,6 +342,7 @@ function StudentDetailSheet({
   onChanged,
   onOpenRecapture,
   onRevert,
+  onCopyBypassLink,
 }: {
   student: MonitorStudent | null;
   data: MonitorOverview | null;
@@ -350,6 +350,7 @@ function StudentDetailSheet({
   onChanged: () => void;
   onOpenRecapture: (student: MonitorStudent) => void;
   onRevert?: (student: MonitorStudent) => void;
+  onCopyBypassLink?: (student: MonitorStudent) => void;
 }) {
   const events = useMemo(
     () => (student && data ? data.activity.filter((a) => a.student === student.admission_number) : []),
@@ -421,11 +422,23 @@ function StudentDetailSheet({
               <p className="text-xs font-bold text-white">Biometric Face Management</p>
               <p className="text-[11px] text-white/60 mt-0.5">
                 {isStudentEnrolled(student)
-                  ? 'Recapture 3D face scan or revert back to un-enrolled'
-                  : 'Perform biometric capture at school now'}
+                  ? 'Open dedicated studio to recapture, or copy direct link'
+                  : 'Open full-screen capture studio or copy bypass link'}
               </p>
             </div>
-            <div className="flex items-center gap-2 w-full sm:w-auto">
+            <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto">
+              {onCopyBypassLink && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  title="Copy Direct Capture Bypass Link"
+                  onClick={() => onCopyBypassLink(student)}
+                  className="rounded-xl h-10 sm:h-9 font-semibold text-xs border-white/20 bg-white/5 hover:bg-white/10 text-white/90 gap-1.5 touch-manipulation"
+                >
+                  <Copy className="h-3.5 w-3.5 text-cyan-400" />
+                  Copy Link
+                </Button>
+              )}
               {isStudentEnrolled(student) && onRevert && (
                 <Button
                   variant="outline"
@@ -447,7 +460,7 @@ function StudentDetailSheet({
                 className="flex-1 sm:flex-none rounded-xl h-10 sm:h-9 font-bold text-xs bg-gradient-to-r from-cyan-500 via-blue-600 to-indigo-600 text-white hover:from-cyan-600 hover:to-indigo-700 shadow-md shadow-blue-500/20 gap-1.5 shrink-0 touch-manipulation"
               >
                 <ScanFace className="h-4 w-4" />
-                {isStudentEnrolled(student) ? 'Recapture Face' : 'Capture Now'}
+                {isStudentEnrolled(student) ? 'Recapture Face' : 'Capture in Studio'}
               </Button>
             </div>
           </div>
@@ -602,6 +615,7 @@ function StudentDetailSheet({
 export default function EnrollmentMonitor() {
   const { role } = useUserRole();
   const { toast } = useToast();
+  const navigate = useNavigate();
   const [data, setData] = useState<MonitorOverview | null>(null);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(true);
@@ -611,13 +625,85 @@ export default function EnrollmentMonitor() {
   const [limit, setLimit] = useState(PAGE);
   const [selectedStudentAdm, setSelectedStudentAdm] = useState<string | null>(null);
   const [uploadOpen, setUploadOpen] = useState(false);
-  const [recaptureStudent, setRecaptureStudent] = useState<RecaptureStudent | null>(null);
+  const [launchingCaptureAdm, setLaunchingCaptureAdm] = useState<string | null>(null);
   const [revertingStudent, setRevertingStudent] = useState<MonitorStudent | null>(null);
   const [isReverting, setIsReverting] = useState(false);
   const [showScrollTop, setShowScrollTop] = useState(false);
 
   const parentLink = `${window.location.origin}/enroll`;
   const backTo = role === 'teacher' ? '/teacher' : '/admin';
+
+  const handleLaunchDirectCapture = async (student: MonitorStudent) => {
+    try {
+      setLaunchingCaptureAdm(student.admission_number);
+      toast({
+        title: 'Opening Biometric Studio',
+        description: `Preparing 3D face scan studio for ${student.name}...`,
+      });
+
+      let token = '';
+      try {
+        const res = await enrollmentApi<EnrollmentSession>('staff.session', {
+          admission: student.admission_number,
+        });
+        if (res?.session) {
+          token = res.session;
+          sessionStorage.setItem('bypass_enrollment_session', JSON.stringify(res));
+        }
+      } catch (e) {
+        console.warn('Could not pre-fetch session; will initialize on enroll page:', e);
+      }
+
+      const params = new URLSearchParams({
+        student: student.admission_number,
+        bypass: 'true',
+      });
+      if (token) {
+        params.set('token', token);
+      }
+
+      navigate(`/enroll?${params.toString()}`);
+    } catch (err: any) {
+      toast({
+        variant: 'destructive',
+        title: 'Error launching studio',
+        description: err?.message || 'Could not open capture studio.',
+      });
+    } finally {
+      setLaunchingCaptureAdm(null);
+    }
+  };
+
+  const copyDirectCaptureLink = async (student: MonitorStudent) => {
+    try {
+      let token = '';
+      try {
+        const res = await enrollmentApi<EnrollmentSession>('staff.session', {
+          admission: student.admission_number,
+        });
+        if (res?.session) token = res.session;
+      } catch {}
+
+      const params = new URLSearchParams({
+        student: student.admission_number,
+        bypass: 'true',
+      });
+      if (token) params.set('token', token);
+
+      const url = `${window.location.origin}/enroll?${params.toString()}`;
+      await navigator.clipboard.writeText(url);
+      toast({
+        title: 'Bypass Link Copied!',
+        description: `Direct capture link for ${student.name} copied to clipboard.`,
+      });
+    } catch {
+      toast({
+        variant: 'destructive',
+        title: 'Copy failed',
+        description: 'Could not copy link.',
+      });
+    }
+  };
 
   const handleRevert = async (s: MonitorStudent) => {
     setIsReverting(true);
@@ -1345,23 +1431,26 @@ export default function EnrollmentMonitor() {
                                 )}
                                 <Button
                                   size="sm"
-                                  onClick={() =>
-                                    setRecaptureStudent({
-                                      id: s.admission_number,
-                                      name: s.name,
-                                      employee_id: s.admission_number,
-                                      category: s.category,
-                                    })
-                                  }
+                                  disabled={launchingCaptureAdm === s.admission_number}
+                                  onClick={() => void handleLaunchDirectCapture(s)}
                                   className={cn(
-                                    'h-9 sm:h-8 px-3 rounded-xl text-xs font-bold gap-1 shadow-sm active:scale-95 touch-manipulation',
+                                    'h-9 sm:h-8 px-3 rounded-xl text-xs font-bold gap-1.5 shadow-sm active:scale-95 touch-manipulation',
                                     isComplete
                                       ? 'bg-white/10 hover:bg-white/20 text-white border border-white/15'
                                       : 'bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-600 hover:to-teal-700 text-slate-950 font-black'
                                   )}
                                 >
-                                  <ScanFace className="h-3.5 w-3.5" />
-                                  {isComplete ? 'Re-scan' : 'Capture'}
+                                  {launchingCaptureAdm === s.admission_number ? (
+                                    <>
+                                      <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                                      <span>Opening...</span>
+                                    </>
+                                  ) : (
+                                    <>
+                                      <ScanFace className="h-3.5 w-3.5" />
+                                      <span>{isComplete ? 'Re-scan' : 'Capture'}</span>
+                                    </>
+                                  )}
                                 </Button>
                               </>
                             )}
@@ -1416,14 +1505,8 @@ export default function EnrollmentMonitor() {
             data={data}
             onClose={() => setSelectedStudentAdm(null)}
             onChanged={() => void load(true)}
-            onOpenRecapture={(st) =>
-              setRecaptureStudent({
-                id: st.admission_number,
-                name: st.name,
-                employee_id: st.admission_number,
-                category: st.category,
-              })
-            }
+            onOpenRecapture={(st) => void handleLaunchDirectCapture(st)}
+            onCopyBypassLink={(st) => void copyDirectCaptureLink(st)}
             onRevert={(st) => setRevertingStudent(st)}
           />
         )}
@@ -1484,17 +1567,6 @@ export default function EnrollmentMonitor() {
             </DialogFooter>
           </DialogContent>
         </Dialog>
-
-        {/* 3D Face Recapture Modal directly embedded! */}
-        <CaptureFaceDialog
-          open={Boolean(recaptureStudent)}
-          onOpenChange={(open) => !open && setRecaptureStudent(null)}
-          student={recaptureStudent}
-          onSuccess={() => {
-            void load(true);
-            setRecaptureStudent(null);
-          }}
-        />
 
         {/* Class PDF Bulk ID Cards Importer Modal */}
         {uploadOpen && (

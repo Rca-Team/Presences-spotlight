@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { Link, useNavigate } from 'react-router-dom';
 import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
-import { ArrowRight, Check, CheckCircle2, Fingerprint, Glasses, Loader2, LockKeyhole, ShieldCheck } from 'lucide-react';
+import { ArrowLeft, ArrowRight, Check, CheckCircle2, Fingerprint, Glasses, Loader2, LockKeyhole, ShieldCheck } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import GuidedFaceCapture from '@/components/enrollment/GuidedFaceCapture';
@@ -30,6 +31,8 @@ export default function StudentEnrollment() {
   const [pendingCorrections, setPendingCorrections] = useState(false);
   const [clock, setClock] = useState(Date.now());
   const [replaceExisting, setReplaceExisting] = useState(true);
+  const [isStaffBypass, setIsStaffBypass] = useState(false);
+  const navigate = useNavigate();
   const reduced = useReducedMotion();
   const staffStarted = useRef(false);
   const uploadedKeysRef = useRef<Set<string>>(new Set());
@@ -121,17 +124,61 @@ export default function StudentEnrollment() {
     }
   };
 
-  const acceptSession = (value: EnrollmentSession) => {
+  const acceptSession = (value: EnrollmentSession, bypassMode = false) => {
     setSession(value);
     setDetails(value.student);
+    if (bypassMode) {
+      setIsStaffBypass(true);
+      setConsent(true);
+    }
     setPhase('consent');
   };
 
   useEffect(() => {
-    const staffAdmission = new URLSearchParams(window.location.search).get('student');
-    if (!staffAdmission || staffStarted.current) return;
+    const params = new URLSearchParams(window.location.search);
+    const staffAdmission = params.get('student');
+    const tokenParam = params.get('token');
+    const isBypass = params.get('bypass') === 'true' || params.get('bypass') === '1' || Boolean(tokenParam);
+
+    if (staffStarted.current) return;
+    if (!staffAdmission && !tokenParam) return;
     staffStarted.current = true;
-    void run(async () => acceptSession(await enrollmentApi<EnrollmentSession>('staff.session', { admission: staffAdmission })));
+
+    // Check sessionStorage first for instantaneous 0ms transition
+    try {
+      const cachedStr = sessionStorage.getItem('bypass_enrollment_session');
+      if (cachedStr) {
+        const cached = JSON.parse(cachedStr) as EnrollmentSession;
+        if (
+          cached?.session &&
+          (!tokenParam || cached.session === tokenParam) &&
+          (!staffAdmission || cached.student?.admission_number === staffAdmission)
+        ) {
+          sessionStorage.removeItem('bypass_enrollment_session');
+          acceptSession(cached, isBypass);
+          return;
+        }
+      }
+    } catch {
+      // ignore parse failure
+    }
+
+    void run(async () => {
+      let sess: EnrollmentSession | null = null;
+      if (tokenParam) {
+        try {
+          sess = await enrollmentApi<EnrollmentSession>('session.get', { session: tokenParam });
+        } catch {
+          // fallback to staff.session if token query failed
+        }
+      }
+      if (!sess && staffAdmission) {
+        sess = await enrollmentApi<EnrollmentSession>('staff.session', { admission: staffAdmission });
+      }
+      if (sess) {
+        acceptSession(sess, isBypass);
+      }
+    });
   }, []);
 
   async function cancelCapture() {
@@ -145,7 +192,11 @@ export default function StudentEnrollment() {
         setSession(undefined);
         setResult(undefined);
         setConsent(false);
-        setPhase('verify');
+        if (isStaffBypass) {
+          navigate('/enrollment-monitor');
+        } else {
+          setPhase('verify');
+        }
       });
     }
   }
@@ -171,13 +222,24 @@ export default function StudentEnrollment() {
   return (
     <main className="enrollment-shell">
       <header className="enrollment-header">
-        <a href="/" className="font-semibold tracking-tight text-white flex items-center gap-1.5">
-          <span className="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-pulse" />
-          <span>presences<span className="text-emerald-300 font-bold">.</span></span>
-        </a>
+        <div className="flex items-center gap-3">
+          <a href="/" className="font-semibold tracking-tight text-white flex items-center gap-1.5">
+            <span className="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-pulse" />
+            <span>presences<span className="text-emerald-300 font-bold">.</span></span>
+          </a>
+          {isStaffBypass && (
+            <Link
+              to="/enrollment-monitor"
+              className="flex items-center gap-1.5 text-xs font-semibold px-2.5 py-1 rounded-full bg-emerald-500/15 border border-emerald-500/30 text-emerald-300 hover:bg-emerald-500/25 transition-all"
+            >
+              <ArrowLeft size={13} />
+              <span>Back to Hub</span>
+            </Link>
+          )}
+        </div>
         <div className="flex items-center gap-2 text-xs font-semibold px-2.5 py-1 rounded-full bg-white/5 border border-white/10 text-slate-300">
           <LockKeyhole size={12} className="text-emerald-400" />
-          <span>Private Enrollment</span>
+          <span>{isStaffBypass ? 'Staff Direct Studio' : 'Private Enrollment'}</span>
         </div>
       </header>
 
@@ -303,8 +365,20 @@ export default function StudentEnrollment() {
               {phase === 'consent' && (
                 <>
                   <div className="enrollment-icon"><ShieldCheck /></div>
-                  <h2>Ready, {session?.student.name.split(' ')[0]}?</h2>
-                  <p className="enrollment-muted">A parent or school staff member should help the student complete this step.</p>
+                  <h2>Ready, {session?.student.name?.split(' ')[0] || 'Student'}?</h2>
+                  {isStaffBypass ? (
+                    <div className="mt-3 mb-4 p-3.5 rounded-2xl bg-emerald-500/10 border border-emerald-500/25 text-emerald-300 text-xs text-left flex items-start gap-2.5">
+                      <ShieldCheck className="h-4 w-4 shrink-0 text-emerald-400 mt-0.5" />
+                      <div>
+                        <p className="font-bold text-emerald-200">Staff Verification Bypass Active</p>
+                        <p className="text-emerald-300/80 text-[11px] mt-0.5 leading-relaxed">
+                          Identity verified directly from school records for <strong className="text-white">{session?.student.name}</strong> (ID: <span className="font-mono text-emerald-300">{session?.student.admission_number}</span>). You may start camera capture immediately.
+                        </p>
+                      </div>
+                    </div>
+                  ) : (
+                    <p className="enrollment-muted">A parent or school staff member should help the student complete this step.</p>
+                  )}
                   <div className="enrollment-inset space-y-4 my-6">
                     <p>Face a soft light and keep the camera at eye level. Follow the ring as we capture each angle automatically.</p>
                     <p className="flex gap-3"><Glasses className="shrink-0" size={20} />If the student wears glasses, we’ll take one photo without them, then the remaining views with them on.</p>
@@ -453,7 +527,18 @@ export default function StudentEnrollment() {
                   {pendingCorrections && (
                     <p className="enrollment-inset mt-6 text-sm">Your corrections are waiting for school approval. Existing student details remain in place until reviewed.</p>
                   )}
-                  <a href="/" className="inline-block text-emerald-300 mt-8">Return to home</a>
+                  <div className="flex flex-col sm:flex-row items-center justify-center gap-3 mt-8">
+                    <Link
+                      to="/enrollment-monitor"
+                      className="inline-flex items-center justify-center gap-2 px-5 py-2.5 rounded-xl bg-gradient-to-r from-emerald-500 to-teal-600 text-slate-950 font-bold text-sm shadow-lg shadow-emerald-500/20 hover:from-emerald-400 hover:to-teal-500 transition-all active:scale-95"
+                    >
+                      <ArrowLeft size={16} />
+                      Return to Biometric Hub
+                    </Link>
+                    <Link to="/" className="inline-block text-white/60 hover:text-white text-xs py-2">
+                      Return to home
+                    </Link>
+                  </div>
                 </div>
               )}
             </motion.div>

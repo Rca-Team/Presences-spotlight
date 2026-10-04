@@ -255,6 +255,17 @@ export function createEnrollmentService({ db, databaseId = 'presences_db', sms, 
       reject(404, 'Unknown staff action.');
     }
     await limit('ip:' + ip, 120, 3600000);
+        if (action === 'session.get') {
+      const session = await sessionFor(body);
+      const student = await studentFor(session.student);
+      if (!student) reject(404, 'Student not found.');
+      return {
+        session: String(body.session),
+        student: Object.fromEntries(fields.map(k => [k, student[k] || ''])),
+        challenge: session.challenge,
+        expires: session.expires
+      };
+    }
     if (action === 'verify-student') {
       await limit('verify-student-ip:' + ip, 20, 3600000);
       const admission = String(body.admission || '').trim().slice(0, 64);
