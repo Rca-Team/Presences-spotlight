@@ -251,24 +251,7 @@ const PrincipalDashboard: React.FC<PrincipalDashboardProps> = ({ onNavigateTab }
     try {
       const today = format(new Date(), 'yyyy-MM-dd');
 
-      // 1. Fetch Registered Students & Teachers
-      const { data: users } = await supabase
-        .from('attendance_records')
-        .select('id, user_id, device_info, image_url, category')
-        .eq('status', 'registered');
-
-      const processedUsers = (users || []).map(r => {
-        const m = (r.device_info as any)?.metadata || {};
-        return {
-          id: r.id,
-          user_id: r.user_id,
-          name: m.name || (r.device_info as any)?.name || 'Unknown',
-          category: r.category || 'A',
-          employee_id: m.employee_id || (r.device_info as any)?.employee_id || '',
-          image_url: r.image_url || m.firebase_image_url || '',
-        };
-      }).filter(u => u.name !== 'Unknown' && u.name !== 'User' && !!u.name);
-
+      // 1. Fetch unified roster & attendance snapshot
       const unified = await fetchUnifiedStudentSnapshot();
 
       const presentMap = new Map<string, string | undefined>();
@@ -277,8 +260,9 @@ const PrincipalDashboard: React.FC<PrincipalDashboardProps> = ({ onNavigateTab }
 
       Object.entries(unified.statusesByEmployeeId).forEach(([employeeId, snapshot]) => {
         const time = snapshot.time ? format(new Date(snapshot.time), 'hh:mm a') : undefined;
-        if (snapshot.status === 'present') presentMap.set(employeeId, time);
-        else if (snapshot.status === 'late') lateMap.set(employeeId, time);
+        const normKey = employeeId.toLowerCase().trim();
+        if (snapshot.status === 'present') presentMap.set(normKey, time);
+        else if (snapshot.status === 'late') lateMap.set(normKey, time);
       });
 
       // 2. Fetch Today's Live Attendance Records
@@ -313,25 +297,26 @@ const PrincipalDashboard: React.FC<PrincipalDashboardProps> = ({ onNavigateTab }
       let teacherTotal = 0;
       let teacherPresent = 0;
 
-      const studentList: StudentRecord[] = processedUsers.map(u => {
+      const studentList: StudentRecord[] = (unified.roster || []).map(u => {
         let status: 'present' | 'late' | 'absent' = 'absent';
         let time: string | undefined;
 
-        const identifiers = [u.employee_id, u.user_id, u.id].filter(Boolean);
+        const identifiers = [u.employee_id, u.user_id, u.id, u.name].filter(Boolean);
         for (const identifier of identifiers) {
-          if (!identifier) continue;
-          if (presentMap.has(identifier)) {
+          const norm = String(identifier).toLowerCase().trim();
+          if (presentMap.has(norm)) {
             status = 'present';
-            time = presentMap.get(identifier);
+            time = presentMap.get(norm);
             break;
-          } else if (lateMap.has(identifier)) {
+          } else if (lateMap.has(norm)) {
             status = 'late';
-            time = lateMap.get(identifier);
+            time = lateMap.get(norm);
             break;
           }
         }
 
-        if (u.category === 'Teacher') {
+        const isTeacher = u.category === 'Teacher' || u.role === 'teacher';
+        if (isTeacher) {
           teacherTotal++;
           if (status === 'present' || status === 'late') teacherPresent++;
         }
@@ -339,17 +324,20 @@ const PrincipalDashboard: React.FC<PrincipalDashboardProps> = ({ onNavigateTab }
         return {
           name: u.name,
           employee_id: u.employee_id,
-          category: u.category,
-          image_url: u.image_url,
+          category: u.category || 'Class 10',
+          image_url: u.image_url || '',
           status,
           time,
-          user_id: u.user_id,
+          user_id: u.user_id || undefined,
         };
       });
 
       studentList.sort((a, b) => {
         const order = { present: 0, late: 1, absent: 2 };
-        return order[a.status] - order[b.status];
+        if (order[a.status] !== order[b.status]) {
+          return order[a.status] - order[b.status];
+        }
+        return a.name.localeCompare(b.name);
       });
 
       setAllStudents(studentList);

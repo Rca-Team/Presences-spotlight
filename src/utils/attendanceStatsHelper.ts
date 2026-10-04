@@ -28,6 +28,18 @@ export interface CanonicalStudent {
   employee_id: string;
   name: string;
   category?: string;
+  image_url?: string;
+  role?: string;
+}
+
+export interface UnifiedStudentSnapshot {
+  totalRegistered: number;
+  presentToday: number;
+  lateToday: number;
+  absentToday: number;
+  attendanceRate: number;
+  statusesByEmployeeId: Record<string, UnifiedStudentStatus>;
+  roster: CanonicalStudent[];
 }
 
 /**
@@ -72,9 +84,13 @@ const normalizeStatus = (s: string | null | undefined): 'present' | 'late' | 'ab
 
 /**
  * Build a strictly deduplicated roster of enrolled students.
- * Groups multiple registrations, face samples, and alias IDs into unique physical students.
+ * Groups multiple registrations, face samples, profiles, and alias IDs into unique physical students.
  */
-function buildDeduplicatedRoster(registrationRecords: any[], descriptorRows: any[]): CanonicalStudent[] {
+function buildDeduplicatedRoster(
+  registrationRecords: any[],
+  descriptorRows: any[],
+  profileRows: any[] = []
+): CanonicalStudent[] {
   const candidates: CanonicalStudent[] = [];
 
   // 1. Process attendance_records with status='registered'
@@ -85,6 +101,7 @@ function buildDeduplicatedRoster(registrationRecords: any[], descriptorRows: any
     const name = String(rawName).trim();
     const rawEmp = meta.employee_id || meta.roll_number || di.employee_id || (r as any).student_id || '';
     const employee_id = String(rawEmp).trim();
+    const imageUrl = r.image_url || meta.firebase_image_url || meta.avatar_url || meta.id_card_photo_url || '';
 
     if (
       name &&
@@ -99,6 +116,7 @@ function buildDeduplicatedRoster(registrationRecords: any[], descriptorRows: any
         employee_id,
         name,
         category: r.category || meta.class_section || meta.department,
+        image_url: imageUrl,
       });
     }
   });
@@ -109,7 +127,9 @@ function buildDeduplicatedRoster(registrationRecords: any[], descriptorRows: any
     const name = String(d.student_name || d.label || '').trim();
     const empId = String(d.student_id || '').trim();
     const uid = String(d.user_id || '').trim();
-    if (!name || name === 'Unknown' || name.toLowerCase().includes('unknown')) return;
+    const meta = (d.metadata as any) || {};
+    const imageUrl = d.image_url || meta.avatar_url || '';
+    if (!name || name === 'Unknown' || name.toLowerCase().includes('unknown') || name === 'User') return;
 
     const groupKey = empId ? `emp:${normStr(empId)}` : `name:${normStr(name)}`;
     if (!descriptorsByNameOrEmp.has(groupKey)) {
@@ -118,6 +138,8 @@ function buildDeduplicatedRoster(registrationRecords: any[], descriptorRows: any
         user_id: uid || null,
         employee_id: empId,
         name,
+        category: meta.class_section || meta.category || meta.department,
+        image_url: imageUrl,
       });
     }
   });
@@ -126,7 +148,28 @@ function buildDeduplicatedRoster(registrationRecords: any[], descriptorRows: any
     candidates.push(cand);
   });
 
-  // 3. Multi-key alias collapsing (collapses identical name, employee_id, or user_id)
+  // 3. Process profiles (official roster)
+  (profileRows || []).forEach((p) => {
+    const rawName = p.full_name || p.display_name || '';
+    const name = String(rawName).trim();
+    if (!name || name === 'Unknown' || name.toLowerCase().includes('unknown') || name === 'User') return;
+
+    const empId = String(p.admission_number || p.employee_id || p.roll_number || '').trim();
+    const uid = String(p.user_id || p.id || '').trim();
+    const cat = p.category || (p.class ? (p.section ? `${p.class}-${p.section}` : `Class ${p.class}`) : (p.role === 'teacher' ? 'Teacher' : undefined));
+
+    candidates.push({
+      id: p.id,
+      user_id: uid || null,
+      employee_id: empId,
+      name,
+      category: cat,
+      image_url: p.avatar_url || '',
+      role: p.role,
+    });
+  });
+
+  // 4. Multi-key alias collapsing (collapses identical name, employee_id, or user_id)
   const byEmpId = new Map<string, CanonicalStudent>();
   const byUserId = new Map<string, CanonicalStudent>();
   const byName = new Map<string, CanonicalStudent>();
@@ -144,9 +187,23 @@ function buildDeduplicatedRoster(registrationRecords: any[], descriptorRows: any
 
     if (existing) {
       // Merge identifiers into existing student
-      if (!existing.employee_id && cand.employee_id) existing.employee_id = cand.employee_id;
-      if (!existing.user_id && cand.user_id) existing.user_id = cand.user_id;
-      if (!existing.category && cand.category) existing.category = cand.category;
+      if (!existing.employee_id && cand.employee_id) {
+        existing.employee_id = cand.employee_id;
+        byEmpId.set(normStr(existing.employee_id), existing);
+      }
+      if (!existing.user_id && cand.user_id) {
+        existing.user_id = cand.user_id;
+        byUserId.set(normStr(existing.user_id), existing);
+      }
+      if ((!existing.category || existing.category === 'A' || existing.category === 'Class 10') && cand.category) {
+        existing.category = cand.category;
+      }
+      if (!existing.image_url && cand.image_url) {
+        existing.image_url = cand.image_url;
+      }
+      if (!existing.role && cand.role) {
+        existing.role = cand.role;
+      }
 
       if (empKey) byEmpId.set(empKey, existing);
       if (uKey) byUserId.set(uKey, existing);
@@ -190,110 +247,117 @@ export async function fetchUnifiedAttendanceStats(forceFresh = false): Promise<U
 
   inFlightStatsPromise = (async () => {
     try {
-      const [registeredRes, descriptorsRes, todayRes, gateRes] = await Promise.all([
-      supabase
-        .from('attendance_records')
-        .select('id, user_id, device_info, category, student_id, student_name')
-        .eq('status', 'registered'),
-      supabase
-        .from('face_descriptors')
-        .select('id, user_id, student_id, label'),
-      supabase
-        .from('attendance_records')
-        .select('id, user_id, status, timestamp, device_info, student_id, student_name')
-        .in('status', ['present', 'late', 'unauthorized'])
-        .gte('timestamp', startIso),
-      supabase
-        .from('gate_entries')
-        .select('id, student_id, entry_time, is_recognized')
-        .gte('entry_time', startIso)
-        .eq('is_recognized', true),
-    ]);
+      const [registeredRes, descriptorsRes, profilesRes, todayRes, gateRes] = await Promise.all([
+        supabase
+          .from('attendance_records')
+          .select('id, user_id, device_info, category, student_id, student_name, image_url')
+          .eq('status', 'registered'),
+        supabase
+          .from('face_descriptors')
+          .select('id, user_id, student_id, label, image_url'),
+        supabase
+          .from('profiles')
+          .select('id, user_id, display_name, full_name, role, employee_id, admission_number, class, section, category, avatar_url'),
+        supabase
+          .from('attendance_records')
+          .select('id, user_id, status, timestamp, device_info, student_id, student_name')
+          .in('status', ['present', 'late', 'unauthorized'])
+          .gte('timestamp', startIso),
+        supabase
+          .from('gate_entries')
+          .select('id, student_id, entry_time, is_recognized')
+          .gte('entry_time', startIso)
+          .eq('is_recognized', true),
+      ]);
 
-    // 1. Build strictly deduplicated roster
-    const roster = buildDeduplicatedRoster(registeredRes.data || [], descriptorsRes.data || []);
+      // 1. Build strictly deduplicated roster
+      const roster = buildDeduplicatedRoster(
+        registeredRes.data || [],
+        descriptorsRes.data || [],
+        profilesRes.data || []
+      );
 
-    // 2. Build present/late lookup sets
-    const presentKeys = new Set<string>();
-    const lateKeys = new Set<string>();
+      // 2. Build present/late lookup sets
+      const presentKeys = new Set<string>();
+      const lateKeys = new Set<string>();
 
-    (todayRes.data || []).forEach((r) => {
-      const m = (r.device_info as any)?.metadata || r.device_info || {};
-      const empId = (r as any).student_id || m.employee_id || m.roll_number || (r.device_info as any)?.employee_id;
-      const name = (r as any).student_name || m.name || m.student_name || (r.device_info as any)?.name;
-      const norm = normalizeStatus(r.status);
+      (todayRes.data || []).forEach((r) => {
+        const m = (r.device_info as any)?.metadata || r.device_info || {};
+        const empId = (r as any).student_id || m.employee_id || m.roll_number || (r.device_info as any)?.employee_id;
+        const name = (r as any).student_name || m.name || m.student_name || (r.device_info as any)?.name;
+        const norm = normalizeStatus(r.status);
 
-      const keys = [r.user_id, (r as any).student_id, empId, name, (r as any).student_name, r.id]
-        .filter(Boolean)
-        .map((k) => normStr(k));
+        const keys = [r.user_id, (r as any).student_id, empId, name, (r as any).student_name, r.id]
+          .filter(Boolean)
+          .map((k) => normStr(k));
 
-      keys.forEach((k) => {
-        if (norm === 'present') {
-          presentKeys.add(k);
-          lateKeys.delete(k);
-        } else if (norm === 'late' && !presentKeys.has(k)) {
-          lateKeys.add(k);
+        keys.forEach((k) => {
+          if (norm === 'present') {
+            presentKeys.add(k);
+            lateKeys.delete(k);
+          } else if (norm === 'late' && !presentKeys.has(k)) {
+            lateKeys.add(k);
+          }
+        });
+      });
+
+      // Merge gate entries
+      (gateRes.data || []).forEach((g) => {
+        const sId = normStr(g.student_id);
+        if (sId) {
+          presentKeys.add(sId);
+          lateKeys.delete(sId);
         }
       });
-    });
 
-    // Merge gate entries
-    (gateRes.data || []).forEach((g) => {
-      const sId = normStr(g.student_id);
-      if (sId) {
-        presentKeys.add(sId);
-        lateKeys.delete(sId);
-      }
-    });
+      // 3. Count statuses across unique students
+      let totalPresent = 0;
+      let totalLate = 0;
 
-    // 3. Count statuses across unique students
-    let totalPresent = 0;
-    let totalLate = 0;
+      roster.forEach((student) => {
+        const identifiers = [student.employee_id, student.user_id, student.id, student.name]
+          .filter(Boolean)
+          .map((k) => normStr(k));
 
-    roster.forEach((student) => {
-      const identifiers = [student.employee_id, student.user_id, student.id, student.name]
-        .filter(Boolean)
-        .map((k) => normStr(k));
-
-      for (const id of identifiers) {
-        if (!id) continue;
-        if (presentKeys.has(id)) {
-          totalPresent++;
-          return;
+        for (const id of identifiers) {
+          if (!id) continue;
+          if (presentKeys.has(id)) {
+            totalPresent++;
+            return;
+          }
+          if (lateKeys.has(id)) {
+            totalLate++;
+            return;
+          }
         }
-        if (lateKeys.has(id)) {
-          totalLate++;
-          return;
-        }
-      }
-    });
+      });
 
-    const totalRegistered = roster.length;
-    const absentToday = Math.max(0, totalRegistered - totalPresent - totalLate);
-    const attendanceRate =
-      totalRegistered > 0 ? Math.round(((totalPresent + totalLate) / totalRegistered) * 100) : 0;
+      const totalRegistered = roster.length;
+      const absentToday = Math.max(0, totalRegistered - totalPresent - totalLate);
+      const attendanceRate =
+        totalRegistered > 0 ? Math.round(((totalPresent + totalLate) / totalRegistered) * 100) : 0;
 
-    const result: UnifiedAttendanceStats = {
-      totalRegistered,
-      presentToday: totalPresent,
-      lateToday: totalLate,
-      absentToday,
-      attendanceRate,
-    };
-    cachedStats = { data: result, expiresAt: Date.now() + 15000 };
-    return result;
-  } catch (err) {
-    console.error('[attendanceStatsHelper] Error calculating attendance stats:', err);
-    return {
-      totalRegistered: 0,
-      presentToday: 0,
-      lateToday: 0,
-      absentToday: 0,
-      attendanceRate: 0,
-    };
-  } finally {
-    inFlightStatsPromise = null;
-  }
+      const result: UnifiedAttendanceStats = {
+        totalRegistered,
+        presentToday: totalPresent,
+        lateToday: totalLate,
+        absentToday,
+        attendanceRate,
+      };
+      cachedStats = { data: result, expiresAt: Date.now() + 15000 };
+      return result;
+    } catch (err) {
+      console.error('[attendanceStatsHelper] Error calculating attendance stats:', err);
+      return {
+        totalRegistered: 0,
+        presentToday: 0,
+        lateToday: 0,
+        absentToday: 0,
+        attendanceRate: 0,
+      };
+    } finally {
+      inFlightStatsPromise = null;
+    }
   })();
 
   return inFlightStatsPromise;
@@ -315,120 +379,145 @@ export async function fetchUnifiedStudentSnapshot(forceFresh = false): Promise<U
   const { startIso, localDateStr, utcDateStr } = getTodayRange();
 
   inFlightSnapshotPromise = (async () => {
-  try {
-    const [registeredRes, descriptorsRes, todayRes, gateRes] = await Promise.all([
-      supabase
-        .from('attendance_records')
-        .select('id, user_id, device_info, category, student_id, student_name')
-        .eq('status', 'registered'),
-      supabase
-        .from('face_descriptors')
-        .select('id, user_id, student_id, label'),
-      supabase
-        .from('attendance_records')
-        .select('id, user_id, status, timestamp, device_info, student_id, student_name')
-        .in('status', ['present', 'late', 'unauthorized'])
-        .gte('timestamp', startIso)
-        .order('timestamp', { ascending: false }),
-      supabase
-        .from('gate_entries')
-        .select('id, student_id, entry_time')
-        .gte('entry_time', startIso)
-        .eq('is_recognized', true)
-        .order('entry_time', { ascending: false }),
-    ]);
+    try {
+      const [registeredRes, descriptorsRes, profilesRes, todayRes, gateRes] = await Promise.all([
+        supabase
+          .from('attendance_records')
+          .select('id, user_id, device_info, category, student_id, student_name, image_url')
+          .eq('status', 'registered'),
+        supabase
+          .from('face_descriptors')
+          .select('id, user_id, student_id, label, image_url'),
+        supabase
+          .from('profiles')
+          .select('id, user_id, display_name, full_name, role, employee_id, admission_number, class, section, category, avatar_url'),
+        supabase
+          .from('attendance_records')
+          .select('id, user_id, status, timestamp, device_info, student_id, student_name, image_url')
+          .in('status', ['present', 'late', 'unauthorized'])
+          .gte('timestamp', startIso)
+          .order('timestamp', { ascending: false }),
+        supabase
+          .from('gate_entries')
+          .select('id, student_id, entry_time')
+          .gte('entry_time', startIso)
+          .eq('is_recognized', true)
+          .order('entry_time', { ascending: false }),
+      ]);
 
-    const roster = buildDeduplicatedRoster(registeredRes.data || [], descriptorsRes.data || []);
+      const roster = buildDeduplicatedRoster(
+        registeredRes.data || [],
+        descriptorsRes.data || [],
+        profilesRes.data || []
+      );
 
-    const idToStudentKey = new Map<string, string>();
-    const statusesByEmployeeId: Record<string, UnifiedStudentStatus> = {};
+      const idToStudentKey = new Map<string, string>();
+      const statusesByEmployeeId: Record<string, UnifiedStudentStatus> = {};
 
-    roster.forEach((student) => {
-      const studentKey = student.employee_id || student.name || student.id;
-      statusesByEmployeeId[studentKey] = { status: 'absent' };
+      roster.forEach((student) => {
+        const studentKey = student.employee_id || student.name || student.id;
+        statusesByEmployeeId[studentKey] = { status: 'absent' };
 
-      [student.employee_id, student.user_id, student.id, student.name].filter(Boolean).forEach((id) => {
-        idToStudentKey.set(normStr(id), studentKey);
+        [student.employee_id, student.user_id, student.id, student.name].filter(Boolean).forEach((id) => {
+          idToStudentKey.set(normStr(id), studentKey);
+        });
       });
-    });
 
-    // Latest attendance record wins
-    (todayRes.data || []).forEach((r) => {
-      const metadata = (r.device_info as any)?.metadata || r.device_info || {};
-      const possibleIds = [
-        metadata.employee_id,
-        (r.device_info as any)?.employee_id,
-        (r as any).student_id,
-        metadata.name,
-        (r.device_info as any)?.name,
-        (r as any).student_name,
-        r.user_id,
-        r.id,
-      ]
-        .filter(Boolean)
-        .map((s) => normStr(s));
+      // Latest attendance record wins
+      (todayRes.data || []).forEach((r) => {
+        const metadata = (r.device_info as any)?.metadata || r.device_info || {};
+        const possibleIds = [
+          metadata.employee_id,
+          (r.device_info as any)?.employee_id,
+          (r as any).student_id,
+          metadata.name,
+          (r.device_info as any)?.name,
+          (r as any).student_name,
+          r.user_id,
+          r.id,
+        ]
+          .filter(Boolean)
+          .map((s) => normStr(s));
 
-      const matchedStudentKey = possibleIds
-        .map((id) => idToStudentKey.get(id))
-        .find(Boolean);
+        const matchedStudentKey = possibleIds
+          .map((id) => idToStudentKey.get(id))
+          .find(Boolean);
 
-      if (!matchedStudentKey) return;
-      if (statusesByEmployeeId[matchedStudentKey]?.status !== 'absent') return;
+        if (!matchedStudentKey) return;
+        if (statusesByEmployeeId[matchedStudentKey]?.status !== 'absent') return;
 
-      const normalized = normalizeStatus(r.status);
-      if (normalized === 'present' || normalized === 'late') {
-        statusesByEmployeeId[matchedStudentKey] = {
-          status: normalized as 'present' | 'late',
-          time: r.timestamp,
-        };
-      }
-    });
+        const normalized = normalizeStatus(r.status);
+        if (normalized === 'present' || normalized === 'late') {
+          statusesByEmployeeId[matchedStudentKey] = {
+            status: normalized as 'present' | 'late',
+            time: r.timestamp,
+          };
+        }
+      });
 
-    // Gate entries fill remaining absentees
-    (gateRes.data || []).forEach((g) => {
-      if (!g.student_id) return;
-      const sId = normStr(g.student_id);
-      const matchedStudentKey = idToStudentKey.get(sId);
-      if (!matchedStudentKey) return;
+      // Gate entries fill remaining absentees
+      (gateRes.data || []).forEach((g) => {
+        if (!g.student_id) return;
+        const sId = normStr(g.student_id);
+        const matchedStudentKey = idToStudentKey.get(sId);
+        if (!matchedStudentKey) return;
 
-      if (statusesByEmployeeId[matchedStudentKey]?.status === 'absent') {
-        statusesByEmployeeId[matchedStudentKey] = {
-          status: 'present',
-          time: g.entry_time,
-        };
-      }
-    });
+        if (statusesByEmployeeId[matchedStudentKey]?.status === 'absent') {
+          statusesByEmployeeId[matchedStudentKey] = {
+            status: 'present',
+            time: g.entry_time,
+          };
+        }
+      });
 
-    const totalRegistered = roster.length;
-    const presentToday = Object.values(statusesByEmployeeId).filter((s) => s.status === 'present').length;
-    const lateToday = Object.values(statusesByEmployeeId).filter((s) => s.status === 'late').length;
-    const absentToday = Math.max(0, totalRegistered - presentToday - lateToday);
-    const attendanceRate =
-      totalRegistered > 0 ? Math.round(((presentToday + lateToday) / totalRegistered) * 100) : 0;
+      // Also index all aliases of each student into statusesByEmployeeId so consumers can look up by any identifier
+      roster.forEach((student) => {
+        const studentKey = student.employee_id || student.name || student.id;
+        const statusObj = statusesByEmployeeId[studentKey] || { status: 'absent' };
+        [student.employee_id, student.user_id, student.id, student.name].filter(Boolean).forEach((id) => {
+          statusesByEmployeeId[id] = statusObj;
+          statusesByEmployeeId[normStr(id)] = statusObj;
+        });
+      });
 
-    const result: UnifiedStudentSnapshot = {
-      totalRegistered,
-      presentToday,
-      lateToday,
-      absentToday,
-      attendanceRate,
-      statusesByEmployeeId,
-    };
-    cachedSnapshot = { data: result, expiresAt: Date.now() + 15000 };
-    return result;
-  } catch (err) {
-    console.error('[attendanceStatsHelper] Error fetching student snapshot:', err);
-    return {
-      totalRegistered: 0,
-      presentToday: 0,
-      lateToday: 0,
-      absentToday: 0,
-      attendanceRate: 0,
-      statusesByEmployeeId: {},
-    };
-  } finally {
-    inFlightSnapshotPromise = null;
-  }
+      const totalRegistered = roster.length;
+      const presentToday = roster.filter((student) => {
+        const key = student.employee_id || student.name || student.id;
+        return statusesByEmployeeId[key]?.status === 'present';
+      }).length;
+      const lateToday = roster.filter((student) => {
+        const key = student.employee_id || student.name || student.id;
+        return statusesByEmployeeId[key]?.status === 'late';
+      }).length;
+      const absentToday = Math.max(0, totalRegistered - presentToday - lateToday);
+      const attendanceRate =
+        totalRegistered > 0 ? Math.round(((presentToday + lateToday) / totalRegistered) * 100) : 0;
+
+      const result: UnifiedStudentSnapshot = {
+        totalRegistered,
+        presentToday,
+        lateToday,
+        absentToday,
+        attendanceRate,
+        statusesByEmployeeId,
+        roster,
+      };
+      cachedSnapshot = { data: result, expiresAt: Date.now() + 15000 };
+      return result;
+    } catch (err) {
+      console.error('[attendanceStatsHelper] Error fetching student snapshot:', err);
+      return {
+        totalRegistered: 0,
+        presentToday: 0,
+        lateToday: 0,
+        absentToday: 0,
+        attendanceRate: 0,
+        statusesByEmployeeId: {},
+        roster: [],
+      };
+    } finally {
+      inFlightSnapshotPromise = null;
+    }
   })();
 
   return inFlightSnapshotPromise;
