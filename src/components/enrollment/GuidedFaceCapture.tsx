@@ -1,9 +1,24 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
-import { motion, useReducedMotion } from 'framer-motion';
-import { Camera, Check, Glasses, RotateCcw, ScanFace, Sparkles, Volume2, VolumeX, ArrowLeft, ArrowRight, ArrowUp, ArrowDown, Eye, User, AlertTriangle } from 'lucide-react';
+import { motion, AnimatePresence, useReducedMotion } from 'framer-motion';
+import { 
+  Camera, Check, Glasses, RotateCcw, ScanFace, Sparkles, 
+  Volume2, VolumeX, ArrowLeft, ArrowRight, ArrowUp, ArrowDown, 
+  Eye, User, AlertTriangle, ShieldCheck, Compass, Lightbulb, 
+  Smile, Mic, MicOff, Activity, CheckCircle2, Zap 
+} from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { Badge } from '@/components/ui/badge';
 import { poses, type CaptureResult, type FaceSample, type Pose } from '@/services/enrollment/types';
-import { eyeOpenness, estimateFacePose, imageQuality, diagnoseFrameQuality, aiEnhanceFaceCanvas } from '@/services/enrollment/captureQuality';
+import { 
+  eyeOpenness, 
+  estimateFacePose, 
+  imageQuality, 
+  diagnoseFrameQuality, 
+  aiEnhanceFaceCanvas,
+  evaluateSpatialReasoning,
+  speechCoach,
+  type AIReasoningResult
+} from '@/services/enrollment/captureQuality';
 
 type Phase = 'prepare' | 'glasses' | 'turn' | 'capture' | 'replace-glasses' | 'done';
 
@@ -25,17 +40,22 @@ const directions: Record<Pose, string> = {
   'master-hd': 'Final calibration: Look straight & hold still 🌟',
 };
 
-const isPoseSatisfied = (current: Pose | null, target: Pose): boolean => {
-  if (!current) return false;
-  if (target === 'master-hd') return true;
-  if (target === current) return true;
-  if (target === 'front' && (current === 'front' || current === 'front-smile')) return true;
-  if (target === 'front-smile' && (current === 'front-smile' || current === 'front')) return true;
-  if (target === 'front-up' && (current === 'front-up' || current === 'up')) return true;
-  if (target === 'front-down' && (current === 'front-down' || current === 'down')) return true;
-  if (target === 'left' && (current === 'left' || current === 'left-deep')) return true;
-  if (target === 'right' && (current === 'right' || current === 'right-deep')) return true;
-  return false;
+const spokenDirections: Record<Pose, string> = {
+  front: 'Please look straight ahead.',
+  'front-smile': 'Now smile naturally for verification.',
+  'front-up': 'Lift your chin slightly up.',
+  'front-down': 'Lower your chin slightly.',
+  left: 'Turn gently to your left.',
+  'left-deep': 'Turn further to your left.',
+  right: 'Turn gently to your right.',
+  'right-deep': 'Turn further to your right.',
+  up: 'Tilt your head up.',
+  down: 'Tilt your head down.',
+  'up-left': 'Angle up and to the left.',
+  'up-right': 'Angle up and to the right.',
+  'down-left': 'Angle down and to the left.',
+  'down-right': 'Angle down and to the right.',
+  'master-hd': 'Hold still for final calibration.',
 };
 
 const TOTAL_TICKS = 36;
@@ -72,7 +92,7 @@ class AppleFaceIDSoundEngine {
       gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.05);
       osc.start(ctx.currentTime);
       osc.stop(ctx.currentTime + 0.05);
-    } catch { /* Optional sound/haptic feedback is unavailable on this device. */ }
+    } catch {}
   }
 
   playSectorComplete() {
@@ -93,7 +113,7 @@ class AppleFaceIDSoundEngine {
         osc.start(start);
         osc.stop(start + 0.12);
       });
-    } catch { /* Optional sound/haptic feedback is unavailable on this device. */ }
+    } catch {}
   }
 
   playComplete() {
@@ -101,7 +121,6 @@ class AppleFaceIDSoundEngine {
     try {
       const ctx = this.getCtx();
       if (!ctx) return;
-      // Signature Apple Face ID / Apple Pay chime
       [587.33, 880, 1174.66].forEach((freq, idx) => {
         const osc = ctx.createOscillator();
         const gain = ctx.createGain();
@@ -115,7 +134,7 @@ class AppleFaceIDSoundEngine {
         osc.start(start);
         osc.stop(start + 0.35);
       });
-    } catch { /* Optional sound/haptic feedback is unavailable on this device. */ }
+    } catch {}
   }
 }
 
@@ -154,24 +173,30 @@ export default function GuidedFaceCapture({
   const landmarksRef = useRef<{ x: number; y: number }[] | null>(null);
   const particlesRef = useRef<Particle[]>([]);
   const animFrameRef = useRef<number>(0);
+  const finishEnrollmentRef = useRef<() => void>(() => {});
+
   const latestFaceDataRef = useRef<{
     descriptor?: number[];
     image?: string;
-    quality: { brightness: number; sharpness: number; faces: number };
+    quality: { brightness: number; sharpness: number; faces: number; symmetry?: number };
     pose: Pose | null;
   } | null>(null);
-  const finishEnrollmentRef = useRef<() => void>(() => {});
 
   const [stage, setStage] = useState<Phase>('prepare');
-  const [message, setMessage] = useState('Preparing your camera…');
+  const [message, setMessage] = useState('Initializing intelligent neural camera…');
   const [failure, setFailure] = useState('');
   const [progress, setProgress] = useState(0);
   const [suggestion, setSuggestion] = useState<boolean | null>(null);
   const [classifying, setClassifying] = useState(false);
   const [generation, setGeneration] = useState(0);
   const [soundMuted, setSoundMuted] = useState(false);
+  const [voiceCoachActive, setVoiceCoachActive] = useState(true);
   const [activeTargetPose, setActiveTargetPose] = useState<Pose | null>(null);
   const [qualityWarning, setQualityWarning] = useState<string | null>(null);
+
+  // Advanced AI Reasoning & Telemetry State
+  const [aiReasoning, setAiReasoning] = useState<AIReasoningResult | null>(null);
+  const [holdProgress, setHoldProgress] = useState(0);
 
   const reduced = useReducedMotion();
 
@@ -180,12 +205,21 @@ export default function GuidedFaceCapture({
     setSoundMuted(!soundRef.current.enabled);
   };
 
+  const toggleVoiceCoach = () => {
+    const next = !voiceCoachActive;
+    setVoiceCoachActive(next);
+    speechCoach.enabled = next;
+    if (!next) speechCoach.stop();
+    else speechCoach.speak('Voice coach enabled.');
+  };
+
   const change = (next: Phase) => {
     phase.current = next;
     setStage(next);
   };
 
   const stop = () => {
+    speechCoach.stop();
     stream.current?.getTracks().forEach((t) => t.stop());
     worker.current?.terminate();
     if (animFrameRef.current) cancelAnimationFrame(animFrameRef.current);
@@ -215,6 +249,7 @@ export default function GuidedFaceCapture({
   const finishEnrollment = useCallback(() => {
     change('done');
     soundRef.current.playComplete();
+    speechCoach.speak('Calibration complete! Excellent job.');
     if (overlayCanvasRef.current) {
       const rect = overlayCanvasRef.current.getBoundingClientRect();
       const dpr = window.devicePixelRatio || 1;
@@ -321,6 +356,7 @@ export default function GuidedFaceCapture({
       }
 
       soundRef.current.playSectorComplete();
+      speechCoach.speak('Captured.');
       if (overlayCanvasRef.current) {
         const rect = overlayCanvasRef.current.getBoundingClientRect();
         const dpr = window.devicePixelRatio || 1;
@@ -340,7 +376,7 @@ export default function GuidedFaceCapture({
     }
   }, [finishEnrollment, triggerBurst]);
 
-  // Apple Face ID 3D HUD Canvas Animation Loop
+  // Apple Face ID 3D HUD & Cyber Neural Mesh Canvas Animation Loop
   useEffect(() => {
     const canvas = overlayCanvasRef.current;
     if (!canvas) return;
@@ -373,19 +409,40 @@ export default function GuidedFaceCapture({
       const cursorAngle = cursorAngleRef.current;
       const isDone = phase.current === 'done';
 
-      // 1. Draw subtle landmark contours on face
+      // 1. Draw Intelligent Neural 3D Wireframe Mesh on Face
       const landmarks = landmarksRef.current;
       const v = video.current;
       if (landmarks && landmarks.length >= 68 && v && v.videoWidth) {
         ctx.save();
-        ctx.strokeStyle = 'rgba(52, 211, 153, 0.35)';
-        ctx.lineWidth = 1.2 * dpr;
-
-        // video is scaled via CSS scaleX(-1); coordinates are mapped from mirrored video
         const mapPt = (p: { x: number; y: number }) => ({
           x: (1 - p.x / v.videoWidth) * w,
           y: (p.y / v.videoHeight) * h,
         });
+
+        // 1a. Triangulated Cyber Shading Lines
+        ctx.strokeStyle = 'rgba(34, 211, 238, 0.16)';
+        ctx.lineWidth = 1 * dpr;
+
+        const triangulationPairs: [number, number][] = [
+          [0, 36], [16, 45], [27, 36], [27, 45], [30, 48], [30, 54],
+          [8, 48], [8, 54], [8, 57], [33, 51], [19, 37], [24, 44],
+          [21, 27], [22, 27], [36, 31], [45, 35]
+        ];
+
+        ctx.beginPath();
+        triangulationPairs.forEach(([a, b]) => {
+          if (landmarks[a] && landmarks[b]) {
+            const pa = mapPt(landmarks[a]);
+            const pb = mapPt(landmarks[b]);
+            ctx.moveTo(pa.x, pa.y);
+            ctx.lineTo(pb.x, pb.y);
+          }
+        });
+        ctx.stroke();
+
+        // 1b. Main Facial Contours (Jawline, Nose, Eyes, Brows, Lips)
+        ctx.strokeStyle = 'rgba(52, 211, 153, 0.45)';
+        ctx.lineWidth = 1.3 * dpr;
 
         // Jawline
         ctx.beginPath();
@@ -416,16 +473,48 @@ export default function GuidedFaceCapture({
           ctx.closePath();
           ctx.stroke();
         });
+
+        // Eyebrows
+        [[17, 18, 19, 20, 21], [22, 23, 24, 25, 26]].forEach((indices) => {
+          ctx.beginPath();
+          indices.forEach((idx, i) => {
+            const pt = mapPt(landmarks[idx]);
+            if (i === 0) ctx.moveTo(pt.x, pt.y);
+            else ctx.lineTo(pt.x, pt.y);
+          });
+          ctx.stroke();
+        });
+
+        // Lips
+        ctx.beginPath();
+        for (let i = 48; i <= 59; i++) {
+          const pt = mapPt(landmarks[i]);
+          if (i === 48) ctx.moveTo(pt.x, pt.y);
+          else ctx.lineTo(pt.x, pt.y);
+        }
+        ctx.closePath();
+        ctx.stroke();
+
+        // 1c. Glowing Key Landmark Nodes (Nose Tip, Pupils, Mouth Corners, Chin)
+        const keyNodes = [30, 36, 45, 48, 54, 8];
+        keyNodes.forEach((idx) => {
+          const pt = mapPt(landmarks[idx]);
+          ctx.fillStyle = idx === 30 ? '#22d3ee' : '#34d399';
+          ctx.beginPath();
+          ctx.arc(pt.x, pt.y, (idx === 30 ? 3 : 2) * dpr, 0, Math.PI * 2);
+          ctx.fill();
+        });
+
         ctx.restore();
       }
 
       // 2. Base Guide Ring (Circle)
       ctx.save();
       ctx.strokeStyle = isDone
-        ? 'rgba(52, 211, 153, 0.9)'
+        ? 'rgba(52, 211, 153, 0.95)'
         : activeTicks.size > 0
-        ? 'rgba(52, 211, 153, 0.5)'
-        : 'rgba(255, 255, 255, 0.18)';
+        ? 'rgba(52, 211, 153, 0.55)'
+        : 'rgba(255, 255, 255, 0.2)';
       ctx.lineWidth = 1.5 * dpr;
       ctx.beginPath();
       ctx.arc(cx, cy, r - 12 * dpr, 0, Math.PI * 2);
@@ -450,50 +539,47 @@ export default function GuidedFaceCapture({
         ctx.lineTo(x2, y2);
 
         if (isTickActive) {
-          ctx.shadowColor = 'rgba(52, 211, 153, 0.85)';
-          ctx.shadowBlur = 8 * dpr;
           ctx.strokeStyle = '#34d399';
-          ctx.lineWidth = 3.5 * dpr;
-          ctx.lineCap = 'round';
+          ctx.lineWidth = 2.8 * dpr;
+          ctx.shadowColor = 'rgba(52, 211, 153, 0.85)';
+          ctx.shadowBlur = 6 * dpr;
         } else {
-          ctx.shadowBlur = 0;
           ctx.strokeStyle = 'rgba(255, 255, 255, 0.22)';
-          ctx.lineWidth = 1.8 * dpr;
-          ctx.lineCap = 'butt';
+          ctx.lineWidth = 1.6 * dpr;
+          ctx.shadowBlur = 0;
         }
         ctx.stroke();
-        ctx.shadowBlur = 0;
       }
 
-      // 4. Cursor Beacon Indicator
+      // 4. Live Cursor Follower Pill
       if (cursorAngle !== null && !isDone) {
-        const beaconR = r;
-        const bx = cx + Math.cos(cursorAngle - Math.PI / 2) * beaconR;
-        const by = cy + Math.sin(cursorAngle - Math.PI / 2) * beaconR;
+        const tickAngle = cursorAngle - Math.PI / 2;
+        const pointerR = r + 2 * dpr;
+        const px = cx + Math.cos(tickAngle) * pointerR;
+        const py = cy + Math.sin(tickAngle) * pointerR;
 
         ctx.save();
-        ctx.shadowColor = 'rgba(34, 211, 238, 0.9)';
-        ctx.shadowBlur = 12 * dpr;
-        ctx.fillStyle = '#22d3ee';
+        ctx.fillStyle = '#6ee7b7';
+        ctx.shadowColor = 'rgba(52, 211, 153, 0.9)';
+        ctx.shadowBlur = 10 * dpr;
         ctx.beginPath();
-        ctx.arc(bx, by, 4.5 * dpr, 0, Math.PI * 2);
+        ctx.arc(px, py, 4.2 * dpr, 0, Math.PI * 2);
         ctx.fill();
         ctx.restore();
       }
 
-      // 5. Render Particle Bursts
-      const particles = particlesRef.current;
-      for (let i = particles.length - 1; i >= 0; i--) {
-        const p = particles[i];
+      // 5. Particles Physics Engine
+      for (let i = particlesRef.current.length - 1; i >= 0; i--) {
+        const p = particlesRef.current[i];
         p.x += p.vx;
         p.y += p.vy;
         p.vx *= 0.95;
         p.vy *= 0.95;
         p.life++;
-        p.alpha = 1 - p.life / p.maxLife;
+        p.alpha = Math.max(0, 1 - p.life / p.maxLife);
 
         if (p.life >= p.maxLife) {
-          particles.splice(i, 1);
+          particlesRef.current.splice(i, 1);
           continue;
         }
 
@@ -520,16 +606,13 @@ export default function GuidedFaceCapture({
     };
   }, [generation]);
 
-  // Main Detection & Capture Lifecycle
+  // Main Detection, AI Reasoning & Auto-Calibration Lifecycle Loop
   useEffect(() => {
     let disposed = false;
     let timer: ReturnType<typeof setTimeout>;
     let classifierTimer: ReturnType<typeof setTimeout>;
     let stableSince = 0;
     let previousTarget = '';
-    let closed = false;
-    let openBaseline = 0;
-    let blinked = false;
     let classifierStarted = false;
     let reference: number[] | null = null;
     let lastTickAngle = -1;
@@ -579,6 +662,7 @@ export default function GuidedFaceCapture({
         if (disposed) return;
 
         change('glasses');
+        speechCoach.speak('Please look straight ahead while we check for glasses.');
 
         const loop = async () => {
           if (disposed || phase.current === 'done') return;
@@ -587,6 +671,7 @@ export default function GuidedFaceCapture({
             const v = video.current;
             if (!v?.videoWidth || document.hidden) {
               stableSince = 0;
+              setHoldProgress(0);
               cursorAngleRef.current = null;
               landmarksRef.current = null;
               return;
@@ -602,7 +687,7 @@ export default function GuidedFaceCapture({
             if (!cCtx) return;
             cCtx.drawImage(v, 0, 0, targetW, targetH);
 
-            // Fast tracking: TinyFace detector (inputSize 224) + 68 landmarks (no descriptor during tracking!)
+            // Fast tracking: TinyFace detector (inputSize 224) + 68 landmarks
             let face = await faceapi
               .detectSingleFace(
                 canvas,
@@ -612,7 +697,7 @@ export default function GuidedFaceCapture({
 
             if (disposed) return;
 
-            // Fallback SSD MobileNet only if TinyFace didn't catch the face
+            // Fallback SSD MobileNet if TinyFace missed extreme angles
             if (!face) {
               try {
                 face = await faceapi
@@ -627,17 +712,20 @@ export default function GuidedFaceCapture({
             if (disposed) return;
 
             if (!face) {
-              setMessage('Center face inside the circle');
+              setMessage('Center your face inside the guidance ring');
               stableSince = 0;
+              setHoldProgress(0);
               cursorAngleRef.current = null;
               landmarksRef.current = null;
+              setAiReasoning(null);
               return;
             }
 
             const b = face.detection.box;
             if (b.width < 50) {
-              setMessage('Move a little closer to the camera');
+              setMessage('Move closer to the camera');
               stableSince = 0;
+              setHoldProgress(0);
               return;
             }
 
@@ -663,19 +751,44 @@ export default function GuidedFaceCapture({
 
             if (quality.brightness < 12 || quality.brightness > 248 || quality.sharpness < 5) {
               setMessage(
-                quality.sharpness < 5 ? 'Hold still while the camera focuses' : 'Adjust lighting'
+                quality.sharpness < 5 ? 'Hold still while the camera focuses' : 'Adjust room lighting'
               );
               stableSince = 0;
+              setHoldProgress(0);
               return;
             }
 
-            // Multi-criteria Quality Diagnosis
+            // Multi-criteria Quality Diagnosis & Eye Openness
             const ear = eyeOpenness(face.landmarks.positions);
             const diag = diagnoseFrameQuality(quality, ear);
             setQualityWarning(diag.userWarning);
 
-            const poseData = estimateFacePose(face.landmarks.positions);
+            const poseData = estimateFacePose(face.landmarks.positions, canvas.width);
             const currentPose = poseData.pose;
+
+            // Target pose determination
+            const needsBare = glasses.current && samples.current.length === 0;
+            const capturedMain = samples.current.filter(
+              (s) => s.glasses === (glasses.current ? 'with' : 'without')
+            ).length;
+            const target: Pose | null = 
+              phase.current === 'turn' 
+                ? challenge 
+                : phase.current === 'capture' 
+                ? (needsBare ? 'front' : (poses[capturedMain] || null))
+                : 'front';
+
+            // Advanced AI Reasoning Evaluation
+            const holdDuration = stableSince ? performance.now() - stableSince : 0;
+            const reasoning = evaluateSpatialReasoning(
+              face.landmarks.positions,
+              canvas.width,
+              target,
+              quality,
+              ear,
+              holdDuration
+            );
+            setAiReasoning(reasoning);
 
             // Update live landmarks for HUD wireframe
             landmarksRef.current = face.landmarks.positions;
@@ -697,7 +810,7 @@ export default function GuidedFaceCapture({
               pose: currentPose,
             };
 
-            // Helper to capture a sample frame (computes descriptor and enhanced portrait ONLY when locking in a pose)
+            // Helper to capture a sample frame (computes descriptor and enhanced portrait)
             const captureSample = async (targetPose: Pose, glassesState: 'with' | 'without') => {
               let descriptorArr: number[];
               try {
@@ -711,7 +824,9 @@ export default function GuidedFaceCapture({
 
               if (reference && Math.hypot(...descriptorArr.map((x, i) => x - reference![i])) > 0.85) {
                 setMessage('Please keep the same student in view');
+                speechCoach.speak('Please keep the same student in view.');
                 stableSince = 0;
+                setHoldProgress(0);
                 return false;
               }
               if (!reference && currentPose === 'front') reference = descriptorArr;
@@ -757,7 +872,7 @@ export default function GuidedFaceCapture({
               return true;
             };
 
-            // Phase: Glasses
+            // Phase: Glasses Detection
             if (phase.current === 'glasses') {
               setMessage('Look straight ahead while we check for glasses');
               if (!classifierStarted && currentPose === 'front') {
@@ -777,6 +892,9 @@ export default function GuidedFaceCapture({
                   if (!disposed) {
                     setSuggestion(e.data.glasses);
                     setClassifying(false);
+                    if (e.data.glasses) {
+                      speechCoach.speak('Glasses detected. Please confirm.');
+                    }
                   }
                   clearTimeout(classifierTimer);
                   worker.current?.terminate();
@@ -797,6 +915,7 @@ export default function GuidedFaceCapture({
 
             if (phase.current === 'replace-glasses') {
               setMessage('Put your glasses back on, then continue');
+              speechCoach.speak('Please put your glasses back on, then click continue.');
               return;
             }
 
@@ -804,56 +923,72 @@ export default function GuidedFaceCapture({
             if (phase.current === 'turn') {
               setActiveTargetPose(challenge);
               setMessage(directions[challenge]);
-              if (isPoseSatisfied(currentPose, challenge)) {
+              if (previousTarget !== challenge) {
+                previousTarget = challenge;
+                speechCoach.speak(spokenDirections[challenge] || 'Turn head.');
+              }
+
+              if (reasoning.targetSatisfied) {
                 if (!stableSince) stableSince = performance.now();
+                const progressPct = Math.min(100, Math.round(((performance.now() - stableSince) / 260) * 100));
+                setHoldProgress(progressPct);
+
                 if (performance.now() - stableSince > 260) {
                   stableSince = 0;
+                  setHoldProgress(0);
                   soundRef.current.playSectorComplete();
                   change('capture');
                 }
               } else {
                 stableSince = 0;
+                setHoldProgress(0);
               }
               return;
             }
 
-            // Capture every required view, including all 15 poses.
-            const needsBare = glasses.current && samples.current.length === 0;
-            const capturedMain = samples.current.filter(
-              (s) => s.glasses === (glasses.current ? 'with' : 'without')
-            ).length;
-            const target = needsBare ? 'front' : poses[capturedMain];
+            // Phase: Multi-angle Capture
             if (!target) return;
 
             setActiveTargetPose(target);
             setMessage((needsBare ? 'Without glasses: ' : '') + directions[target]);
 
-            if (!isPoseSatisfied(currentPose, target)) {
-              stableSince = 0;
-              return;
-            }
-
             if (previousTarget !== target) {
               previousTarget = target;
               stableSince = 0;
+              setHoldProgress(0);
+              speechCoach.speak(spokenDirections[target] || 'Look at the camera.');
+            }
+
+            // Check if spatial reasoning marks target as satisfied
+            if (!reasoning.targetSatisfied) {
+              stableSince = 0;
+              setHoldProgress(0);
+              return;
             }
 
             if (!stableSince) stableSince = performance.now();
-            if (performance.now() - stableSince < 260) return;
+            const elapsed = performance.now() - stableSince;
+            const holdPct = Math.min(100, Math.round((elapsed / 260) * 100));
+            setHoldProgress(holdPct);
 
-            // Pose held stably: compute descriptor & extract high-res enhanced portrait
+            if (elapsed < 260) return;
+
+            // Target held stably: execute snapshot capture
             const ok = await captureSample(target, needsBare || !glasses.current ? 'without' : 'with');
             if (!ok) return;
 
             stableSince = 0;
+            setHoldProgress(0);
             setProgress(samples.current.length);
 
-            // Audio & particle feedback on sector complete
+            // Audio & Particle Burst
             soundRef.current.playSectorComplete();
+            speechCoach.speak(samples.current.length % 3 === 0 ? 'Great alignment!' : 'Captured.');
+
             if (overlayCanvasRef.current) {
               const rect = overlayCanvasRef.current.getBoundingClientRect();
               const dpr = window.devicePixelRatio || 1;
-              triggerBurst((rect.width * dpr) / 2, (rect.height * dpr) / 2, 22);
+              triggerBurst((rect.width * dpr) / 2, (rect.height * dpr) / 2, 24);
             }
             if ('vibrate' in navigator) {
               try {
@@ -872,12 +1007,13 @@ export default function GuidedFaceCapture({
             }
           } catch {
             if (!disposed) {
-              setMessage('Camera analysis paused. Hold still while we retry.');
+              setMessage('Camera analysis paused. Hold still while we refocus.');
               stableSince = 0;
+              setHoldProgress(0);
             }
           } finally {
             if (!disposed && (phase.current as Phase) !== 'done') {
-              timer = setTimeout(loop, 90);
+              timer = setTimeout(loop, 80);
             }
           }
         };
@@ -905,20 +1041,81 @@ export default function GuidedFaceCapture({
   }, [challenge, generation, onComplete, triggerBurst]);
 
   return (
-    <section className="faceid-stage" aria-label="Guided multi-angle face capture">
-      <div className="faceid-viewport">
-        {/* Circular camera mask with mirrored video */}
-        <div className="faceid-circle-mask">
+    <section className="faceid-stage relative max-w-xl mx-auto" aria-label="Intelligent multi-angle face capture">
+      {/* Upper Mode Pill Strip */}
+      <div className="flex items-center justify-between w-full max-w-md mx-auto mb-2 px-1">
+        <div className="flex items-center gap-1.5">
+          <Badge variant="outline" className="text-[11px] font-bold border-emerald-500/30 bg-emerald-500/10 text-emerald-300 gap-1">
+            <ScanFace size={12} className="text-emerald-400" />
+            Neural 3D TrueDepth
+          </Badge>
+          {aiReasoning?.adaptiveAssisted && (
+            <Badge variant="outline" className="text-[10px] font-bold border-cyan-500/30 bg-cyan-500/10 text-cyan-300 animate-pulse gap-1">
+              <Zap size={10} className="text-cyan-400" />
+              Adaptive Assist
+            </Badge>
+          )}
+        </div>
+
+        <div className="flex items-center gap-1">
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            onClick={toggleVoiceCoach}
+            title={voiceCoachActive ? 'Mute AI Voice Coach' : 'Enable AI Voice Coach'}
+            className="h-7 px-2 text-xs rounded-full text-slate-300 hover:text-white bg-white/5 border border-white/10 gap-1.5"
+          >
+            {voiceCoachActive ? (
+              <>
+                <Mic size={12} className="text-emerald-400" />
+                <span className="hidden xs:inline text-[10px] font-semibold text-emerald-300">Voice Coach</span>
+              </>
+            ) : (
+              <>
+                <MicOff size={12} className="text-slate-400" />
+                <span className="hidden xs:inline text-[10px] font-medium text-slate-400">Muted</span>
+              </>
+            )}
+          </Button>
+
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            onClick={toggleSound}
+            aria-label={soundMuted ? 'Unmute sound effects' : 'Mute sound effects'}
+            className="h-7 w-7 p-0 rounded-full text-slate-400 hover:text-white bg-white/5 border border-white/10"
+          >
+            {soundMuted ? <VolumeX size={13} /> : <Volume2 size={13} className="text-emerald-400" />}
+          </Button>
+        </div>
+      </div>
+
+      {/* Main Circular Camera Viewport */}
+      <div className="faceid-viewport relative mx-auto">
+        <div className="faceid-circle-mask relative">
           <video ref={video} muted playsInline autoPlay className="faceid-video" />
           {stage === 'prepare' && (
             <div className="faceid-loading-scrim">
               <Camera size={34} className="animate-pulse text-emerald-400" />
-              <span className="text-xs font-medium tracking-wide">Preparing guided capture…</span>
+              <span className="text-xs font-medium tracking-wide">Starting neural capture…</span>
             </div>
+          )}
+
+          {/* Hold Steady Ring Pulse */}
+          {holdProgress > 0 && (
+            <div 
+              className="absolute inset-0 rounded-full border-4 border-emerald-400 pointer-events-none transition-all duration-150 animate-pulse"
+              style={{
+                boxShadow: `0 0 25px rgba(52, 211, 153, ${holdProgress / 100})`,
+                opacity: holdProgress / 100
+              }}
+            />
           )}
         </div>
 
-        {/* Visual In-Viewport Floating Directional Beacons */}
+        {/* Directional Beacons Around Circle */}
         {activeTargetPose === 'left' && (
           <div className="faceid-viewport-arrow pos-left" title="Turn Left">
             <ArrowLeft size={24} className="animate-pulse" />
@@ -939,74 +1136,107 @@ export default function GuidedFaceCapture({
             <ArrowDown size={24} className="animate-pulse" />
           </div>
         )}
-        {/* Apple Face ID 36-tick HUD & Particle Canvas */}
+
+        {/* Apple Face ID 36-tick HUD & Particle Overlay Canvas */}
         <canvas ref={overlayCanvasRef} className="faceid-canvas-overlay" />
       </div>
 
-      {/* AI Visual 3D Action Guidance with Animated Head Model */}
-      {(stage === 'capture' || stage === 'turn') && (
-        <div className="faceid-action-guide">
-          <div className="faceid-head-avatar-wrapper">
-            <div
-              className={`faceid-head-model ${
-                activeTargetPose ? `pose-${activeTargetPose}` : 'pose-front'
-              }`}
-            >
-              <div className="faceid-avatar-face">
-                <div className="faceid-avatar-eye-left" />
-                <div className="faceid-avatar-eye-right" />
-                <div className="faceid-avatar-nose" />
-                <div className="faceid-avatar-smile" />
+      {/* INTELLIGENT AI REASONING & TELEMETRY CARD */}
+      {stage !== 'done' && (
+        <motion.div 
+          initial={{ opacity: 0, y: 10 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="mt-3.5 p-3.5 sm:p-4 rounded-3xl bg-slate-900/80 backdrop-blur-xl border border-white/10 shadow-xl space-y-3 max-w-md mx-auto text-left"
+        >
+          {/* Header row: Primary Guidance & Alignment */}
+          <div className="flex items-start justify-between gap-2">
+            <div className="min-w-0 flex-1">
+              <div className="flex items-center gap-1.5 text-[11px] font-bold text-emerald-400 uppercase tracking-wider">
+                <Activity size={13} className="animate-pulse text-emerald-400" />
+                <span>AI Live Guidance</span>
               </div>
+              <p className="text-sm sm:text-base font-bold text-white mt-0.5 truncate">
+                {aiReasoning?.guidanceReasoning || failure || message}
+              </p>
             </div>
 
-            {/* Glowing directional arrow beacons around head avatar */}
-            {activeTargetPose === 'left' && (
-              <div className="faceid-arrow-beacon dir-left">
-                <ArrowLeft size={18} />
-              </div>
-            )}
-            {activeTargetPose === 'right' && (
-              <div className="faceid-arrow-beacon dir-right">
-                <ArrowRight size={18} />
-              </div>
-            )}
-            {activeTargetPose === 'up' && (
-              <div className="faceid-arrow-beacon dir-up">
-                <ArrowUp size={18} />
-              </div>
-            )}
-            {activeTargetPose === 'down' && (
-              <div className="faceid-arrow-beacon dir-down">
-                <ArrowDown size={18} />
-              </div>
+            {/* Target Alignment Score Pill */}
+            <div className="flex flex-col items-end shrink-0">
+              <span className="text-[10px] font-mono text-white/60">Pose Match</span>
+              <span className={`text-sm font-black font-mono ${
+                (aiReasoning?.targetAlignment || 0) >= 80 ? 'text-emerald-400' : 'text-amber-400'
+              }`}>
+                {aiReasoning?.targetAlignment || 0}%
+              </span>
+            </div>
+          </div>
+
+          {/* Smooth Target Alignment & Hold Progress Bar */}
+          <div className="space-y-1">
+            <div className="h-2 w-full bg-white/10 rounded-full overflow-hidden relative">
+              <div
+                className={`h-full transition-all duration-200 rounded-full ${
+                  holdProgress > 0 
+                    ? 'bg-gradient-to-r from-emerald-400 to-teal-300' 
+                    : 'bg-gradient-to-r from-cyan-500 to-emerald-500'
+                }`}
+                style={{ width: `${holdProgress > 0 ? holdProgress : (aiReasoning?.targetAlignment || 0)}%` }}
+              />
+            </div>
+            {holdProgress > 0 && (
+              <p className="text-[10px] text-emerald-300 font-bold font-mono text-right animate-pulse">
+                Holding steady… {holdProgress}%
+              </p>
             )}
           </div>
 
-          <div className="text-left">
-            <p className="text-xs font-semibold uppercase tracking-wider text-emerald-400">
-              AI Action Visual
-            </p>
-            <p className="text-sm font-medium text-slate-200">
-              {activeTargetPose === 'left' && 'Follow arrow: gently face left (15°)'}
-              {activeTargetPose === 'left-deep' && 'Follow arrow: turn more left (30°)'}
-              {activeTargetPose === 'right' && 'Follow arrow: gently face right (15°)'}
-              {activeTargetPose === 'right-deep' && 'Follow arrow: turn more right (30°)'}
-              {activeTargetPose === 'up' && 'Follow arrow: lift chin up slightly'}
-              {activeTargetPose === 'down' && 'Follow arrow: lower chin slightly'}
-              {activeTargetPose === 'front-smile' && 'Smile naturally for identification 😊'}
-              {activeTargetPose === 'front-up' && 'Chin slightly raised ⬆️'}
-              {activeTargetPose === 'front-down' && 'Chin slightly lowered ⬇️'}
-              {activeTargetPose === 'up-left' && 'Angle chin up and to the left ↖️'}
-              {activeTargetPose === 'up-right' && 'Angle chin up and to the right ↗️'}
-              {activeTargetPose === 'down-left' && 'Angle chin down and to the left ↙️'}
-              {activeTargetPose === 'down-right' && 'Angle chin down and to the right ↘️'}
-              {activeTargetPose === 'master-hd' && 'Hold still for calibrated master portrait 🌟'}
-              {activeTargetPose === 'front' && 'Center position: look straight ahead'}
-              {!activeTargetPose && 'Calibrating facial landmarks…'}
-            </p>
+          {/* Realtime Spatial Reasoning Telemetry Chips */}
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 pt-1">
+            {/* Distance */}
+            <div className="p-2 rounded-xl bg-white/5 border border-white/5 flex flex-col">
+              <span className="text-[10px] text-white/50 flex items-center gap-1">
+                <Compass size={10} className="text-cyan-400" /> Distance
+              </span>
+              <span className={`text-[11px] font-bold mt-0.5 truncate ${
+                aiReasoning?.distanceStatus === 'optimal' ? 'text-emerald-300' : 'text-amber-300'
+              }`}>
+                {aiReasoning?.distanceStatus === 'optimal' ? 'Optimal (~50cm)' : aiReasoning?.distanceStatus === 'too_far' ? 'Move closer' : 'Back up'}
+              </span>
+            </div>
+
+            {/* Lighting */}
+            <div className="p-2 rounded-xl bg-white/5 border border-white/5 flex flex-col">
+              <span className="text-[10px] text-white/50 flex items-center gap-1">
+                <Lightbulb size={10} className="text-amber-400" /> Lighting
+              </span>
+              <span className={`text-[11px] font-bold mt-0.5 truncate ${
+                aiReasoning?.lightingStatus === 'balanced' ? 'text-emerald-300' : 'text-amber-300'
+              }`}>
+                {aiReasoning?.lightingStatus === 'balanced' ? `${aiReasoning.lightingSymmetry}% symmetry` : 'Shadows'}
+              </span>
+            </div>
+
+            {/* Live Euler Angles */}
+            <div className="p-2 rounded-xl bg-white/5 border border-white/5 flex flex-col">
+              <span className="text-[10px] text-white/50 flex items-center gap-1">
+                <ScanFace size={10} className="text-emerald-400" /> 3D Angles
+              </span>
+              <span className="text-[11px] font-mono font-bold text-white mt-0.5 truncate">
+                Y:{aiReasoning?.angles?.yaw ?? 0}° P:{aiReasoning?.angles?.pitch ?? 0}°
+              </span>
+            </div>
+
+            {/* Liveness / Expression */}
+            <div className="p-2 rounded-xl bg-white/5 border border-white/5 flex flex-col">
+              <span className="text-[10px] text-white/50 flex items-center gap-1">
+                <Smile size={10} className="text-purple-400" /> Expression
+              </span>
+              <span className="text-[11px] font-bold text-purple-300 mt-0.5 truncate">
+                {(aiReasoning?.liveness?.smileRatio ?? 0) > 0.70 ? 'Smiling 😊' : 'Neutral'}
+              </span>
+            </div>
           </div>
-        </div>
+        </motion.div>
       )}
 
       {/* Real-time Quality & Blur Diagnostics Alert Banner */}
@@ -1021,31 +1251,13 @@ export default function GuidedFaceCapture({
         </motion.div>
       )}
 
-      {/* Dynamic guidance chip */}
-      <motion.div
-        key={message}
-        initial={reduced ? false : { opacity: 0, y: 6 }}
-        animate={{ opacity: 1, y: 0 }}
-        className="text-center min-h-16 mt-3"
-      >
-        <p className="text-lg font-semibold tracking-tight" aria-live="polite">
-          {failure || message}
-        </p>
-        <div className="flex items-center justify-center gap-3 mt-2">
-          <span className="faceid-chip active">
-            <Sparkles size={13} className="text-emerald-400" />
-            {progress} of {totalRequired} views calibrated
-          </span>
-          <button
-            type="button"
-            onClick={toggleSound}
-            aria-label={soundMuted ? 'Unmute sounds' : 'Mute sounds'}
-            className="p-1.5 rounded-full text-slate-400 hover:text-slate-200 transition-colors"
-          >
-            {soundMuted ? <VolumeX size={15} /> : <Volume2 size={15} />}
-          </button>
-        </div>
-      </motion.div>
+      {/* Progress Chip */}
+      <div className="flex items-center justify-center gap-3 mt-3">
+        <span className="faceid-chip active text-xs font-bold">
+          <Sparkles size={13} className="text-emerald-400" />
+          {progress} of {totalRequired} angles calibrated
+        </span>
+      </div>
 
       {/* Manual Override Snap Button */}
       {stage !== 'done' && (
@@ -1053,31 +1265,31 @@ export default function GuidedFaceCapture({
           <Button
             type="button"
             onClick={() => void handleManualCapture()}
-            className="w-full bg-emerald-600/90 hover:bg-emerald-500 text-white font-medium text-xs sm:text-sm py-2.5 px-3 rounded-xl border border-emerald-400/30 shadow-md flex items-center justify-center gap-1.5 active:scale-95 transition-all"
+            className="w-full bg-emerald-600/90 hover:bg-emerald-500 text-white font-bold text-xs sm:text-sm py-2.5 px-3 rounded-2xl border border-emerald-400/30 shadow-md flex items-center justify-center gap-1.5 active:scale-95 transition-all"
             title="Manually capture current view"
           >
             <Camera size={15} />
-            <span>📸 Snap Shot ({Math.min(progress + 1, totalRequired)}/{totalRequired})</span>
+            <span>📸 Snap Angle ({Math.min(progress + 1, totalRequired)}/{totalRequired})</span>
           </Button>
         </div>
       )}
 
       {/* Glasses Confirmation Prompt */}
       {stage === 'glasses' && (
-        <div className="enrollment-inset mt-4 w-full">
-          <Glasses className="mx-auto mb-2 text-emerald-300" />
-          <p className="text-center text-sm mb-3">
+        <div className="enrollment-inset mt-4 w-full max-w-md mx-auto p-4 rounded-3xl bg-slate-900/90 border border-white/10">
+          <Glasses className="mx-auto mb-2 text-emerald-300 h-6 w-6" />
+          <p className="text-center text-sm mb-3 text-white/90 font-medium">
             {classifying
               ? 'Analyzing for glasses… You can also confirm directly below.'
               : suggestion === null
-              ? 'Does the student normally wear glasses?'
+              ? 'Does the student wear glasses?'
               : suggestion
               ? 'Glasses detected. Please confirm.'
               : 'No glasses detected. Please confirm.'}
           </p>
           <div className="flex gap-3">
             <Button
-              className="flex-1 enrollment-primary"
+              className="flex-1 enrollment-primary rounded-xl"
               onClick={() => {
                 glasses.current = true;
                 worker.current?.terminate();
@@ -1088,7 +1300,7 @@ export default function GuidedFaceCapture({
             </Button>
             <Button
               variant="outline"
-              className="flex-1"
+              className="flex-1 rounded-xl text-white border-white/20 hover:bg-white/10"
               onClick={() => {
                 glasses.current = false;
                 worker.current?.terminate();
@@ -1103,29 +1315,34 @@ export default function GuidedFaceCapture({
 
       {/* Replace Glasses Step */}
       {stage === 'replace-glasses' && (
-        <Button className="w-full mt-4 enrollment-primary" onClick={() => change('capture')}>
-          <Check className="mr-2 h-4 w-4" />
-          Glasses are back on — continue
-        </Button>
+        <div className="w-full max-w-md mx-auto mt-4">
+          <Button className="w-full enrollment-primary rounded-xl font-bold" onClick={() => change('capture')}>
+            <Check className="mr-2 h-4 w-4" />
+            Glasses are back on — continue
+          </Button>
+        </div>
       )}
 
       {/* Failure retry */}
       {failure && (
-        <Button className="w-full mt-4" variant="outline" onClick={() => setGeneration((v) => v + 1)}>
-          <RotateCcw className="mr-2 h-4 w-4" />
-          Retry camera
-        </Button>
+        <div className="w-full max-w-md mx-auto mt-4">
+          <Button className="w-full rounded-xl" variant="outline" onClick={() => setGeneration((v) => v + 1)}>
+            <RotateCcw className="mr-2 h-4 w-4" />
+            Retry camera
+          </Button>
+        </div>
       )}
 
       {/* Footer controls */}
-      <div className="flex items-center justify-between w-full mt-5 text-xs text-slate-400">
-        <span className="flex items-center gap-2">
-          <ScanFace size={15} className="text-emerald-400" />
-          Guided multi-angle face capture
+      <div className="flex items-center justify-between w-full max-w-md mx-auto mt-5 text-xs text-slate-400 px-1">
+        <span className="flex items-center gap-2 font-medium">
+          <ShieldCheck size={15} className="text-emerald-400" />
+          Private Biometric Calibration
         </span>
         <Button
           variant="ghost"
           size="sm"
+          className="text-white/60 hover:text-white"
           onClick={() => {
             stop();
             onCancel();
