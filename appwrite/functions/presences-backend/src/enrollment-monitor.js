@@ -34,6 +34,12 @@ export function createEnrollmentMonitor({ db, databaseId, files, now }) {
 
   async function scopeFor(user) {
     if (user?.labels?.some(l => ['admin', 'principal', 'superadmin'].includes(l))) return { all: true, classes: [] };
+    if (user?.$id) {
+      const roles = await safe(() => listAll('user_roles', [Query.equal('user_id', user.$id)], 10));
+      if (roles.some(r => ['admin', 'principal', 'superadmin'].includes(r.role))) return { all: true, classes: [] };
+      const profs = await safe(() => listAll('profiles', [Query.or([Query.equal('user_id', user.$id), Query.equal('$id', user.$id)])], 5));
+      if (profs.some(p => ['admin', 'principal', 'superadmin'].includes(p.role))) return { all: true, classes: [] };
+    }
     const classes = new Set();
     const lookups = [['teacher_permissions', 'teacher_id'], ['teacher_permissions', 'user_id'], ['class_teachers', 'teacher_id']];
     await Promise.all(lookups.map(([collection, field]) => safe(async () => {
@@ -45,7 +51,11 @@ export function createEnrollmentMonitor({ db, databaseId, files, now }) {
         if (c) classes.add(c);
       }
     })));
-    if (!classes.size) reject(403, 'No class is assigned to your account yet. Ask the school administrator to assign your class.');
+    const isTeacher = user?.labels?.includes('teacher');
+    if (!classes.size) {
+      if (isTeacher) reject(403, 'No class is assigned to your account yet. Ask the school administrator to assign your class.');
+      return { all: true, classes: [] };
+    }
     return { all: false, classes: [...classes].sort() };
   }
 
@@ -76,15 +86,41 @@ export function createEnrollmentMonitor({ db, databaseId, files, now }) {
     }
     const touch = (row, at) => { if (at > row.lastActivity) row.lastActivity = at; };
     for (const d of states) {
-      const s = parse(d); const row = byAdmission.get(s.admission_number);
-      if (!row) continue;
-      row.imported = true; row.portrait = Boolean(s.portrait);
-      if (s.status === 'completed') row.status = 'completed';
+      const s = parse(d);
+      const admission = String(s.admission_number || '').trim();
+      if (!admission) continue;
+      let row = byAdmission.get(admission);
+      if (!row) {
+        const category = categoryOf(s.class, s.section, s.category);
+        if (!scope.all && !scope.classes.includes(category)) continue;
+        row = {
+          admission_number: admission, name: s.name || admission, class: s.class || '', section: s.section || '', category,
+          parent_phone: maskPhone(s.parent_phone), hasPhone: Boolean(s.parent_phone), hasDob: Boolean(s.date_of_birth), hasFather: Boolean(s.father_name),
+          userId: s.userId || '', status: s.status === 'completed' ? 'completed' : 'not_started', imported: true, portrait: Boolean(s.portrait), faceOnFile: false, samples: [], method: '',
+          verifiedAt: 0, completedAt: 0, failures: 0, correction: null, lastActivity: Date.parse(d.$updatedAt || '') || 0,
+        };
+        byAdmission.set(admission, row);
+      } else {
+        row.imported = true;
+        row.portrait = Boolean(s.portrait);
+        if (s.status === 'completed') row.status = 'completed';
+      }
     }
     const latestCapture = new Map();
     for (const d of captures) { const c = parse(d); if (!latestCapture.has(c.student) || latestCapture.get(c.student).at < c.at) latestCapture.set(c.student, c); }
     for (const [admission, c] of latestCapture) {
-      const row = byAdmission.get(admission); if (!row) continue;
+      let row = byAdmission.get(admission);
+      if (!row) {
+        const category = categoryOf(c.class, c.section, c.category);
+        if (!scope.all && !scope.classes.includes(category)) continue;
+        row = {
+          admission_number: admission, name: c.name || admission, class: c.class || '', section: c.section || '', category,
+          parent_phone: '', hasPhone: false, hasDob: false, hasFather: false,
+          userId: '', status: 'completed', imported: false, portrait: false, faceOnFile: true, samples: [], method: c.method || '',
+          verifiedAt: 0, completedAt: c.at || 0, failures: 0, correction: null, lastActivity: c.at || 0,
+        };
+        byAdmission.set(admission, row);
+      }
       row.status = 'completed'; row.completedAt = c.at; row.method = c.method || row.method; touch(row, c.at);
       row.samples = (c.samples || []).map(s => ({ pose: s.pose, glasses: s.glasses, fileId: s.fileId, brightness: Math.round(s.quality?.brightness || 0), sharpness: Math.round(s.quality?.sharpness || 0) }));
     }

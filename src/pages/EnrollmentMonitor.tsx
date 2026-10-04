@@ -1363,7 +1363,18 @@ export default function EnrollmentMonitor() {
                             <div className="flex items-start justify-between gap-2">
                               <div className="flex items-center gap-2.5 sm:gap-3 min-w-0 flex-1">
                                 <div className="h-10 w-10 sm:h-11 sm:w-11 rounded-xl sm:rounded-2xl bg-gradient-to-br from-white/20 to-white/5 border border-white/15 flex items-center justify-center font-black text-xs sm:text-sm text-white overflow-hidden shrink-0 shadow-inner">
-                                  {s.name.slice(0, 2).toUpperCase()}
+                                  {s.avatarUrl ? (
+                                    <img
+                                      src={s.avatarUrl}
+                                      alt={s.name}
+                                      className="h-full w-full object-cover"
+                                      onError={(e) => {
+                                        (e.target as HTMLElement).style.display = 'none';
+                                      }}
+                                    />
+                                  ) : (
+                                    s.name.slice(0, 2).toUpperCase()
+                                  )}
                                 </div>
                                 <div className="min-w-0 flex-1">
                                   <h4 className="text-sm font-extrabold text-white truncate group-hover:text-emerald-300 transition-colors">

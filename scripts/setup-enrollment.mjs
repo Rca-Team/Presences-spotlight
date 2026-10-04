@@ -8,6 +8,12 @@ if (!apply) {
   console.log('Plan: create private student_enrollment state and enrollment-private JPEG storage; deploy public presences-enrollment with action-level authorization. No existing collection permissions change. Production requires the separate access audit and SMS setup in appwrite/ENROLLMENT.md.');
   process.exit(0);
 }
+import fs from 'node:fs';
+if (!process.env.APPWRITE_API_KEY && fs.existsSync('.env.local')) {
+  const envText = fs.readFileSync('.env.local', 'utf8');
+  const match = envText.match(/APPWRITE_API_KEY=([^\r\n]+)/);
+  if (match) process.env.APPWRITE_API_KEY = match[1].trim();
+}
 if (!process.env.APPWRITE_API_KEY) throw new Error('Provide APPWRITE_API_KEY through the environment.');
 const client = new Client().setEndpoint(process.env.APPWRITE_ENDPOINT || 'https://sgp.cloud.appwrite.io/v1').setProject(process.env.APPWRITE_PROJECT_ID || '6abfd34f000604fcf074').setKey(process.env.APPWRITE_API_KEY);
 const db = new Databases(client), storage = new Storage(client), functions = new Functions(client);
