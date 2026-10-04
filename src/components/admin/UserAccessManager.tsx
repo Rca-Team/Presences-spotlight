@@ -44,6 +44,7 @@ import {
   Mail,
   Clock,
   Shield,
+  UserPlus,
 } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
@@ -64,7 +65,7 @@ import {
 } from '@/utils/teacherAccess';
 import { motion } from 'framer-motion';
 
-type Role = 'user' | 'principal' | 'admin' | 'teacher' | 'student' | 'staff' | string;
+type Role = 'user' | 'principal' | 'admin' | 'teacher' | 'enroller' | 'student_coordinator' | 'student' | 'staff' | string;
 
 interface RegisteredUser {
   id: string;
@@ -84,6 +85,8 @@ const ROLE_CONFIG: Record<string, { label: string; icon: React.ElementType; colo
   admin: { label: 'Admin', icon: Users, color: 'text-yellow-600 bg-yellow-500/10' },
   principal: { label: 'Principal', icon: ShieldCheck, color: 'text-purple-600 bg-purple-500/10' },
   teacher: { label: 'Teacher', icon: GraduationCap, color: 'text-blue-600 bg-blue-500/10' },
+  enroller: { label: 'Student Coordinator (Enroller)', icon: UserPlus, color: 'text-cyan-600 bg-cyan-500/10 border-cyan-500/20' },
+  student_coordinator: { label: 'Student Coordinator (Enroller)', icon: UserPlus, color: 'text-cyan-600 bg-cyan-500/10 border-cyan-500/20' },
   student: { label: 'Student', icon: Users, color: 'text-emerald-600 bg-emerald-500/10' },
   staff: { label: 'Staff', icon: Users, color: 'text-amber-600 bg-amber-500/10' },
   user: { label: 'User', icon: Users, color: 'text-muted-foreground bg-muted' },
@@ -159,6 +162,7 @@ const UserAccessManager: React.FC = () => {
   const [autoAllocPlan, setAutoAllocPlan] = useState<Array<{ slot: ClassMatrixSlot; teacher: { id: string; name: string; email?: string } }>>([]);
   const [isApplyingAlloc, setIsApplyingAlloc] = useState(false);
 
+  const [tAccountType, setTAccountType] = useState<'teacher' | 'enroller'>('enroller');
   const [tEmail, setTEmail] = useState('');
   const [tPass, setTPass] = useState('');
   const [tName, setTName] = useState('');
@@ -237,7 +241,7 @@ const UserAccessManager: React.FC = () => {
       // d. Profiles with verified staff roles or staff login emails
       (profilesRes.data || []).forEach((p: any) => {
         const role = String(p.role || '').toLowerCase();
-        const isStaffRole = ['admin', 'principal', 'teacher', 'staff', 'guard', 'security'].includes(role);
+        const isStaffRole = ['admin', 'principal', 'teacher', 'enroller', 'student_coordinator', 'staff', 'guard', 'security'].includes(role);
         const hasRealStaffEmail = Boolean(p.email && p.email.includes('@') && !p.admission_number && role !== 'student');
         if (p.user_id && (isStaffRole || hasRealStaffEmail)) {
           authenticUserIds.add(p.user_id);
@@ -285,8 +289,8 @@ const UserAccessManager: React.FC = () => {
         });
       }
 
-      // Sort: Admins first, then Principals, Teachers, Staff, Users
-      const roleOrder: Record<string, number> = { admin: 1, principal: 2, teacher: 3, staff: 4, guard: 5, user: 6 };
+      // Sort: Admins first, then Principals, Teachers, Enrollers, Staff, Users
+      const roleOrder: Record<string, number> = { admin: 1, principal: 2, teacher: 3, enroller: 4, student_coordinator: 4, staff: 5, guard: 6, user: 7 };
       processedUsers.sort((a, b) => {
         const orderA = roleOrder[a.role.toLowerCase()] || 99;
         const orderB = roleOrder[b.role.toLowerCase()] || 99;
@@ -365,8 +369,9 @@ const UserAccessManager: React.FC = () => {
     try {
       await supabase.from('user_roles').delete().eq('user_id', selectedUser.user_id);
       await supabase.from('user_roles').insert({ user_id: selectedUser.user_id, role: editRole });
+      await supabase.from('profiles').update({ role: editRole }).eq('user_id', selectedUser.user_id);
       await saveTeacherCategories(selectedUser.user_id, editCategories, editPermissions);
-      toast({ title: 'Success', description: 'Access updated' });
+      toast({ title: 'Success', description: 'Access updated successfully' });
       setEditDialogOpen(false);
       loadData();
     } catch (e: any) { toast({ title: 'Error', description: e.message, variant: 'destructive' }); }
@@ -376,14 +381,36 @@ const UserAccessManager: React.FC = () => {
   const handleCreateTeacher = async () => {
     setTCreating(true);
     try {
+      const isEnrollerRole = tAccountType === 'enroller';
       const { data, error } = await supabase.functions.invoke('admin-create-teacher', {
-        body: { email: tEmail, password: tPass, name: tName, classes: [`${tClass}-${tSection}`] },
+        body: {
+          email: tEmail,
+          password: tPass,
+          name: tName,
+          classes: isEnrollerRole ? [] : [`${tClass}-${tSection}`],
+          role: isEnrollerRole ? 'enroller' : 'teacher',
+        },
       });
       if (error || (data as any)?.error) throw new Error((data as any)?.error || error);
-      setCreatedCredentials({ email: tEmail, pass: tPass, class: `${tClass}-${tSection}` });
+
+      const createdUserId = (data as any)?.user?.id || (data as any)?.id;
+      if (isEnrollerRole && createdUserId) {
+        await supabase.from('user_roles').delete().eq('user_id', createdUserId);
+        await supabase.from('user_roles').insert({ user_id: createdUserId, role: 'enroller' });
+        await supabase.from('profiles').update({ role: 'enroller' }).eq('user_id', createdUserId);
+      }
+
+      setCreatedCredentials({
+        email: tEmail,
+        pass: tPass,
+        class: isEnrollerRole ? 'Student Coordinator (Manual Register & Attendance Only)' : `${tClass}-${tSection}`,
+      });
       loadData();
-    } catch (e: any) { toast({ title: 'Error', description: e.message, variant: 'destructive' }); }
-    finally { setTCreating(false); }
+    } catch (e: any) {
+      toast({ title: 'Error', description: e.message, variant: 'destructive' });
+    } finally {
+      setTCreating(false);
+    }
   };
 
   const handleAssignTeacherToSlot = async () => {
@@ -608,7 +635,7 @@ const UserAccessManager: React.FC = () => {
             <Users className="h-3.5 w-3.5" /> All System Roles ({users.length})
           </TabsTrigger>
           <TabsTrigger value="create" className="rounded-xl font-bold text-xs gap-1.5">
-            <Plus className="h-3.5 w-3.5" /> Provision Teacher
+            <Plus className="h-3.5 w-3.5" /> Provision Account
           </TabsTrigger>
         </TabsList>
 
@@ -857,6 +884,7 @@ const UserAccessManager: React.FC = () => {
                       <SelectItem value="admin">Admins</SelectItem>
                       <SelectItem value="principal">Principals</SelectItem>
                       <SelectItem value="teacher">Teachers</SelectItem>
+                      <SelectItem value="enroller">Enrollers / Coordinators</SelectItem>
                       <SelectItem value="staff">Staff</SelectItem>
                       <SelectItem value="user">Users</SelectItem>
                     </SelectContent>
@@ -936,23 +964,64 @@ const UserAccessManager: React.FC = () => {
           </Card>
         </TabsContent>
 
-        {/* TAB 4: PROVISION TEACHER */}
+        {/* TAB 4: PROVISION ACCOUNT */}
         <TabsContent value="create" className="space-y-4">
           <Card className="rounded-2xl border shadow-sm max-w-2xl mx-auto">
             <CardHeader>
               <CardTitle className="text-base font-bold flex items-center gap-2">
-                <GraduationCap className="h-5 w-5 text-primary" /> Provision New Teacher Account
+                <Plus className="h-5 w-5 text-primary" /> Provision New Staff or Coordinator
               </CardTitle>
               <CardDescription>
-                Automatically creates login credentials, registers teacher role, and binds class in-charge permissions.
+                Create authenticated credentials and configure operational roles.
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
+              {/* Account Role Selector */}
+              <div className="grid grid-cols-2 gap-2 p-1 bg-muted/60 dark:bg-black/30 rounded-xl border border-border/50">
+                <button
+                  type="button"
+                  onClick={() => setTAccountType('enroller')}
+                  className={`flex items-center justify-center gap-1.5 py-2 px-3 text-xs font-bold rounded-lg transition-all ${
+                    tAccountType === 'enroller'
+                      ? 'bg-gradient-to-r from-cyan-600 to-teal-600 text-white shadow-sm'
+                      : 'text-muted-foreground hover:text-foreground'
+                  }`}
+                >
+                  <UserPlus className="w-3.5 h-3.5" />
+                  Student Coordinator (Enroller)
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setTAccountType('teacher')}
+                  className={`flex items-center justify-center gap-1.5 py-2 px-3 text-xs font-bold rounded-lg transition-all ${
+                    tAccountType === 'teacher'
+                      ? 'bg-gradient-to-r from-blue-600 to-indigo-600 text-white shadow-sm'
+                      : 'text-muted-foreground hover:text-foreground'
+                  }`}
+                >
+                  <GraduationCap className="w-3.5 h-3.5" />
+                  Teacher / Class In-Charge
+                </button>
+              </div>
+
+              {tAccountType === 'enroller' && (
+                <div className="p-3 rounded-xl border border-cyan-500/30 bg-cyan-500/10 text-cyan-800 dark:text-cyan-200 text-xs">
+                  <p className="font-bold flex items-center gap-1.5">
+                    <UserPlus className="h-3.5 w-3.5" /> Specialized Enrollment Role
+                  </p>
+                  <p className="text-[11px] mt-0.5 text-muted-foreground">
+                    This account is restricted strictly to Manual Student Registration (/register), 3D Face Enrollment (/enroll), Biometric Enrollment Monitor (/enrollment-monitor), and Attendance (/attendance). Admin, Teacher portals, and Campus Gates remain inaccessible.
+                  </p>
+                </div>
+              )}
+
               <div className="grid gap-3 sm:grid-cols-2">
                 <div>
-                  <label className="text-xs font-bold text-foreground">Teacher Email *</label>
+                  <label className="text-xs font-bold text-foreground">
+                    {tAccountType === 'enroller' ? 'Student Coordinator Email *' : 'Teacher Email *'}
+                  </label>
                   <Input
-                    placeholder="teacher@school.com"
+                    placeholder={tAccountType === 'enroller' ? "coordinator@school.com" : "teacher@school.com"}
                     value={tEmail}
                     onChange={(e) => setTEmail(e.target.value)}
                     className="mt-1 text-xs"
@@ -971,42 +1040,46 @@ const UserAccessManager: React.FC = () => {
                 <div className="sm:col-span-2">
                   <label className="text-xs font-bold text-foreground">Display Name / Full Name</label>
                   <Input
-                    placeholder="e.g. Mrs. Sharma (PGT Mathematics)"
+                    placeholder={tAccountType === 'enroller' ? "e.g. Rahul Verma (Student Coordinator)" : "e.g. Mrs. Sharma (PGT Mathematics)"}
                     value={tName}
                     onChange={(e) => setTName(e.target.value)}
                     className="mt-1 text-xs"
                   />
                 </div>
-                <div>
-                  <label className="text-xs font-bold text-foreground">Initial Class</label>
-                  <Select value={tClass} onValueChange={setTClass}>
-                    <SelectTrigger className="mt-1 text-xs">
-                      <SelectValue placeholder="Class" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {CLASSES.map((c) => (
-                        <SelectItem key={String(c)} value={String(c)}>
-                          Class {c}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div>
-                  <label className="text-xs font-bold text-foreground">Section</label>
-                  <Select value={tSection} onValueChange={setTSection}>
-                    <SelectTrigger className="mt-1 text-xs">
-                      <SelectValue placeholder="Section" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {SECTIONS.map((s) => (
-                        <SelectItem key={String(s)} value={String(s)}>
-                          Section {s}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
+                {tAccountType === 'teacher' && (
+                  <>
+                    <div>
+                      <label className="text-xs font-bold text-foreground">Initial Class</label>
+                      <Select value={tClass} onValueChange={setTClass}>
+                        <SelectTrigger className="mt-1 text-xs">
+                          <SelectValue placeholder="Class" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {CLASSES.map((c) => (
+                            <SelectItem key={String(c)} value={String(c)}>
+                              Class {c}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div>
+                      <label className="text-xs font-bold text-foreground">Section</label>
+                      <Select value={tSection} onValueChange={setTSection}>
+                        <SelectTrigger className="mt-1 text-xs">
+                          <SelectValue placeholder="Section" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {SECTIONS.map((s) => (
+                            <SelectItem key={String(s)} value={String(s)}>
+                              Section {s}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  </>
+                )}
               </div>
 
               {createdCredentials && (
@@ -1017,14 +1090,14 @@ const UserAccessManager: React.FC = () => {
                   <div className="text-xs font-mono text-foreground space-y-0.5">
                     <p>Email: {createdCredentials.email}</p>
                     <p>Password: {createdCredentials.pass}</p>
-                    <p>Assigned: Class {createdCredentials.class}</p>
+                    <p>{createdCredentials.class.includes('Student Coordinator') ? `Role: ${createdCredentials.class}` : `Assigned: Class ${createdCredentials.class}`}</p>
                   </div>
                   <Button
                     size="sm"
                     variant="outline"
                     className="h-7 text-xs rounded-lg gap-1"
                     onClick={() => {
-                      navigator.clipboard.writeText(`Email: ${createdCredentials.email}\nPassword: ${createdCredentials.pass}\nClass: ${createdCredentials.class}`);
+                      navigator.clipboard.writeText(`Email: ${createdCredentials.email}\nPassword: ${createdCredentials.pass}\nRole/Class: ${createdCredentials.class}`);
                       toast({ title: 'Credentials copied to clipboard' });
                     }}
                   >
@@ -1197,6 +1270,7 @@ const UserAccessManager: React.FC = () => {
                   <SelectItem value="admin">Admin (Full Control)</SelectItem>
                   <SelectItem value="principal">Principal (School Oversight)</SelectItem>
                   <SelectItem value="teacher">Teacher (Class & Attendance Access)</SelectItem>
+                  <SelectItem value="enroller">Student Coordinator / Enroller (Manual Register & Attendance Only)</SelectItem>
                   <SelectItem value="staff">Staff (Gate & Operations)</SelectItem>
                   <SelectItem value="student">Student</SelectItem>
                   <SelectItem value="user">Standard User</SelectItem>

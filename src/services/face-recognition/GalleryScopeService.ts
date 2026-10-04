@@ -90,10 +90,10 @@ async function resolve(): Promise<GalleryScope> {
   const user = auth?.user;
   if (!user) return UNRESTRICTED;
 
-  // Admin / principal → full gallery
+  // Admin / principal / enroller → full gallery
   const roles = await db.from('user_roles').select('role').eq('user_id', user.id);
   const roleList: string[] = (roles?.data || []).map((r: any) => String(r.role));
-  if (roleList.includes('admin') || roleList.includes('principal')) return UNRESTRICTED;
+  if (roleList.includes('admin') || roleList.includes('principal') || roleList.includes('enroller') || roleList.includes('student_coordinator')) return UNRESTRICTED;
 
   const categories = await fetchTeacherCategories(user.id);
   if (categories.length === 0) return UNRESTRICTED;

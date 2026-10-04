@@ -1,8 +1,8 @@
 {
-  "version": "2.4.8",
-  "buildTime": 1791135900000,
-  "releaseTag": "v2.4.8",
-  "updatedAt": "2026-10-04T17:35:00.000Z",
+  "version": "2.4.9",
+  "buildTime": 1791136900000,
+  "releaseTag": "v2.4.9",
+  "updatedAt": "2026-10-04T18:02:00.000Z",
   "appName": "Presences Smart School",
   "channel": "production"
 }

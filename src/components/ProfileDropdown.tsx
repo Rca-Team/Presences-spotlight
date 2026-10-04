@@ -12,10 +12,12 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { Button } from '@/components/ui/button';
 import { useToast } from '@/hooks/use-toast';
+import { useUserRole } from '@/hooks/useUserRole';
 
 const ProfileDropdown = () => {
   const navigate = useNavigate();
   const { toast } = useToast();
+  const { isAdminOrPrincipal } = useUserRole();
   const [user, setUser] = useState<any>(null);
   const [profile, setProfile] = useState<any>(null);
 
@@ -108,10 +110,12 @@ const ProfileDropdown = () => {
           <User className="mr-2 h-4 w-4" />
           <span>My Profile</span>
         </DropdownMenuItem>
-        <DropdownMenuItem onClick={() => navigate('/backup')}>
-          <DatabaseBackup className="mr-2 h-4 w-4 text-primary" />
-          <span>Cloud Backup</span>
-        </DropdownMenuItem>
+        {isAdminOrPrincipal && (
+          <DropdownMenuItem onClick={() => navigate('/backup')}>
+            <DatabaseBackup className="mr-2 h-4 w-4 text-primary" />
+            <span>Cloud Backup</span>
+          </DropdownMenuItem>
+        )}
         <DropdownMenuSeparator />
         <DropdownMenuItem onClick={handleSignOut}>
           <LogOut className="mr-2 h-4 w-4" />

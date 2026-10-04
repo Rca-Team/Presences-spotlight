@@ -1,7 +1,7 @@
 import React, { useMemo } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import { motion, LayoutGroup } from 'framer-motion';
-import { Home, UserPlus, Clock, User, GraduationCap, LayoutGrid, Sparkles } from 'lucide-react';
+import { Home, UserPlus, Clock, User, GraduationCap, LayoutGrid, Sparkles, Camera, Users } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useIsMobile } from '@/hooks/use-mobile';
 import { useHapticFeedback } from '@/hooks/useHapticFeedback';
@@ -12,9 +12,18 @@ const MobileNavBar: React.FC = () => {
   const location = useLocation();
   const isMobile = useIsMobile();
   const { trigger } = useHapticFeedback();
-  const { isTeacher, isAdminOrPrincipal } = useUserRole();
+  const { isTeacher, isAdminOrPrincipal, isEnroller } = useUserRole();
 
   const navItems = useMemo(() => {
+    if (isEnroller) {
+      return [
+        { path: '/attendance', icon: Clock, label: 'Attend', color: 'ios-purple' },
+        { path: '/enrollment-monitor', icon: Users, label: 'Monitor', color: 'ios-blue' },
+        { path: '/enroll', icon: Camera, label: 'Enroll', color: 'ios-orange' },
+        { path: '/register', icon: UserPlus, label: 'Register', color: 'ios-green' },
+        { path: '/profile', icon: User, label: 'Profile', color: 'ios-pink' },
+      ];
+    }
     if (isTeacher || isAdminOrPrincipal) {
       return [
         { path: '/teacher', icon: GraduationCap, label: 'Teacher', color: 'ios-blue' },
@@ -31,7 +40,7 @@ const MobileNavBar: React.FC = () => {
       { path: '/widgets', icon: LayoutGrid, label: 'Widgets', color: 'ios-orange' },
       { path: '/profile', icon: User, label: 'Profile', color: 'ios-pink' },
     ];
-  }, [isTeacher, isAdminOrPrincipal]);
+  }, [isEnroller, isTeacher, isAdminOrPrincipal]);
 
   if (!isMobile) return null;
   if (location.pathname.startsWith('/guard') || location.pathname === '/smartboard') return null;

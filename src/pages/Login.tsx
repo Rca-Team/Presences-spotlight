@@ -18,12 +18,30 @@ import { hasTeacherAccess } from '@/utils/teacherAccess';
 
 const resolvePostLoginRoute = async (userId: string, defaultTarget: string) => {
   try {
-    const [userRolesRes, hasAccess] = await Promise.all([
+    const [userRolesRes, profileRes, hasAccess] = await Promise.all([
       (supabase as any).from('user_roles').select('role').eq('user_id', userId),
+      (supabase as any).from('profiles').select('role').eq('user_id', userId).maybeSingle(),
       hasTeacherAccess(userId),
     ]);
 
-    const rolesList: string[] = (userRolesRes.data || []).map((r: any) => r.role);
+    const rolesList: string[] = (userRolesRes?.data || []).map((r: any) => r.role);
+    if (profileRes?.data?.role) {
+      rolesList.push(profileRes.data.role);
+    }
+
+    // If student coordinator / enroller, prioritize direct opening of enrollment monitor
+    if (rolesList.includes('enroller') || rolesList.includes('student_coordinator')) {
+      if (
+        defaultTarget &&
+        (defaultTarget.startsWith('/enrollment-monitor') ||
+          defaultTarget.startsWith('/register') ||
+          defaultTarget.startsWith('/enroll') ||
+          defaultTarget.startsWith('/attendance'))
+      ) {
+        return defaultTarget;
+      }
+      return '/enrollment-monitor';
+    }
 
     // If gate guard or security, redirect straight to specialized scanner
     if (rolesList.includes('guard') || rolesList.includes('security')) {

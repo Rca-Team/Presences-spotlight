@@ -120,7 +120,7 @@ const Register = () => {
   const { toast } = useToast();
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
-  const { role, isAdmin, isPrincipal, isTeacher, userId } = useUserRole();
+  const { role, isAdmin, isPrincipal, isTeacher, isEnroller, userId } = useUserRole();
 
   const returnUrl = searchParams.get('returnUrl') || searchParams.get('redirect');
   const classParam = searchParams.get('class');
@@ -250,7 +250,7 @@ const Register = () => {
     } catch {}
   };
 
-  const canBulkImport = isAdmin || isPrincipal || isTeacher;
+  const canBulkImport = isAdmin || isPrincipal || isTeacher || isEnroller;
   const [isPdfModalOpen, setIsPdfModalOpen] = useState(false);
   const [draftSearchQuery, setDraftSearchQuery] = useState('');
   const [isDraftsExpanded, setIsDraftsExpanded] = useState(false);
@@ -715,7 +715,7 @@ const Register = () => {
                       <div className="flex items-center gap-2">
                         <span className="text-sm font-bold text-foreground">Bulk Class ID Cards (PDF)</span>
                         <Badge variant="outline" className="text-[10px] bg-blue-500/10 text-blue-700 dark:text-blue-300 border-blue-500/30 font-semibold">
-                          {isAdmin ? 'Admin' : 'Class Teacher'}
+                          {isAdmin ? 'Admin' : isPrincipal ? 'Principal' : isEnroller ? 'Enroller' : 'Class Teacher'}
                         </Badge>
                       </div>
                       <p className="text-xs text-muted-foreground">Upload whole class ID cards PDF to extract all students and queue face scans</p>

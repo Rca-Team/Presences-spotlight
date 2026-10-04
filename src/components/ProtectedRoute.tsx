@@ -5,7 +5,7 @@ import NotificationPermissionGate from './NotificationPermissionGate';
 import { ShieldAlert } from 'lucide-react';
 import { hasTeacherAccess } from '@/utils/teacherAccess';
 
-type AppRole = 'admin' | 'principal' | 'teacher' | 'guard' | 'security' | 'user';
+type AppRole = 'admin' | 'principal' | 'teacher' | 'guard' | 'security' | 'enroller' | 'student_coordinator' | 'user';
 
 interface ProtectedRouteProps {
   children: React.ReactNode;
@@ -24,16 +24,20 @@ export function ProtectedRoute({ children, requireAdmin = false, requireRoles }:
   const resolveUserRole = async (userId: string, email?: string): Promise<AppRole> => {
     const db = supabase as any;
 
-    const { data: userRoles } = await db
-      .from('user_roles')
-      .select('role')
-      .eq('user_id', userId);
+    const [userRolesRes, profileRes] = await Promise.all([
+      db.from('user_roles').select('role').eq('user_id', userId),
+      db.from('profiles').select('role').eq('user_id', userId).maybeSingle(),
+    ]);
 
-    const rolesList: string[] = (userRoles || []).map((r: any) => r.role);
+    const rolesList: string[] = (userRolesRes?.data || []).map((r: any) => r.role);
+    if (profileRes?.data?.role) {
+      rolesList.push(profileRes.data.role);
+    }
 
     if (rolesList.includes('admin')) return 'admin';
     if (rolesList.includes('principal')) return 'principal';
     if (rolesList.includes('guard') || rolesList.includes('security')) return 'guard';
+    if (rolesList.includes('enroller') || rolesList.includes('student_coordinator')) return 'enroller';
 
     if (await hasTeacherAccess(userId)) return 'teacher';
 
@@ -44,6 +48,7 @@ export function ProtectedRoute({ children, requireAdmin = false, requireRoles }:
     if (!required || required.length === 0) return true;
     if (role === 'admin') return true; // Superadmin has universal access to all routes
     if (role === 'principal' && (required.includes('principal') || required.includes('teacher') || required.includes('user'))) return true;
+    if ((role === 'enroller' || role === 'student_coordinator') && (required.includes('enroller') || required.includes('student_coordinator'))) return true;
     return required.includes(role);
   };
 

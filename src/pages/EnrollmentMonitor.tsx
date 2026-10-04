@@ -631,7 +631,7 @@ export default function EnrollmentMonitor() {
   const [showScrollTop, setShowScrollTop] = useState(false);
 
   const parentLink = `${window.location.origin}/enroll`;
-  const backTo = role === 'teacher' ? '/teacher' : '/admin';
+  const backTo = role === 'teacher' ? '/teacher' : (role === 'enroller' || role === 'student_coordinator') ? '/attendance' : '/admin';
 
   const handleLaunchDirectCapture = async (student: MonitorStudent) => {
     try {

@@ -254,19 +254,23 @@ function AnimatedRoutes() {
         <Route path="/forgot-password" element={bound(<PasswordRecovery />, "Reset Password")} />
         <Route path="/reset-password" element={bound(<PasswordRecovery />, "Reset Password")} />
         <Route path="/signup" element={bound(<Signup />, "Sign Up")} />
-        <Route path="/register" element={bound(<Register />, "Add Student")} />
+        <Route path="/register" element={
+          <ProtectedRoute requireRoles={["admin", "principal", "teacher", "enroller", "student_coordinator", "user"]}>
+            {bound(<Register />, "Add Student")}
+          </ProtectedRoute>
+        } />
         <Route path="/profile" element={
-          <ProtectedRoute requireRoles={["admin", "principal", "teacher", "user"]}>
+          <ProtectedRoute requireRoles={["admin", "principal", "teacher", "enroller", "student_coordinator", "user"]}>
             {bound(<Profile />, "Profile")}
           </ProtectedRoute>
         } />
         <Route path="/attendance" element={
-          <ProtectedRoute requireRoles={["admin", "principal", "teacher", "user"]}>
+          <ProtectedRoute requireRoles={["admin", "principal", "teacher", "enroller", "student_coordinator", "user"]}>
             {bound(<Attendance />, "Attendance")}
           </ProtectedRoute>
         } />
         <Route path="/user" element={
-          <ProtectedRoute requireRoles={["admin", "principal", "teacher", "user"]}>
+          <ProtectedRoute requireRoles={["admin", "principal", "teacher", "enroller", "student_coordinator", "user"]}>
             {bound(<Attendance />, "Attendance")}
           </ProtectedRoute>
         } />
@@ -293,7 +297,7 @@ function AnimatedRoutes() {
         <Route path="/parent" element={bound(<ParentPortal />, "Parent Portal")} />
         <Route path="/enroll" element={bound(<StudentEnrollment />, "Student Enrollment")} />
         <Route path="/enrollment-monitor" element={
-          <ProtectedRoute requireRoles={["admin", "principal", "teacher"]}>
+          <ProtectedRoute requireRoles={["admin", "principal", "teacher", "enroller", "student_coordinator"]}>
             {bound(<EnrollmentMonitor />, "Enrollment Monitor")}
           </ProtectedRoute>
         } />
@@ -349,8 +353,16 @@ function AnimatedRoutes() {
             {bound(<Jarvis />, "Jarvis Assistant")}
           </ProtectedRoute>
         } />
-        <Route path="/widgets" element={bound(<Widgets />, "Quick Tools")} />
-        <Route path="/smartboard" element={bound(<SmartBoardMode />, "Smart Board")} />
+        <Route path="/widgets" element={
+          <ProtectedRoute requireRoles={["admin", "principal", "teacher"]}>
+            {bound(<Widgets />, "Quick Tools")}
+          </ProtectedRoute>
+        } />
+        <Route path="/smartboard" element={
+          <ProtectedRoute requireRoles={["admin", "principal", "teacher"]}>
+            {bound(<SmartBoardMode />, "Smart Board")}
+          </ProtectedRoute>
+        } />
         <Route path="/shared-media" element={bound(<SharedMediaPage />, "Shared Media")} />
         <Route path="*" element={bound(<NotFound />, "Page Not Found")} />
       </Routes>

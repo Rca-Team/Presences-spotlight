@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { hasTeacherAccess } from '@/utils/teacherAccess';
 
-export type UserRole = 'admin' | 'principal' | 'teacher' | 'guard' | 'security' | 'user' | null;
+export type UserRole = 'admin' | 'principal' | 'teacher' | 'guard' | 'security' | 'enroller' | 'student_coordinator' | 'user' | null;
 
 interface UseUserRoleReturn {
   role: UserRole;
@@ -11,6 +11,7 @@ interface UseUserRoleReturn {
   isPrincipal: boolean;
   isTeacher: boolean;
   isGuard: boolean;
+  isEnroller: boolean;
   isAdminOrPrincipal: boolean;
   userId: string | null;
   refetch: () => Promise<void>;
@@ -42,21 +43,31 @@ export const useUserRole = (): UseUserRoleReturn => {
         setIsLoading(false);
       }
 
-      // Fast check user_metadata for admin
-      if (user.user_metadata?.role === 'admin' || user.app_metadata?.role === 'admin') {
+      // Fast check user_metadata for admin or enroller
+      const metaRole = user.user_metadata?.role || user.app_metadata?.role;
+      if (metaRole === 'admin') {
         roleCache.set(user.id, 'admin');
         setRole('admin');
         setIsLoading(false);
         return;
       }
+      if (metaRole === 'enroller' || metaRole === 'student_coordinator') {
+        roleCache.set(user.id, 'enroller');
+        setRole('enroller');
+        setIsLoading(false);
+        return;
+      }
 
-      // Fetch user roles safely without .single() to avoid 406 when no role exists
-      const { data: userRoles } = await db
-        .from('user_roles')
-        .select('role')
-        .eq('user_id', user.id);
+      // Fetch user roles and profile safely
+      const [userRolesRes, profileRes] = await Promise.all([
+        db.from('user_roles').select('role').eq('user_id', user.id),
+        db.from('profiles').select('role').eq('user_id', user.id).maybeSingle(),
+      ]);
 
-      const rolesList: string[] = (userRoles || []).map((r: any) => r.role);
+      const rolesList: string[] = (userRolesRes?.data || []).map((r: any) => r.role);
+      if (profileRes?.data?.role) {
+        rolesList.push(profileRes.data.role);
+      }
 
       let resolved: UserRole = 'user';
       if (rolesList.includes('admin')) {
@@ -65,6 +76,8 @@ export const useUserRole = (): UseUserRoleReturn => {
         resolved = 'principal';
       } else if (rolesList.includes('guard') || rolesList.includes('security')) {
         resolved = 'guard';
+      } else if (rolesList.includes('enroller') || rolesList.includes('student_coordinator')) {
+        resolved = 'enroller';
       } else {
         const teacherAccess = await hasTeacherAccess(user.id);
         if (teacherAccess) {
@@ -99,13 +112,16 @@ export const useUserRole = (): UseUserRoleReturn => {
     return () => subscription.unsubscribe();
   }, [fetchRole]);
 
+  const isEnroller = role === 'enroller' || role === 'student_coordinator';
+
   return {
     role,
     isLoading,
     isAdmin: role === 'admin',
     isPrincipal: role === 'principal' || role === 'admin',
-    isTeacher: role === 'teacher' || role === 'admin' || role === 'principal',
-    isGuard: role === 'guard' || role === 'security' || role === 'admin',
+    isTeacher: !isEnroller && (role === 'teacher' || role === 'admin' || role === 'principal'),
+    isGuard: !isEnroller && (role === 'guard' || role === 'security' || role === 'admin'),
+    isEnroller,
     isAdminOrPrincipal: role === 'admin' || role === 'principal',
     userId,
     refetch: fetchRole,

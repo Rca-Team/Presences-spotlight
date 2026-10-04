@@ -18,6 +18,8 @@ import {
   Scan,
   ChevronRight,
   Compass,
+  Camera,
+  Users,
 } from 'lucide-react';
 import Logo from './Logo';
 import { useIsMobile } from '@/hooks/use-mobile';
@@ -33,6 +35,8 @@ const navColors: Record<string, string> = {
   Profile: 'ios-pink',
   Register: 'ios-green',
   Attendance: 'ios-purple',
+  'Enrollment Monitor': 'ios-blue',
+  'Enroll Face': 'ios-orange',
   'Gate Mode': 'ios-orange',
   Admin: 'ios-red',
   Teacher: 'ios-orange',
@@ -47,7 +51,7 @@ const MobileSidebar = () => {
   const { theme, setTheme } = useTheme();
   const [user, setUser] = useState<any>(null);
   const [profile, setProfile] = useState<any>(null);
-  const { isAdminOrPrincipal, isTeacher } = useUserRole();
+  const { isAdminOrPrincipal, isTeacher, isEnroller } = useUserRole();
   const { toast } = useToast();
   const haptic = useHapticFeedback();
 
@@ -94,6 +98,15 @@ const MobileSidebar = () => {
   };
 
   const navigation = useMemo(() => {
+    if (isEnroller) {
+      return [
+        { name: 'Attendance', path: '/attendance', icon: Clock, show: true },
+        { name: 'Enrollment Monitor', path: '/enrollment-monitor', icon: Users, show: true },
+        { name: 'Enroll Face', path: '/enroll', icon: Camera, show: true },
+        { name: 'Register', path: '/register', icon: UserPlus, show: true },
+        { name: 'Profile', path: '/profile', icon: User, show: !!user },
+      ].filter((i) => i.show);
+    }
     const items = [
       { name: 'Home', path: '/', icon: Home, show: true },
       { name: 'Parent Portal', path: '/parent', icon: GraduationCap, show: !user },
@@ -109,7 +122,7 @@ const MobileSidebar = () => {
       },
     ];
     return items.filter((i) => i.show);
-  }, [isAdminOrPrincipal, isTeacher, user]);
+  }, [isAdminOrPrincipal, isTeacher, isEnroller, user]);
 
   if (!isMobile) return null;
 

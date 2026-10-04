@@ -17,7 +17,8 @@ import {
   GraduationCap, 
   BookOpen,
   LayoutGrid,
-  QrCode
+  Camera,
+  Users,
 } from 'lucide-react';
 import { Toggle } from '@/components/ui/toggle';
 import { useTheme } from '@/hooks/use-theme';
@@ -34,7 +35,7 @@ const Navbar = () => {
   const location = useLocation();
   const isMobile = useIsMobile();
   const { theme, setTheme } = useTheme();
-  const { isAdminOrPrincipal, isTeacher, isGuard } = useUserRole();
+  const { isAdminOrPrincipal, isTeacher, isGuard, isEnroller } = useUserRole();
   const { trigger: haptic } = useHapticFeedback();
   
   useEffect(() => {
@@ -78,16 +79,23 @@ const Navbar = () => {
     setTheme(theme === 'dark' ? 'light' : 'dark');
   };
 
-  const navLinks = [
-    { text: 'Home', path: '/', icon: Home, show: !isAuthenticated || (!isTeacher || isAdminOrPrincipal) },
-    { text: 'Attendance', path: '/attendance', icon: ScanLine, show: true },
-    { text: 'Parent Portal', path: '/parent', icon: GraduationCap, show: true },
-    { text: 'Teacher Portal', path: '/teacher', icon: BookOpen, show: isAuthenticated && isTeacher && !isAdminOrPrincipal },
-    { text: 'Guard Scanner', path: '/guard', icon: QrCode, show: isAuthenticated && isGuard && !isAdminOrPrincipal },
-    { text: 'Add Student', path: '/register', icon: UserPlus, show: true },
-    { text: 'Gate & Campus', path: '/gate', icon: DoorOpen, show: isAdminOrPrincipal || isTeacher },
-    { text: 'Admin', path: '/admin', icon: LayoutDashboard, show: isAdminOrPrincipal },
-  ].filter((item) => item.show);
+  const navLinks = isEnroller
+    ? [
+        { text: 'Attendance', path: '/attendance', icon: ScanLine, show: true },
+        { text: 'Enrollment Monitor', path: '/enrollment-monitor', icon: Users, show: true },
+        { text: 'Enroll Face', path: '/enroll', icon: Camera, show: true },
+        { text: 'Add Student', path: '/register', icon: UserPlus, show: true },
+      ]
+    : [
+        { text: 'Home', path: '/', icon: Home, show: !isAuthenticated || (!isTeacher || isAdminOrPrincipal) },
+        { text: 'Attendance', path: '/attendance', icon: ScanLine, show: true },
+        { text: 'Parent Portal', path: '/parent', icon: GraduationCap, show: true },
+        { text: 'Teacher Portal', path: '/teacher', icon: BookOpen, show: isAuthenticated && isTeacher && !isAdminOrPrincipal },
+        { text: 'Guard Scanner', path: '/guard', icon: QrCode, show: isAuthenticated && isGuard && !isAdminOrPrincipal },
+        { text: 'Add Student', path: '/register', icon: UserPlus, show: true },
+        { text: 'Gate & Campus', path: '/gate', icon: DoorOpen, show: isAdminOrPrincipal || isTeacher },
+        { text: 'Admin', path: '/admin', icon: LayoutDashboard, show: isAdminOrPrincipal },
+      ].filter((item) => item.show);
 
   return (
     <header 
@@ -100,7 +108,7 @@ const Navbar = () => {
     >
       <div className="max-w-7xl mx-auto flex items-center justify-between gap-3">
         <Link
-          to={isAuthenticated && isTeacher && !isAdminOrPrincipal ? "/teacher" : "/"}
+          to={isAuthenticated && isTeacher && !isAdminOrPrincipal ? "/teacher" : isEnroller ? "/enrollment-monitor" : "/"}
           className="animate-ios-bounce shrink-0"
           onClick={() => haptic('selection')}
         >
