@@ -37,7 +37,9 @@ import {
   UserCheck,
   ArrowUp,
   Share2,
-  MessageSquare
+  MessageSquare,
+  LockKeyhole,
+  Building2
 } from 'lucide-react';
 import PageTransition from '@/components/PageTransition';
 import { Button } from '@/components/ui/button';
@@ -744,6 +746,37 @@ export default function EnrollmentMonitor() {
       <div className="enrollment-shell min-h-screen pb-24 sm:pb-16">
         <div className="max-w-7xl mx-auto px-3 sm:px-6 py-4 sm:py-6 space-y-4 sm:space-y-6 relative z-10">
           
+          {/* Official Presences Brand Header */}
+          <header className="flex items-center justify-between gap-3 px-1 py-1">
+            <Link to="/" className="font-semibold tracking-tight text-white flex items-center gap-2 group">
+              <img
+                src="/logo.png"
+                alt="Presences AI"
+                className="w-7 h-7 sm:w-8 sm:h-8 object-contain group-hover:scale-105 transition-transform"
+                onError={(e) => {
+                  (e.target as HTMLElement).style.display = 'none';
+                }}
+              />
+              <div className="flex items-center gap-1">
+                <span className="font-black text-base sm:text-lg tracking-tight bg-clip-text text-transparent bg-gradient-to-r from-emerald-400 via-teal-300 to-cyan-400">
+                  presences
+                </span>
+                <span className="text-emerald-400 font-black text-base sm:text-lg">.ai</span>
+              </div>
+            </Link>
+
+            <div className="flex items-center gap-2">
+              <div className="hidden xs:flex items-center gap-2 text-xs font-semibold px-3 py-1.5 rounded-full bg-white/5 border border-white/10 text-slate-300 backdrop-blur-md">
+                <ShieldCheck size={13} className="text-emerald-400" />
+                <span>Biometric Radar Operations</span>
+                <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 animate-pulse" />
+              </div>
+              <Badge variant="outline" className="text-[10px] font-mono font-bold px-2 py-0.5 border-emerald-500/30 text-emerald-400 bg-emerald-500/10">
+                v2.4
+              </Badge>
+            </div>
+          </header>
+
           {/* Header Navigation Bar */}
           <div className="flex flex-col gap-3.5 p-3.5 sm:p-5 rounded-2xl sm:rounded-3xl bg-white/5 border border-white/10 backdrop-blur-xl shadow-2xl">
             
@@ -764,7 +797,7 @@ export default function EnrollmentMonitor() {
                   <div className="flex items-center gap-2">
                     <h1 className="text-lg sm:text-2xl font-black text-white tracking-tight flex items-center gap-1.5 sm:gap-2 truncate">
                       <ScanFace className="h-5 w-5 sm:h-6 sm:w-6 text-emerald-400 shrink-0" />
-                      <span className="truncate">Biometric Enrollment Radar</span>
+                      <span className="truncate">Presences Biometric Enrollment Radar</span>
                     </h1>
                     <span className="flex h-2 w-2 sm:h-2.5 sm:w-2.5 relative shrink-0">
                       <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
