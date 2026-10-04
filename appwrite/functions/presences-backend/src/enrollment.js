@@ -200,6 +200,45 @@ export function createEnrollmentService({ db, databaseId = 'presences_db', sms, 
           return { saved: true };
         });
       }
+      if (action === 'staff.revert') {
+        const admission = String(body.admission || '').trim();
+        if (!admission) reject(400, 'Admission number is required.');
+        return lock('student:' + admission, async () => {
+          const student = await studentFor(admission);
+          if (!student) reject(404, 'Student not found.');
+
+          // 1. Delete prior capture and files
+          const studentState = await get(hash('student:' + admission));
+          if (studentState?.lastCapture) {
+            const oldCapture = await get(studentState.lastCapture);
+            if (oldCapture?.samples) {
+              for (const s of oldCapture.samples) {
+                if (s.fileId) await files.remove(s.fileId).catch(() => {});
+              }
+            }
+            await db.deleteDocument(databaseId, STATE, studentState.lastCapture).catch(() => {});
+          }
+
+          // 2. Delete descriptor from face_descriptors
+          const descriptorId = hash('enrollment-descriptor:' + admission);
+          await db.deleteDocument(databaseId, 'face_descriptors', descriptorId).catch(() => {});
+          const existingDesc = await db.listDocuments(databaseId, 'face_descriptors', [Query.or([Query.equal('student_id', admission), Query.equal('user_id', student.userId)]), Query.limit(50)]).catch(() => ({ documents: [] }));
+          for (const d of existingDesc.documents) {
+            await db.deleteDocument(databaseId, 'face_descriptors', d.$id).catch(() => {});
+          }
+
+          // 3. Reset student state
+          await save(hash('student:' + admission), 'student', { ...student, status: 'pending', lastCapture: null }, now() + 3650 * DAY);
+
+          // 4. Clear avatar_url from profile
+          if (student.profileId) {
+            await db.updateDocument(databaseId, 'profiles', student.profileId, { avatar_url: '', updated_at: new Date(now()).toISOString() }).catch(() => {});
+          }
+
+          await audit('reverted', admission, user.$id);
+          return { reverted: true, admission };
+        });
+      }
       if (action === 'staff.cleanup') {
         const expired = await db.listDocuments(databaseId, STATE, [Query.lessThan('expires', now() - 120000), Query.limit(100)]);
         for (const d of expired.documents) {

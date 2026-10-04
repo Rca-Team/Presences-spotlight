@@ -39,7 +39,8 @@ import {
   Share2,
   MessageSquare,
   LockKeyhole,
-  Building2
+  Building2,
+  RotateCcw
 } from 'lucide-react';
 import PageTransition from '@/components/PageTransition';
 import { Button } from '@/components/ui/button';
@@ -47,6 +48,7 @@ import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from '@/components/ui/sheet';
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { useToast } from '@/hooks/use-toast';
 import { useUserRole } from '@/hooks/useUserRole';
 import { cn } from '@/lib/utils';
@@ -84,18 +86,24 @@ const FILTERS: { id: Filter; label: string; icon: React.ElementType }[] = [
 const PAGE = 80;
 const ago = (t: number) => (t ? formatDistanceToNow(t, { addSuffix: true }) : '—');
 const needsAttention = (s: MonitorStudent) => Boolean(s.correction) || !s.hasPhone || s.failures > 0;
+export const isStudentEnrolled = (s: MonitorStudent) => s.status === 'completed' || s.faceOnFile || s.samples.length > 0;
 const matchesFilter = (s: MonitorStudent, f: Filter) =>
   f === 'all'
     ? true
+    : f === 'completed'
+    ? isStudentEnrolled(s)
     : f === 'in_progress'
-    ? s.status === 'verified' || s.status === 'capturing'
+    ? (s.status === 'verified' || s.status === 'capturing') && !isStudentEnrolled(s)
+    : f === 'not_started'
+    ? s.status === 'not_started' && !isStudentEnrolled(s)
     : f === 'attention'
     ? needsAttention(s)
     : s.status === f;
 
 // Enhanced Modern Status Badge
-function ModernStatusBadge({ status, className }: { status: MonitorStatus; className?: string }) {
-  const m = statusMeta[status];
+function ModernStatusBadge({ student, className }: { student: MonitorStudent; className?: string }) {
+  const isEnrolled = isStudentEnrolled(student);
+  const m = isEnrolled ? statusMeta['completed'] : statusMeta[student.status] || statusMeta['not_started'];
   return (
     <span
       className={cn(
@@ -334,12 +342,14 @@ function StudentDetailSheet({
   onClose,
   onChanged,
   onOpenRecapture,
+  onRevert,
 }: {
   student: MonitorStudent | null;
   data: MonitorOverview | null;
   onClose: () => void;
   onChanged: () => void;
   onOpenRecapture: (student: MonitorStudent) => void;
+  onRevert?: (student: MonitorStudent) => void;
 }) {
   const events = useMemo(
     () => (student && data ? data.activity.filter((a) => a.student === student.admission_number) : []),
@@ -369,12 +379,14 @@ function StudentDetailSheet({
     },
     {
       label: 'TrueDepth 15-Angle 3D Face Calibration',
-      done: student.status === 'completed',
+      done: isStudentEnrolled(student),
       detail:
         student.status === 'capturing'
           ? `${student.inProgress?.samples.length || 0} of ${REQUIRED_POSES.length} angles synced`
           : student.completedAt
           ? format(student.completedAt, 'd MMM yyyy, h:mm a')
+          : isStudentEnrolled(student)
+          ? 'Biometric vectors calibrated & active'
           : 'Waiting for biometric scan',
     },
   ];
@@ -395,34 +407,49 @@ function StudentDetailSheet({
                 <span className="text-cyan-400 font-bold">{student.category || 'Unassigned'}</span>
               </p>
             </div>
-            <ModernStatusBadge status={student.status} />
+            <ModernStatusBadge student={student} />
           </div>
           <SheetDescription className="text-xs text-white/60 font-mono">
             Parent Phone: {student.parent_phone || 'Not on file'}
           </SheetDescription>
         </SheetHeader>
 
-        {/* Action Button: Recapture 3D Face */}
+        {/* Action Button: Recapture 3D Face & Revert */}
         {data?.canManage && (
           <div className="mt-4 p-3.5 sm:p-4 rounded-2xl bg-gradient-to-r from-blue-600/20 via-indigo-600/20 to-purple-600/20 border border-blue-500/30 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
             <div>
-              <p className="text-xs font-bold text-white">Direct Biometric Calibration</p>
+              <p className="text-xs font-bold text-white">Biometric Face Management</p>
               <p className="text-[11px] text-white/60 mt-0.5">
-                {student.status === 'completed'
-                  ? 'Recapture 3D face to replace or enhance models'
+                {isStudentEnrolled(student)
+                  ? 'Recapture 3D face scan or revert back to un-enrolled'
                   : 'Perform biometric capture at school now'}
               </p>
             </div>
-            <Button
-              onClick={() => {
-                onClose();
-                onOpenRecapture(student);
-              }}
-              className="w-full sm:w-auto rounded-xl h-10 sm:h-9 font-bold text-xs bg-gradient-to-r from-cyan-500 via-blue-600 to-indigo-600 text-white hover:from-cyan-600 hover:to-indigo-700 shadow-md shadow-blue-500/20 gap-1.5 shrink-0 touch-manipulation"
-            >
-              <ScanFace className="h-4 w-4" />
-              {student.status === 'completed' ? 'Recapture Face' : 'Capture Now'}
-            </Button>
+            <div className="flex items-center gap-2 w-full sm:w-auto">
+              {isStudentEnrolled(student) && onRevert && (
+                <Button
+                  variant="outline"
+                  onClick={() => {
+                    onClose();
+                    onRevert(student);
+                  }}
+                  className="flex-1 sm:flex-none rounded-xl h-10 sm:h-9 font-bold text-xs border-rose-500/30 bg-rose-500/10 text-rose-300 hover:bg-rose-500/20 hover:text-white gap-1.5 shrink-0 touch-manipulation"
+                >
+                  <RotateCcw className="h-4 w-4 text-rose-400" />
+                  Revert
+                </Button>
+              )}
+              <Button
+                onClick={() => {
+                  onClose();
+                  onOpenRecapture(student);
+                }}
+                className="flex-1 sm:flex-none rounded-xl h-10 sm:h-9 font-bold text-xs bg-gradient-to-r from-cyan-500 via-blue-600 to-indigo-600 text-white hover:from-cyan-600 hover:to-indigo-700 shadow-md shadow-blue-500/20 gap-1.5 shrink-0 touch-manipulation"
+              >
+                <ScanFace className="h-4 w-4" />
+                {isStudentEnrolled(student) ? 'Recapture Face' : 'Capture Now'}
+              </Button>
+            </div>
           </div>
         )}
 
@@ -585,10 +612,59 @@ export default function EnrollmentMonitor() {
   const [selectedStudentAdm, setSelectedStudentAdm] = useState<string | null>(null);
   const [uploadOpen, setUploadOpen] = useState(false);
   const [recaptureStudent, setRecaptureStudent] = useState<RecaptureStudent | null>(null);
+  const [revertingStudent, setRevertingStudent] = useState<MonitorStudent | null>(null);
+  const [isReverting, setIsReverting] = useState(false);
   const [showScrollTop, setShowScrollTop] = useState(false);
 
   const parentLink = `${window.location.origin}/enroll`;
   const backTo = role === 'teacher' ? '/teacher' : '/admin';
+
+  const handleRevert = async (s: MonitorStudent) => {
+    setIsReverting(true);
+    try {
+      // 1. Backend revert action
+      await enrollmentApi('staff.revert', { admission: s.admission_number }).catch((err) => {
+        console.warn('Backend staff.revert notice:', err);
+      });
+
+      // 2. Direct client purge as safety net
+      const cleanAdm = s.admission_number.trim();
+      await Promise.all([
+        supabase
+          .from('face_descriptors')
+          .delete()
+          .or(`student_id.eq.${cleanAdm}`),
+        supabase
+          .from('profiles')
+          .update({ avatar_url: null, updated_at: new Date().toISOString() })
+          .or(`admission_number.eq.${cleanAdm},employee_id.eq.${cleanAdm}`),
+        supabase
+          .from('attendance_records')
+          .update({ face_descriptor: null, status: 'absent' })
+          .eq('student_id', cleanAdm)
+          .eq('status', 'registered'),
+      ]).catch((err) => {
+        console.warn('Client cleanup notice:', err);
+      });
+
+      toast({
+        title: 'Enrollment Reverted',
+        description: `Biometric enrollment for ${s.name} has been cleared. The student can now re-enroll.`,
+      });
+
+      setRevertingStudent(null);
+      setSelectedStudentAdm(null);
+      await load(true);
+    } catch (err: any) {
+      toast({
+        title: 'Revert Failed',
+        description: err.message || 'Could not revert enrollment.',
+        variant: 'destructive',
+      });
+    } finally {
+      setIsReverting(false);
+    }
+  };
 
   // Scroll to top listener for mobile FAB
   useEffect(() => {
@@ -626,7 +702,7 @@ export default function EnrollmentMonitor() {
     if (!cards.length) return;
     toast({
       title: 'Processing ID Cards...',
-      description: `Saving ${cards.length} students into Biometric Radar database...`,
+      description: `Saving ${cards.length} students into enrollment database...`,
     });
 
     try {
@@ -693,7 +769,7 @@ export default function EnrollmentMonitor() {
 
       toast({
         title: 'Class ID Cards Imported! 🚀',
-        description: `Successfully added ${cards.length} students to the Biometric Enrollment Radar.`,
+        description: `Successfully added ${cards.length} students to Biometric Enrollment Hub.`,
       });
 
       await load(true);
@@ -716,14 +792,14 @@ export default function EnrollmentMonitor() {
 
   // Summary statistics
   const stats = useMemo(() => {
-    const done = students.filter((s) => s.status === 'completed').length;
+    const done = students.filter(isStudentEnrolled).length;
     return {
       total: students.length,
       done,
       pct: students.length ? Math.round((done / students.length) * 100) : 0,
-      progress: students.filter((s) => s.status === 'verified' || s.status === 'capturing').length,
-      notStarted: students.filter((s) => s.status === 'not_started').length,
-      failed: students.filter((s) => s.failures > 0 && s.status !== 'completed').length,
+      progress: students.filter((s) => !isStudentEnrolled(s) && (s.status === 'verified' || s.status === 'capturing')).length,
+      notStarted: students.filter((s) => !isStudentEnrolled(s) && s.status === 'not_started').length,
+      failed: students.filter((s) => !isStudentEnrolled(s) && s.failures > 0).length,
       corrections: data?.corrections.filter((c) => c.status === 'pending').length ?? 0,
       noPhone: students.filter((s) => !s.hasPhone).length,
     };
@@ -736,7 +812,7 @@ export default function EnrollmentMonitor() {
       const key = s.category || 'Unassigned';
       const v = map.get(key) || { total: 0, done: 0 };
       v.total++;
-      if (s.status === 'completed') v.done++;
+      if (isStudentEnrolled(s)) v.done++;
       map.set(key, v);
     }
     return [...map.entries()].sort(([a], [b]) => a.localeCompare(b, undefined, { numeric: true }));
@@ -857,7 +933,7 @@ export default function EnrollmentMonitor() {
             <div className="flex items-center gap-2">
               <div className="hidden xs:flex items-center gap-2 text-xs font-semibold px-3 py-1.5 rounded-full bg-white/5 border border-white/10 text-slate-300 backdrop-blur-md">
                 <ShieldCheck size={13} className="text-emerald-400" />
-                <span>Biometric Radar Operations</span>
+                <span>Biometric Operations</span>
                 <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 animate-pulse" />
               </div>
               <Badge variant="outline" className="text-[10px] font-mono font-bold px-2 py-0.5 border-emerald-500/30 text-emerald-400 bg-emerald-500/10">
@@ -886,7 +962,7 @@ export default function EnrollmentMonitor() {
                   <div className="flex items-center gap-2">
                     <h1 className="text-lg sm:text-2xl font-black text-white tracking-tight flex items-center gap-1.5 sm:gap-2 truncate">
                       <ScanFace className="h-5 w-5 sm:h-6 sm:w-6 text-emerald-400 shrink-0" />
-                      <span className="truncate">Presences Biometric Enrollment Radar</span>
+                      <span className="truncate">Biometric Enrollment Hub</span>
                     </h1>
                     <span className="flex h-2 w-2 sm:h-2.5 sm:w-2.5 relative shrink-0">
                       <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
@@ -1173,7 +1249,7 @@ export default function EnrollmentMonitor() {
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 sm:gap-3.5">
                   <AnimatePresence mode="popLayout">
                     {visible.slice(0, limit).map((s) => {
-                      const isComplete = s.status === 'completed';
+                      const isComplete = isStudentEnrolled(s);
                       const isCapturing = s.status === 'capturing' || s.status === 'verified';
                       const hasAttention = needsAttention(s);
 
@@ -1214,7 +1290,7 @@ export default function EnrollmentMonitor() {
                                 </div>
                               </div>
 
-                              <ModernStatusBadge status={s.status} />
+                              <ModernStatusBadge student={s} />
                             </div>
 
                             {/* Indicators Pill Strip */}
@@ -1254,26 +1330,40 @@ export default function EnrollmentMonitor() {
                             </Button>
 
                             {data.canManage && (
-                              <Button
-                                size="sm"
-                                onClick={() =>
-                                  setRecaptureStudent({
-                                    id: s.admission_number,
-                                    name: s.name,
-                                    employee_id: s.admission_number,
-                                    category: s.category,
-                                  })
-                                }
-                                className={cn(
-                                  'h-9 sm:h-8 px-3 rounded-xl text-xs font-bold gap-1 shadow-sm active:scale-95 touch-manipulation',
-                                  isComplete
-                                    ? 'bg-white/10 hover:bg-white/20 text-white border border-white/15'
-                                    : 'bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-600 hover:to-teal-700 text-slate-950 font-black'
+                              <>
+                                {isComplete && (
+                                  <Button
+                                    size="sm"
+                                    variant="ghost"
+                                    title="Revert biometric enrollment"
+                                    onClick={() => setRevertingStudent(s)}
+                                    className="h-9 sm:h-8 px-2.5 rounded-xl text-xs font-bold text-rose-300 hover:text-rose-100 hover:bg-rose-500/20 border border-rose-500/30 gap-1 active:scale-95 touch-manipulation"
+                                  >
+                                    <RotateCcw className="h-3.5 w-3.5 text-rose-400" />
+                                    <span className="hidden xs:inline">Revert</span>
+                                  </Button>
                                 )}
-                              >
-                                <ScanFace className="h-3.5 w-3.5" />
-                                {isComplete ? 'Re-scan' : 'Capture'}
-                              </Button>
+                                <Button
+                                  size="sm"
+                                  onClick={() =>
+                                    setRecaptureStudent({
+                                      id: s.admission_number,
+                                      name: s.name,
+                                      employee_id: s.admission_number,
+                                      category: s.category,
+                                    })
+                                  }
+                                  className={cn(
+                                    'h-9 sm:h-8 px-3 rounded-xl text-xs font-bold gap-1 shadow-sm active:scale-95 touch-manipulation',
+                                    isComplete
+                                      ? 'bg-white/10 hover:bg-white/20 text-white border border-white/15'
+                                      : 'bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-600 hover:to-teal-700 text-slate-950 font-black'
+                                  )}
+                                >
+                                  <ScanFace className="h-3.5 w-3.5" />
+                                  {isComplete ? 'Re-scan' : 'Capture'}
+                                </Button>
+                              </>
                             )}
                           </div>
                         </motion.div>
@@ -1334,8 +1424,66 @@ export default function EnrollmentMonitor() {
                 category: st.category,
               })
             }
+            onRevert={(st) => setRevertingStudent(st)}
           />
         )}
+
+        {/* Revert Confirmation Dialog */}
+        <Dialog open={Boolean(revertingStudent)} onOpenChange={(open) => !open && setRevertingStudent(null)}>
+          <DialogContent className="max-w-md bg-slate-900 border-white/10 text-white">
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2 text-rose-400">
+                <RotateCcw className="h-5 w-5" />
+                Revert Biometric Enrollment
+              </DialogTitle>
+              <DialogDescription className="text-white/70 text-xs">
+                Are you sure you want to revert biometric enrollment for{' '}
+                <strong className="text-white">{revertingStudent?.name}</strong> (ID:{' '}
+                <span className="font-mono text-emerald-300">{revertingStudent?.admission_number}</span>)?
+              </DialogDescription>
+            </DialogHeader>
+
+            <div className="rounded-xl border border-rose-500/20 bg-rose-500/10 p-3 text-xs text-rose-200 space-y-1">
+              <p className="font-semibold">This action will:</p>
+              <ul className="list-disc list-inside text-rose-200/80 space-y-0.5">
+                <li>Clear all 3D face samples and registered biometric vectors</li>
+                <li>Reset enrollment status to <strong>Not Started</strong></li>
+                <li>Allow the student or parent to start fresh calibration</li>
+              </ul>
+            </div>
+
+            <DialogFooter className="gap-2 sm:gap-0 mt-2">
+              <Button
+                variant="ghost"
+                size="sm"
+                disabled={isReverting}
+                onClick={() => setRevertingStudent(null)}
+                className="text-white/70 hover:text-white"
+              >
+                Cancel
+              </Button>
+              <Button
+                variant="destructive"
+                size="sm"
+                disabled={isReverting}
+                onClick={() => revertingStudent && void handleRevert(revertingStudent)}
+                className="bg-rose-600 hover:bg-rose-700 text-white gap-1.5 font-bold"
+              >
+                {isReverting ? (
+                  <>
+                    <RefreshCw className="h-3.5 w-3.5 animate-spin" />
+                    Reverting...
+                  </>
+                ) : (
+                  <>
+                    <RotateCcw className="h-3.5 w-3.5" />
+                    Yes, Revert Enrollment
+                  </>
+                )}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
 
         {/* 3D Face Recapture Modal directly embedded! */}
         <CaptureFaceDialog

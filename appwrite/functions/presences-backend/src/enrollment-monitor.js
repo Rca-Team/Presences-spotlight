@@ -114,7 +114,13 @@ export function createEnrollmentMonitor({ db, databaseId, files, now }) {
       if (c.status === 'pending') row.correction = item.id;
     }
     const descriptorKeys = new Set(descriptors.flatMap(d => [d.student_id, d.user_id].filter(Boolean)));
-    for (const row of byAdmission.values()) row.faceOnFile = row.status === 'completed' || descriptorKeys.has(row.admission_number) || descriptorKeys.has(row.userId);
+    for (const row of byAdmission.values()) {
+      const hasFace = descriptorKeys.has(row.admission_number) || descriptorKeys.has(row.userId);
+      row.faceOnFile = row.status === 'completed' || hasFace;
+      if (hasFace && row.status === 'not_started') {
+        row.status = 'completed';
+      }
+    }
     const students = [...byAdmission.values()].map(({ userId, ...row }) => row);
     return { scope, generatedAt: t, students, activity, corrections: correctionList.sort((a, b) => b.at - a.at), canManage: scope.all };
   }
