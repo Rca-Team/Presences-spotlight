@@ -4,26 +4,16 @@ import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
 import {
   ArrowLeft,
   ArrowRight,
+  Camera,
   Check,
   CheckCircle2,
   Fingerprint,
-  Glasses,
   Loader2,
   LockKeyhole,
   ShieldCheck,
-  Sun,
-  ScanFace,
-  RotateCcw,
-  Sparkles,
-  Camera,
-  Zap,
-  GraduationCap,
-  Phone,
-  Calendar,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Badge } from '@/components/ui/badge';
 import GuidedFaceCapture from '@/components/enrollment/GuidedFaceCapture';
 import IdCardPhotoStep from '@/components/enrollment/IdCardPhotoStep';
 import InteractiveIdCard from '@/components/enrollment/InteractiveIdCard';
@@ -296,223 +286,74 @@ export default function StudentEnrollment() {
   return (
     <main className="enrollment-shell">
       <header className="enrollment-header">
-        <div className="flex items-center gap-2.5 sm:gap-3 flex-wrap">
-          <a href="/" className="flex items-center gap-2.5 group shrink-0">
-            <div className="relative">
-              <img
-                src="/logo.png"
-                alt="Presences AI"
-                className="h-8 w-8 sm:h-9 sm:w-9 object-contain drop-shadow-md group-hover:scale-105 transition-transform"
-              />
-              <span className="absolute -bottom-0.5 -right-0.5 w-2.5 h-2.5 rounded-full bg-emerald-400 border-2 border-slate-950 animate-pulse" />
-            </div>
-            <div className="flex flex-col leading-none">
-              <div className="flex items-center gap-1.5">
-                <span className="text-sm sm:text-base font-extrabold tracking-tight bg-clip-text text-transparent bg-gradient-to-r from-emerald-400 via-teal-300 to-cyan-400">
-                  PRESENCES
-                </span>
-                <span className="px-1.5 py-0.5 rounded-md bg-emerald-500/20 border border-emerald-400/40 text-[9px] font-mono font-extrabold text-emerald-300 leading-none">
-                  AI
-                </span>
-              </div>
-              <span className="text-[9px] text-slate-400 tracking-[0.16em] uppercase font-medium mt-0.5">
-                Smart Biometrics
-              </span>
-            </div>
-          </a>
-
-          <span className="text-white/25 hidden sm:inline">×</span>
-
-          {/* PM Shri Kendriya Vidyalaya Official Collaboration Badge */}
-          <div className="flex items-center gap-2 bg-white/[0.08] hover:bg-white/10 transition-colors border border-white/10 px-2.5 py-1 rounded-2xl backdrop-blur-md shadow-sm">
+        <div className="flex items-center gap-2.5">
+          <div className="flex items-center -space-x-1 shrink-0">
             <img
               src="/kvs-logo.png"
-              alt="Kendriya Vidyalaya Sangathan"
-              className="h-5 w-5 object-contain rounded-full bg-white p-0.5 shadow-sm shrink-0"
+              alt="PM Shri KV"
+              className="h-7 w-7 object-contain rounded-full bg-white p-0.5 border border-white/10 shadow-sm"
             />
-            <div className="text-left hidden sm:block">
-              <p className="text-[10px] font-black tracking-wide text-white leading-tight">
-                PM SHRI KENDRIYA VIDYALAYA
-              </p>
-              <p className="text-[8px] font-semibold text-emerald-400 tracking-wider leading-none">
-                NFC VIGYAN VIHAR
-              </p>
-            </div>
-            <span className="text-[9px] font-bold text-emerald-300 sm:hidden">
-              PM Shri KV
-            </span>
+            <img
+              src="/logo.png"
+              alt="Presences AI"
+              className="h-7 w-7 object-contain rounded-full bg-slate-900 p-1 border border-white/10 shadow-sm"
+            />
           </div>
+          <div>
+            <span className="text-xs font-semibold text-white block leading-tight">PM Shri Kendriya Vidyalaya</span>
+            <span className="text-[10px] text-slate-400">Student Biometric Enrollment</span>
+          </div>
+        </div>
 
-          {(isStaffBypass || returnTo !== '/') && (
-            <Link
-              to={returnTo}
-              className="flex items-center gap-1.5 text-xs font-semibold px-2.5 py-1 rounded-full bg-emerald-500/15 border border-emerald-500/30 text-emerald-300 hover:bg-emerald-500/25 transition-all"
-            >
-              <ArrowLeft size={13} />
-              <span>Back to {returnLabel}</span>
-            </Link>
-          )}
-        </div>
-        <div className="flex items-center gap-2 text-xs font-semibold px-2.5 py-1 rounded-full bg-white/5 border border-white/10 text-slate-300 shrink-0">
-          <LockKeyhole size={12} className="text-emerald-400" />
-          <span>{isStaffBypass ? 'Staff Direct Studio' : 'Official KV Enrollment'}</span>
-        </div>
+        {(isStaffBypass || returnTo !== '/') ? (
+          <Link
+            to={returnTo}
+            className="flex items-center gap-1.5 text-xs font-medium px-2.5 py-1 rounded-lg bg-white/5 border border-white/10 text-slate-300 hover:text-white transition-all"
+          >
+            <ArrowLeft size={13} />
+            <span>Back</span>
+          </Link>
+        ) : (
+          <div className="flex items-center gap-1.5 text-[11px] font-medium px-2 py-0.5 rounded-full bg-white/5 border border-white/10 text-slate-400">
+            <LockKeyhole size={11} className="text-emerald-400" />
+            <span>Secure</span>
+          </div>
+        )}
       </header>
 
-      {/* Mobile Step Tracker Banner */}
-      <div className="lg:hidden max-w-xl mx-auto mt-4 mb-2 p-3 rounded-2xl bg-slate-900/80 backdrop-blur-md border border-white/10 shadow-lg">
-        <div className="flex items-center justify-between mb-2">
-          <div className="flex items-center gap-2">
-            <div className="w-6 h-6 rounded-lg bg-emerald-500/20 border border-emerald-400/40 text-emerald-300 flex items-center justify-center font-black text-xs">
-              {currentStepIndex + 1}
-            </div>
-            <span className="text-xs font-bold text-white">
-              {stepsList[currentStepIndex].label}
-            </span>
+      {/* Clean Minimal Step Progress Indicator */}
+      {phase !== 'done' && (
+        <div className="max-w-[500px] mx-auto mt-4 mb-2 px-1">
+          <div className="flex items-center justify-between text-xs text-slate-400 mb-1.5 font-medium">
+            <span>Step {currentStepIndex + 1} of 4: {stepsList[currentStepIndex].shortLabel}</span>
+            <span className="text-[11px] font-mono text-emerald-400">{Math.round(((currentStepIndex + 1) / 4) * 100)}%</span>
           </div>
-          <span className="text-[10px] font-mono font-bold text-emerald-400/90 uppercase tracking-wider">
-            Step {currentStepIndex + 1} of 4
-          </span>
-        </div>
-        <div className="grid grid-cols-4 gap-1.5">
-          {stepsList.map((st, i) => (
+          <div className="h-1 bg-white/10 rounded-full overflow-hidden">
             <div
-              key={st.step}
-              className={`h-1.5 rounded-full transition-all duration-300 ${
-                i === currentStepIndex
-                  ? 'bg-gradient-to-r from-emerald-400 to-teal-300 shadow-sm shadow-emerald-400/50'
-                  : i < currentStepIndex
-                  ? 'bg-emerald-600'
-                  : 'bg-white/10'
-              }`}
+              className="h-full bg-emerald-500 rounded-full transition-all duration-300"
+              style={{ width: `${((currentStepIndex + 1) / 4) * 100}%` }}
             />
-          ))}
+          </div>
         </div>
-      </div>
+      )}
 
       <div className={cn('enrollment-layout', (phase === 'idphoto' || phase === 'capture' || phase === 'review') && 'is-wide')}>
-        {phase !== 'idphoto' && phase !== 'capture' && phase !== 'review' && (
-          <aside className="enrollment-intro hidden lg:block space-y-6">
-            {/* Visual Institutional Co-Branding Ribbon */}
-            <div className="inline-flex items-center gap-2.5 px-3 py-1.5 rounded-2xl bg-white/[0.06] border border-white/10 backdrop-blur-md shadow-sm">
-              <img src="/kvs-logo.png" alt="KVS" className="h-6 w-6 object-contain rounded-full bg-white p-0.5" />
-              <div className="text-left leading-none">
-                <span className="text-[11px] font-black text-white block">PM SHRI KENDRIYA VIDYALAYA</span>
-                <span className="text-[9px] font-semibold text-emerald-400">NFC Vigyan Vihar · Presences AI</span>
-              </div>
-            </div>
-
-            <div className="space-y-1.5">
-              <h1 className="text-3xl lg:text-4xl font-black text-white tracking-tight">
-                Student 3D <span className="text-transparent bg-clip-text bg-gradient-to-r from-emerald-400 via-teal-300 to-cyan-400">Enrollment</span>
-              </h1>
-              <p className="text-xs text-slate-400 font-medium">
-                Fast 1-minute biometric face calibration in 4 simple steps.
-              </p>
-            </div>
-
-            {/* Visual Interactive Process Roadmap */}
-            <div className="space-y-2.5 pt-1">
-              {[
-                { step: 1, title: 'Student Match', desc: 'Admission No. & DOB lookup', icon: Fingerprint },
-                { step: 2, title: '3D Face Capture', desc: 'Guided multi-angle calibration', icon: Camera },
-                { step: 3, title: 'ID Photo Studio', desc: 'High-res portrait selection', icon: Sparkles },
-                { step: 4, title: 'Digital Student ID', desc: 'Verified school credential', icon: ShieldCheck },
-              ].map((s, idx) => {
-                const isCurrent = currentStepIndex === idx;
-                const isDone = currentStepIndex > idx;
-                const Icon = s.icon;
-                return (
-                  <div
-                    key={s.step}
-                    className={`flex items-center gap-3.5 p-3 rounded-2xl border transition-all duration-300 ${
-                      isCurrent
-                        ? 'bg-emerald-500/15 border-emerald-400/50 shadow-lg shadow-emerald-500/10 translate-x-1'
-                        : isDone
-                        ? 'bg-white/[0.04] border-emerald-500/20 text-slate-300 opacity-80'
-                        : 'bg-white/[0.02] border-white/5 text-slate-500 opacity-60'
-                    }`}
-                  >
-                    <div className={`w-9 h-9 rounded-xl flex items-center justify-center font-bold text-xs shrink-0 border ${
-                      isDone
-                        ? 'bg-emerald-500 text-slate-950 border-emerald-400'
-                        : isCurrent
-                        ? 'bg-emerald-500/20 text-emerald-300 border-emerald-400 animate-pulse'
-                        : 'bg-white/5 text-slate-400 border-white/10'
-                    }`}>
-                      {isDone ? <Check size={16} strokeWidth={3} /> : <Icon size={16} />}
-                    </div>
-                    <div className="min-w-0 flex-1">
-                      <div className="flex items-center justify-between">
-                        <span className={`text-xs font-bold ${isCurrent ? 'text-white' : isDone ? 'text-slate-200' : 'text-slate-400'}`}>
-                          {s.title}
-                        </span>
-                        <span className="text-[10px] font-mono font-bold text-slate-500">
-                          0{s.step}
-                        </span>
-                      </div>
-                      <p className="text-[10px] text-slate-400 mt-0.5 truncate">
-                        {s.desc}
-                      </p>
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-
-            {/* Visual Trust Badge Strip */}
-            <div className="grid grid-cols-3 gap-2 pt-2 border-t border-white/10">
-              <div className="p-2.5 rounded-xl bg-white/[0.03] border border-white/5 text-center">
-                <Zap size={14} className="text-emerald-400 mx-auto mb-1" />
-                <span className="text-[10px] font-bold text-slate-300 block">40ms Speed</span>
-              </div>
-              <div className="p-2.5 rounded-xl bg-white/[0.03] border border-white/5 text-center">
-                <LockKeyhole size={14} className="text-cyan-400 mx-auto mb-1" />
-                <span className="text-[10px] font-bold text-slate-300 block">Encrypted</span>
-              </div>
-              <div className="p-2.5 rounded-xl bg-white/[0.03] border border-white/5 text-center">
-                <ShieldCheck size={14} className="text-purple-400 mx-auto mb-1" />
-                <span className="text-[10px] font-bold text-slate-300 block">Private DB</span>
-              </div>
-            </div>
-          </aside>
-        )}
-
         <section className={cn('enrollment-glass', (phase === 'idphoto' || phase === 'capture' || phase === 'review') && 'w-full')}>
           <AnimatePresence mode="wait">
             <motion.div
               key={phase}
-              initial={reduced ? false : { opacity: 0, x: 24 }}
-              animate={{ opacity: 1, x: 0 }}
-              exit={reduced ? undefined : { opacity: 0, x: -16 }}
-              transition={{ duration: 0.25 }}
+              initial={reduced ? false : { opacity: 0, y: 12 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={reduced ? undefined : { opacity: 0, y: -12 }}
+              transition={{ duration: 0.2 }}
             >
               {phase === 'verify' && (
                 <>
-                  {/* Institutional Co-Branding Banner */}
-                  <div className="flex items-center justify-between gap-3 mb-6 p-3 rounded-2xl bg-white/5 border border-white/10 backdrop-blur-md">
-                    <div className="flex items-center gap-2.5">
-                      <div className="flex items-center -space-x-2 shrink-0">
-                        <div className="w-10 h-10 rounded-xl bg-white p-1 flex items-center justify-center shadow-md border border-white/20 relative z-10">
-                          <img src="/kvs-logo.png" alt="Kendriya Vidyalaya Sangathan" className="w-full h-full object-contain" />
-                        </div>
-                        <div className="w-10 h-10 rounded-xl bg-slate-900/90 p-1.5 flex items-center justify-center shadow-md border border-emerald-400/40 relative z-20">
-                          <img src="/logo.png" alt="Presences AI" className="w-full h-full object-contain" />
-                        </div>
-                      </div>
-                      <div className="text-left pl-1">
-                        <p className="text-xs font-black text-white leading-tight">PM SHRI KENDRIYA VIDYALAYA</p>
-                        <p className="text-[10px] text-emerald-400 font-medium">Biometric Enrollment Powered by Presences AI</p>
-                      </div>
-                    </div>
-                    <Badge variant="outline" className="hidden sm:inline-flex text-[9px] font-bold px-2 py-0.5 bg-emerald-500/15 border-emerald-400/30 text-emerald-300">
-                      Presences Vision AI
-                    </Badge>
+                  <div className="text-center mb-6">
+                    <div className="enrollment-icon mx-auto"><Fingerprint size={20} /></div>
+                    <h2 className="text-xl font-bold text-white">Find Student</h2>
+                    <p className="enrollment-muted text-xs">Enter your details to locate student record</p>
                   </div>
-
-                  <div className="enrollment-icon"><Fingerprint /></div>
-                  <h2 className="text-xl sm:text-2xl font-black text-white">Find your student</h2>
-                  <p className="enrollment-muted text-xs">Verify identity to begin 3D biometric enrollment</p>
 
                   <form
                     onSubmit={e => {
@@ -526,27 +367,26 @@ export default function StudentEnrollment() {
                         acceptSession(verifiedSession);
                       });
                     }}
-                    className="space-y-4 mt-6 text-left"
+                    className="space-y-4 text-left"
                   >
-                    <label className="enrollment-label">
-                      <span className="flex items-center gap-2 text-xs font-semibold text-slate-300">
-                        <GraduationCap className="w-4 h-4 text-emerald-400" />
+                    <div>
+                      <label className="text-xs font-medium text-slate-300 block mb-1.5">
                         Student Admission Number
-                      </span>
+                      </label>
                       <Input
                         required
                         value={admission}
                         onChange={e => setAdmission(e.target.value)}
                         placeholder="e.g. 10425"
                         autoComplete="off"
+                        className="bg-white/5 border-white/10 text-white placeholder:text-slate-500 h-11"
                       />
-                    </label>
+                    </div>
 
-                    <label className="enrollment-label">
-                      <span className="flex items-center gap-2 text-xs font-semibold text-slate-300">
-                        <Phone className="w-4 h-4 text-cyan-400" />
+                    <div>
+                      <label className="text-xs font-medium text-slate-300 block mb-1.5">
                         Registered Parent Phone
-                      </span>
+                      </label>
                       <Input
                         required
                         value={phone}
@@ -554,23 +394,23 @@ export default function StudentEnrollment() {
                         inputMode="tel"
                         autoComplete="tel"
                         placeholder="e.g. 9876543210"
+                        className="bg-white/5 border-white/10 text-white placeholder:text-slate-500 h-11"
                       />
-                    </label>
+                    </div>
 
-                    <label className="enrollment-label">
-                      <span className="flex items-center gap-2 text-xs font-semibold text-slate-300">
-                        <Calendar className="w-4 h-4 text-purple-400" />
+                    <div>
+                      <label className="text-xs font-medium text-slate-300 block mb-1.5">
                         Student Date of Birth
-                      </span>
+                      </label>
                       <DobDatePicker
                         value={dob}
                         onChange={setDob}
                         required
                       />
-                    </label>
+                    </div>
 
-                    <Button disabled={busy} className="enrollment-primary w-full mt-2 font-bold flex items-center justify-center gap-2">
-                      {busy ? <Loader2 className="animate-spin" /> : <>Verify and Continue<ArrowRight className="h-4 w-4" /></>}
+                    <Button disabled={busy} className="w-full mt-2 font-semibold h-11 rounded-xl bg-emerald-500 hover:bg-emerald-600 text-slate-950 flex items-center justify-center gap-2 shadow-sm">
+                      {busy ? <Loader2 className="animate-spin h-4 w-4" /> : <>Continue <ArrowRight className="h-4 w-4" /></>}
                     </Button>
                   </form>
                 </>
@@ -578,116 +418,61 @@ export default function StudentEnrollment() {
 
               {phase === 'consent' && (
                 <>
-                  <div className="enrollment-icon"><ShieldCheck /></div>
-                  <h2 className="text-xl sm:text-2xl font-black text-white">
-                    Ready, {session?.student.name?.split(' ')[0] || 'Student'}!
-                  </h2>
-                  {isStaffBypass ? (
-                    <div className="mt-3 mb-2 p-3 rounded-2xl bg-emerald-500/10 border border-emerald-500/25 text-emerald-300 text-xs text-left flex items-center gap-2.5">
+                  <div className="text-center mb-5">
+                    <div className="enrollment-icon mx-auto"><ShieldCheck size={20} /></div>
+                    <h2 className="text-xl font-bold text-white">
+                      Camera Preparation
+                    </h2>
+                    <p className="text-xs text-slate-400 mt-1">
+                      Student: <span className="text-white font-medium">{session?.student.name}</span>{' '}
+                      <span className="font-mono text-emerald-400">({session?.student.admission_number})</span>
+                    </p>
+                  </div>
+
+                  {isStaffBypass && (
+                    <div className="mb-4 p-2.5 rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-emerald-300 text-xs text-left flex items-center gap-2">
                       <ShieldCheck className="h-4 w-4 shrink-0 text-emerald-400" />
-                      <div>
-                        <span className="font-bold text-emerald-200">Staff Verified:</span>{' '}
-                        <span className="text-white font-medium">{session?.student.name}</span>{' '}
-                        <span className="font-mono text-emerald-400">({session?.student.admission_number})</span>
-                      </div>
+                      <span>Staff verification bypass active</span>
                     </div>
-                  ) : (
-                    <p className="enrollment-muted text-xs">Quick 60-second Face ID calibration</p>
                   )}
 
-                  {/* 4-Tile Visual Camera Preparation Grid */}
-                  <div className="grid grid-cols-2 gap-2.5 my-5 text-left">
-                    <div className="p-3 rounded-2xl bg-white/[0.04] border border-white/10 flex flex-col gap-1.5 hover:border-amber-400/30 transition-all">
-                      <div className="w-8 h-8 rounded-xl bg-amber-500/15 border border-amber-400/30 flex items-center justify-center text-amber-300">
-                        <Sun size={17} />
-                      </div>
-                      <span className="text-xs font-bold text-white">Good Lighting</span>
-                      <span className="text-[11px] text-slate-400 leading-tight">Face the light directly, avoid strong shadows</span>
+                  {/* Concise practical camera guidance */}
+                  <div className="p-3.5 rounded-xl bg-white/[0.03] border border-white/10 text-xs text-slate-300 space-y-2 text-left mb-4">
+                    <div className="flex items-start gap-2">
+                      <span className="text-emerald-400 font-bold">•</span>
+                      <span>Ensure good, direct face lighting without heavy shadows.</span>
                     </div>
-
-                    <div className="p-3 rounded-2xl bg-white/[0.04] border border-white/10 flex flex-col gap-1.5 hover:border-emerald-400/30 transition-all">
-                      <div className="w-8 h-8 rounded-xl bg-emerald-500/15 border border-emerald-400/30 flex items-center justify-center text-emerald-300">
-                        <ScanFace size={17} />
-                      </div>
-                      <span className="text-xs font-bold text-white">Eye Level</span>
-                      <span className="text-[11px] text-slate-400 leading-tight">Hold camera upright at comfortable eye level</span>
+                    <div className="flex items-start gap-2">
+                      <span className="text-emerald-400 font-bold">•</span>
+                      <span>Hold camera straight at eye level and follow the on-screen prompts.</span>
                     </div>
-
-                    <div className="p-3 rounded-2xl bg-white/[0.04] border border-white/10 flex flex-col gap-1.5 hover:border-cyan-400/30 transition-all">
-                      <div className="w-8 h-8 rounded-xl bg-cyan-500/15 border border-cyan-400/30 flex items-center justify-center text-cyan-300">
-                        <Glasses size={17} />
-                      </div>
-                      <span className="text-xs font-bold text-white">Spectacles</span>
-                      <span className="text-[11px] text-slate-400 leading-tight">Camera will guide: with and without glasses</span>
-                    </div>
-
-                    <div className="p-3 rounded-2xl bg-white/[0.04] border border-white/10 flex flex-col gap-1.5 hover:border-purple-400/30 transition-all">
-                      <div className="w-8 h-8 rounded-xl bg-purple-500/15 border border-purple-400/30 flex items-center justify-center text-purple-300">
-                        <RotateCcw size={17} />
-                      </div>
-                      <span className="text-xs font-bold text-white">Gentle Turns</span>
-                      <span className="text-[11px] text-slate-400 leading-tight">Follow the green ring around your face</span>
+                    <div className="flex items-start gap-2">
+                      <span className="text-emerald-400 font-bold">•</span>
+                      <span>If wearing spectacles, you'll be prompted with and without glasses.</span>
                     </div>
                   </div>
 
-                  {/* Visual Mode Selection: Clean Baseline vs Additive */}
-                  <div className="grid grid-cols-2 gap-2 text-left my-4">
-                    <button
-                      type="button"
-                      onClick={() => setReplaceExisting(true)}
-                      className={`p-3 rounded-2xl border text-left transition-all ${
-                        replaceExisting
-                          ? 'bg-emerald-500/15 border-emerald-400 text-white shadow-md shadow-emerald-500/10'
-                          : 'bg-white/[0.03] border-white/10 text-slate-400 hover:bg-white/[0.06]'
-                      }`}
-                    >
-                      <div className="flex items-center justify-between mb-1">
-                        <Sparkles size={16} className={replaceExisting ? 'text-emerald-400' : 'text-slate-500'} />
-                        {replaceExisting && <Check size={14} className="text-emerald-400" />}
-                      </div>
-                      <p className="text-xs font-bold text-white">Fresh 3D Scan</p>
-                      <p className="text-[10px] text-slate-400 mt-0.5">Recommended fresh baseline</p>
-                    </button>
-
-                    <button
-                      type="button"
-                      onClick={() => setReplaceExisting(false)}
-                      className={`p-3 rounded-2xl border text-left transition-all ${
-                        !replaceExisting
-                          ? 'bg-emerald-500/15 border-emerald-400 text-white shadow-md shadow-emerald-500/10'
-                          : 'bg-white/[0.03] border-white/10 text-slate-400 hover:bg-white/[0.06]'
-                      }`}
-                    >
-                      <div className="flex items-center justify-between mb-1">
-                        <Camera size={16} className={!replaceExisting ? 'text-emerald-400' : 'text-slate-500'} />
-                        {!replaceExisting && <Check size={14} className="text-emerald-400" />}
-                      </div>
-                      <p className="text-xs font-bold text-white">Add New Angles</p>
-                      <p className="text-[10px] text-slate-400 mt-0.5">Append to existing photos</p>
-                    </button>
-                  </div>
-
-                  {/* Consent Confirmation */}
-                  <label className="flex items-center gap-3 p-3 rounded-2xl bg-white/[0.04] border border-white/10 text-xs leading-relaxed text-slate-300 text-left cursor-pointer hover:bg-white/[0.07] transition-all">
+                  {/* Simple practical consent check */}
+                  <label className="flex items-start gap-2.5 p-3 rounded-xl bg-white/[0.02] border border-white/10 text-xs text-slate-300 text-left cursor-pointer hover:bg-white/[0.04] transition-all mb-4">
                     <input
                       type="checkbox"
                       checked={consent}
                       onChange={e => setConsent(e.target.checked)}
-                      className="w-4 h-4 rounded accent-emerald-500 cursor-pointer shrink-0"
+                      className="mt-0.5 w-4 h-4 rounded accent-emerald-500 cursor-pointer shrink-0"
                     />
                     <span>
-                      I authorize this biometric facial capture for school attendance under PM Shri KV guidelines.
+                      I authorize facial biometric capture for school attendance under PM Shri KV guidelines.
                     </span>
                   </label>
 
                   <Button
-                    className="w-full enrollment-primary mt-5 flex items-center justify-center gap-2 text-sm font-bold shadow-lg shadow-emerald-500/20"
+                    className="w-full bg-emerald-500 hover:bg-emerald-600 text-slate-950 font-semibold h-11 rounded-xl flex items-center justify-center gap-2 shadow-sm"
                     disabled={!consent || expired}
                     onClick={() => setPhase('capture')}
                   >
                     <Camera size={16} />
-                    Start 3D Camera Capture
-                    <ArrowRight className="ml-1 h-4 w-4" />
+                    <span>Start Camera</span>
+                    <ArrowRight className="h-4 w-4" />
                   </Button>
                 </>
               )}
@@ -836,24 +621,8 @@ export default function StudentEnrollment() {
           {error && <p role="alert" className="enrollment-error">{error}</p>}
         </section>
       </div>
-      <footer className="enrollment-footer py-6 mt-8 border-t border-white/10">
-        <div className="max-w-4xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-4 text-xs text-slate-400">
-          <div className="flex items-center gap-2.5">
-            <div className="w-7 h-7 rounded-xl bg-slate-950 p-1 border border-white/15 flex items-center justify-center shadow-sm">
-              <img src="/logo.png" alt="Presences AI" className="w-full h-full object-contain" />
-            </div>
-            <div className="text-left">
-              <span className="font-extrabold text-white text-xs tracking-wide">PRESENCES AI</span>
-              <span className="text-[10px] text-slate-400 block">Smart School Biometric Security & Attendance Platform</span>
-            </div>
-          </div>
-          <div className="flex items-center gap-2.5 text-[11px] text-slate-400">
-            <img src="/kvs-logo.png" alt="KVS" className="h-4 w-4 object-contain rounded-full bg-white p-0.5" />
-            <span className="text-slate-300 font-semibold">PM Shri Kendriya Vidyalaya NFC Vigyan Vihar</span>
-            <span className="text-white/20">•</span>
-            <span className="text-emerald-400 font-semibold">Official Deployment</span>
-          </div>
-        </div>
+      <footer className="max-w-[500px] mx-auto py-6 mt-8 text-center text-xs text-slate-500 border-t border-white/5">
+        PM Shri Kendriya Vidyalaya NFC Vigyan Vihar · Presences AI
       </footer>
     </main>
   );

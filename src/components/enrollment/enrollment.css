@@ -1,15 +1,11 @@
 .enrollment-shell {
-  --enroll-line: rgba(255, 255, 255, 0.12);
+  --enroll-line: rgba(255, 255, 255, 0.08);
   --neon-emerald: #10b981;
-  --neon-emerald-glow: rgba(52, 211, 153, 0.45);
-  --neon-cyan: #06b6d4;
-  --neon-cyan-glow: rgba(34, 211, 238, 0.4);
+  --neon-emerald-glow: rgba(52, 211, 153, 0.2);
   min-height: 100dvh;
-  color: #f3f6fc;
-  background: radial-gradient(ellipse at 15% 15%, #0d383b99, transparent 55%),
-              radial-gradient(ellipse at 85% 75%, #231b4688, transparent 55%),
-              radial-gradient(circle at 50% 50%, #06111f, #03070d);
-  padding: 28px clamp(18px, 5vw, 80px);
+  color: #f1f5f9;
+  background: linear-gradient(180deg, #0c111d 0%, #070a12 100%);
+  padding: 20px 16px;
   font-family: inherit;
   color-scheme: dark;
   position: relative;
@@ -17,17 +13,11 @@
 }
 
 .enrollment-shell::before {
-  content: "";
-  position: fixed;
-  inset: 0;
-  pointer-events: none;
-  opacity: 0.035;
-  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 180 180' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.8' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Cpath fill='%23fff' filter='url(%23n)' opacity='.7' d='M0 0h180v180H0z'/%3E%3C/svg%3E");
-  z-index: 0;
+  display: none;
 }
 
 .enrollment-header {
-  max-width: 1150px;
+  max-width: 500px;
   margin: auto;
   display: flex;
   align-items: center;
@@ -37,21 +27,15 @@
 }
 
 .enrollment-layout {
-  max-width: 1100px;
-  margin: 60px auto;
-  display: grid;
-  grid-template-columns: 1fr 1.15fr;
-  gap: 70px;
-  align-items: start;
+  max-width: 500px;
+  margin: 20px auto;
   position: relative;
   z-index: 1;
 }
 
 .enrollment-layout.is-wide {
-  grid-template-columns: 1fr !important;
-  max-width: 980px;
-  gap: 0;
-  margin: 30px auto;
+  max-width: 860px;
+  margin: 16px auto;
 }
 
 .enrollment-intro {
@@ -151,28 +135,21 @@
   color: #34d399;
 }
 
-/* Glassmorphism Panel with iOS Texture */
+/* Clean Minimal Panel */
 .enrollment-glass {
-  padding: 34px;
-  border: 1px solid rgba(255, 255, 255, 0.12);
-  border-radius: 36px;
-  background: linear-gradient(135deg, rgba(255, 255, 255, 0.07), rgba(255, 255, 255, 0.02)), #0d1522dd;
-  box-shadow: 0 30px 90px rgba(0, 0, 0, 0.65), inset 0 1px 0 rgba(255, 255, 255, 0.18);
-  backdrop-filter: blur(24px);
-  -webkit-backdrop-filter: blur(24px);
+  padding: 30px 24px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 24px;
+  background: rgba(15, 23, 42, 0.65);
+  box-shadow: 0 16px 48px rgba(0, 0, 0, 0.4);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
   position: relative;
   overflow: hidden;
 }
 
 .enrollment-glass::after {
-  content: "";
-  position: absolute;
-  top: 0;
-  left: 0;
-  right: 0;
-  height: 1px;
-  background: linear-gradient(90deg, transparent, rgba(52, 211, 153, 0.5), rgba(34, 211, 238, 0.4), transparent);
-  pointer-events: none;
+  display: none;
 }
 
 .enrollment-glass > div {
@@ -180,8 +157,8 @@
 }
 
 .enrollment-glass h2 {
-  font-size: 24px;
-  letter-spacing: -0.025em;
+  font-size: 20px;
+  letter-spacing: -0.02em;
   font-weight: 600;
   line-height: 1.25;
 }
@@ -189,21 +166,20 @@
 .enrollment-muted {
   font-size: 13px;
   color: #94a7bb;
-  line-height: 1.7;
-  margin-top: 8px;
+  line-height: 1.6;
+  margin-top: 6px;
 }
 
 .enrollment-icon {
   display: grid;
   place-items: center;
-  width: 50px;
-  height: 50px;
-  border-radius: 18px;
-  background: rgba(16, 185, 129, 0.12);
-  border: 1px solid rgba(52, 211, 153, 0.3);
-  color: #6ee7b7;
-  margin-bottom: 22px;
-  box-shadow: 0 0 20px rgba(16, 185, 129, 0.18);
+  width: 44px;
+  height: 44px;
+  border-radius: 14px;
+  background: rgba(16, 185, 129, 0.1);
+  border: 1px solid rgba(52, 211, 153, 0.2);
+  color: #34d399;
+  margin-bottom: 16px;
 }
 
 .enrollment-label {
