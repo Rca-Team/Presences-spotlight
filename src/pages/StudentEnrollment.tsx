@@ -1,7 +1,26 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
-import { ArrowLeft, ArrowRight, Check, CheckCircle2, Fingerprint, Glasses, Loader2, LockKeyhole, ShieldCheck } from 'lucide-react';
+import {
+  ArrowLeft,
+  ArrowRight,
+  Check,
+  CheckCircle2,
+  Fingerprint,
+  Glasses,
+  Loader2,
+  LockKeyhole,
+  ShieldCheck,
+  Sun,
+  ScanFace,
+  RotateCcw,
+  Sparkles,
+  Camera,
+  Zap,
+  GraduationCap,
+  Phone,
+  Calendar,
+} from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
@@ -373,86 +392,88 @@ export default function StudentEnrollment() {
 
       <div className={cn('enrollment-layout', (phase === 'idphoto' || phase === 'capture' || phase === 'review') && 'is-wide')}>
         {phase !== 'idphoto' && phase !== 'capture' && phase !== 'review' && (
-          <aside className="enrollment-intro hidden lg:block">
-            <div className="flex items-center gap-2 mb-3">
-              <span className="enrollment-eyebrow">Smart School Biometrics</span>
-              <Badge variant="outline" className="text-[9px] font-bold px-2 py-0.5 bg-blue-500/20 text-blue-300 border-blue-400/40">
-                KVS Affiliated
-              </Badge>
-            </div>
-            <h1>Your school day,<br /><span>ready in a few turns.</span></h1>
-            <p>Help your student get ready for seamless facial recognition attendance at PM Shri Kendriya Vidyalaya. Verify details, follow the camera, and confirm their digital student ID.</p>
-
-            {/* Official KVS Campus Collaboration Banner Card */}
-            <div className="p-4 rounded-3xl bg-gradient-to-br from-white/[0.07] via-slate-900/60 to-emerald-950/40 border border-emerald-500/30 backdrop-blur-xl shadow-xl my-6 space-y-3">
-              <div className="flex items-center gap-3">
-                <div className="h-12 w-12 rounded-2xl bg-white p-1.5 shadow-md flex items-center justify-center shrink-0 border border-white/20">
-                  <img src="/kvs-logo.png" alt="Kendriya Vidyalaya Sangathan" className="h-full w-full object-contain" />
-                </div>
-                <div className="min-w-0 flex-1">
-                  <Badge variant="outline" className="text-[9px] font-extrabold px-1.5 py-0 bg-emerald-500/20 text-emerald-300 border-emerald-400/40 uppercase tracking-wider mb-1">
-                    Official Campus Partner
-                  </Badge>
-                  <h4 className="text-xs font-black text-white leading-snug">
-                    PM SHRI KENDRIYA VIDYALAYA
-                  </h4>
-                  <p className="text-[10px] text-slate-300 font-medium">
-                    NFC Vigyan Vihar · Delhi Region
-                  </p>
-                </div>
-              </div>
-              <div className="text-[11px] text-slate-400 border-t border-white/10 pt-2.5 flex items-center justify-between">
-                <span className="text-emerald-400 font-semibold flex items-center gap-1.5 text-[10px]">
-                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" /> Kendriya Vidyalaya Sangathan
-                </span>
-                <span className="text-[10px] text-slate-400 font-mono">CBSE Affiliated</span>
+          <aside className="enrollment-intro hidden lg:block space-y-6">
+            {/* Visual Institutional Co-Branding Ribbon */}
+            <div className="inline-flex items-center gap-2.5 px-3 py-1.5 rounded-2xl bg-white/[0.06] border border-white/10 backdrop-blur-md shadow-sm">
+              <img src="/kvs-logo.png" alt="KVS" className="h-6 w-6 object-contain rounded-full bg-white p-0.5" />
+              <div className="text-left leading-none">
+                <span className="text-[11px] font-black text-white block">PM SHRI KENDRIYA VIDYALAYA</span>
+                <span className="text-[9px] font-semibold text-emerald-400">NFC Vigyan Vihar · Presences AI</span>
               </div>
             </div>
 
-            {/* Presences AI Biometric Architecture Showcase Card */}
-            <div className="p-3.5 rounded-3xl bg-gradient-to-br from-emerald-500/10 via-slate-900/80 to-cyan-500/10 border border-emerald-500/30 backdrop-blur-xl shadow-lg my-5 space-y-2.5">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2.5">
-                  <div className="w-8 h-8 rounded-xl bg-slate-950 p-1.5 border border-emerald-400/40 shadow-sm flex items-center justify-center shrink-0">
-                    <img src="/logo.png" alt="Presences AI" className="w-full h-full object-contain" />
-                  </div>
-                  <div>
-                    <div className="flex items-center gap-1.5">
-                      <span className="text-xs font-black text-white tracking-wide">PRESENCES AI</span>
-                      <span className="text-[9px] font-mono px-1.5 py-0.2 rounded bg-emerald-500/20 border border-emerald-400/40 text-emerald-300 font-bold">
-                        VISION v2.4
-                      </span>
+            <div className="space-y-1.5">
+              <h1 className="text-3xl lg:text-4xl font-black text-white tracking-tight">
+                Student 3D <span className="text-transparent bg-clip-text bg-gradient-to-r from-emerald-400 via-teal-300 to-cyan-400">Enrollment</span>
+              </h1>
+              <p className="text-xs text-slate-400 font-medium">
+                Fast 1-minute biometric face calibration in 4 simple steps.
+              </p>
+            </div>
+
+            {/* Visual Interactive Process Roadmap */}
+            <div className="space-y-2.5 pt-1">
+              {[
+                { step: 1, title: 'Student Match', desc: 'Admission No. & DOB lookup', icon: Fingerprint },
+                { step: 2, title: '3D Face Capture', desc: 'Guided multi-angle calibration', icon: Camera },
+                { step: 3, title: 'ID Photo Studio', desc: 'High-res portrait selection', icon: Sparkles },
+                { step: 4, title: 'Digital Student ID', desc: 'Verified school credential', icon: ShieldCheck },
+              ].map((s, idx) => {
+                const isCurrent = currentStepIndex === idx;
+                const isDone = currentStepIndex > idx;
+                const Icon = s.icon;
+                return (
+                  <div
+                    key={s.step}
+                    className={`flex items-center gap-3.5 p-3 rounded-2xl border transition-all duration-300 ${
+                      isCurrent
+                        ? 'bg-emerald-500/15 border-emerald-400/50 shadow-lg shadow-emerald-500/10 translate-x-1'
+                        : isDone
+                        ? 'bg-white/[0.04] border-emerald-500/20 text-slate-300 opacity-80'
+                        : 'bg-white/[0.02] border-white/5 text-slate-500 opacity-60'
+                    }`}
+                  >
+                    <div className={`w-9 h-9 rounded-xl flex items-center justify-center font-bold text-xs shrink-0 border ${
+                      isDone
+                        ? 'bg-emerald-500 text-slate-950 border-emerald-400'
+                        : isCurrent
+                        ? 'bg-emerald-500/20 text-emerald-300 border-emerald-400 animate-pulse'
+                        : 'bg-white/5 text-slate-400 border-white/10'
+                    }`}>
+                      {isDone ? <Check size={16} strokeWidth={3} /> : <Icon size={16} />}
                     </div>
-                    <p className="text-[10px] text-slate-400">Next-Gen Facial Biometric Platform</p>
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-center justify-between">
+                        <span className={`text-xs font-bold ${isCurrent ? 'text-white' : isDone ? 'text-slate-200' : 'text-slate-400'}`}>
+                          {s.title}
+                        </span>
+                        <span className="text-[10px] font-mono font-bold text-slate-500">
+                          0{s.step}
+                        </span>
+                      </div>
+                      <p className="text-[10px] text-slate-400 mt-0.5 truncate">
+                        {s.desc}
+                      </p>
+                    </div>
                   </div>
-                </div>
-                <Badge variant="outline" className="text-[9px] font-bold px-2 py-0.5 bg-emerald-500/15 border-emerald-400/30 text-emerald-300">
-                  ⚡ 40ms Match
-                </Badge>
-              </div>
-
-              <div className="grid grid-cols-2 gap-2 text-[10px] text-slate-300 pt-1 border-t border-white/10">
-                <div className="flex items-center gap-1.5 text-slate-300">
-                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 shrink-0" />
-                  <span>3D Face Mesh Model</span>
-                </div>
-                <div className="flex items-center gap-1.5 text-slate-300">
-                  <span className="w-1.5 h-1.5 rounded-full bg-cyan-400 shrink-0" />
-                  <span>ISO 19794-5 Compliant</span>
-                </div>
-              </div>
+                );
+              })}
             </div>
 
-            <div className="enrollment-steps">
-              {stepsList.map((st, i) => (
-                <div key={st.step} className={currentStepIndex >= i ? 'active' : ''}>
-                  <span>{i + 1}</span>{st.label}
-                </div>
-              ))}
-            </div>
-            <div className="enrollment-assurance mt-6">
-              <ShieldCheck size={20} />
-              <p>Biometric samples are securely processed and private to PM Shri Kendriya Vidyalaya attendance records. Your camera automatically shuts down after scan.</p>
+            {/* Visual Trust Badge Strip */}
+            <div className="grid grid-cols-3 gap-2 pt-2 border-t border-white/10">
+              <div className="p-2.5 rounded-xl bg-white/[0.03] border border-white/5 text-center">
+                <Zap size={14} className="text-emerald-400 mx-auto mb-1" />
+                <span className="text-[10px] font-bold text-slate-300 block">40ms Speed</span>
+              </div>
+              <div className="p-2.5 rounded-xl bg-white/[0.03] border border-white/5 text-center">
+                <LockKeyhole size={14} className="text-cyan-400 mx-auto mb-1" />
+                <span className="text-[10px] font-bold text-slate-300 block">Encrypted</span>
+              </div>
+              <div className="p-2.5 rounded-xl bg-white/[0.03] border border-white/5 text-center">
+                <ShieldCheck size={14} className="text-purple-400 mx-auto mb-1" />
+                <span className="text-[10px] font-bold text-slate-300 block">Private DB</span>
+              </div>
             </div>
           </aside>
         )}
@@ -490,8 +511,8 @@ export default function StudentEnrollment() {
                   </div>
 
                   <div className="enrollment-icon"><Fingerprint /></div>
-                  <h2>Let’s find your student</h2>
-                  <p className="enrollment-muted">Verify using your PM Shri KV admission number, registered parent phone, and date of birth.</p>
+                  <h2 className="text-xl sm:text-2xl font-black text-white">Find your student</h2>
+                  <p className="enrollment-muted text-xs">Verify identity to begin 3D biometric enrollment</p>
 
                   <form
                     onSubmit={e => {
@@ -505,33 +526,42 @@ export default function StudentEnrollment() {
                         acceptSession(verifiedSession);
                       });
                     }}
-                    className="space-y-4 mt-6"
+                    className="space-y-4 mt-6 text-left"
                   >
                     <label className="enrollment-label">
-                      Student admission number
+                      <span className="flex items-center gap-2 text-xs font-semibold text-slate-300">
+                        <GraduationCap className="w-4 h-4 text-emerald-400" />
+                        Student Admission Number
+                      </span>
                       <Input
                         required
                         value={admission}
                         onChange={e => setAdmission(e.target.value)}
-                        placeholder="Enter admission number"
+                        placeholder="e.g. 10425"
                         autoComplete="off"
                       />
                     </label>
 
                     <label className="enrollment-label">
-                      Registered parent phone
+                      <span className="flex items-center gap-2 text-xs font-semibold text-slate-300">
+                        <Phone className="w-4 h-4 text-cyan-400" />
+                        Registered Parent Phone
+                      </span>
                       <Input
                         required
                         value={phone}
                         onChange={e => setPhone(e.target.value)}
                         inputMode="tel"
                         autoComplete="tel"
-                        placeholder="e.g. +91 98765 43210"
+                        placeholder="e.g. 9876543210"
                       />
                     </label>
 
                     <label className="enrollment-label">
-                      Student date of birth
+                      <span className="flex items-center gap-2 text-xs font-semibold text-slate-300">
+                        <Calendar className="w-4 h-4 text-purple-400" />
+                        Student Date of Birth
+                      </span>
                       <DobDatePicker
                         value={dob}
                         onChange={setDob}
@@ -539,8 +569,8 @@ export default function StudentEnrollment() {
                       />
                     </label>
 
-                    <Button disabled={busy} className="enrollment-primary w-full mt-2">
-                      {busy ? <Loader2 className="animate-spin" /> : <>Verify and continue<ArrowRight className="ml-2 h-4 w-4" /></>}
+                    <Button disabled={busy} className="enrollment-primary w-full mt-2 font-bold flex items-center justify-center gap-2">
+                      {busy ? <Loader2 className="animate-spin" /> : <>Verify and Continue<ArrowRight className="h-4 w-4" /></>}
                     </Button>
                   </form>
                 </>
@@ -549,52 +579,115 @@ export default function StudentEnrollment() {
               {phase === 'consent' && (
                 <>
                   <div className="enrollment-icon"><ShieldCheck /></div>
-                  <h2>Ready, {session?.student.name?.split(' ')[0] || 'Student'}?</h2>
+                  <h2 className="text-xl sm:text-2xl font-black text-white">
+                    Ready, {session?.student.name?.split(' ')[0] || 'Student'}!
+                  </h2>
                   {isStaffBypass ? (
-                    <div className="mt-3 mb-4 p-3.5 rounded-2xl bg-emerald-500/10 border border-emerald-500/25 text-emerald-300 text-xs text-left flex items-start gap-2.5">
-                      <ShieldCheck className="h-4 w-4 shrink-0 text-emerald-400 mt-0.5" />
+                    <div className="mt-3 mb-2 p-3 rounded-2xl bg-emerald-500/10 border border-emerald-500/25 text-emerald-300 text-xs text-left flex items-center gap-2.5">
+                      <ShieldCheck className="h-4 w-4 shrink-0 text-emerald-400" />
                       <div>
-                        <p className="font-bold text-emerald-200">Staff Verification Bypass Active</p>
-                        <p className="text-emerald-300/80 text-[11px] mt-0.5 leading-relaxed">
-                          Identity verified directly from school records for <strong className="text-white">{session?.student.name}</strong> (ID: <span className="font-mono text-emerald-300">{session?.student.admission_number}</span>). You may start camera capture immediately.
-                        </p>
+                        <span className="font-bold text-emerald-200">Staff Verified:</span>{' '}
+                        <span className="text-white font-medium">{session?.student.name}</span>{' '}
+                        <span className="font-mono text-emerald-400">({session?.student.admission_number})</span>
                       </div>
                     </div>
                   ) : (
-                    <p className="enrollment-muted">A parent or school staff member should help the student complete this step.</p>
+                    <p className="enrollment-muted text-xs">Quick 60-second Face ID calibration</p>
                   )}
-                  <div className="enrollment-inset space-y-4 my-6">
-                    <p>Face a soft light and keep the camera at eye level. Follow the ring as we capture each angle automatically.</p>
-                    <p className="flex gap-3"><Glasses className="shrink-0" size={20} />If the student wears glasses, we’ll take one photo without them, then the remaining views with them on.</p>
-                  </div>
-                  {/* Face Data Strategy Option */}
-                  <div className="p-3.5 rounded-2xl bg-white/5 border border-white/10 space-y-2 text-left my-4">
-                    <label className="flex items-start gap-3 text-sm cursor-pointer select-none">
-                      <input
-                        type="checkbox"
-                        checked={replaceExisting}
-                        onChange={(e) => setReplaceExisting(e.target.checked)}
-                        className="mt-1 accent-emerald-500 rounded"
-                      />
-                      <div>
-                        <span className="font-semibold text-white flex items-center gap-1.5">
-                          {replaceExisting ? 'Clean Baseline: Erase & Replace Old Face Data' : 'Additive Mode: Keep & Merge with Old Face Data'}
-                        </span>
-                        <p className="text-xs text-white/60 mt-0.5 leading-relaxed">
-                          {replaceExisting
-                            ? 'Recommended: Completely erases old face captures and sets up a fresh 3D calibration.'
-                            : 'Appends these new photos alongside existing face records to expand angle and lighting coverage.'}
-                        </p>
+
+                  {/* 4-Tile Visual Camera Preparation Grid */}
+                  <div className="grid grid-cols-2 gap-2.5 my-5 text-left">
+                    <div className="p-3 rounded-2xl bg-white/[0.04] border border-white/10 flex flex-col gap-1.5 hover:border-amber-400/30 transition-all">
+                      <div className="w-8 h-8 rounded-xl bg-amber-500/15 border border-amber-400/30 flex items-center justify-center text-amber-300">
+                        <Sun size={17} />
                       </div>
-                    </label>
+                      <span className="text-xs font-bold text-white">Good Lighting</span>
+                      <span className="text-[11px] text-slate-400 leading-tight">Face the light directly, avoid strong shadows</span>
+                    </div>
+
+                    <div className="p-3 rounded-2xl bg-white/[0.04] border border-white/10 flex flex-col gap-1.5 hover:border-emerald-400/30 transition-all">
+                      <div className="w-8 h-8 rounded-xl bg-emerald-500/15 border border-emerald-400/30 flex items-center justify-center text-emerald-300">
+                        <ScanFace size={17} />
+                      </div>
+                      <span className="text-xs font-bold text-white">Eye Level</span>
+                      <span className="text-[11px] text-slate-400 leading-tight">Hold camera upright at comfortable eye level</span>
+                    </div>
+
+                    <div className="p-3 rounded-2xl bg-white/[0.04] border border-white/10 flex flex-col gap-1.5 hover:border-cyan-400/30 transition-all">
+                      <div className="w-8 h-8 rounded-xl bg-cyan-500/15 border border-cyan-400/30 flex items-center justify-center text-cyan-300">
+                        <Glasses size={17} />
+                      </div>
+                      <span className="text-xs font-bold text-white">Spectacles</span>
+                      <span className="text-[11px] text-slate-400 leading-tight">Camera will guide: with and without glasses</span>
+                    </div>
+
+                    <div className="p-3 rounded-2xl bg-white/[0.04] border border-white/10 flex flex-col gap-1.5 hover:border-purple-400/30 transition-all">
+                      <div className="w-8 h-8 rounded-xl bg-purple-500/15 border border-purple-400/30 flex items-center justify-center text-purple-300">
+                        <RotateCcw size={17} />
+                      </div>
+                      <span className="text-xs font-bold text-white">Gentle Turns</span>
+                      <span className="text-[11px] text-slate-400 leading-tight">Follow the green ring around your face</span>
+                    </div>
                   </div>
 
-                  <label className="flex gap-3 text-sm leading-relaxed">
-                    <input type="checkbox" checked={consent} onChange={e => setConsent(e.target.checked)} className="mt-1" />
-                    I am the parent, guardian, or authorized school staff member. I agree to save these face samples for school attendance and confirm the student is present.
+                  {/* Visual Mode Selection: Clean Baseline vs Additive */}
+                  <div className="grid grid-cols-2 gap-2 text-left my-4">
+                    <button
+                      type="button"
+                      onClick={() => setReplaceExisting(true)}
+                      className={`p-3 rounded-2xl border text-left transition-all ${
+                        replaceExisting
+                          ? 'bg-emerald-500/15 border-emerald-400 text-white shadow-md shadow-emerald-500/10'
+                          : 'bg-white/[0.03] border-white/10 text-slate-400 hover:bg-white/[0.06]'
+                      }`}
+                    >
+                      <div className="flex items-center justify-between mb-1">
+                        <Sparkles size={16} className={replaceExisting ? 'text-emerald-400' : 'text-slate-500'} />
+                        {replaceExisting && <Check size={14} className="text-emerald-400" />}
+                      </div>
+                      <p className="text-xs font-bold text-white">Fresh 3D Scan</p>
+                      <p className="text-[10px] text-slate-400 mt-0.5">Recommended fresh baseline</p>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => setReplaceExisting(false)}
+                      className={`p-3 rounded-2xl border text-left transition-all ${
+                        !replaceExisting
+                          ? 'bg-emerald-500/15 border-emerald-400 text-white shadow-md shadow-emerald-500/10'
+                          : 'bg-white/[0.03] border-white/10 text-slate-400 hover:bg-white/[0.06]'
+                      }`}
+                    >
+                      <div className="flex items-center justify-between mb-1">
+                        <Camera size={16} className={!replaceExisting ? 'text-emerald-400' : 'text-slate-500'} />
+                        {!replaceExisting && <Check size={14} className="text-emerald-400" />}
+                      </div>
+                      <p className="text-xs font-bold text-white">Add New Angles</p>
+                      <p className="text-[10px] text-slate-400 mt-0.5">Append to existing photos</p>
+                    </button>
+                  </div>
+
+                  {/* Consent Confirmation */}
+                  <label className="flex items-center gap-3 p-3 rounded-2xl bg-white/[0.04] border border-white/10 text-xs leading-relaxed text-slate-300 text-left cursor-pointer hover:bg-white/[0.07] transition-all">
+                    <input
+                      type="checkbox"
+                      checked={consent}
+                      onChange={e => setConsent(e.target.checked)}
+                      className="w-4 h-4 rounded accent-emerald-500 cursor-pointer shrink-0"
+                    />
+                    <span>
+                      I authorize this biometric facial capture for school attendance under PM Shri KV guidelines.
+                    </span>
                   </label>
-                  <Button className="w-full enrollment-primary mt-6" disabled={!consent || expired} onClick={() => setPhase('capture')}>
-                    Start guided capture<ArrowRight className="ml-2 h-4 w-4" />
+
+                  <Button
+                    className="w-full enrollment-primary mt-5 flex items-center justify-center gap-2 text-sm font-bold shadow-lg shadow-emerald-500/20"
+                    disabled={!consent || expired}
+                    onClick={() => setPhase('capture')}
+                  >
+                    <Camera size={16} />
+                    Start 3D Camera Capture
+                    <ArrowRight className="ml-1 h-4 w-4" />
                   </Button>
                 </>
               )}
