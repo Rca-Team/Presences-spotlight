@@ -28,11 +28,63 @@ export default function StudentEnrollment() {
   const [clock, setClock] = useState(Date.now());
   const reduced = useReducedMotion();
   const staffStarted = useRef(false);
+  const uploadedKeysRef = useRef<Set<string>>(new Set());
+
+  // Fast Parallel Sample Upload Pool (5 concurrent connections + caching)
+  const uploadSamplesParallel = useCallback(async (
+    sessionToken: string,
+    samples: CaptureResult['samples'],
+    onProgress?: (done: number, total: number) => void
+  ) => {
+    const total = samples.length;
+    const pendingIndices: number[] = [];
+
+    samples.forEach((sample, idx) => {
+      const key = `${sample.pose}_${sample.glasses}_${sample.image.slice(0, 32)}`;
+      if (!uploadedKeysRef.current.has(key)) {
+        pendingIndices.push(idx);
+      }
+    });
+
+    if (pendingIndices.length === 0) {
+      onProgress?.(total, total);
+      return;
+    }
+
+    let completed = total - pendingIndices.length;
+    onProgress?.(completed, total);
+
+    const CONCURRENCY = 5;
+    const queue = [...pendingIndices];
+
+    const workers = Array.from({ length: Math.min(CONCURRENCY, queue.length) }, async () => {
+      while (queue.length > 0) {
+        const idx = queue.shift();
+        if (idx === undefined) break;
+        const sample = samples[idx];
+        const key = `${sample.pose}_${sample.glasses}_${sample.image.slice(0, 32)}`;
+        try {
+          await enrollmentApi('sample', { session: sessionToken, sample });
+          uploadedKeysRef.current.add(key);
+        } catch (err) {
+          console.warn(`Parallel upload retry for ${sample.pose}:`, err);
+        }
+        completed++;
+        onProgress?.(completed, total);
+      }
+    });
+
+    await Promise.all(workers);
+  }, []);
 
   const onCapture = useCallback((capture: CaptureResult) => { 
     setResult(capture); 
     setPhase('idphoto'); 
-  }, []);
+    // Ultra-Fast: Start background parallel upload immediately
+    if (session?.session) {
+      uploadSamplesParallel(session.session, capture.samples).catch(() => {});
+    }
+  }, [session?.session, uploadSamplesParallel]);
 
   const onIdPhotoConfirm = useCallback((finalPhotoUrl: string) => {
     setResult((prev) => {
@@ -43,10 +95,14 @@ export default function StudentEnrollment() {
         }
         return s;
       });
+      // Background upload updated front portrait
+      if (session?.session) {
+        uploadSamplesParallel(session.session, updatedSamples).catch(() => {});
+      }
       return { ...prev, samples: updatedSamples };
     });
     setPhase('review');
-  }, []);
+  }, [session?.session, uploadSamplesParallel]);
   useEffect(() => { const timer = setInterval(() => setClock(Date.now()), 1000); return () => clearInterval(timer); }, []);
 
   const run = async (fn: () => Promise<void>) => {
@@ -262,10 +318,14 @@ export default function StudentEnrollment() {
                     disabled={busy || expired}
                     className="enrollment-primary w-full mt-3"
                     onClick={() => void run(async () => {
-                      for (let i = 0; i < result.samples.length; i++) {
-                        setMessage(`Saving photo ${i + 1} of ${result.samples.length}…`);
-                        await enrollmentApi('sample', { session: session!.session, sample: result.samples[i] });
-                      }
+                      setMessage('Finalizing photo uploads…');
+                      await uploadSamplesParallel(
+                        session!.session,
+                        result.samples,
+                        (done, total) => {
+                          setMessage(`Saving photos (${done}/${total})…`);
+                        }
+                      );
                       setMessage('Confirming enrollment…');
                       const saved = await enrollmentApi<{ completed: boolean; correctionPending: boolean }>('submit', {
                         session: session!.session,
@@ -279,6 +339,7 @@ export default function StudentEnrollment() {
                       setResult(undefined);
                       setDetails(undefined);
                       setSession(undefined);
+                      uploadedKeysRef.current.clear();
                       setPhase('done');
                       setMessage('');
                     })}
