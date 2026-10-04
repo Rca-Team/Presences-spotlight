@@ -11,6 +11,7 @@ import { enrollmentApi } from '@/services/enrollment/api';
 import { syncEnrolledFaceDataToSupabase } from '@/services/enrollment/syncEnrolledFaceData';
 import { fieldLabels, studentFields, type CaptureResult, type EnrollmentSession, type StudentDetails } from '@/services/enrollment/types';
 import DobDatePicker from '@/components/enrollment/DobDatePicker';
+import { cn } from '@/lib/utils';
 import '@/components/enrollment/enrollment.css';
 
 export default function StudentEnrollment() {
@@ -211,25 +212,27 @@ export default function StudentEnrollment() {
         </div>
       </div>
 
-      <div className="enrollment-layout">
-        <aside className="enrollment-intro hidden lg:block">
-          <span className="enrollment-eyebrow">A familiar face. A simpler day.</span>
-          <h1>Your school day,<br /><span>ready in a few turns.</span></h1>
-          <p>Help your child get ready for effortless attendance. Verify your details, follow the camera, and confirm their student card.</p>
-          <div className="enrollment-steps">
-            {stepsList.map((st, i) => (
-              <div key={st.step} className={currentStepIndex >= i ? 'active' : ''}>
-                <span>{i + 1}</span>{st.label}
-              </div>
-            ))}
-          </div>
-          <div className="enrollment-assurance">
-            <ShieldCheck size={20} />
-            <p>Your child’s photos are saved privately for school attendance. Your camera turns off when capture finishes.</p>
-          </div>
-        </aside>
+      <div className={cn('enrollment-layout', (phase === 'idphoto' || phase === 'capture' || phase === 'review') && 'is-wide')}>
+        {phase !== 'idphoto' && phase !== 'capture' && phase !== 'review' && (
+          <aside className="enrollment-intro hidden lg:block">
+            <span className="enrollment-eyebrow">A familiar face. A simpler day.</span>
+            <h1>Your school day,<br /><span>ready in a few turns.</span></h1>
+            <p>Help your child get ready for effortless attendance. Verify your details, follow the camera, and confirm their student card.</p>
+            <div className="enrollment-steps">
+              {stepsList.map((st, i) => (
+                <div key={st.step} className={currentStepIndex >= i ? 'active' : ''}>
+                  <span>{i + 1}</span>{st.label}
+                </div>
+              ))}
+            </div>
+            <div className="enrollment-assurance">
+              <ShieldCheck size={20} />
+              <p>Your child’s photos are saved privately for school attendance. Your camera turns off when capture finishes.</p>
+            </div>
+          </aside>
+        )}
 
-        <section className="enrollment-glass">
+        <section className={cn('enrollment-glass', (phase === 'idphoto' || phase === 'capture' || phase === 'review') && 'w-full')}>
           <AnimatePresence mode="wait">
             <motion.div
               key={phase}

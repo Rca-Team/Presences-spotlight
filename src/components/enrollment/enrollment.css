@@ -47,6 +47,13 @@
   z-index: 1;
 }
 
+.enrollment-layout.is-wide {
+  grid-template-columns: 1fr !important;
+  max-width: 980px;
+  gap: 0;
+  margin: 30px auto;
+}
+
 .enrollment-intro {
   padding-top: 35px;
 }

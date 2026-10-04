@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect, useCallback, useMemo } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
+import { motion } from 'framer-motion';
 import { 
   Upload, 
   RotateCw, 
@@ -7,26 +7,21 @@ import {
   ZoomOut, 
   Sparkles, 
   Sliders, 
-  Check, 
   ArrowRight, 
   ArrowLeft, 
   Undo, 
-  Image as ImageIcon,
-  Sun,
-  Contrast,
-  Palette,
-  ShieldCheck,
-  Crop,
-  Building2,
-  Wifi,
-  Maximize2,
-  RefreshCw,
-  Eye,
-  CheckCircle2
+  Sun, 
+  Contrast, 
+  Palette, 
+  ShieldCheck, 
+  Crop, 
+  Building2, 
+  Wifi, 
+  CheckCircle2 
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Slider } from '@/components/ui/slider';
-import { Badge } from '@/components/ui/badge';
+import { cn } from '@/lib/utils';
 import type { StudentDetails } from '@/services/enrollment/types';
 import { resolveIdentityDisplay } from '@/utils/studentIdentityResolver';
 
@@ -38,6 +33,12 @@ interface IdCardPhotoStepProps {
 }
 
 type AspectRatio = '3:4' | '1:1' | '2:3';
+
+const RATIO_OPTIONS: { id: AspectRatio; label: string; ratio: string }[] = [
+  { id: '3:4', label: 'Passport', ratio: '3:4' },
+  { id: '1:1', label: 'Square', ratio: '1:1' },
+  { id: '2:3', label: 'Badge', ratio: '2:3' },
+];
 
 export default function IdCardPhotoStep({
   student,
@@ -277,7 +278,7 @@ export default function IdCardPhotoStep({
       <canvas ref={canvasRef} className="hidden" />
 
       {/* Top Header Bar */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-2 border-b border-white/10">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-white/10">
         <div>
           <div className="flex items-center gap-2 text-emerald-400 text-xs font-bold uppercase tracking-wider">
             <ShieldCheck size={16} />
@@ -287,7 +288,7 @@ export default function IdCardPhotoStep({
             {identity.isTeacher ? 'Faculty / Staff ID Badge Portrait' : 'Student ID Card Portrait'}
           </h2>
           <p className="text-xs sm:text-sm text-slate-400 mt-0.5">
-            Crop, enhance, or upload a portrait for {student.name}’s official school badge.
+            Crop, frame, and enhance {student.name}’s official school badge photo.
           </p>
         </div>
         <Button
@@ -295,16 +296,17 @@ export default function IdCardPhotoStep({
           variant="outline"
           size="sm"
           onClick={handleSkip}
-          className="text-xs font-semibold h-8 rounded-xl border-white/15 bg-white/5 hover:bg-white/10 text-slate-300 self-start sm:self-auto"
+          className="text-xs font-semibold h-8 rounded-xl border-white/15 bg-white/5 hover:bg-white/10 text-slate-300 self-start sm:self-auto shrink-0"
         >
-          Skip & Use Camera Photo
+          Skip & Use Raw Capture
         </Button>
       </div>
 
-      {/* Main Studio Grid */}
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
+      {/* Main Studio Grid: Left Cropper Viewport, Right Controls & Live Badge */}
+      <div className="grid grid-cols-1 md:grid-cols-12 gap-6 items-start">
+        
         {/* Left / Center: Interactive Cropper Viewport */}
-        <div className="lg:col-span-7 flex flex-col items-center">
+        <div className="md:col-span-6 lg:col-span-7 flex flex-col items-center">
           <div 
             className="relative w-full max-w-sm sm:max-w-md aspect-[3/4] rounded-3xl overflow-hidden border-2 border-emerald-500/40 bg-slate-950 shadow-2xl shadow-emerald-950/40 flex items-center justify-center cursor-grab active:cursor-grabbing touch-none select-none transition-shadow hover:shadow-emerald-500/15"
             onMouseDown={handleMouseDown}
@@ -330,8 +332,8 @@ export default function IdCardPhotoStep({
               <div className="border-r border-b border-white/10" />
               <div className="border-r border-b border-white/10" />
               <div className="border-b border-white/10" />
-              <div className="border-r border-white/10" />
-              <div className="border-r border-white/10" />
+              <div className="border-r border-b border-white/10" />
+              <div className="border-r border-b border-white/10" />
               <div />
             </div>
 
@@ -342,13 +344,13 @@ export default function IdCardPhotoStep({
             <div className="absolute bottom-3 right-3 w-4 h-4 border-b-2 border-r-2 border-emerald-400 rounded-br pointer-events-none" />
 
             {/* Floating Top Badge */}
-            <div className="absolute top-3.5 left-3.5 bg-slate-950/80 backdrop-blur-md px-3 py-1 rounded-full text-[11px] font-semibold text-emerald-300 border border-emerald-500/30 flex items-center gap-1.5 shadow-lg">
+            <div className="absolute top-3.5 left-3.5 bg-slate-950/85 backdrop-blur-md px-3 py-1 rounded-full text-[11px] font-semibold text-emerald-300 border border-emerald-500/30 flex items-center gap-1.5 shadow-lg">
               <Crop size={12} className="text-emerald-400" />
               <span>Drag to position • {aspectRatio}</span>
             </div>
 
             {/* Zoom Percentage Chip */}
-            <div className="absolute bottom-3.5 right-3.5 bg-slate-950/80 backdrop-blur-md px-2.5 py-1 rounded-full text-[10px] font-mono font-bold text-slate-300 border border-white/15">
+            <div className="absolute bottom-3.5 right-3.5 bg-slate-950/85 backdrop-blur-md px-2.5 py-1 rounded-full text-[10px] font-mono font-bold text-slate-300 border border-white/15">
               {Math.round(zoom * 100)}%
             </div>
           </div>
@@ -361,7 +363,7 @@ export default function IdCardPhotoStep({
                 variant="ghost"
                 size="sm"
                 onClick={() => setRotation((r) => (r + 90) % 360)}
-                className="h-8 px-3 text-xs font-semibold text-slate-200 hover:text-emerald-300 rounded-xl hover:bg-white/5"
+                className="h-8 px-3 text-xs font-semibold text-slate-200 hover:text-emerald-300 rounded-xl hover:bg-white/5 active:scale-95"
                 title="Rotate 90 degrees"
               >
                 <RotateCw size={13} className="mr-1.5 text-emerald-400" /> 90°
@@ -371,7 +373,7 @@ export default function IdCardPhotoStep({
                 variant="ghost"
                 size="sm"
                 onClick={handleReset}
-                className="h-8 px-3 text-xs font-semibold text-slate-300 hover:text-slate-100 rounded-xl hover:bg-white/5"
+                className="h-8 px-3 text-xs font-semibold text-slate-300 hover:text-slate-100 rounded-xl hover:bg-white/5 active:scale-95"
                 title="Reset adjustments"
               >
                 <Undo size={13} className="mr-1.5 text-slate-400" /> Reset
@@ -393,17 +395,19 @@ export default function IdCardPhotoStep({
         </div>
 
         {/* Right: Studio Controls & Live Official ID Card Mockup */}
-        <div className="lg:col-span-5 space-y-4">
+        <div className="md:col-span-6 lg:col-span-5 space-y-4">
+          
           {/* Segmented Tab Navigation */}
           <div className="flex bg-slate-900/90 backdrop-blur-md p-1.5 rounded-2xl border border-white/10 text-xs font-bold shadow-inner">
             <button
               type="button"
               onClick={() => setActiveTab('crop')}
-              className={`flex-1 py-2 rounded-xl flex items-center justify-center gap-2 transition-all ${
+              className={cn(
+                'flex-1 py-2 rounded-xl flex items-center justify-center gap-1.5 transition-all cursor-pointer',
                 activeTab === 'crop'
                   ? 'bg-emerald-500 text-slate-950 shadow-md shadow-emerald-500/25 font-extrabold'
                   : 'text-slate-400 hover:text-slate-200'
-              }`}
+              )}
             >
               <Crop size={14} />
               <span>Crop & Sizing</span>
@@ -411,11 +415,12 @@ export default function IdCardPhotoStep({
             <button
               type="button"
               onClick={() => setActiveTab('enhance')}
-              className={`flex-1 py-2 rounded-xl flex items-center justify-center gap-2 transition-all ${
+              className={cn(
+                'flex-1 py-2 rounded-xl flex items-center justify-center gap-1.5 transition-all cursor-pointer',
                 activeTab === 'enhance'
                   ? 'bg-emerald-500 text-slate-950 shadow-md shadow-emerald-500/25 font-extrabold'
                   : 'text-slate-400 hover:text-slate-200'
-              }`}
+              )}
             >
               <Sparkles size={14} />
               <span>Enhance & Lighting</span>
@@ -427,30 +432,37 @@ export default function IdCardPhotoStep({
             <motion.div 
               initial={{ opacity: 0, y: 6 }} 
               animate={{ opacity: 1, y: 0 }} 
-              className="space-y-4 p-4 sm:p-5 rounded-2xl bg-slate-900/70 border border-white/10 shadow-xl"
+              className="space-y-4 p-4 rounded-2xl bg-slate-900/70 border border-white/10 shadow-xl"
             >
-              {/* Aspect Ratio Presets */}
+              {/* Aspect Ratio Presets (Clean 2-line layout to prevent horizontal overlap) */}
               <div>
                 <label className="text-xs font-bold uppercase tracking-wider text-slate-300 block mb-2">
                   ID Card Aspect Ratio
                 </label>
                 <div className="grid grid-cols-3 gap-2">
-                  {(['3:4', '1:1', '2:3'] as AspectRatio[]).map((ratio) => (
-                    <button
-                      key={ratio}
-                      type="button"
-                      onClick={() => setAspectRatio(ratio)}
-                      className={`py-2 text-xs font-bold rounded-xl border transition-all ${
-                        aspectRatio === ratio
-                          ? 'border-emerald-400 bg-emerald-500/20 text-emerald-300 shadow-md shadow-emerald-500/10'
-                          : 'border-white/10 bg-white/5 text-slate-400 hover:text-slate-200 hover:bg-white/10'
-                      }`}
-                    >
-                      {ratio === '3:4' && 'Passport (3:4)'}
-                      {ratio === '1:1' && 'Square (1:1)'}
-                      {ratio === '2:3' && 'Badge (2:3)'}
-                    </button>
-                  ))}
+                  {RATIO_OPTIONS.map((item) => {
+                    const isSelected = aspectRatio === item.id;
+                    return (
+                      <button
+                        key={item.id}
+                        type="button"
+                        onClick={() => setAspectRatio(item.id)}
+                        className={cn(
+                          'py-2 px-1.5 rounded-xl border transition-all flex flex-col items-center justify-center min-w-0 select-none touch-manipulation cursor-pointer',
+                          isSelected
+                            ? 'border-emerald-400 bg-emerald-500/20 text-emerald-300 shadow-md shadow-emerald-500/10 ring-1 ring-emerald-400/30'
+                            : 'border-white/10 bg-white/5 text-slate-400 hover:text-slate-200 hover:bg-white/10'
+                        )}
+                      >
+                        <span className="text-xs font-bold leading-tight truncate w-full text-center">
+                          {item.label}
+                        </span>
+                        <span className="text-[10px] font-mono opacity-70 mt-0.5">
+                          ({item.ratio})
+                        </span>
+                      </button>
+                    );
+                  })}
                 </div>
               </div>
 
@@ -467,7 +479,7 @@ export default function IdCardPhotoStep({
                     type="button"
                     variant="ghost"
                     size="sm"
-                    className="h-8 w-8 p-0 rounded-xl bg-white/5 hover:bg-white/10 text-slate-300 border border-white/10 shrink-0"
+                    className="h-8 w-8 p-0 rounded-xl bg-white/5 hover:bg-white/10 text-slate-300 border border-white/10 shrink-0 active:scale-95"
                     onClick={() => setZoom((z) => Math.max(0.7, Number((z - 0.1).toFixed(2))))}
                   >
                     <ZoomOut size={14} />
@@ -484,7 +496,7 @@ export default function IdCardPhotoStep({
                     type="button"
                     variant="ghost"
                     size="sm"
-                    className="h-8 w-8 p-0 rounded-xl bg-white/5 hover:bg-white/10 text-slate-300 border border-white/10 shrink-0"
+                    className="h-8 w-8 p-0 rounded-xl bg-white/5 hover:bg-white/10 text-slate-300 border border-white/10 shrink-0 active:scale-95"
                     onClick={() => setZoom((z) => Math.min(2.8, Number((z + 0.1).toFixed(2))))}
                   >
                     <ZoomIn size={14} />
@@ -499,30 +511,31 @@ export default function IdCardPhotoStep({
             <motion.div 
               initial={{ opacity: 0, y: 6 }} 
               animate={{ opacity: 1, y: 0 }} 
-              className="space-y-4 p-4 sm:p-5 rounded-2xl bg-slate-900/70 border border-white/10 shadow-xl"
+              className="space-y-3.5 p-4 rounded-2xl bg-slate-900/70 border border-white/10 shadow-xl"
             >
               {/* 1-Click Auto Enhance Button */}
               <Button
                 type="button"
                 onClick={toggleAutoEnhance}
-                className={`w-full text-xs font-extrabold py-3 h-auto rounded-xl flex items-center justify-center gap-2 transition-all ${
+                className={cn(
+                  'w-full text-xs font-extrabold py-2.5 h-auto rounded-xl flex items-center justify-center gap-2 transition-all active:scale-95',
                   autoEnhanced
                     ? 'bg-emerald-500 text-slate-950 shadow-lg shadow-emerald-500/30'
                     : 'bg-gradient-to-r from-emerald-600 via-teal-600 to-cyan-600 hover:from-emerald-500 hover:to-cyan-500 text-white shadow-md'
-                }`}
+                )}
               >
-                <Sparkles size={15} className={autoEnhanced ? 'animate-spin' : ''} />
-                <span>{autoEnhanced ? '✨ Auto-Enhanced Active (Click to Reset)' : '✨ 1-Click AI Portrait Auto-Enhance'}</span>
+                <Sparkles size={14} className={autoEnhanced ? 'animate-spin' : ''} />
+                <span>{autoEnhanced ? '✨ Auto-Enhanced Active' : '✨ 1-Click AI Auto-Enhance'}</span>
               </Button>
 
-              <div className="grid grid-cols-1 gap-3 pt-1">
+              <div className="grid grid-cols-1 gap-2.5 pt-1">
                 {/* Brightness */}
                 <div className="space-y-1">
                   <div className="flex justify-between text-xs font-medium text-slate-300">
                     <span className="flex items-center gap-1.5">
                       <Sun size={13} className="text-amber-400" /> Brightness
                     </span>
-                    <span className="text-slate-400 font-mono">{brightness > 0 ? `+${brightness}` : brightness}</span>
+                    <span className="text-slate-400 font-mono text-[11px]">{brightness > 0 ? `+${brightness}` : brightness}</span>
                   </div>
                   <Slider
                     value={[brightness]}
@@ -539,7 +552,7 @@ export default function IdCardPhotoStep({
                     <span className="flex items-center gap-1.5">
                       <Contrast size={13} className="text-cyan-400" /> Contrast
                     </span>
-                    <span className="text-slate-400 font-mono">{contrast > 0 ? `+${contrast}` : contrast}</span>
+                    <span className="text-slate-400 font-mono text-[11px]">{contrast > 0 ? `+${contrast}` : contrast}</span>
                   </div>
                   <Slider
                     value={[contrast]}
@@ -554,9 +567,9 @@ export default function IdCardPhotoStep({
                 <div className="space-y-1">
                   <div className="flex justify-between text-xs font-medium text-slate-300">
                     <span className="flex items-center gap-1.5">
-                      <Palette size={13} className="text-pink-400" /> Saturation / Warmth
+                      <Palette size={13} className="text-pink-400" /> Saturation
                     </span>
-                    <span className="text-slate-400 font-mono">{saturation > 0 ? `+${saturation}` : saturation}</span>
+                    <span className="text-slate-400 font-mono text-[11px]">{saturation > 0 ? `+${saturation}` : saturation}</span>
                   </div>
                   <Slider
                     value={[saturation]}
@@ -571,9 +584,9 @@ export default function IdCardPhotoStep({
                 <div className="space-y-1">
                   <div className="flex justify-between text-xs font-medium text-slate-300">
                     <span className="flex items-center gap-1.5">
-                      <Sliders size={13} className="text-emerald-400" /> Facial Clarity & Sharpness
+                      <Sliders size={13} className="text-emerald-400" /> Clarity
                     </span>
-                    <span className="text-emerald-400 font-mono">{sharpness}%</span>
+                    <span className="text-emerald-400 font-mono text-[11px]">{sharpness}%</span>
                   </div>
                   <Slider
                     value={[sharpness]}
@@ -588,15 +601,15 @@ export default function IdCardPhotoStep({
           )}
 
           {/* Authentic Official School ID Badge Card Preview */}
-          <div className="p-4 rounded-3xl bg-gradient-to-br from-[#0c1f1c] via-[#09151e] to-[#040a10] border-2 border-emerald-500/40 shadow-2xl relative overflow-hidden group">
+          <div className="p-3.5 sm:p-4 rounded-3xl bg-gradient-to-br from-[#0c1f1c] via-[#09151e] to-[#040a10] border-2 border-emerald-500/40 shadow-2xl relative overflow-hidden">
             {/* Holographic Header Bar */}
-            <div className="flex justify-between items-center pb-2.5 border-b border-white/10 mb-3">
-              <div className="flex items-center gap-2">
-                <div className="w-6 h-6 rounded-lg bg-emerald-500/20 border border-emerald-400/40 flex items-center justify-center text-emerald-300 shadow-sm">
+            <div className="flex justify-between items-center pb-2.5 border-b border-white/10 mb-2.5">
+              <div className="flex items-center gap-2 min-w-0">
+                <div className="w-6 h-6 rounded-lg bg-emerald-500/20 border border-emerald-400/40 flex items-center justify-center text-emerald-300 shadow-sm shrink-0">
                   <Building2 size={13} />
                 </div>
-                <div>
-                  <span className="text-[10px] font-black uppercase tracking-wider text-white block leading-none">
+                <div className="min-w-0">
+                  <span className="text-[10px] font-black uppercase tracking-wider text-white block leading-none truncate">
                     PM Shri KV · Vigyan Vihar
                   </span>
                   <span className="text-[8px] font-mono font-semibold tracking-widest text-emerald-400 uppercase">
@@ -604,14 +617,14 @@ export default function IdCardPhotoStep({
                   </span>
                 </div>
               </div>
-              <div className="flex items-center gap-1 px-2 py-0.5 rounded-full bg-emerald-950/80 border border-emerald-500/30 text-emerald-300 text-[9px] font-mono font-bold">
+              <div className="flex items-center gap-1 px-2 py-0.5 rounded-full bg-emerald-950/80 border border-emerald-500/30 text-emerald-300 text-[9px] font-mono font-bold shrink-0">
                 <Wifi size={10} className="rotate-90 text-emerald-400" />
                 <span>RFID</span>
               </div>
             </div>
 
             {/* Badge Body: Cropped Photo + Person Info */}
-            <div className="flex items-center gap-3.5">
+            <div className="flex items-center gap-3">
               <div className="relative shrink-0">
                 <img
                   src={previewDataUrl}
@@ -624,12 +637,12 @@ export default function IdCardPhotoStep({
               </div>
 
               <div className="min-w-0 flex-1 space-y-1">
-                <h4 className="text-sm sm:text-base font-extrabold text-white truncate leading-tight">
+                <h4 className="text-sm sm:text-base font-extrabold text-white leading-snug break-words">
                   {student.name}
                 </h4>
 
                 {/* Dynamic Role / Class Badge */}
-                <div className="flex flex-wrap items-center gap-1.5 pt-0.5">
+                <div className="flex flex-wrap items-center gap-1 pt-0.5">
                   {identity.isTeacher ? (
                     <span className="px-2 py-0.5 rounded-md text-[10px] font-bold bg-purple-500/20 text-purple-300 border border-purple-400/40">
                       ★ {identity.roleLabel}
@@ -649,29 +662,29 @@ export default function IdCardPhotoStep({
             </div>
           </div>
 
-          {/* Action Buttons Section with Zero Text Clipping */}
-          <div className="pt-2 space-y-2.5">
-            <Button
+          {/* Action Buttons Section */}
+          <div className="pt-2 space-y-2">
+            <button
               type="button"
               onClick={handleSaveAndContinue}
-              className="w-full h-12 rounded-2xl bg-gradient-to-r from-emerald-500 via-teal-500 to-emerald-600 hover:from-emerald-400 hover:to-teal-400 text-slate-950 font-extrabold text-sm sm:text-base shadow-xl shadow-emerald-500/25 flex items-center justify-center gap-2 border-0 transition-transform active:scale-[0.98]"
+              className="w-full h-11 sm:h-12 rounded-2xl bg-gradient-to-r from-emerald-400 via-teal-400 to-emerald-500 hover:from-emerald-300 hover:to-teal-300 text-slate-950 font-black text-sm sm:text-base shadow-xl shadow-emerald-500/25 flex items-center justify-center gap-2 border-0 transition-all cursor-pointer active:scale-[0.98] select-none"
             >
               <span>Save & Continue to Review</span>
-              <ArrowRight size={18} className="stroke-[2.5]" />
-            </Button>
-            <Button
+              <ArrowRight size={18} className="stroke-[3]" />
+            </button>
+
+            <button
               type="button"
-              variant="ghost"
               onClick={onBack}
-              className="w-full h-10 rounded-xl text-xs font-semibold text-slate-400 hover:text-white hover:bg-white/5 flex items-center justify-center gap-2"
+              className="w-full h-9 rounded-xl text-xs font-semibold text-slate-400 hover:text-white hover:bg-white/5 flex items-center justify-center gap-2 transition-all cursor-pointer select-none"
             >
               <ArrowLeft size={14} /> 
               <span>Back to Face Capture</span>
-            </Button>
+            </button>
           </div>
+
         </div>
       </div>
     </div>
   );
 }
-
