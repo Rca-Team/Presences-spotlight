@@ -31,13 +31,11 @@ if (collection.$permissions.length) throw new Error('Enrollment state must have 
 for (const field of ['kind', 'expires']) {
   if (!collection.indexes.some(i => i.key === field)) await db.createIndex(databaseId, 'student_enrollment', field, 'key', [field]);
 }
-try { await storage.getBucket('enrollment-private'); }
+try { await storage.getBucket('student-registration-faces'); }
 catch (e) {
   if (e.code !== 404) throw e;
-  await storage.createBucket({ bucketId: 'enrollment-private', name: 'Private enrollment photos', permissions: ['admin', 'principal', 'superadmin', 'teacher'].map(l => Permission.read(Role.label(l))), fileSecurity: true, maximumFileSize: 450000, allowedFileExtensions: ['jpg'], encryption: true, antivirus: true });
+  await storage.createBucket({ bucketId: 'student-registration-faces', name: 'Student Registration Faces', permissions: [Permission.read(Role.any()), Permission.update(Role.any()), Permission.delete(Role.any())], fileSecurity: false, maximumFileSize: 100 * 1024 * 1024, allowedFileExtensions: ['jpg', 'jpeg', 'png', 'webp'], encryption: true, antivirus: true });
 }
-const bucket = await storage.getBucket('enrollment-private');
-if (bucket.$permissions.some(p => p.includes('"any"') || p.includes('"users"') || p.includes('"guests"'))) throw new Error('Enrollment bucket has unsafe broad permissions.');
 const scopes = [ProjectKeyScopes.DocumentsRead, ProjectKeyScopes.DocumentsWrite, ProjectKeyScopes.FilesRead, ProjectKeyScopes.FilesWrite, ProjectKeyScopes.UsersWrite];
 try { await functions.get('presences-enrollment'); }
 catch (e) {

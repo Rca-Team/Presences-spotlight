@@ -3,7 +3,7 @@ import { hash, token, reject, normalizeName, normalizeDob, phoneNumber, cleanStu
 import { createEnrollmentMonitor } from './enrollment-monitor.js';
 
 export const STATE = 'student_enrollment';
-export const BUCKET = 'enrollment-private';
+export const BUCKET = 'student-registration-faces';
 const staffRead = ['admin', 'principal', 'superadmin', 'teacher'].map(label => Permission.read(Role.label(label)));
 const DAY = 86400000;
 export function createEnrollmentService({ db, databaseId = 'presences_db', sms, files, now = Date.now }) {

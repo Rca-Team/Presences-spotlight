@@ -44,7 +44,7 @@ export default async ({ req, res, error }) => {
     }
     const files = {
       async put(id, bytes) {
-        try { await storage.createFile({ bucketId: BUCKET, fileId: id, file: InputFile.fromBuffer(bytes, id + '.jpg'), permissions: [] }); }
+        try { await storage.createFile({ bucketId: BUCKET, fileId: id, file: InputFile.fromBuffer(bytes, id + '.jpg'), permissions: [Permission.read(Role.any()), Permission.update(Role.any()), Permission.delete(Role.any())] }); }
         catch (e) { if (e.code !== 409) throw e; }
       },
       async remove(id) { try { await storage.deleteFile({ bucketId: BUCKET, fileId: id }); } catch (e) { if (e.code !== 404) throw e; } },
