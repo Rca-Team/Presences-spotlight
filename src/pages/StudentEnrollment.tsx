@@ -20,7 +20,7 @@ import InteractiveIdCard from '@/components/enrollment/InteractiveIdCard';
 import EnrollmentInformationCard from '@/components/enrollment/EnrollmentInformationCard';
 import { enrollmentApi } from '@/services/enrollment/api';
 import { syncEnrolledFaceDataToSupabase } from '@/services/enrollment/syncEnrolledFaceData';
-import { fieldLabels, studentFields, type CaptureResult, type EnrollmentSession, type StudentDetails } from '@/services/enrollment/types';
+import { fieldLabels, studentFields, prepareAppwriteBackendSamples, type CaptureResult, type EnrollmentSession, type StudentDetails } from '@/services/enrollment/types';
 import DobDatePicker from '@/components/enrollment/DobDatePicker';
 import { cn } from '@/lib/utils';
 import { supabase } from '@/integrations/supabase/client';
@@ -98,9 +98,10 @@ export default function StudentEnrollment() {
   const onCapture = useCallback((capture: CaptureResult) => { 
     setResult(capture); 
     setPhase('idphoto'); 
-    // Ultra-Fast: Start background parallel upload immediately
+    // Ultra-Fast: Start background parallel upload immediately with backend-compliant sample mapping
     if (session?.session) {
-      uploadSamplesParallel(session.session, capture.samples).catch(() => {});
+      const backendSamples = prepareAppwriteBackendSamples(capture.samples, capture.wearsGlasses);
+      uploadSamplesParallel(session.session, backendSamples).catch(() => {});
     }
   }, [session?.session, uploadSamplesParallel]);
 
@@ -115,7 +116,8 @@ export default function StudentEnrollment() {
       });
       // Background upload updated front portrait
       if (session?.session) {
-        uploadSamplesParallel(session.session, updatedSamples).catch(() => {});
+        const backendSamples = prepareAppwriteBackendSamples(updatedSamples, prev.wearsGlasses);
+        uploadSamplesParallel(session.session, backendSamples).catch(() => {});
       }
       return { ...prev, samples: updatedSamples };
     });
@@ -540,10 +542,12 @@ export default function StudentEnrollment() {
                         return;
                       }
 
+                      const backendSamples = prepareAppwriteBackendSamples(result.samples, result.wearsGlasses);
+
                       setMessage('Finalizing photo uploads…');
                       await uploadSamplesParallel(
                         session!.session,
-                        result.samples,
+                        backendSamples,
                         (done, total) => {
                           setMessage(`Saving photos (${done}/${total})…`);
                         }
@@ -554,29 +558,70 @@ export default function StudentEnrollment() {
                           (s) => s.pose === 'front' && s.glasses === (result.wearsGlasses ? 'with' : 'without')
                         )?.image || result.samples[0]?.image || '';
 
-                      const [saved] = await Promise.all([
-                        enrollmentApi<{ completed: boolean; correctionPending: boolean }>('submit', {
+                      // 1. Sync face descriptors and details directly to Supabase (primary system of record)
+                      const supabaseSyncPromise = syncEnrolledFaceDataToSupabase({
+                        admission: details?.admission_number || admission,
+                        details,
+                        samples: result.samples,
+                        wearsGlasses: result.wearsGlasses,
+                        primaryPhotoUrl: primaryPhoto,
+                        replaceExisting,
+                      }).catch((syncErr) => {
+                        console.warn('Supabase descriptor sync notice:', syncErr);
+                        return { success: false, descriptorsCount: 0 };
+                      });
+
+                      // 2. Submit to Appwrite backend session with resilient fallback
+                      let appwriteSaved: { completed?: boolean; correctionPending?: boolean } | null = null;
+                      let appwriteErrMessage = '';
+
+                      try {
+                        appwriteSaved = await enrollmentApi<{ completed: boolean; correctionPending: boolean }>('submit', {
                           session: session!.session,
                           consent,
                           wearsGlasses: result.wearsGlasses,
                           challenge: result.challenge,
                           blinked: result.blinked,
                           changes: details,
-                        }),
-                        syncEnrolledFaceDataToSupabase({
-                          admission: details?.admission_number || admission,
-                          details,
-                          samples: result.samples,
-                          wearsGlasses: result.wearsGlasses,
-                          primaryPhotoUrl: primaryPhoto,
-                          replaceExisting,
-                        }).catch((syncErr) => {
-                          console.warn('Supabase descriptor sync non-fatal warning:', syncErr);
-                          return { success: false, descriptorsCount: 0 };
-                        }),
-                      ]);
+                        });
+                      } catch (err: any) {
+                        console.warn('Appwrite session submission fallback:', err);
+                        appwriteErrMessage = err instanceof Error ? err.message : String(err || '');
+                      }
 
-                      setPendingCorrections(saved.correctionPending);
+                      // Await Supabase sync completion
+                      const supabaseResult = await supabaseSyncPromise;
+
+                      // If both failed, notify the user with an actionable message
+                      if (!appwriteSaved && (!supabaseResult || !supabaseResult.success)) {
+                        throw new Error(appwriteErrMessage || 'Enrollment could not be finalized. Please try again.');
+                      }
+
+                      // Update student profile in Supabase profiles table
+                      if (details?.admission_number || admission) {
+                        try {
+                          const adm = (details?.admission_number || admission).trim();
+                          await supabase
+                            .from('profiles')
+                            .update({
+                              email: emailVal,
+                              parent_email: emailVal,
+                              parent_phone: details?.parent_phone?.trim() || undefined,
+                              phone: details?.parent_phone?.trim() || undefined,
+                              full_name: details?.name?.trim() || undefined,
+                              display_name: details?.name?.trim() || undefined,
+                              class: details?.class?.trim() || undefined,
+                              section: details?.section?.trim() || undefined,
+                              avatar_url: primaryPhoto || undefined,
+                              updated_at: new Date().toISOString(),
+                            })
+                            .or(`admission_number.eq.${adm},employee_id.eq.${adm}`);
+                        } catch (profileUpdateErr) {
+                          console.warn('Profile metadata sync notice:', profileUpdateErr);
+                        }
+                      }
+
+                      setPendingCorrections(Boolean(appwriteSaved?.correctionPending));
                       setResult(undefined);
                       setDetails(undefined);
                       setSession(undefined);

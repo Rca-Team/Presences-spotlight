@@ -24,34 +24,22 @@ type Phase = 'prepare' | 'glasses' | 'turn' | 'capture' | 'replace-glasses' | 'd
 
 const directions: Partial<Record<Pose, string>> = {
   front: 'Look straight at the camera',
-  'front-smile': 'Smile naturally 😊',
-  'front-up': 'Lift your chin slightly ⬆️',
-  'front-down': 'Lower your chin slightly ⬇️',
   left: 'Turn gently to your left ⬅️',
-  'left-deep': 'Turn further to your left ⬅️',
   right: 'Turn gently to your right ➡️',
-  'right-deep': 'Turn further to your right ➡️',
   up: 'Tilt your head up ⬆️',
   down: 'Tilt your head down ⬇️',
   'up-left': 'Look slightly up and left ↖️',
   'up-right': 'Look slightly up and right ↗️',
-  'master-hd': 'Look straight and hold still 🌟',
 };
 
 const spokenDirections: Partial<Record<Pose, string>> = {
   front: 'Please look straight ahead.',
-  'front-smile': 'Now smile naturally.',
-  'front-up': 'Lift your chin slightly up.',
-  'front-down': 'Lower your chin slightly.',
   left: 'Turn gently to your left.',
-  'left-deep': 'Turn further to your left.',
   right: 'Turn gently to your right.',
-  'right-deep': 'Turn further to your right.',
   up: 'Tilt your head up.',
   down: 'Tilt your head down.',
   'up-left': 'Angle up and to the left.',
   'up-right': 'Angle up and to the right.',
-  'master-hd': 'Hold still for final photo.',
 };
 
 const TOTAL_TICKS = 36;
