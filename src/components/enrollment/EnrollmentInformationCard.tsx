@@ -68,6 +68,9 @@ export default function EnrollmentInformationCard({
               <Badge variant="outline" className="text-[10px] font-bold px-2 py-0.5 bg-blue-500/20 text-blue-300 border-blue-400/40">
                 PM Shri KV
               </Badge>
+              <Badge variant="outline" className="hidden sm:inline-flex text-[10px] font-bold px-2 py-0.5 bg-emerald-500/15 text-emerald-300 border-emerald-400/40 gap-1 items-center">
+                <img src="/logo.png" alt="" className="w-3 h-3 object-contain inline" /> Presences Secured
+              </Badge>
               {isTeacher ? (
                 <Badge variant="outline" className="text-[10px] font-bold px-2 py-0.5 bg-purple-500/20 text-purple-300 border-purple-400/40">
                   ★ Faculty

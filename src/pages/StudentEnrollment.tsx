@@ -278,9 +278,28 @@ export default function StudentEnrollment() {
     <main className="enrollment-shell">
       <header className="enrollment-header">
         <div className="flex items-center gap-2.5 sm:gap-3 flex-wrap">
-          <a href="/" className="font-semibold tracking-tight text-white flex items-center gap-1.5 shrink-0">
-            <span className="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-pulse" />
-            <span>presences<span className="text-emerald-300 font-bold">.</span></span>
+          <a href="/" className="flex items-center gap-2.5 group shrink-0">
+            <div className="relative">
+              <img
+                src="/logo.png"
+                alt="Presences AI"
+                className="h-8 w-8 sm:h-9 sm:w-9 object-contain drop-shadow-md group-hover:scale-105 transition-transform"
+              />
+              <span className="absolute -bottom-0.5 -right-0.5 w-2.5 h-2.5 rounded-full bg-emerald-400 border-2 border-slate-950 animate-pulse" />
+            </div>
+            <div className="flex flex-col leading-none">
+              <div className="flex items-center gap-1.5">
+                <span className="text-sm sm:text-base font-extrabold tracking-tight bg-clip-text text-transparent bg-gradient-to-r from-emerald-400 via-teal-300 to-cyan-400">
+                  PRESENCES
+                </span>
+                <span className="px-1.5 py-0.5 rounded-md bg-emerald-500/20 border border-emerald-400/40 text-[9px] font-mono font-extrabold text-emerald-300 leading-none">
+                  AI
+                </span>
+              </div>
+              <span className="text-[9px] text-slate-400 tracking-[0.16em] uppercase font-medium mt-0.5">
+                Smart Biometrics
+              </span>
+            </div>
           </a>
 
           <span className="text-white/25 hidden sm:inline">×</span>
@@ -390,6 +409,40 @@ export default function StudentEnrollment() {
               </div>
             </div>
 
+            {/* Presences AI Biometric Architecture Showcase Card */}
+            <div className="p-3.5 rounded-3xl bg-gradient-to-br from-emerald-500/10 via-slate-900/80 to-cyan-500/10 border border-emerald-500/30 backdrop-blur-xl shadow-lg my-5 space-y-2.5">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2.5">
+                  <div className="w-8 h-8 rounded-xl bg-slate-950 p-1.5 border border-emerald-400/40 shadow-sm flex items-center justify-center shrink-0">
+                    <img src="/logo.png" alt="Presences AI" className="w-full h-full object-contain" />
+                  </div>
+                  <div>
+                    <div className="flex items-center gap-1.5">
+                      <span className="text-xs font-black text-white tracking-wide">PRESENCES AI</span>
+                      <span className="text-[9px] font-mono px-1.5 py-0.2 rounded bg-emerald-500/20 border border-emerald-400/40 text-emerald-300 font-bold">
+                        VISION v2.4
+                      </span>
+                    </div>
+                    <p className="text-[10px] text-slate-400">Next-Gen Facial Biometric Platform</p>
+                  </div>
+                </div>
+                <Badge variant="outline" className="text-[9px] font-bold px-2 py-0.5 bg-emerald-500/15 border-emerald-400/30 text-emerald-300">
+                  ⚡ 40ms Match
+                </Badge>
+              </div>
+
+              <div className="grid grid-cols-2 gap-2 text-[10px] text-slate-300 pt-1 border-t border-white/10">
+                <div className="flex items-center gap-1.5 text-slate-300">
+                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 shrink-0" />
+                  <span>3D Face Mesh Model</span>
+                </div>
+                <div className="flex items-center gap-1.5 text-slate-300">
+                  <span className="w-1.5 h-1.5 rounded-full bg-cyan-400 shrink-0" />
+                  <span>ISO 19794-5 Compliant</span>
+                </div>
+              </div>
+            </div>
+
             <div className="enrollment-steps">
               {stepsList.map((st, i) => (
                 <div key={st.step} className={currentStepIndex >= i ? 'active' : ''}>
@@ -418,16 +471,21 @@ export default function StudentEnrollment() {
                   {/* Institutional Co-Branding Banner */}
                   <div className="flex items-center justify-between gap-3 mb-6 p-3 rounded-2xl bg-white/5 border border-white/10 backdrop-blur-md">
                     <div className="flex items-center gap-2.5">
-                      <div className="w-10 h-10 rounded-xl bg-white p-1 flex items-center justify-center shadow-sm shrink-0">
-                        <img src="/kvs-logo.png" alt="Kendriya Vidyalaya Sangathan" className="w-full h-full object-contain" />
+                      <div className="flex items-center -space-x-2 shrink-0">
+                        <div className="w-10 h-10 rounded-xl bg-white p-1 flex items-center justify-center shadow-md border border-white/20 relative z-10">
+                          <img src="/kvs-logo.png" alt="Kendriya Vidyalaya Sangathan" className="w-full h-full object-contain" />
+                        </div>
+                        <div className="w-10 h-10 rounded-xl bg-slate-900/90 p-1.5 flex items-center justify-center shadow-md border border-emerald-400/40 relative z-20">
+                          <img src="/logo.png" alt="Presences AI" className="w-full h-full object-contain" />
+                        </div>
                       </div>
-                      <div className="text-left">
+                      <div className="text-left pl-1">
                         <p className="text-xs font-black text-white leading-tight">PM SHRI KENDRIYA VIDYALAYA</p>
-                        <p className="text-[10px] text-emerald-400 font-medium">NFC Vigyan Vihar · KVS Delhi Region</p>
+                        <p className="text-[10px] text-emerald-400 font-medium">Biometric Enrollment Powered by Presences AI</p>
                       </div>
                     </div>
                     <Badge variant="outline" className="hidden sm:inline-flex text-[9px] font-bold px-2 py-0.5 bg-emerald-500/15 border-emerald-400/30 text-emerald-300">
-                      Biometric Portal
+                      Presences Vision AI
                     </Badge>
                   </div>
 
@@ -686,15 +744,21 @@ export default function StudentEnrollment() {
         </section>
       </div>
       <footer className="enrollment-footer py-6 mt-8 border-t border-white/10">
-        <div className="max-w-4xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-3 text-xs text-slate-400">
-          <div className="flex items-center gap-2">
-            <img src="/kvs-logo.png" alt="KVS" className="h-5 w-5 object-contain rounded-full bg-white p-0.5 shadow-sm" />
-            <span className="font-bold text-slate-200">PM Shri Kendriya Vidyalaya NFC Vigyan Vihar</span>
+        <div className="max-w-4xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-4 text-xs text-slate-400">
+          <div className="flex items-center gap-2.5">
+            <div className="w-7 h-7 rounded-xl bg-slate-950 p-1 border border-white/15 flex items-center justify-center shadow-sm">
+              <img src="/logo.png" alt="Presences AI" className="w-full h-full object-contain" />
+            </div>
+            <div className="text-left">
+              <span className="font-extrabold text-white text-xs tracking-wide">PRESENCES AI</span>
+              <span className="text-[10px] text-slate-400 block">Smart School Biometric Security & Attendance Platform</span>
+            </div>
           </div>
-          <div className="flex items-center gap-3 text-[11px] text-slate-400">
-            <span>Kendriya Vidyalaya Sangathan (Delhi)</span>
+          <div className="flex items-center gap-2.5 text-[11px] text-slate-400">
+            <img src="/kvs-logo.png" alt="KVS" className="h-4 w-4 object-contain rounded-full bg-white p-0.5" />
+            <span className="text-slate-300 font-semibold">PM Shri Kendriya Vidyalaya NFC Vigyan Vihar</span>
             <span className="text-white/20">•</span>
-            <span className="text-emerald-400 font-semibold">Collaboration with Presences AI</span>
+            <span className="text-emerald-400 font-semibold">Official Deployment</span>
           </div>
         </div>
       </footer>

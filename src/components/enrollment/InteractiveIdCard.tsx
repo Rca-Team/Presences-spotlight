@@ -277,9 +277,14 @@ export default function InteractiveIdCard({
                       />
                     ))}
                   </div>
-                  <span className="text-[8px] font-mono tracking-widest text-slate-400 block uppercase">
-                    PASS-SEC-{student.admission_number || '10341'}
-                  </span>
+                  <div className="flex items-center gap-2">
+                    <span className="text-[8px] font-mono tracking-widest text-slate-400 block uppercase">
+                      PASS-SEC-{student.admission_number || '10341'}
+                    </span>
+                    <span className="text-[8px] font-bold text-emerald-400 flex items-center gap-1 font-mono">
+                      <img src="/logo.png" alt="" className="w-2.5 h-2.5 object-contain inline" /> PRESENCES AI
+                    </span>
+                  </div>
                 </div>
 
                 {/* Miniature Scannable QR Code */}
