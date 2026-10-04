@@ -52,7 +52,7 @@ export function createEnrollmentService({ db, databaseId = 'presences_db', sms, 
     };
   };
   async function profilesFor(admission) {
-    const result = await db.listDocuments(databaseId, 'profiles', [Query.or([Query.equal('admission_number', admission), Query.equal('employee_id', admission)]), Query.limit(3)]);
+    const result = await db.listDocuments(databaseId, 'profiles', [Query.or([Query.equal('admission_number', admission), Query.equal('employee_id', admission), Query.equal('user_id', admission), Query.equal('$id', admission)]), Query.limit(3)]);
     if (result.documents.length > 1) reject(409, 'School staff must resolve duplicate student records.');
     return result.documents[0];
   }

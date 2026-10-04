@@ -1,17 +1,14 @@
-import React, { useState, useEffect } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
+import React, { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
+import { motion } from 'framer-motion';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { Badge } from '@/components/ui/badge';
 import { supabase } from '@/integrations/supabase/client';
-import { loadRegistrationModels } from '@/services/face-recognition/OptimizedRegistrationService';
-import { storeFaceSample, getUserTrainingStats } from '@/services/face-recognition/ProgressiveTrainingService';
-import { descriptorToString } from '@/services/face-recognition/ModelService';
-import Scan3DCapture from '@/components/register/Scan3DCapture';
+import { getUserTrainingStats } from '@/services/face-recognition/ProgressiveTrainingService';
 import { toast } from 'sonner';
 import { 
   Scan, RefreshCw, CheckCircle2, AlertTriangle, Trash2, 
-  ShieldCheck, Loader2, Camera, ChevronRight, Info
+  ShieldCheck, Loader2, Info, ArrowRight, ExternalLink
 } from 'lucide-react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 
@@ -21,12 +18,11 @@ interface FaceReRegistrationProps {
 }
 
 const FaceReRegistration: React.FC<FaceReRegistrationProps> = ({ userId, userName }) => {
+  const navigate = useNavigate();
   const queryClient = useQueryClient();
-  const [showScanner, setShowScanner] = useState(false);
-  const [isModelLoading, setIsModelLoading] = useState(false);
   const [isClearing, setIsClearing] = useState(false);
 
-  const { data: trainingStats, isLoading: statsLoading } = useQuery({
+  const { data: trainingStats } = useQuery({
     queryKey: ['trainingStats', userId],
     queryFn: () => getUserTrainingStats(userId),
     enabled: !!userId
@@ -44,65 +40,25 @@ const FaceReRegistration: React.FC<FaceReRegistrationProps> = ({ userId, userNam
     enabled: !!userId
   });
 
-  const handleStartScan = async () => {
-    setIsModelLoading(true);
-    try {
-      await loadRegistrationModels();
-      setIsModelLoading(false);
-      setShowScanner(true);
-    } catch {
-      setIsModelLoading(false);
-      toast.error('Failed to load face detection models');
-    }
-  };
+  const handleStartScan = (openNewTab = false, replace = false) => {
+    const params = new URLSearchParams({
+      student: userId,
+      bypass: 'true',
+      replace: String(replace),
+      returnTo: '/profile',
+    });
+    const targetUrl = `/enroll?${params.toString()}`;
 
-  const handleScanComplete = async (
-    averagedDescriptor: Float32Array, 
-    primaryImage: string, 
-    allDescriptors: Float32Array[]
-  ) => {
-    setShowScanner(false);
-    
-    try {
-      // Convert primary image to blob
-      const response = await fetch(primaryImage);
-      const blob = await response.blob();
-
-      // Store each descriptor as a training sample
-      let stored = 0;
-      for (const descriptor of allDescriptors) {
-        const success = await storeFaceSample(
-          userId,
-          descriptor,
-          stored === 0 ? blob : null, // only upload image for first sample
-          userName,
-          1.0 // registration confidence
-        );
-        if (success) stored++;
-      }
-
-      // Also update the face_descriptor in attendance_records for legacy matching
-      const descriptorString = descriptorToString(averagedDescriptor);
-      await supabase
-        .from('attendance_records')
-        .update({ face_descriptor: descriptorString })
-        .eq('user_id', userId)
-        .in('status', ['registered', 'pending_approval']);
-
-      queryClient.invalidateQueries({ queryKey: ['trainingStats', userId] });
-      queryClient.invalidateQueries({ queryKey: ['faceSampleCount', userId] });
-
-      toast.success(`Face data updated! ${stored} new samples stored.`);
-    } catch (err) {
-      console.error('Re-registration error:', err);
-      toast.error('Failed to update face data');
+    if (openNewTab) {
+      window.open(targetUrl, '_blank');
+    } else {
+      navigate(targetUrl);
     }
   };
 
   const handleClearAndRescan = async () => {
     setIsClearing(true);
     try {
-      // Delete all existing face descriptors for this user
       const { error } = await supabase
         .from('face_descriptors')
         .delete()
@@ -113,9 +69,9 @@ const FaceReRegistration: React.FC<FaceReRegistrationProps> = ({ userId, userNam
       queryClient.invalidateQueries({ queryKey: ['trainingStats', userId] });
       queryClient.invalidateQueries({ queryKey: ['faceSampleCount', userId] });
 
-      toast.success('Old face data cleared. Starting fresh scan...');
+      toast.success('Old face data cleared. Opening biometric studio...');
       setIsClearing(false);
-      handleStartScan();
+      handleStartScan(false, true);
     } catch {
       setIsClearing(false);
       toast.error('Failed to clear face data');
@@ -124,40 +80,15 @@ const FaceReRegistration: React.FC<FaceReRegistrationProps> = ({ userId, userNam
 
   const levelConfig = {
     none: { color: 'text-muted-foreground', bg: 'bg-muted', label: 'Not Set', icon: AlertTriangle },
-    basic: { color: 'text-amber', bg: 'bg-amber/10', label: 'Basic', icon: Info },
-    moderate: { color: 'text-cyan', bg: 'bg-cyan/10', label: 'Moderate', icon: Scan },
-    good: { color: 'text-emerald', bg: 'bg-emerald/10', label: 'Good', icon: CheckCircle2 },
+    basic: { color: 'text-amber-500', bg: 'bg-amber-500/10', label: 'Basic', icon: Info },
+    moderate: { color: 'text-cyan-500', bg: 'bg-cyan-500/10', label: 'Moderate', icon: Scan },
+    good: { color: 'text-emerald-500', bg: 'bg-emerald-500/10', label: 'Good', icon: CheckCircle2 },
     excellent: { color: 'text-primary', bg: 'bg-primary/10', label: 'Excellent', icon: ShieldCheck },
   };
 
   const level = trainingStats?.trainingLevel || 'none';
   const config = levelConfig[level];
   const LevelIcon = config.icon;
-
-  if (showScanner) {
-    return (
-      <Card className="bg-white/70 dark:bg-slate-900/70 backdrop-blur-xl border border-blue-100 dark:border-blue-900/50 shadow-xl overflow-hidden">
-        <CardHeader className="pb-2">
-          <div className="flex items-center justify-between">
-            <CardTitle className="text-base flex items-center gap-2">
-              <Camera className="w-5 h-5 text-primary" />
-              Re-Scan Your Face
-            </CardTitle>
-            <Button variant="ghost" size="sm" onClick={() => setShowScanner(false)}>Cancel</Button>
-          </div>
-          <CardDescription className="text-xs">
-            Follow the on-screen guide to capture your face from multiple angles
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="p-0">
-          <Scan3DCapture
-            onComplete={handleScanComplete}
-            isModelLoading={isModelLoading}
-          />
-        </CardContent>
-      </Card>
-    );
-  }
 
   return (
     <Card className="bg-white/70 dark:bg-slate-900/70 backdrop-blur-xl border border-blue-100 dark:border-blue-900/50 shadow-xl">
@@ -169,7 +100,7 @@ const FaceReRegistration: React.FC<FaceReRegistrationProps> = ({ userId, userNam
           Face Recognition Data
         </CardTitle>
         <CardDescription className="text-xs sm:text-sm">
-          Update your face data for better attendance accuracy
+          Update your face biometric calibration using the dedicated 3D capture studio
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
@@ -178,25 +109,21 @@ const FaceReRegistration: React.FC<FaceReRegistrationProps> = ({ userId, userNam
           <LevelIcon className={`w-5 h-5 ${config.color}`} />
           <div className="flex-1">
             <div className="flex items-center gap-2">
-              <span className={`text-sm font-semibold ${config.color}`}>{config.label}</span>
-              <Badge variant="secondary" className="text-[10px]">
-                {sampleCount || 0} samples
-              </Badge>
+              <span className="text-sm font-semibold text-foreground">Biometric Calibration:</span>
+              <span className={`text-xs font-bold px-2 py-0.5 rounded-full ${config.bg} ${config.color}`}>
+                {config.label}
+              </span>
             </div>
             <p className="text-xs text-muted-foreground mt-0.5">
-              {level === 'none' && 'No face data registered yet'}
-              {level === 'basic' && 'Add more samples for better accuracy'}
-              {level === 'moderate' && 'Recognition works, but can be improved'}
-              {level === 'good' && 'Good recognition accuracy'}
-              {level === 'excellent' && 'Best possible recognition accuracy'}
+              {trainingStats?.hasGlassesProfile ? 'Glasses + No Glasses profile configured' : 'Standard 3D facial profile'}
             </p>
           </div>
         </div>
 
-        {/* Quality bar */}
-        <div>
-          <div className="flex justify-between text-xs text-muted-foreground mb-1">
-            <span>Recognition Quality</span>
+        {/* Quality meter */}
+        <div className="space-y-1.5">
+          <div className="flex justify-between text-xs text-muted-foreground">
+            <span>Model Quality Meter</span>
             <span>{Math.min(100, (sampleCount || 0) * 12)}%</span>
           </div>
           <div className="h-2 bg-muted rounded-full overflow-hidden">
@@ -230,31 +157,41 @@ const FaceReRegistration: React.FC<FaceReRegistrationProps> = ({ userId, userNam
         {/* Action buttons */}
         <div className="space-y-2">
           <Button 
-            onClick={handleStartScan}
-            disabled={isModelLoading}
-            className="w-full bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-600 hover:to-blue-700 text-white"
+            onClick={() => handleStartScan(false)}
+            className="w-full bg-gradient-to-r from-emerald-500 via-teal-600 to-cyan-600 hover:from-emerald-600 hover:to-cyan-700 text-white font-bold gap-2 rounded-xl h-11"
           >
-            {isModelLoading ? (
-              <><Loader2 className="w-4 h-4 mr-2 animate-spin" /> Loading Models...</>
-            ) : (
-              <><RefreshCw className="w-4 h-4 mr-2" /> {sampleCount ? 'Add More Samples' : 'Register Face'}</>
-            )}
+            <RefreshCw className="w-4 h-4 mr-1" />
+            {sampleCount ? 'Open 3D Studio to Add Samples' : 'Launch 3D Biometric Studio'}
+            <ArrowRight className="w-4 h-4 ml-auto" />
           </Button>
 
-          {(sampleCount || 0) > 0 && (
-            <Button 
+          <div className="flex gap-2">
+            <Button
               variant="outline"
-              onClick={handleClearAndRescan}
-              disabled={isClearing}
-              className="w-full border-rose-200 dark:border-rose-800 text-rose-600 dark:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-950/30"
+              size="sm"
+              onClick={() => handleStartScan(true)}
+              className="flex-1 rounded-xl text-xs"
             >
-              {isClearing ? (
-                <><Loader2 className="w-4 h-4 mr-2 animate-spin" /> Clearing...</>
-              ) : (
-                <><Trash2 className="w-4 h-4 mr-2" /> Clear & Re-Register</>
-              )}
+              <ExternalLink className="w-3.5 h-3.5 mr-1.5" />
+              Open in New Window
             </Button>
-          )}
+            
+            {(sampleCount || 0) > 0 && (
+              <Button 
+                variant="outline"
+                size="sm"
+                onClick={handleClearAndRescan}
+                disabled={isClearing}
+                className="flex-1 rounded-xl border-rose-200 dark:border-rose-800 text-rose-600 dark:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-950/30 text-xs"
+              >
+                {isClearing ? (
+                  <><Loader2 className="w-3.5 h-3.5 mr-1.5 animate-spin" /> Clearing...</>
+                ) : (
+                  <><Trash2 className="w-3.5 h-3.5 mr-1.5" /> Clear & Recalibrate</>
+                )}
+              </Button>
+            )}
+          </div>
         </div>
       </CardContent>
     </Card>

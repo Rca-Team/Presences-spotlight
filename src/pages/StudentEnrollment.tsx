@@ -181,10 +181,35 @@ export default function StudentEnrollment() {
     });
   }, []);
 
+  const queryParams = new URLSearchParams(window.location.search);
+  const returnTo = queryParams.get('returnTo') || (isStaffBypass ? '/enrollment-monitor' : '/');
+  const returnLabel = returnTo.includes('enrollment-monitor')
+    ? 'Biometric Hub'
+    : returnTo.includes('admin')
+    ? 'Admin Dashboard'
+    : returnTo.includes('teacher')
+    ? 'Teacher Portal'
+    : returnTo.includes('profile')
+    ? 'Profile'
+    : returnTo.includes('attendance')
+    ? 'Attendance'
+    : 'Previous Page';
+
+  useEffect(() => {
+    const replaceParam = new URLSearchParams(window.location.search).get('replace');
+    if (replaceParam === 'false') setReplaceExisting(false);
+    if (replaceParam === 'true') setReplaceExisting(true);
+  }, []);
+
   async function cancelCapture() {
     if (session) {
       if (Date.now() >= session.expires) {
-        setSession(undefined); setResult(undefined); setDetails(undefined); setConsent(false); setError(''); setPhase('verify');
+        setSession(undefined); setResult(undefined); setDetails(undefined); setConsent(false); setError('');
+        if (isStaffBypass || returnTo !== '/') {
+          navigate(returnTo);
+        } else {
+          setPhase('verify');
+        }
         return;
       }
       await run(async () => {
@@ -192,12 +217,14 @@ export default function StudentEnrollment() {
         setSession(undefined);
         setResult(undefined);
         setConsent(false);
-        if (isStaffBypass) {
-          navigate('/enrollment-monitor');
+        if (isStaffBypass || returnTo !== '/') {
+          navigate(returnTo);
         } else {
           setPhase('verify');
         }
       });
+    } else if (isStaffBypass || returnTo !== '/') {
+      navigate(returnTo);
     }
   }
 
@@ -227,13 +254,13 @@ export default function StudentEnrollment() {
             <span className="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-pulse" />
             <span>presences<span className="text-emerald-300 font-bold">.</span></span>
           </a>
-          {isStaffBypass && (
+          {(isStaffBypass || returnTo !== '/') && (
             <Link
-              to="/enrollment-monitor"
+              to={returnTo}
               className="flex items-center gap-1.5 text-xs font-semibold px-2.5 py-1 rounded-full bg-emerald-500/15 border border-emerald-500/30 text-emerald-300 hover:bg-emerald-500/25 transition-all"
             >
               <ArrowLeft size={13} />
-              <span>Back to Hub</span>
+              <span>Back to {returnLabel}</span>
             </Link>
           )}
         </div>
@@ -529,11 +556,11 @@ export default function StudentEnrollment() {
                   )}
                   <div className="flex flex-col sm:flex-row items-center justify-center gap-3 mt-8">
                     <Link
-                      to="/enrollment-monitor"
+                      to={returnTo}
                       className="inline-flex items-center justify-center gap-2 px-5 py-2.5 rounded-xl bg-gradient-to-r from-emerald-500 to-teal-600 text-slate-950 font-bold text-sm shadow-lg shadow-emerald-500/20 hover:from-emerald-400 hover:to-teal-500 transition-all active:scale-95"
                     >
                       <ArrowLeft size={16} />
-                      Return to Biometric Hub
+                      Return to {returnLabel}
                     </Link>
                     <Link to="/" className="inline-block text-white/60 hover:text-white text-xs py-2">
                       Return to home
