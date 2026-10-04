@@ -149,26 +149,77 @@ export default function StudentEnrollment() {
 
   const expired = session && clock >= session.expires;
 
+  const stepsList = [
+    { step: 1, label: 'Verify Student', shortLabel: 'Verify' },
+    { step: 2, label: '3D Face Capture', shortLabel: 'Face Scan' },
+    { step: 3, label: 'ID Photo Studio', shortLabel: 'ID Photo' },
+    { step: 4, label: 'Review & Submit', shortLabel: 'Review' },
+  ];
+
+  const currentStepIndex =
+    phase === 'verify'
+      ? 0
+      : phase === 'consent' || phase === 'capture'
+      ? 1
+      : phase === 'idphoto'
+      ? 2
+      : 3;
+
   return (
     <main className="enrollment-shell">
       <header className="enrollment-header">
-        <a href="/" className="font-semibold tracking-tight">presences<span className="text-emerald-300">.</span></a>
-        <span className="flex items-center gap-2 text-xs text-slate-400"><LockKeyhole size={13} />Student enrollment</span>
+        <a href="/" className="font-semibold tracking-tight text-white flex items-center gap-1.5">
+          <span className="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-pulse" />
+          <span>presences<span className="text-emerald-300 font-bold">.</span></span>
+        </a>
+        <div className="flex items-center gap-2 text-xs font-semibold px-2.5 py-1 rounded-full bg-white/5 border border-white/10 text-slate-300">
+          <LockKeyhole size={12} className="text-emerald-400" />
+          <span>Private Enrollment</span>
+        </div>
       </header>
+
+      {/* Mobile Step Tracker Banner */}
+      <div className="lg:hidden max-w-xl mx-auto mt-4 mb-2 p-3 rounded-2xl bg-slate-900/80 backdrop-blur-md border border-white/10 shadow-lg">
+        <div className="flex items-center justify-between mb-2">
+          <div className="flex items-center gap-2">
+            <div className="w-6 h-6 rounded-lg bg-emerald-500/20 border border-emerald-400/40 text-emerald-300 flex items-center justify-center font-black text-xs">
+              {currentStepIndex + 1}
+            </div>
+            <span className="text-xs font-bold text-white">
+              {stepsList[currentStepIndex].label}
+            </span>
+          </div>
+          <span className="text-[10px] font-mono font-bold text-emerald-400/90 uppercase tracking-wider">
+            Step {currentStepIndex + 1} of 4
+          </span>
+        </div>
+        <div className="grid grid-cols-4 gap-1.5">
+          {stepsList.map((st, i) => (
+            <div
+              key={st.step}
+              className={`h-1.5 rounded-full transition-all duration-300 ${
+                i === currentStepIndex
+                  ? 'bg-gradient-to-r from-emerald-400 to-teal-300 shadow-sm shadow-emerald-400/50'
+                  : i < currentStepIndex
+                  ? 'bg-emerald-600'
+                  : 'bg-white/10'
+              }`}
+            />
+          ))}
+        </div>
+      </div>
+
       <div className="enrollment-layout">
-        <aside className="enrollment-intro">
+        <aside className="enrollment-intro hidden lg:block">
           <span className="enrollment-eyebrow">A familiar face. A simpler day.</span>
           <h1>Your school day,<br /><span>ready in a few turns.</span></h1>
           <p>Help your child get ready for effortless attendance. Verify your details, follow the camera, and confirm their student card.</p>
           <div className="enrollment-steps">
-            {['Verify student', 'Capture face', 'ID card photo', 'Review & submit'].map((label, i) => {
-              const currentStep = phase === 'verify' ? 0 : phase === 'consent' || phase === 'capture' ? 1 : phase === 'idphoto' ? 2 : 3;
-              return (
-                <div key={label} className={currentStep >= i ? 'active' : ''}>
-                  <span>{i + 1}</span>{label}
-                </div>
-              );
-            })}
+            {stepsList.map((st, i) => (
+              <div key={st.step} className={currentStepIndex >= i ? 'active' : ''}>
+                <span>{i + 1}</span>{st.label}
+              </div>
+            ))}
           </div>
           <div className="enrollment-assurance">
             <ShieldCheck size={20} />

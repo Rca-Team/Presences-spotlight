@@ -624,44 +624,31 @@
   animation: pulseArrowDown 0.9s infinite alternate ease-in-out;
 }
 
-@media (max-width: 800px) {
+@media (max-width: 1024px) {
   .enrollment-layout {
     grid-template-columns: 1fr;
-    gap: 26px;
-    margin: 24px auto;
-    max-width: 520px;
+    gap: 20px;
+    margin: 16px auto;
+    max-width: 640px;
   }
   .enrollment-intro {
     padding-top: 0;
   }
   .enrollment-intro h1 {
-    font-size: 30px;
-    margin: 12px 0;
+    font-size: 26px;
+    margin: 8px 0;
   }
   .enrollment-intro > p,
-  .enrollment-assurance {
+  .enrollment-assurance,
+  .enrollment-steps {
     display: none;
   }
-  .enrollment-steps {
-    display: flex;
-    margin-top: 18px;
-    gap: 12px;
-    justify-content: space-between;
-  }
-  .enrollment-steps > div {
-    font-size: 10px;
-    gap: 6px;
-  }
-  .enrollment-steps span {
-    width: 24px;
-    height: 24px;
-  }
   .enrollment-glass {
-    padding: 24px;
+    padding: 20px 16px;
     border-radius: 28px;
   }
   .enrollment-shell {
-    padding: 20px 16px;
+    padding: 16px 12px;
   }
   .faceid-viewport {
     width: 290px;
@@ -670,6 +657,21 @@
   .faceid-circle-mask {
     width: 200px;
     height: 200px;
+  }
+}
+
+@media (max-width: 640px) {
+  .enrollment-label input {
+    font-size: 16px !important; /* Prevents auto-zoom on mobile Safari */
+    height: 48px;
+  }
+  .enrollment-glass h2 {
+    font-size: 20px;
+  }
+  .enrollment-icon {
+    width: 44px;
+    height: 44px;
+    margin-bottom: 16px;
   }
 }
 
@@ -683,21 +685,15 @@
 
 @media (max-width: 380px) {
   .enrollment-glass {
-    padding: 18px;
-  }
-  .enrollment-idcard {
-    padding: 18px;
-  }
-  .enrollment-steps > div {
-    font-size: 9px;
+    padding: 16px 12px;
   }
   .faceid-viewport {
-    width: 260px;
-    height: 260px;
+    width: 250px;
+    height: 250px;
   }
   .faceid-circle-mask {
-    width: 180px;
-    height: 180px;
+    width: 175px;
+    height: 175px;
   }
 }
 
