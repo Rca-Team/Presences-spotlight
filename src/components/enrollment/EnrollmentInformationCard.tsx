@@ -17,6 +17,7 @@ import {
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
+import DobDatePicker, { calculateAge } from '@/components/enrollment/DobDatePicker';
 import type { StudentDetails, StudentField } from '@/services/enrollment/types';
 import { resolveIdentityDisplay } from '@/utils/studentIdentityResolver';
 
@@ -208,20 +209,28 @@ export default function EnrollmentInformationCard({
 
             {/* Date of Birth */}
             <div className="p-3 rounded-2xl bg-white/[0.03] border border-white/10 hover:border-white/20 transition-all">
-              <div className="flex items-center gap-1.5 text-[11px] font-semibold text-slate-400 mb-1">
-                <Calendar className="w-3.5 h-3.5 text-amber-400" />
-                <span>Date of Birth</span>
+              <div className="flex items-center justify-between text-[11px] font-semibold text-slate-400 mb-1.5">
+                <div className="flex items-center gap-1.5">
+                  <Calendar className="w-3.5 h-3.5 text-amber-400" />
+                  <span>Date of Birth</span>
+                </div>
+                {!editing && details.date_of_birth && calculateAge(details.date_of_birth) !== null && (
+                  <span className="text-[10px] font-mono font-semibold px-2 py-0.5 rounded-full bg-emerald-500/15 border border-emerald-500/30 text-emerald-300">
+                    {calculateAge(details.date_of_birth)} yrs old
+                  </span>
+                )}
               </div>
               {editing ? (
-                <Input
-                  value={details.date_of_birth}
-                  onChange={(e) => onChangeField('date_of_birth', e.target.value)}
-                  placeholder="DD/MM/YYYY"
-                  className="h-9 bg-slate-950/80 border-white/20 text-white text-xs font-semibold rounded-xl focus:ring-emerald-400"
+                <DobDatePicker
+                  value={details.date_of_birth || ''}
+                  onChange={(val) => onChangeField('date_of_birth', val)}
+                  compact
+                  showHelper={false}
+                  disabled={disabled}
                 />
               ) : (
-                <p className="text-sm font-bold text-white">
-                  {details.date_of_birth || '— Not provided'}
+                <p className="text-sm font-bold text-white font-mono">
+                  {details.date_of_birth || <span className="text-slate-500 font-sans italic font-normal text-xs">— Not provided</span>}
                 </p>
               )}
             </div>
