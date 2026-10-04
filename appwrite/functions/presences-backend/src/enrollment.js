@@ -82,6 +82,25 @@ export function createEnrollmentService({ db, databaseId = 'presences_db', sms, 
     const { student, changes, descriptor, primaryFileId } = current.commit;
     const imageUrl = files.url(primaryFileId);
     const captureId = hash('capture:' + id);
+
+    // Erase prior capture files and documents for this student so old face data is completely purged
+    try {
+      const priorStudent = await get(hash('student:' + current.student));
+      if (priorStudent?.lastCapture && priorStudent.lastCapture !== captureId) {
+        const oldCapture = await get(priorStudent.lastCapture);
+        if (oldCapture?.samples) {
+          const currentFileIds = new Set((current.samples || []).map(s => s.fileId));
+          for (const s of oldCapture.samples) {
+            if (s.fileId && !currentFileIds.has(s.fileId)) {
+              await files.remove(s.fileId).catch(() => {});
+            }
+          }
+        }
+        await db.deleteDocument(databaseId, STATE, priorStudent.lastCapture).catch(() => {});
+      }
+    } catch (cleanErr) {
+      console.warn('[finishCommit] Prior capture cleanup warning:', cleanErr);
+    }
     if (Object.keys(changes).length) await save(hash('correction:' + id), 'correction', {
       student: current.student, original: Object.fromEntries(fields.map(k => [k, student[k]])), changes, status: 'pending', at: current.commit.at,
     }, now() + 90 * DAY);

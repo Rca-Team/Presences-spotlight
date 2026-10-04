@@ -198,9 +198,14 @@ function StudentSheet({ student, data, onClose, onChanged }: { student: MonitorS
           ) : <p className="text-xs text-muted-foreground mt-2">No activity in the last 90 days.</p>}
         </section>
 
-        {data?.canManage && student.status !== 'completed' && (
+        {data?.canManage && (
           <div className="mt-6">
-            <Button asChild variant="outline" className="w-full"><Link to={`/enroll?student=${encodeURIComponent(student.admission_number)}`}><ScanFace className="h-4 w-4 mr-2" />Capture at school</Link></Button>
+            <Button asChild variant="outline" className="w-full">
+              <Link to={`/enroll?student=${encodeURIComponent(student.admission_number)}`}>
+                <ScanFace className="h-4 w-4 mr-2" />
+                {student.status === 'completed' ? 'Re-enroll / Update Face' : 'Capture at school'}
+              </Link>
+            </Button>
           </div>
         )}
       </SheetContent>
@@ -419,7 +424,16 @@ export default function EnrollmentMonitor() {
                                 <td className="px-3 py-2.5 hidden sm:table-cell text-muted-foreground">{s.category || '—'}</td>
                                 <td className="px-3 py-2.5"><StatusBadge status={s.status} /></td>
                                 <td className="px-3 py-2.5 hidden md:table-cell text-xs text-muted-foreground">{methodLabels[s.method] || (s.failures ? `${s.failures} failed` : '—')}</td>
-                                <td className="px-3 py-2.5 hidden md:table-cell text-xs tabular-nums">{views ? `${views}/${REQUIRED_POSES.length}` : '—'}</td>
+                                <td className="px-3 py-2.5 hidden md:table-cell text-xs tabular-nums">
+                                  {views ? (
+                                    <span className="inline-flex items-center gap-1">
+                                      {s.status === 'completed' && <CheckCircle2 className="h-3 w-3 text-emerald-500" />}
+                                      {views} {views === 1 ? 'view' : 'views'}
+                                    </span>
+                                  ) : (
+                                    '—'
+                                  )}
+                                </td>
                                 <td className="px-3 py-2.5 hidden lg:table-cell text-xs text-muted-foreground">{ago(s.lastActivity)}</td>
                                 <td className="px-3 py-2.5">
                                   <div className="flex items-center justify-end gap-1.5 text-muted-foreground">

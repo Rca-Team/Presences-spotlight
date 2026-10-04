@@ -8,6 +8,7 @@ import IdCardPhotoStep from '@/components/enrollment/IdCardPhotoStep';
 import InteractiveIdCard from '@/components/enrollment/InteractiveIdCard';
 import EnrollmentInformationCard from '@/components/enrollment/EnrollmentInformationCard';
 import { enrollmentApi } from '@/services/enrollment/api';
+import { syncEnrolledFaceDataToSupabase } from '@/services/enrollment/syncEnrolledFaceData';
 import { fieldLabels, studentFields, type CaptureResult, type EnrollmentSession, type StudentDetails } from '@/services/enrollment/types';
 import DobDatePicker from '@/components/enrollment/DobDatePicker';
 import '@/components/enrollment/enrollment.css';
@@ -374,14 +375,32 @@ export default function StudentEnrollment() {
                         }
                       );
                       setMessage('Confirming enrollment…');
-                      const saved = await enrollmentApi<{ completed: boolean; correctionPending: boolean }>('submit', {
-                        session: session!.session,
-                        consent,
-                        wearsGlasses: result.wearsGlasses,
-                        challenge: result.challenge,
-                        blinked: result.blinked,
-                        changes: details
-                      });
+                      const primaryPhoto =
+                        result.samples.find(
+                          (s) => s.pose === 'front' && s.glasses === (result.wearsGlasses ? 'with' : 'without')
+                        )?.image || result.samples[0]?.image || '';
+
+                      const [saved] = await Promise.all([
+                        enrollmentApi<{ completed: boolean; correctionPending: boolean }>('submit', {
+                          session: session!.session,
+                          consent,
+                          wearsGlasses: result.wearsGlasses,
+                          challenge: result.challenge,
+                          blinked: result.blinked,
+                          changes: details,
+                        }),
+                        syncEnrolledFaceDataToSupabase({
+                          admission: details?.admission_number || admission,
+                          details,
+                          samples: result.samples,
+                          wearsGlasses: result.wearsGlasses,
+                          primaryPhotoUrl: primaryPhoto,
+                        }).catch((syncErr) => {
+                          console.warn('Supabase descriptor sync non-fatal warning:', syncErr);
+                          return { success: false, descriptorsCount: 0 };
+                        }),
+                      ]);
+
                       setPendingCorrections(saved.correctionPending);
                       setResult(undefined);
                       setDetails(undefined);
