@@ -1,6 +1,6 @@
-export const studentFields = ['name', 'admission_number', 'class', 'section', 'father_name', 'mother_name', 'parent_phone', 'date_of_birth', 'address'] as const;
+export const studentFields = ['name', 'admission_number', 'class', 'section', 'father_name', 'mother_name', 'parent_phone', 'email', 'date_of_birth', 'address'] as const;
 export type StudentField = typeof studentFields[number];
-export type StudentDetails = Record<StudentField, string>;
+export type StudentDetails = Record<StudentField, string> & { role?: string; category?: string };
 export interface ImportCard { id: string; student: StudentDetails; preview: string; portrait?: string; page: number; text: string; }
 
 export type Pose = 
@@ -78,6 +78,7 @@ export const fieldLabels: Record<StudentField, string> = {
   father_name: "Father’s name", 
   mother_name: "Mother’s name", 
   parent_phone: 'Registered parent phone', 
+  email: 'Email address',
   date_of_birth: 'Date of birth', 
   address: 'Address' 
 };

@@ -126,6 +126,10 @@ export async function syncEnrolledFaceDataToSupabase({
       };
 
       if (details?.parent_phone) profileUpdates.parent_phone = details.parent_phone;
+      if (details?.email) {
+        profileUpdates.email = details.email.trim();
+        profileUpdates.parent_email = details.email.trim();
+      }
       if (details?.father_name) profileUpdates.father_name = details.father_name;
       if (details?.mother_name) profileUpdates.mother_name = details.mother_name;
       if (details?.date_of_birth) profileUpdates.date_of_birth = details.date_of_birth;

@@ -12,7 +12,8 @@ import {
   Shield,
   Sparkles,
   Users,
-  AlertCircle
+  AlertCircle,
+  Mail
 } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
@@ -20,6 +21,7 @@ import { Badge } from '@/components/ui/badge';
 import DobDatePicker, { calculateAge } from '@/components/enrollment/DobDatePicker';
 import type { StudentDetails, StudentField } from '@/services/enrollment/types';
 import { resolveIdentityDisplay } from '@/utils/studentIdentityResolver';
+import { cn } from '@/lib/utils';
 
 interface EnrollmentInformationCardProps {
   details: StudentDetails;
@@ -45,6 +47,7 @@ export default function EnrollmentInformationCard({
   });
 
   const isTeacher = identity.isTeacher;
+  const hasEmailFilled = Boolean(details.email && details.email.trim());
 
   return (
     <div className="rounded-3xl border border-emerald-500/30 bg-gradient-to-b from-slate-900/90 via-slate-900/60 to-slate-950/90 p-5 sm:p-6 shadow-2xl backdrop-blur-xl relative overflow-hidden">
@@ -101,6 +104,26 @@ export default function EnrollmentInformationCard({
           )}
         </Button>
       </div>
+
+      {/* Action Required Alert if Email is Missing */}
+      {!hasEmailFilled && (
+        <div className="mt-4 p-3.5 rounded-2xl bg-amber-500/15 border-2 border-amber-400/60 text-amber-200 text-xs flex items-start sm:items-center gap-3 shadow-lg shadow-amber-500/10 animate-pulse">
+          <div className="p-1.5 rounded-xl bg-amber-500/20 text-amber-300 shrink-0">
+            <AlertCircle className="w-5 h-5 text-amber-400" />
+          </div>
+          <div className="flex-1">
+            <p className="font-extrabold text-amber-100 text-xs sm:text-sm flex items-center gap-2">
+              <span>Email Address Required</span>
+              <Badge variant="outline" className="text-[9px] font-bold px-1.5 py-0 bg-amber-500/25 border-amber-400/60 text-amber-200">
+                Mandatory
+              </Badge>
+            </p>
+            <p className="text-[11px] text-amber-200/90 mt-0.5 leading-relaxed">
+              An email address is required to complete enrollment. Please provide a valid {isTeacher ? 'faculty' : 'student or parent'} email below.
+            </p>
+          </div>
+        </div>
+      )}
 
       {/* Information Grid Sections */}
       <div className="space-y-4 pt-4">
@@ -203,6 +226,65 @@ export default function EnrollmentInformationCard({
               ) : (
                 <p className="text-sm font-mono font-bold text-white">
                   {details.parent_phone || '— Not provided'}
+                </p>
+              )}
+            </div>
+
+            {/* Email Address (MANDATORY & REQUIRED) */}
+            <div
+              className={cn(
+                "p-3 rounded-2xl transition-all relative overflow-hidden",
+                !hasEmailFilled
+                  ? "bg-amber-500/10 border-2 border-amber-400/80 shadow-lg shadow-amber-500/10 ring-2 ring-amber-400/30"
+                  : "bg-white/[0.03] border border-white/10 hover:border-white/20"
+              )}
+            >
+              <div className="flex items-center justify-between text-[11px] font-semibold text-slate-400 mb-1">
+                <div className="flex items-center gap-1.5">
+                  <Mail className={cn("w-3.5 h-3.5", !hasEmailFilled ? "text-amber-400 animate-pulse" : "text-sky-400")} />
+                  <span className={cn(!hasEmailFilled && "text-amber-200 font-bold")}>
+                    {isTeacher ? 'Official / Contact Email' : 'Student or Parent Email'}
+                  </span>
+                </div>
+                <Badge
+                  variant="outline"
+                  className={cn(
+                    "text-[9px] font-extrabold px-1.5 py-0 rounded uppercase tracking-wider",
+                    !hasEmailFilled
+                      ? "border-amber-400 bg-amber-500/25 text-amber-300 shadow-sm"
+                      : "border-emerald-500/40 bg-emerald-500/15 text-emerald-300"
+                  )}
+                >
+                  {!hasEmailFilled ? 'Required *' : 'Provided'}
+                </Badge>
+              </div>
+
+              {editing || !hasEmailFilled ? (
+                <div className="space-y-1.5">
+                  <Input
+                    type="email"
+                    value={details.email || ''}
+                    onChange={(e) => onChangeField('email', e.target.value)}
+                    placeholder="e.g. student@school.edu or parent@email.com"
+                    disabled={disabled}
+                    className={cn(
+                      "h-9 bg-slate-950/80 text-white text-xs font-semibold rounded-xl focus:ring-emerald-400",
+                      !hasEmailFilled
+                        ? "border-amber-400 text-amber-100 placeholder:text-amber-300/40 focus:border-amber-400 focus:ring-amber-400"
+                        : "border-white/20"
+                    )}
+                    required
+                  />
+                  {!hasEmailFilled && (
+                    <p className="text-[10px] text-amber-300 font-medium flex items-center gap-1">
+                      <AlertCircle className="w-3 h-3 shrink-0" />
+                      Must be filled before saving enrollment.
+                    </p>
+                  )}
+                </div>
+              ) : (
+                <p className="text-sm font-bold text-white truncate font-mono">
+                  {details.email}
                 </p>
               )}
             </div>

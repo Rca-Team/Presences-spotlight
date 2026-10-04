@@ -13,6 +13,7 @@ import { syncEnrolledFaceDataToSupabase } from '@/services/enrollment/syncEnroll
 import { fieldLabels, studentFields, type CaptureResult, type EnrollmentSession, type StudentDetails } from '@/services/enrollment/types';
 import DobDatePicker from '@/components/enrollment/DobDatePicker';
 import { cn } from '@/lib/utils';
+import { supabase } from '@/integrations/supabase/client';
 import '@/components/enrollment/enrollment.css';
 
 export default function StudentEnrollment() {
@@ -124,9 +125,35 @@ export default function StudentEnrollment() {
     }
   };
 
-  const acceptSession = (value: EnrollmentSession, bypassMode = false) => {
+  const acceptSession = async (value: EnrollmentSession, bypassMode = false) => {
+    let studentDetails: StudentDetails = {
+      ...value.student,
+      email: value.student?.email || '',
+    };
+
+    // Preload email from profiles if not in enrollment session
+    if (!studentDetails.email && value.student?.admission_number) {
+      try {
+        const { data: p } = await supabase
+          .from('profiles')
+          .select('email, parent_email')
+          .or(`admission_number.eq.${value.student.admission_number},employee_id.eq.${value.student.admission_number}`)
+          .limit(1)
+          .maybeSingle();
+
+        if (p?.email || p?.parent_email) {
+          studentDetails = {
+            ...studentDetails,
+            email: p.email || p.parent_email || '',
+          };
+        }
+      } catch {
+        // Non-blocking fallback
+      }
+    }
+
     setSession(value);
-    setDetails(value.student);
+    setDetails(studentDetails);
     if (bypassMode) {
       setIsStaffBypass(true);
       setConsent(true);
@@ -493,6 +520,18 @@ export default function StudentEnrollment() {
                     disabled={busy || expired}
                     className="enrollment-primary w-full mt-3"
                     onClick={() => void run(async () => {
+                      const emailVal = details?.email?.trim();
+                      if (!emailVal) {
+                        setError('Email address is required. Please fill in the email field in the Information Record above to complete enrollment.');
+                        setEditing(true);
+                        return;
+                      }
+                      if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(emailVal)) {
+                        setError('Please enter a valid email address format (e.g. student@school.edu or parent@email.com).');
+                        setEditing(true);
+                        return;
+                      }
+
                       setMessage('Finalizing photo uploads…');
                       await uploadSamplesParallel(
                         session!.session,

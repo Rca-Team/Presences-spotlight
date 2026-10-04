@@ -324,6 +324,11 @@ export default function InteractiveIdCard({
                     <Phone size={11} className="text-emerald-400" /> Emergency Contact
                   </p>
                   <p className="font-mono text-slate-200">{student.parent_phone || 'School Office'}</p>
+                  {student.email && (
+                    <p className="text-[9px] text-slate-400 font-mono truncate max-w-[140px]" title={student.email}>
+                      ✉ {student.email}
+                    </p>
+                  )}
                   {student.father_name && <p className="text-slate-400">Guardian: {student.father_name}</p>}
                 </div>
 
