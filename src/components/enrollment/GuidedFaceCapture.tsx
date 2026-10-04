@@ -1,22 +1,41 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
 import { motion, useReducedMotion } from 'framer-motion';
-import { Camera, Check, Glasses, RotateCcw, ScanFace, Sparkles, Volume2, VolumeX, ArrowLeft, ArrowRight, ArrowUp, ArrowDown, Eye, User } from 'lucide-react';
+import { Camera, Check, Glasses, RotateCcw, ScanFace, Sparkles, Volume2, VolumeX, ArrowLeft, ArrowRight, ArrowUp, ArrowDown, Eye, User, AlertTriangle } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { poses, type CaptureResult, type FaceSample, type Pose } from '@/services/enrollment/types';
-import { eyeOpenness, estimateFacePose, imageQuality } from '@/services/enrollment/captureQuality';
+import { eyeOpenness, estimateFacePose, imageQuality, diagnoseFrameQuality, aiEnhanceFaceCanvas } from '@/services/enrollment/captureQuality';
 
 type Phase = 'prepare' | 'glasses' | 'turn' | 'capture' | 'replace-glasses' | 'done';
 
 const directions: Record<Pose, string> = {
-  front: 'Look straight ahead',
-  left: 'Turn gently to your left ⬅️',
-  right: 'Turn gently to your right ➡️',
-  up: 'Lift your chin slightly ⬆️',
-  down: 'Lower your chin slightly ⬇️',
-  'up-left': 'Look gently up and left',
-  'up-right': 'Look gently up and right',
-  'down-left': 'Look gently down and left',
-  'down-right': 'Look gently down and right',
+  front: 'Look straight ahead (Neutral)',
+  'front-smile': 'Smile naturally 😊',
+  'front-up': 'Lift your chin slightly ⬆️',
+  'front-down': 'Lower your chin slightly ⬇️',
+  left: 'Turn gently to your left ⬅️ (15°)',
+  'left-deep': 'Turn further to your left ⬅️ (30°)',
+  right: 'Turn gently to your right ➡️ (15°)',
+  'right-deep': 'Turn further to your right ➡️ (30°)',
+  up: 'Look up ⬆️ (25°)',
+  down: 'Look down ⬇️ (20°)',
+  'up-left': 'Look up and left ↖️',
+  'up-right': 'Look up and right ↗️',
+  'down-left': 'Look down and left ↙️',
+  'down-right': 'Look down and right ↘️',
+  'master-hd': 'Final calibration: Look straight & hold still 🌟',
+};
+
+const isPoseSatisfied = (current: Pose | null, target: Pose): boolean => {
+  if (!current) return false;
+  if (target === 'master-hd') return true;
+  if (target === current) return true;
+  if (target === 'front' && (current === 'front' || current === 'front-smile')) return true;
+  if (target === 'front-smile' && (current === 'front-smile' || current === 'front')) return true;
+  if (target === 'front-up' && (current === 'front-up' || current === 'up')) return true;
+  if (target === 'front-down' && (current === 'front-down' || current === 'down')) return true;
+  if (target === 'left' && (current === 'left' || current === 'left-deep')) return true;
+  if (target === 'right' && (current === 'right' || current === 'right-deep')) return true;
+  return false;
 };
 
 const TOTAL_TICKS = 36;
@@ -152,6 +171,7 @@ export default function GuidedFaceCapture({
   const [generation, setGeneration] = useState(0);
   const [soundMuted, setSoundMuted] = useState(false);
   const [activeTargetPose, setActiveTargetPose] = useState<Pose | null>(null);
+  const [qualityWarning, setQualityWarning] = useState<string | null>(null);
 
   const reduced = useReducedMotion();
 
@@ -218,7 +238,7 @@ export default function GuidedFaceCapture({
     finishEnrollmentRef.current = finishEnrollment;
   }, [finishEnrollment]);
 
-  // Alternative Method 1: Manual Snap of Current Frame
+  // Manual Snap of Current Frame with AI Auto-Enhancement & Quality Diagnostics
   const handleManualCapture = useCallback(async () => {
     try {
       const v = video.current;
@@ -231,12 +251,12 @@ export default function GuidedFaceCapture({
       let image = latestFaceDataRef.current?.image;
       let descriptor = latestFaceDataRef.current?.descriptor;
 
-      if (!image && v && v.videoWidth) {
+      if (v && v.videoWidth) {
         const minDim = Math.min(v.videoWidth, v.videoHeight);
         const sx = (v.videoWidth - minDim) / 2;
         const sy = (v.videoHeight - minDim) / 2;
         ctx.drawImage(v, sx, sy, minDim, minDim, 0, 0, 384, 384);
-        image = c.toDataURL('image/jpeg', 0.88);
+        image = aiEnhanceFaceCanvas(c);
       }
 
       if (!descriptor) {
@@ -271,12 +291,24 @@ export default function GuidedFaceCapture({
       ).length;
       const target = needsBare ? 'front' : (poses[capturedMain] || 'front');
 
+      const qualityRaw = latestFaceDataRef.current?.quality || { brightness: 125, sharpness: 25, faces: 1 };
+      const diag = diagnoseFrameQuality(qualityRaw, 0.28);
+      if (diag.userWarning) setQualityWarning(diag.userWarning);
+
       samples.current.push({
         pose: target,
         glasses: needsBare || !glasses.current ? 'without' : 'with',
         descriptor: [...descriptor],
         image: image || '',
-        quality: { brightness: 120, sharpness: 30, faces: 1 },
+        quality: {
+          brightness: qualityRaw.brightness,
+          sharpness: qualityRaw.sharpness,
+          faces: 1,
+          flags: diag.flags,
+          isEnhanced: true,
+          clarityScore: diag.clarityScore,
+          anomalyWarning: diag.userWarning || undefined,
+        },
       });
 
       const nextCount = samples.current.length;
@@ -621,6 +653,11 @@ export default function GuidedFaceCapture({
               return;
             }
 
+            // Multi-criteria Quality Diagnosis
+            const ear = eyeOpenness(face.landmarks.positions);
+            const diag = diagnoseFrameQuality(quality, ear);
+            setQualityWarning(diag.userWarning);
+
             const poseData = estimateFacePose(face.landmarks.positions);
             const currentPose = poseData.pose;
             const descriptor = Array.from(face.descriptor);
@@ -664,7 +701,8 @@ export default function GuidedFaceCapture({
                 384,
                 384
               );
-            const image = portrait.toDataURL('image/jpeg', 0.88);
+            const enhancedImage = aiEnhanceFaceCanvas(portrait);
+            const image = enhancedImage || portrait.toDataURL('image/jpeg', 0.88);
 
             // Cache latest good face data for manual capture & instant enrollment
             latestFaceDataRef.current = {
@@ -718,7 +756,7 @@ export default function GuidedFaceCapture({
             if (phase.current === 'turn') {
               setActiveTargetPose(challenge);
               setMessage(directions[challenge]);
-              if (currentPose === challenge) {
+              if (isPoseSatisfied(currentPose, challenge)) {
                 if (!stableSince) stableSince = performance.now();
                 if (performance.now() - stableSince > 280) {
                   stableSince = 0;
@@ -731,7 +769,7 @@ export default function GuidedFaceCapture({
               return;
             }
 
-            // Capture every required view, including the four diagonals.
+            // Capture every required view, including all 15 poses.
             const needsBare = glasses.current && samples.current.length === 0;
             const capturedMain = samples.current.filter(
               (s) => s.glasses === (glasses.current ? 'with' : 'without')
@@ -742,7 +780,7 @@ export default function GuidedFaceCapture({
             setActiveTargetPose(target);
             setMessage((needsBare ? 'Without glasses: ' : '') + directions[target]);
 
-            if (currentPose !== target) {
+            if (!isPoseSatisfied(currentPose, target)) {
               stableSince = 0;
               return;
             }
@@ -755,13 +793,21 @@ export default function GuidedFaceCapture({
             if (!stableSince) stableSince = performance.now();
             if (performance.now() - stableSince < 280) return;
 
-            // Sample successfully acquired!
+            // Sample successfully acquired with AI quality evaluation & enhancement
             samples.current.push({
               pose: target,
               glasses: needsBare || !glasses.current ? 'without' : 'with',
               descriptor,
               image,
-              quality,
+              quality: {
+                brightness: quality.brightness,
+                sharpness: quality.sharpness,
+                faces: 1,
+                flags: diag.flags,
+                isEnhanced: true,
+                clarityScore: diag.clarityScore,
+                anomalyWarning: diag.userWarning || undefined,
+              },
             });
 
             stableSince = 0;
@@ -907,15 +953,37 @@ export default function GuidedFaceCapture({
               AI Action Visual
             </p>
             <p className="text-sm font-medium text-slate-200">
-              {activeTargetPose === 'left' && 'Follow arrow: gently face left'}
-              {activeTargetPose === 'right' && 'Follow arrow: gently face right'}
+              {activeTargetPose === 'left' && 'Follow arrow: gently face left (15°)'}
+              {activeTargetPose === 'left-deep' && 'Follow arrow: turn more left (30°)'}
+              {activeTargetPose === 'right' && 'Follow arrow: gently face right (15°)'}
+              {activeTargetPose === 'right-deep' && 'Follow arrow: turn more right (30°)'}
               {activeTargetPose === 'up' && 'Follow arrow: lift chin up slightly'}
               {activeTargetPose === 'down' && 'Follow arrow: lower chin slightly'}
+              {activeTargetPose === 'front-smile' && 'Smile naturally for identification 😊'}
+              {activeTargetPose === 'front-up' && 'Chin slightly raised ⬆️'}
+              {activeTargetPose === 'front-down' && 'Chin slightly lowered ⬇️'}
+              {activeTargetPose === 'up-left' && 'Angle chin up and to the left ↖️'}
+              {activeTargetPose === 'up-right' && 'Angle chin up and to the right ↗️'}
+              {activeTargetPose === 'down-left' && 'Angle chin down and to the left ↙️'}
+              {activeTargetPose === 'down-right' && 'Angle chin down and to the right ↘️'}
+              {activeTargetPose === 'master-hd' && 'Hold still for calibrated master portrait 🌟'}
               {activeTargetPose === 'front' && 'Center position: look straight ahead'}
               {!activeTargetPose && 'Calibrating facial landmarks…'}
             </p>
           </div>
         </div>
+      )}
+
+      {/* Real-time Quality & Blur Diagnostics Alert Banner */}
+      {qualityWarning && stage !== 'done' && (
+        <motion.div
+          initial={{ opacity: 0, scale: 0.95 }}
+          animate={{ opacity: 1, scale: 1 }}
+          className="mx-auto mt-2 px-3 py-1.5 rounded-full bg-amber-500/15 border border-amber-500/30 text-amber-300 text-xs font-semibold flex items-center justify-center gap-1.5 shadow-sm max-w-sm text-center animate-pulse"
+        >
+          <AlertTriangle size={14} className="text-amber-400 shrink-0" />
+          <span>{qualityWarning}</span>
+        </motion.div>
       )}
 
       {/* Dynamic guidance chip */}
@@ -954,7 +1022,7 @@ export default function GuidedFaceCapture({
             title="Manually capture current view"
           >
             <Camera size={15} />
-            <span>Snap View ({Math.min(progress + 1, totalRequired)}/{totalRequired})</span>
+            <span>📸 Snap Shot ({Math.min(progress + 1, totalRequired)}/{totalRequired})</span>
           </Button>
         </div>
       )}

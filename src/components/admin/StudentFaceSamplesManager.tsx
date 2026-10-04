@@ -27,6 +27,7 @@ import {
   Upload,
   CheckCircle2,
   AlertCircle,
+  AlertTriangle,
   Sparkles,
   Layers,
   Cpu,
@@ -77,6 +78,14 @@ export type FaceSample = {
   source_table: 'face_descriptors' | 'attendance_records';
   confidence_score?: number | null;
   status?: string | null;
+  quality?: {
+    brightness?: number;
+    sharpness?: number;
+    clarityScore?: number;
+    flags?: string[];
+    isEnhanced?: boolean;
+    anomalyWarning?: string;
+  };
 };
 
 export type StudentGroup = {
@@ -504,6 +513,16 @@ const StudentFaceSamplesManager: React.FC = () => {
         if (row.status === 'registered') source = 'record_registration';
         else if (di.mode === 'gate' || di.gate) source = 'recognition_gate';
 
+        const q = di.quality || meta.quality || di.quality_diagnostics;
+        const qualityData = q ? {
+          brightness: q.brightness,
+          sharpness: q.sharpness,
+          clarityScore: q.clarityScore,
+          flags: q.flags,
+          isEnhanced: q.isEnhanced,
+          anomalyWarning: q.anomalyWarning,
+        } : undefined;
+
         if (!group.samples.some(s => s.id === row.id || (s.image_url && s.image_url === row.image_url))) {
           group.samples.push({
             id: row.id,
@@ -515,6 +534,7 @@ const StudentFaceSamplesManager: React.FC = () => {
             source_table: 'attendance_records',
             confidence_score: row.confidence_score,
             status: row.status,
+            quality: qualityData,
           });
         }
       });
@@ -2489,6 +2509,22 @@ const PhotoCard: React.FC<PhotoCardProps> = ({
         </label>
 
         <div className="flex items-center gap-1">
+          {sample.quality?.isEnhanced && (
+            <Badge
+              variant="outline"
+              className="text-[9px] font-bold px-1.5 py-0.5 rounded-md border-purple-500/30 text-purple-400 bg-purple-500/10 flex items-center gap-0.5"
+            >
+              <Sparkles className="w-2.5 h-2.5" /> AI
+            </Badge>
+          )}
+          {typeof sample.quality?.clarityScore === 'number' && (
+            <Badge
+              variant="outline"
+              className="text-[9px] font-mono font-bold px-1.5 py-0.5 rounded-md border-emerald-500/30 text-emerald-400 bg-emerald-500/10"
+            >
+              {sample.quality.clarityScore}% Q
+            </Badge>
+          )}
           {isUsingFallback && (
             <Badge
               variant="outline"
@@ -2510,7 +2546,7 @@ const PhotoCard: React.FC<PhotoCardProps> = ({
       <div
         onClick={displayUrl ? onPreview : undefined}
         className={cn(
-          "relative aspect-square w-full rounded-xl overflow-hidden bg-muted/40 border border-border/40 flex items-center justify-center mb-3",
+          "relative aspect-square w-full rounded-xl overflow-hidden bg-muted/40 border border-border/40 flex items-center justify-center mb-2",
           displayUrl && "cursor-pointer group/img"
         )}
       >
@@ -2550,8 +2586,16 @@ const PhotoCard: React.FC<PhotoCardProps> = ({
         )}
       </div>
 
+      {/* Quality Anomaly Warning if Flagged */}
+      {(sample.quality?.anomalyWarning || (sample.quality?.flags && sample.quality.flags.length > 0)) && (
+        <div className="mb-2 px-2 py-1 rounded-lg bg-amber-500/10 border border-amber-500/25 text-amber-400 text-[10px] flex items-center gap-1 font-medium">
+          <AlertTriangle className="h-3 w-3 shrink-0" />
+          <span className="truncate">{sample.quality.anomalyWarning || `Issue: ${sample.quality.flags?.join(', ')}`}</span>
+        </div>
+      )}
+
       {/* Metadata */}
-      <div className="space-y-1 text-xs mb-3">
+      <div className="space-y-1 text-xs mb-2">
         <p className="text-[10px] text-muted-foreground font-mono truncate">
           {new Date(sample.created_at).toLocaleDateString()} · {new Date(sample.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
         </p>
