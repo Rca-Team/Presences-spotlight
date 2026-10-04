@@ -207,7 +207,7 @@ const resolveFaceSampleUrl = async (rawValue: string | null | undefined): Promis
   // 1. Try unified student photo resolver
   try {
     const resolved = await resolveStudentPhotoUrl(value);
-    if (resolved && resolved !== value) {
+    if (resolved && (resolved.startsWith('http://') || resolved.startsWith('https://') || resolved.startsWith('data:') || resolved.startsWith('blob:'))) {
       GLOBAL_SIGNED_URL_CACHE.set(cacheKey, resolved);
       return resolved;
     }
@@ -215,8 +215,8 @@ const resolveFaceSampleUrl = async (rawValue: string | null | undefined): Promis
     console.warn('resolveStudentPhotoUrl error:', err);
   }
 
-  // 2. If it's already an HTTP URL with token, use it directly
-  if (/^https?:\/\//i.test(value) && value.includes('token=')) {
+  // 2. Direct HTTP(S) URL
+  if (/^https?:\/\//i.test(value)) {
     GLOBAL_SIGNED_URL_CACHE.set(cacheKey, value);
     return value;
   }
@@ -272,6 +272,49 @@ const resolveFaceSampleUrl = async (rawValue: string | null | undefined): Promis
   GLOBAL_SIGNED_URL_CACHE.set(cacheKey, value);
   return value;
 };
+
+// ---------- Sidebar Avatar Component ----------
+function SidebarAvatar({
+  name,
+  avatarUrl,
+  isTrained,
+  className = 'h-10 w-10',
+}: {
+  name: string;
+  avatarUrl?: string | null;
+  isTrained?: boolean;
+  className?: string;
+}) {
+  const [imgFailed, setImgFailed] = useState(false);
+  const initials = (name || 'Student')
+    .trim()
+    .split(/\s+/)
+    .slice(0, 2)
+    .map((w) => w[0])
+    .join('')
+    .toUpperCase() || 'ST';
+
+  return (
+    <div className={`relative shrink-0 rounded-2xl bg-gradient-to-br from-primary/20 via-emerald-500/10 to-primary/5 border border-primary/20 flex items-center justify-center font-bold text-xs text-primary overflow-hidden shadow-sm ${className}`}>
+      {avatarUrl && !imgFailed ? (
+        <img
+          src={avatarUrl}
+          alt={name}
+          className="h-full w-full object-cover"
+          onError={() => setImgFailed(true)}
+          loading="lazy"
+        />
+      ) : (
+        <span className="font-extrabold text-[11px] tracking-wider text-primary/90 select-none">
+          {initials}
+        </span>
+      )}
+      {isTrained && (
+        <span className="absolute bottom-0 right-0 h-2.5 w-2.5 rounded-full bg-emerald-500 ring-2 ring-background" />
+      )}
+    </div>
+  );
+}
 
 // ---------- Component ----------
 const StudentFaceSamplesManager: React.FC = () => {
@@ -354,8 +397,7 @@ const StudentFaceSamplesManager: React.FC = () => {
           .order('timestamp', { ascending: false }),
         supabase
           .from('profiles')
-          .select('user_id, display_name, full_name, employee_id, roll_number, admission_number, avatar_url, class, section')
-          .not('user_id', 'is', null),
+          .select('id, user_id, display_name, full_name, employee_id, roll_number, admission_number, avatar_url, photo_url, class, section'),
       ]);
 
       if (descriptorsRes.error) throw descriptorsRes.error;
@@ -380,16 +422,22 @@ const StudentFaceSamplesManager: React.FC = () => {
       const profileMapByName = new Map<string, any>();
 
       profileRows.forEach((p) => {
-        if (p.user_id) profileMapByUserId.set(p.user_id, p);
-        if (p.employee_id) profileMapByEmpId.set(String(p.employee_id).trim().toLowerCase(), p);
-        if (p.roll_number) profileMapByEmpId.set(String(p.roll_number).trim().toLowerCase(), p);
-        if (p.admission_number) profileMapByEmpId.set(String(p.admission_number).trim().toLowerCase(), p);
-        if (p.full_name) profileMapByName.set(normalizeNameKey(p.full_name), p);
-        if (p.display_name) profileMapByName.set(normalizeNameKey(p.display_name), p);
+        const photo = p.photo_url || p.avatar_url || null;
+        const normalizedProfile = { ...p, avatar_url: photo };
+        if (p.user_id) profileMapByUserId.set(p.user_id, normalizedProfile);
+        if (p.id) profileMapByUserId.set(p.id, normalizedProfile);
+        if (p.employee_id) profileMapByEmpId.set(String(p.employee_id).trim().toLowerCase(), normalizedProfile);
+        if (p.roll_number) profileMapByEmpId.set(String(p.roll_number).trim().toLowerCase(), normalizedProfile);
+        if (p.admission_number) profileMapByEmpId.set(String(p.admission_number).trim().toLowerCase(), normalizedProfile);
+        if (p.full_name) profileMapByName.set(normalizeNameKey(p.full_name), normalizedProfile);
+        if (p.display_name) profileMapByName.set(normalizeNameKey(p.display_name), normalizedProfile);
       });
 
       // Index attendance records for additional ID, class, and photo metadata
       const regMetaByName = new Map<string, any>();
+      const regMetaByEmpId = new Map<string, any>();
+      const regMetaByUserId = new Map<string, any>();
+
       attendanceRows.forEach((row: any) => {
         const di = (row.device_info as Record<string, any>) || {};
         const meta = (di.metadata as Record<string, any>) || {};
@@ -397,14 +445,24 @@ const StudentFaceSamplesManager: React.FC = () => {
         const name = meta.name || di.name || row.student_name || '';
         const classSec = normalizeClassSection(meta.class, meta.section, di.class_section) || undefined;
         const norm = normalizeNameKey(name);
+        const normEmp = empId ? String(empId).trim().toLowerCase() : '';
+
+        const metaObj = {
+          employeeId: empId,
+          classSection: classSec,
+          imageUrl: row.image_url,
+          userId: row.user_id,
+          name,
+        };
+
         if (norm && (!regMetaByName.has(norm) || row.status === 'registered' || row.image_url)) {
-          regMetaByName.set(norm, {
-            employeeId: empId,
-            classSection: classSec,
-            imageUrl: row.image_url,
-            userId: row.user_id,
-            name,
-          });
+          regMetaByName.set(norm, metaObj);
+        }
+        if (normEmp && (!regMetaByEmpId.has(normEmp) || row.status === 'registered' || row.image_url)) {
+          regMetaByEmpId.set(normEmp, metaObj);
+        }
+        if (row.user_id && (!regMetaByUserId.has(row.user_id) || row.status === 'registered' || row.image_url)) {
+          regMetaByUserId.set(row.user_id, metaObj);
         }
       });
 
@@ -431,10 +489,13 @@ const StudentFaceSamplesManager: React.FC = () => {
 
         const profile =
           (normEmpId ? profileMapByEmpId.get(normEmpId) : null) ||
-          (normName ? profileMapByName.get(normName) : null) ||
-          (userId ? profileMapByUserId.get(userId) : null);
+          (userId ? profileMapByUserId.get(userId) : null) ||
+          (normName ? profileMapByName.get(normName) : null);
 
-        const regMeta = normName ? regMetaByName.get(normName) : null;
+        const regMeta =
+          (normEmpId ? regMetaByEmpId.get(normEmpId) : null) ||
+          (userId ? regMetaByUserId.get(userId) : null) ||
+          (normName ? regMetaByName.get(normName) : null);
 
         const finalUserId = existing?.userId || profile?.user_id || regMeta?.userId || userId || '';
         const finalEmpId = existing?.employeeId || profile?.employee_id || profile?.roll_number || profile?.admission_number || empId || regMeta?.employeeId || '';
@@ -486,6 +547,9 @@ const StudentFaceSamplesManager: React.FC = () => {
       descriptorRows.forEach((row: any) => {
         const group = getOrCreateGroup(row.user_id, row.student_id, row.label || 'Trained Student');
         const effectiveImg = row.image_url || group.avatarUrl || null;
+        if (!group.avatarUrl && row.image_url) {
+          group.avatarUrl = row.image_url;
+        }
         if (!group.samples.some(s => s.id === row.id)) {
           group.samples.push({
             id: row.id,
@@ -508,6 +572,9 @@ const StudentFaceSamplesManager: React.FC = () => {
         const name = meta.name || di.name || row.student_name || 'Student';
 
         const group = getOrCreateGroup(row.user_id, empId, name);
+        if (!group.avatarUrl && row.image_url) {
+          group.avatarUrl = row.image_url;
+        }
 
         let source: FaceSample['source'] = 'recognition_attendance';
         if (row.status === 'registered') source = 'record_registration';
@@ -1790,23 +1857,11 @@ const StudentFaceSamplesManager: React.FC = () => {
                         }`}
                       >
                         {/* Avatar */}
-                        <div className="relative h-10 w-10 shrink-0 rounded-2xl bg-primary/10 border border-primary/20 flex items-center justify-center font-bold text-xs text-primary overflow-hidden">
-                          {g.avatarUrl ? (
-                            <img
-                              src={resolvedUrls[g.avatarUrl] || g.avatarUrl}
-                              alt={g.name}
-                              className="h-full w-full object-cover"
-                              onError={(e) => {
-                                (e.target as HTMLElement).style.display = 'none';
-                              }}
-                            />
-                          ) : (
-                            g.name.slice(0, 2).toUpperCase()
-                          )}
-                          {isTrained && (
-                            <span className="absolute bottom-0 right-0 h-2.5 w-2.5 rounded-full bg-emerald-500 ring-2 ring-background" />
-                          )}
-                        </div>
+                        <SidebarAvatar
+                          name={g.name}
+                          avatarUrl={resolvedUrls[g.avatarUrl || ''] || g.avatarUrl}
+                          isTrained={isTrained}
+                        />
 
                         {/* Info */}
                         <div className="min-w-0 flex-1">
@@ -1876,20 +1931,13 @@ const StudentFaceSamplesManager: React.FC = () => {
               {/* Active Student Header Banner */}
               <div className="p-6 bg-gradient-to-r from-primary/10 via-card/50 to-transparent flex flex-col sm:flex-row sm:items-center justify-between gap-4">
                 <div className="flex items-center gap-4">
-                  <div className="relative h-16 w-16 rounded-3xl bg-primary/15 border-2 border-primary/30 flex items-center justify-center font-extrabold text-base text-primary overflow-hidden shrink-0 shadow-lg group">
-                    {selectedGroup.avatarUrl ? (
-                      <img
-                        src={resolvedUrls[selectedGroup.avatarUrl] || selectedGroup.avatarUrl}
-                        alt={selectedGroup.name}
-                        className="h-full w-full object-cover"
-                        onError={(e) => {
-                          (e.target as HTMLElement).style.display = 'none';
-                        }}
-                      />
-                    ) : (
-                      selectedGroup.name.slice(0, 2).toUpperCase()
-                    )}
-                    <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center pointer-events-none">
+                  <div className="relative group">
+                    <SidebarAvatar
+                      name={selectedGroup.name}
+                      avatarUrl={resolvedUrls[selectedGroup.avatarUrl || ''] || selectedGroup.avatarUrl}
+                      isTrained={false}
+                    />
+                    <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center pointer-events-none rounded-2xl">
                       <span className="text-[9px] font-bold text-white uppercase tracking-tighter">ID Cover</span>
                     </div>
                   </div>
@@ -2354,20 +2402,12 @@ const StudentFaceSamplesManager: React.FC = () => {
             <div className="space-y-4 py-2">
               <div className="rounded-2xl border border-destructive/20 bg-destructive/5 p-4 space-y-3">
                 <div className="flex items-center gap-3">
-                  <div className="h-12 w-12 rounded-2xl bg-primary/10 border border-primary/20 flex items-center justify-center font-bold text-sm text-primary overflow-hidden shrink-0">
-                    {studentToDelete.avatarUrl ? (
-                      <img
-                        src={resolvedUrls[studentToDelete.avatarUrl] || studentToDelete.avatarUrl}
-                        alt={studentToDelete.name}
-                        className="h-full w-full object-cover"
-                        onError={(e) => {
-                          (e.target as HTMLElement).style.display = 'none';
-                        }}
-                      />
-                    ) : (
-                      studentToDelete.name.slice(0, 2).toUpperCase()
-                    )}
-                  </div>
+                  <SidebarAvatar
+                    name={studentToDelete.name}
+                    avatarUrl={resolvedUrls[studentToDelete.avatarUrl || ''] || studentToDelete.avatarUrl}
+                    isTrained={studentToDelete.isTrained}
+                    className="h-12 w-12 text-sm"
+                  />
                   <div>
                     <p className="text-sm font-extrabold text-foreground">{studentToDelete.name}</p>
                     <div className="flex items-center gap-2 text-xs text-muted-foreground font-mono">
@@ -2481,9 +2521,28 @@ const PhotoCard: React.FC<PhotoCardProps> = ({
   onTransfer,
 }) => {
   const [imgError, setImgError] = useState(false);
+  const [fallbackFailed, setFallbackFailed] = useState(false);
   const isSlot = sample.source_table === 'face_descriptors';
-  const displayUrl = (!imgError && imageUrl) ? imageUrl : (!imgError && fallbackUrl) ? fallbackUrl : null;
+
+  // Prefer imageUrl -> fallbackUrl -> direct sample.image_url
+  const displayUrl = (!imgError && imageUrl)
+    ? imageUrl
+    : (!fallbackFailed && fallbackUrl)
+    ? fallbackUrl
+    : (!imgError && sample.image_url)
+    ? sample.image_url
+    : null;
+
   const isUsingFallback = !imageUrl && Boolean(displayUrl);
+
+  const handleImageError = () => {
+    if (!imgError && fallbackUrl && imageUrl !== fallbackUrl) {
+      setImgError(true);
+    } else {
+      setFallbackFailed(true);
+      setImgError(true);
+    }
+  };
 
   return (
     <div
@@ -2561,7 +2620,7 @@ const PhotoCard: React.FC<PhotoCardProps> = ({
             <img
               src={displayUrl}
               alt="Face sample"
-              onError={() => setImgError(true)}
+              onError={handleImageError}
               className="h-full w-full object-cover transition-transform duration-300 group-hover/img:scale-105"
               loading="lazy"
             />
