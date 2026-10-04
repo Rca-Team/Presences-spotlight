@@ -34,7 +34,10 @@ import {
   Filter as FilterIcon,
   X,
   Phone,
-  UserCheck
+  UserCheck,
+  ArrowUp,
+  Share2,
+  MessageSquare
 } from 'lucide-react';
 import PageTransition from '@/components/PageTransition';
 import { Button } from '@/components/ui/button';
@@ -88,13 +91,14 @@ const matchesFilter = (s: MonitorStudent, f: Filter) =>
     : s.status === f;
 
 // Enhanced Modern Status Badge
-function ModernStatusBadge({ status }: { status: MonitorStatus }) {
+function ModernStatusBadge({ status, className }: { status: MonitorStatus; className?: string }) {
   const m = statusMeta[status];
   return (
     <span
       className={cn(
-        'inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[11px] font-bold tracking-tight shadow-sm select-none transition-all',
-        m.tone
+        'inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[11px] font-bold tracking-tight shadow-sm select-none transition-all shrink-0',
+        m.tone,
+        className
       )}
     >
       <span className={cn('h-2 w-2 rounded-full animate-pulse', m.dot)} />
@@ -103,7 +107,7 @@ function ModernStatusBadge({ status }: { status: MonitorStatus }) {
   );
 }
 
-// Glowing Stat Card with Smooth Hover
+// Glowing Stat Card with Touch / Hover Polish
 function GlowStatCard({
   label,
   value,
@@ -112,6 +116,7 @@ function GlowStatCard({
   icon: Icon,
   tone = 'default',
   progress,
+  className,
 }: {
   label: string;
   value: number | string;
@@ -120,44 +125,47 @@ function GlowStatCard({
   icon: React.ElementType;
   tone?: 'emerald' | 'cyan' | 'amber' | 'rose' | 'default';
   progress?: number;
+  className?: string;
 }) {
   const toneClasses = {
-    emerald: 'border-emerald-500/30 bg-gradient-to-br from-emerald-500/10 via-emerald-500/5 to-transparent shadow-emerald-950/20 text-emerald-400',
-    cyan: 'border-cyan-500/30 bg-gradient-to-br from-cyan-500/10 via-cyan-500/5 to-transparent shadow-cyan-950/20 text-cyan-400',
-    amber: 'border-amber-500/30 bg-gradient-to-br from-amber-500/10 via-amber-500/5 to-transparent shadow-amber-950/20 text-amber-400',
-    rose: 'border-rose-500/30 bg-gradient-to-br from-rose-500/10 via-rose-500/5 to-transparent shadow-rose-950/20 text-rose-400',
+    emerald: 'border-emerald-500/30 bg-gradient-to-br from-emerald-500/15 via-emerald-500/5 to-transparent shadow-emerald-950/20 text-emerald-400',
+    cyan: 'border-cyan-500/30 bg-gradient-to-br from-cyan-500/15 via-cyan-500/5 to-transparent shadow-cyan-950/20 text-cyan-400',
+    amber: 'border-amber-500/30 bg-gradient-to-br from-amber-500/15 via-amber-500/5 to-transparent shadow-amber-950/20 text-amber-400',
+    rose: 'border-rose-500/30 bg-gradient-to-br from-rose-500/15 via-rose-500/5 to-transparent shadow-rose-950/20 text-rose-400',
     default: 'border-white/10 bg-gradient-to-br from-white/10 via-white/5 to-transparent shadow-black/40 text-slate-300',
   }[tone];
 
   return (
     <motion.div
       whileHover={{ y: -3, transition: { duration: 0.2 } }}
+      whileTap={{ scale: 0.98 }}
       className={cn(
-        'relative rounded-2xl border p-4 backdrop-blur-xl shadow-lg flex flex-col justify-between overflow-hidden',
-        toneClasses
+        'relative rounded-2xl sm:rounded-3xl border p-3.5 sm:p-4 backdrop-blur-xl shadow-lg flex flex-col justify-between overflow-hidden touch-manipulation',
+        toneClasses,
+        className
       )}
     >
       <div className="flex items-start justify-between gap-2">
-        <div className="min-w-0">
-          <p className="text-xs font-semibold text-white/70 truncate">{label}</p>
-          <div className="flex items-baseline gap-2 mt-1">
-            <span className="text-2xl sm:text-3xl font-black text-white tabular-nums tracking-tight">
+        <div className="min-w-0 flex-1">
+          <p className="text-[11px] sm:text-xs font-semibold text-white/70 truncate">{label}</p>
+          <div className="flex items-baseline gap-1.5 sm:gap-2 mt-1">
+            <span className="text-xl sm:text-3xl font-black text-white tabular-nums tracking-tight">
               {value}
             </span>
             {subvalue && (
-              <span className="text-xs font-bold text-white/60 font-mono">
+              <span className="text-[11px] sm:text-xs font-bold text-white/60 font-mono">
                 {subvalue}
               </span>
             )}
           </div>
         </div>
-        <div className="h-10 w-10 rounded-xl bg-white/10 border border-white/15 flex items-center justify-center shrink-0 shadow-inner">
-          <Icon className="h-5 w-5" />
+        <div className="h-8 w-8 sm:h-10 sm:w-10 rounded-xl bg-white/10 border border-white/15 flex items-center justify-center shrink-0 shadow-inner">
+          <Icon className="h-4 w-4 sm:h-5 sm:w-5" />
         </div>
       </div>
 
       {progress !== undefined && (
-        <div className="mt-3 space-y-1">
+        <div className="mt-2.5 sm:mt-3 space-y-1">
           <div className="h-1.5 w-full rounded-full bg-white/10 overflow-hidden">
             <motion.div
               initial={{ width: 0 }}
@@ -170,7 +178,7 @@ function GlowStatCard({
       )}
 
       {hint && (
-        <p className="text-[11px] text-white/50 mt-2 truncate font-medium">
+        <p className="text-[10px] sm:text-[11px] text-white/50 mt-2 truncate font-medium">
           {hint}
         </p>
       )}
@@ -198,6 +206,7 @@ function SamplePhoto({ admission, fileId }: { admission: string; fileId: string 
       <img
         src={src}
         alt="Enrollment capture"
+        loading="lazy"
         className="absolute inset-0 h-full w-full object-cover rounded-xl transition-all duration-300 hover:scale-105"
       />
     );
@@ -207,14 +216,14 @@ function SamplePhoto({ admission, fileId }: { admission: string; fileId: string 
     <button
       type="button"
       onClick={load}
-      className="absolute inset-0 flex flex-col items-center justify-center gap-1.5 text-xs text-white/60 hover:text-white hover:bg-white/10 transition-all rounded-xl"
+      className="absolute inset-0 flex flex-col items-center justify-center gap-1 text-xs text-white/60 hover:text-white hover:bg-white/10 active:scale-95 transition-all rounded-xl touch-manipulation"
     >
       {state === 'loading' ? (
-        <Loader2 className="h-5 w-5 animate-spin text-emerald-400" />
+        <Loader2 className="h-4 w-4 sm:h-5 sm:w-5 animate-spin text-emerald-400" />
       ) : state === 'error' ? (
-        <AlertCircle className="h-5 w-5 text-rose-400" />
+        <AlertCircle className="h-4 w-4 sm:h-5 sm:w-5 text-rose-400" />
       ) : (
-        <Eye className="h-5 w-5 text-cyan-400" />
+        <Eye className="h-4 w-4 sm:h-5 sm:w-5 text-cyan-400" />
       )}
       <span className="text-[10px] font-bold">
         {state === 'loading' ? 'Loading...' : state === 'error' ? 'Retry' : 'View Face'}
@@ -257,11 +266,11 @@ function CorrectionCard({
   };
 
   return (
-    <div className="rounded-2xl border border-white/15 bg-white/5 p-4 backdrop-blur-md space-y-3">
+    <div className="rounded-2xl border border-white/15 bg-white/5 p-3.5 sm:p-4 backdrop-blur-md space-y-3">
       <div className="flex items-center justify-between gap-2">
         <p className="text-sm font-bold text-white truncate">
           {c.name}{' '}
-          <span className="text-white/60 font-normal">
+          <span className="text-white/60 font-normal text-xs block sm:inline">
             · Adm: {c.student} · Class: {c.category || '—'}
           </span>
         </p>
@@ -275,7 +284,7 @@ function CorrectionCard({
 
       <dl className="space-y-1.5 text-xs">
         {Object.entries(c.changes).map(([k, v]) => (
-          <div key={k} className="grid grid-cols-[130px_1fr] gap-2 p-2 rounded-xl bg-black/30 border border-white/5">
+          <div key={k} className="flex flex-col sm:grid sm:grid-cols-[130px_1fr] gap-1 sm:gap-2 p-2 rounded-xl bg-black/30 border border-white/5">
             <dt className="text-white/60 font-medium">{fieldLabels[k as keyof StudentDetails] || k}</dt>
             <dd className="text-white">
               <span className="line-through text-white/40 mr-1.5">
@@ -287,16 +296,16 @@ function CorrectionCard({
         ))}
       </dl>
 
-      <div className="flex items-center justify-between pt-1">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pt-1">
         <span className="text-[11px] text-white/50">Requested {ago(c.at)}</span>
         {canManage && c.status === 'pending' && (
-          <div className="flex gap-2">
+          <div className="flex gap-2 w-full sm:w-auto">
             <Button
               size="sm"
               variant="outline"
               disabled={busy}
               onClick={() => act(false)}
-              className="rounded-xl h-8 text-xs border-white/20 hover:bg-rose-500/20 hover:text-rose-300"
+              className="flex-1 sm:flex-initial rounded-xl h-9 sm:h-8 text-xs border-white/20 hover:bg-rose-500/20 hover:text-rose-300"
             >
               Reject
             </Button>
@@ -304,7 +313,7 @@ function CorrectionCard({
               size="sm"
               disabled={busy}
               onClick={() => act(true)}
-              className="rounded-xl h-8 text-xs font-bold bg-emerald-600 hover:bg-emerald-500 text-white"
+              className="flex-1 sm:flex-initial rounded-xl h-9 sm:h-8 text-xs font-bold bg-emerald-600 hover:bg-emerald-500 text-white"
             >
               Approve Changes
             </Button>
@@ -315,7 +324,7 @@ function CorrectionCard({
   );
 }
 
-// Ultra-Modern Slide-Over Sheet
+// Ultra-Modern Mobile & Desktop Slide-Over Sheet
 function StudentDetailSheet({
   student,
   data,
@@ -371,24 +380,28 @@ function StudentDetailSheet({
 
   return (
     <Sheet open onOpenChange={(open) => !open && onClose()}>
-      <SheetContent className="w-full sm:max-w-xl overflow-y-auto bg-slate-950/95 border-white/15 text-white backdrop-blur-2xl p-6">
+      <SheetContent className="w-full sm:max-w-xl max-h-[100dvh] overflow-y-auto bg-slate-950/95 border-white/15 text-white backdrop-blur-2xl p-4 sm:p-6 pb-28 sm:pb-8">
         <SheetHeader className="text-left pb-4 border-b border-white/10">
-          <div className="flex items-center justify-between gap-3">
-            <SheetTitle className="text-xl font-extrabold text-white flex items-center gap-2.5">
-              {student.name}
-            </SheetTitle>
+          <div className="flex items-start justify-between gap-3">
+            <div className="min-w-0">
+              <SheetTitle className="text-lg sm:text-xl font-extrabold text-white flex items-center gap-2 truncate">
+                {student.name}
+              </SheetTitle>
+              <p className="text-xs text-white/70 font-mono mt-1">
+                Adm: <span className="text-emerald-400 font-bold">{student.admission_number}</span> · Class:{' '}
+                <span className="text-cyan-400 font-bold">{student.category || 'Unassigned'}</span>
+              </p>
+            </div>
             <ModernStatusBadge status={student.status} />
           </div>
-          <SheetDescription className="text-xs text-white/70 font-mono mt-1">
-            Admission ID: <span className="text-emerald-400 font-bold">{student.admission_number}</span> · Class:{' '}
-            <span className="text-cyan-400 font-bold">{student.category || 'Unassigned'}</span> · Parent Phone:{' '}
-            {student.parent_phone || 'Not on file'}
+          <SheetDescription className="text-xs text-white/60 font-mono">
+            Parent Phone: {student.parent_phone || 'Not on file'}
           </SheetDescription>
         </SheetHeader>
 
         {/* Action Button: Recapture 3D Face */}
         {data?.canManage && (
-          <div className="mt-5 p-4 rounded-2xl bg-gradient-to-r from-blue-600/20 via-indigo-600/20 to-purple-600/20 border border-blue-500/30 flex items-center justify-between gap-3">
+          <div className="mt-4 p-3.5 sm:p-4 rounded-2xl bg-gradient-to-r from-blue-600/20 via-indigo-600/20 to-purple-600/20 border border-blue-500/30 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
             <div>
               <p className="text-xs font-bold text-white">Direct Biometric Calibration</p>
               <p className="text-[11px] text-white/60 mt-0.5">
@@ -402,7 +415,7 @@ function StudentDetailSheet({
                 onClose();
                 onOpenRecapture(student);
               }}
-              className="rounded-xl h-9 font-bold text-xs bg-gradient-to-r from-cyan-500 via-blue-600 to-indigo-600 text-white hover:from-cyan-600 hover:to-indigo-700 shadow-md shadow-blue-500/20 gap-1.5"
+              className="w-full sm:w-auto rounded-xl h-10 sm:h-9 font-bold text-xs bg-gradient-to-r from-cyan-500 via-blue-600 to-indigo-600 text-white hover:from-cyan-600 hover:to-indigo-700 shadow-md shadow-blue-500/20 gap-1.5 shrink-0 touch-manipulation"
             >
               <ScanFace className="h-4 w-4" />
               {student.status === 'completed' ? 'Recapture Face' : 'Capture Now'}
@@ -411,12 +424,12 @@ function StudentDetailSheet({
         )}
 
         {/* Step Progress Timeline */}
-        <section className="mt-6 space-y-3">
+        <section className="mt-5 space-y-2.5">
           <h4 className="text-xs font-extrabold uppercase tracking-wider text-white/60 flex items-center gap-1.5">
             <Activity className="h-3.5 w-3.5 text-emerald-400" />
             Enrollment Flow Progress
           </h4>
-          <ol className="space-y-3 p-4 rounded-2xl bg-white/5 border border-white/10">
+          <ol className="space-y-3 p-3.5 sm:p-4 rounded-2xl bg-white/5 border border-white/10">
             {steps.map((s, idx) => (
               <li key={s.label} className="flex items-start gap-3">
                 <span
@@ -429,7 +442,7 @@ function StudentDetailSheet({
                 >
                   {s.done ? <Check className="h-3.5 w-3.5 stroke-[3]" /> : idx + 1}
                 </span>
-                <div className="min-w-0">
+                <div className="min-w-0 flex-1">
                   <p className={cn('text-sm font-bold', s.done ? 'text-white' : 'text-white/60')}>
                     {s.label}
                   </p>
@@ -441,11 +454,11 @@ function StudentDetailSheet({
         </section>
 
         {/* Record Checks Chips */}
-        <section className="mt-6 space-y-2">
+        <section className="mt-5 space-y-2">
           <h4 className="text-xs font-extrabold uppercase tracking-wider text-white/60">
             Database Record Verification
           </h4>
-          <div className="flex flex-wrap gap-2">
+          <div className="flex flex-wrap gap-1.5 sm:gap-2">
             {[
               ['Parent Phone on File', student.hasPhone],
               ["Father's Name Recorded", student.hasFather],
@@ -456,7 +469,7 @@ function StudentDetailSheet({
               <span
                 key={String(label)}
                 className={cn(
-                  'rounded-xl border px-3 py-1 text-xs font-bold flex items-center gap-1.5',
+                  'rounded-xl border px-2.5 sm:px-3 py-1 text-[11px] sm:text-xs font-bold flex items-center gap-1.5',
                   ok
                     ? 'border-emerald-500/40 bg-emerald-500/10 text-emerald-300'
                     : 'border-amber-500/40 bg-amber-500/10 text-amber-300'
@@ -471,7 +484,7 @@ function StudentDetailSheet({
 
         {/* Captured 15-Angle Samples Grid */}
         {student.samples.length > 0 && (
-          <section className="mt-6 space-y-3">
+          <section className="mt-5 space-y-3">
             <div className="flex items-center justify-between">
               <h4 className="text-xs font-extrabold uppercase tracking-wider text-white/60 flex items-center gap-1.5">
                 <Camera className="h-3.5 w-3.5 text-cyan-400" />
@@ -483,7 +496,8 @@ function StudentDetailSheet({
                 )}
               </h4>
             </div>
-            <div className="grid grid-cols-3 gap-2.5">
+            {/* 2 columns on mobile for large clear photos, 3 on larger */}
+            <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 sm:gap-2.5">
               {student.samples.map((s) => (
                 <figure
                   key={s.fileId}
@@ -493,9 +507,9 @@ function StudentDetailSheet({
                     <SamplePhoto admission={student.admission_number} fileId={s.fileId} />
                   </div>
                   <figcaption className="p-2 text-[10px] bg-black/40 backdrop-blur-md">
-                    <span className="font-extrabold text-white capitalize block">{s.pose}</span>
-                    <span className="text-white/60 block mt-0.5">
-                      Light: {s.brightness} · Sharp: {s.sharpness}
+                    <span className="font-extrabold text-white capitalize block truncate">{s.pose}</span>
+                    <span className="text-white/60 block mt-0.5 truncate text-[9px]">
+                      L: {s.brightness} · S: {s.sharpness}
                     </span>
                   </figcaption>
                 </figure>
@@ -506,7 +520,7 @@ function StudentDetailSheet({
 
         {/* Corrections Requests */}
         {corrections.length > 0 && (
-          <section className="mt-6 space-y-3">
+          <section className="mt-5 space-y-3">
             <h4 className="text-xs font-extrabold uppercase tracking-wider text-white/60">
               Pending Corrections Requests
             </h4>
@@ -522,7 +536,7 @@ function StudentDetailSheet({
         )}
 
         {/* Audit Activity Trail */}
-        <section className="mt-6 space-y-3">
+        <section className="mt-5 space-y-3">
           <h4 className="text-xs font-extrabold uppercase tracking-wider text-white/60 flex items-center gap-1.5">
             <Clock className="h-3.5 w-3.5 text-amber-400" />
             Audit Activity Trail
@@ -530,9 +544,9 @@ function StudentDetailSheet({
           {events.length ? (
             <ul className="space-y-2 p-3 rounded-2xl bg-white/5 border border-white/10 text-xs">
               {events.map((e, i) => (
-                <li key={i} className="flex items-start justify-between gap-3 p-2 rounded-xl bg-black/20 border border-white/5">
-                  <div>
-                    <span className="font-bold text-white">{eventLabels[e.event] || e.event}</span>
+                <li key={i} className="flex items-start justify-between gap-2 p-2 rounded-xl bg-black/20 border border-white/5">
+                  <div className="min-w-0 flex-1">
+                    <span className="font-bold text-white block truncate">{eventLabels[e.event] || e.event}</span>
                     {e.method && (
                       <span className="text-white/60 block text-[11px] mt-0.5">
                         Method: {methodLabels[e.method] || e.method}
@@ -568,9 +582,19 @@ export default function EnrollmentMonitor() {
   const [selectedStudentAdm, setSelectedStudentAdm] = useState<string | null>(null);
   const [uploadOpen, setUploadOpen] = useState(false);
   const [recaptureStudent, setRecaptureStudent] = useState<RecaptureStudent | null>(null);
+  const [showScrollTop, setShowScrollTop] = useState(false);
 
   const parentLink = `${window.location.origin}/enroll`;
   const backTo = role === 'teacher' ? '/teacher' : '/admin';
+
+  // Scroll to top listener for mobile FAB
+  useEffect(() => {
+    const handleScroll = () => {
+      setShowScrollTop(window.scrollY > 300);
+    };
+    window.addEventListener('scroll', handleScroll, { passive: true });
+    return () => window.removeEventListener('scroll', handleScroll);
+  }, []);
 
   const load = useCallback(async (quiet = false) => {
     if (!quiet) setLoading(true);
@@ -688,6 +712,22 @@ export default function EnrollmentMonitor() {
       `Dear parents, please complete your child's 3D face biometric registration at ${parentLink} using your registered admission number.\n\n` +
       `Pending Students:\n` +
       pending.map((s) => `• ${s.name} (${s.category || '—'}) – Admission ID: ${s.admission_number}`).join('\n');
+    
+    // Check if Web Share API is supported (mobile native share)
+    if (navigator.share) {
+      try {
+        await navigator.share({
+          title: 'Student Biometric Enrollment Reminder',
+          text,
+          url: parentLink,
+        });
+        toast({ title: 'Shared via native dialog!' });
+        return;
+      } catch {
+        // Fallback to clipboard
+      }
+    }
+
     await navigator.clipboard.writeText(text);
     toast({
       title: 'Reminder Copied to Clipboard',
@@ -695,78 +735,101 @@ export default function EnrollmentMonitor() {
     });
   };
 
+  const scrollToTop = () => {
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
+
   return (
     <PageTransition>
-      <div className="enrollment-shell min-h-screen">
-        <div className="max-w-7xl mx-auto space-y-6 relative z-10">
+      <div className="enrollment-shell min-h-screen pb-24 sm:pb-16">
+        <div className="max-w-7xl mx-auto px-3 sm:px-6 py-4 sm:py-6 space-y-4 sm:space-y-6 relative z-10">
           
           {/* Header Navigation Bar */}
-          <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 p-4 rounded-3xl bg-white/5 border border-white/10 backdrop-blur-xl shadow-2xl">
-            <div className="flex items-center gap-3.5">
-              <Button
-                asChild
-                variant="ghost"
-                size="icon"
-                className="h-10 w-10 rounded-2xl bg-white/10 border border-white/15 text-white hover:bg-white/20 shrink-0"
-              >
-                <Link to={backTo} aria-label="Back">
-                  <ArrowLeft className="h-5 w-5" />
-                </Link>
-              </Button>
-              <div>
-                <div className="flex items-center gap-2">
-                  <h1 className="text-xl sm:text-2xl font-black text-white tracking-tight flex items-center gap-2">
-                    <ScanFace className="h-6 w-6 text-emerald-400" />
-                    Biometric Enrollment Radar
-                  </h1>
-                  <span className="flex h-2.5 w-2.5 relative">
-                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
-                    <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-emerald-500"></span>
-                  </span>
+          <div className="flex flex-col gap-3.5 p-3.5 sm:p-5 rounded-2xl sm:rounded-3xl bg-white/5 border border-white/10 backdrop-blur-xl shadow-2xl">
+            
+            {/* Top row: Back Button + Title + Status */}
+            <div className="flex items-center justify-between gap-3">
+              <div className="flex items-center gap-2.5 sm:gap-3.5 min-w-0">
+                <Button
+                  asChild
+                  variant="ghost"
+                  size="icon"
+                  className="h-9 w-9 sm:h-10 sm:w-10 rounded-xl sm:rounded-2xl bg-white/10 border border-white/15 text-white hover:bg-white/20 active:scale-95 shrink-0"
+                >
+                  <Link to={backTo} aria-label="Back">
+                    <ArrowLeft className="h-4 w-4 sm:h-5 sm:w-5" />
+                  </Link>
+                </Button>
+                <div className="min-w-0">
+                  <div className="flex items-center gap-2">
+                    <h1 className="text-lg sm:text-2xl font-black text-white tracking-tight flex items-center gap-1.5 sm:gap-2 truncate">
+                      <ScanFace className="h-5 w-5 sm:h-6 sm:w-6 text-emerald-400 shrink-0" />
+                      <span className="truncate">Biometric Enrollment Radar</span>
+                    </h1>
+                    <span className="flex h-2 w-2 sm:h-2.5 sm:w-2.5 relative shrink-0">
+                      <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                      <span className="relative inline-flex rounded-full h-2 w-2 sm:h-2.5 sm:w-2.5 bg-emerald-500"></span>
+                    </span>
+                  </div>
+                  <p className="text-[11px] sm:text-xs text-white/60 font-medium truncate mt-0.5">
+                    {data ? (data.scope.all ? 'All school classes' : `Assigned: ${data.scope.classes.join(', ')}`) : 'Live student biometric onboarding'}
+                    {data && ` · Updated ${ago(data.generatedAt)}`}
+                  </p>
                 </div>
-                <p className="text-xs text-white/60 font-medium mt-0.5">
-                  {data ? (data.scope.all ? 'All school classes' : `Assigned classes: ${data.scope.classes.join(', ')}`) : 'Live student biometric onboarding'}
-                  {data && ` · Updated ${ago(data.generatedAt)}`}
-                </p>
               </div>
+
+              {/* Mobile Quick Refresh Icon */}
+              <Button
+                size="icon"
+                variant="ghost"
+                className="h-9 w-9 sm:hidden rounded-xl bg-white/10 border border-white/15 text-white hover:bg-white/20 active:scale-95 shrink-0"
+                onClick={() => void load()}
+                disabled={loading}
+                aria-label="Refresh"
+              >
+                <RefreshCw className={cn('h-4 w-4', loading && 'animate-spin text-emerald-400')} />
+              </Button>
             </div>
 
-            {/* Quick Action Dock */}
-            <div className="flex flex-wrap items-center gap-2">
+            {/* Action Bar (Horizontally scrollable on mobile, flex on desktop) */}
+            <div className="flex items-center gap-2 overflow-x-auto no-scrollbar pb-0.5 -mx-1 px-1">
               <Button
                 size="sm"
                 variant="outline"
-                className="h-9 px-3.5 rounded-2xl text-xs font-bold border-white/15 bg-white/5 text-white hover:bg-white/15 shadow-sm"
+                className="hidden sm:inline-flex h-9 px-3.5 rounded-2xl text-xs font-bold border-white/15 bg-white/5 text-white hover:bg-white/15 shadow-sm active:scale-95 shrink-0"
                 onClick={() => void load()}
                 disabled={loading}
               >
                 <RefreshCw className={cn('h-3.5 w-3.5 mr-1.5', loading && 'animate-spin text-emerald-400')} />
                 Refresh
               </Button>
+
               <Button
                 size="sm"
                 variant="outline"
-                className="h-9 px-3.5 rounded-2xl text-xs font-bold border-white/15 bg-white/5 text-white hover:bg-white/15 shadow-sm"
+                className="h-8 sm:h-9 px-3 sm:px-3.5 rounded-xl sm:rounded-2xl text-xs font-bold border-white/15 bg-white/5 text-white hover:bg-white/15 shadow-sm active:scale-95 shrink-0"
                 onClick={copyReminder}
                 disabled={!data}
               >
-                <Copy className="h-3.5 w-3.5 mr-1.5 text-cyan-400" />
-                Share WhatsApp Reminder
+                <Share2 className="h-3.5 w-3.5 mr-1.5 text-cyan-400" />
+                <span className="hidden xs:inline">Share</span> WhatsApp Reminder
               </Button>
+
               <Button
                 size="sm"
                 variant="outline"
-                className="h-9 px-3.5 rounded-2xl text-xs font-bold border-white/15 bg-white/5 text-white hover:bg-white/15 shadow-sm"
+                className="h-8 sm:h-9 px-3 sm:px-3.5 rounded-xl sm:rounded-2xl text-xs font-bold border-white/15 bg-white/5 text-white hover:bg-white/15 shadow-sm active:scale-95 shrink-0"
                 onClick={exportCsv}
                 disabled={!visible.length}
               >
                 <Download className="h-3.5 w-3.5 mr-1.5 text-blue-400" />
                 Export CSV
               </Button>
+
               {data?.canManage && (
                 <Button
                   size="sm"
-                  className="h-9 px-3.5 rounded-2xl text-xs font-bold bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-600 hover:to-teal-700 text-white shadow-lg shadow-emerald-500/20"
+                  className="h-8 sm:h-9 px-3 sm:px-3.5 rounded-xl sm:rounded-2xl text-xs font-bold bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-600 hover:to-teal-700 text-white shadow-lg shadow-emerald-500/20 active:scale-95 shrink-0"
                   onClick={() => setUploadOpen(true)}
                 >
                   <Upload className="h-3.5 w-3.5 mr-1.5" />
@@ -778,27 +841,27 @@ export default function EnrollmentMonitor() {
 
           {/* Error Message */}
           {error && (
-            <div role="alert" className="rounded-2xl border border-rose-500/30 bg-rose-500/10 p-4 text-sm flex items-start gap-3 text-rose-200">
+            <div role="alert" className="rounded-2xl border border-rose-500/30 bg-rose-500/10 p-3.5 sm:p-4 text-xs sm:text-sm flex items-start gap-3 text-rose-200">
               <ShieldAlert className="h-5 w-5 text-rose-400 mt-0.5 shrink-0" />
               <div className="flex-1">{error}</div>
-              <Button size="sm" variant="outline" className="rounded-xl" onClick={() => void load()}>Retry</Button>
+              <Button size="sm" variant="outline" className="rounded-xl h-8" onClick={() => void load()}>Retry</Button>
             </div>
           )}
 
           {/* Loading Skeleton */}
           {loading && !data ? (
             <div className="space-y-4">
-              <div className="grid grid-cols-2 md:grid-cols-5 gap-3.5">
+              <div className="grid grid-cols-2 md:grid-cols-5 gap-2.5 sm:gap-3.5">
                 {Array.from({ length: 5 }).map((_, i) => (
-                  <Skeleton key={i} className="h-28 rounded-3xl bg-white/5" />
+                  <Skeleton key={i} className="h-24 sm:h-28 rounded-2xl sm:rounded-3xl bg-white/5" />
                 ))}
               </div>
-              <Skeleton className="h-96 rounded-3xl bg-white/5" />
+              <Skeleton className="h-96 rounded-2xl sm:rounded-3xl bg-white/5" />
             </div>
           ) : data && (
             <>
-              {/* TOP LIVE METRIC HIGHLIGHTS DECK */}
-              <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3.5">
+              {/* TOP LIVE METRIC HIGHLIGHTS DECK (Swipeable carousel on mobile, grid on desktop) */}
+              <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2.5 sm:gap-3.5">
                 <GlowStatCard
                   label="Total Students"
                   value={stats.total}
@@ -811,19 +874,19 @@ export default function EnrollmentMonitor() {
                   value={stats.done}
                   subvalue={`${stats.pct}%`}
                   progress={stats.pct}
-                  hint={`${stats.done} of ${stats.total} fully calibrated`}
+                  hint={`${stats.done} of ${stats.total} calibrated`}
                   icon={ShieldCheck}
                   tone="emerald"
                 />
                 <GlowStatCard
                   label="In Progress"
                   value={stats.progress}
-                  hint="Active parent scans & OTPs"
+                  hint="Active parent scans"
                   icon={Clock}
                   tone="cyan"
                 />
                 <GlowStatCard
-                  label="Awaiting Parent Action"
+                  label="Awaiting Action"
                   value={stats.notStarted}
                   hint="Invitation link sent"
                   icon={Sparkles}
@@ -832,32 +895,33 @@ export default function EnrollmentMonitor() {
                 <GlowStatCard
                   label="Attention & Edits"
                   value={stats.corrections + stats.failed}
-                  hint={`${stats.corrections} corrections · ${stats.failed} failed`}
+                  hint={`${stats.corrections} edits · ${stats.failed} failed`}
                   icon={AlertCircle}
                   tone={stats.corrections + stats.failed > 0 ? 'rose' : 'default'}
+                  className="col-span-2 sm:col-span-1"
                 />
               </div>
 
               {/* CLASS SECTION COMPLETION CAROUSEL / STRIP */}
               {classes.length > 0 && (
-                <div className="p-4 rounded-3xl bg-white/5 border border-white/10 backdrop-blur-xl space-y-2.5">
+                <div className="p-3.5 sm:p-4 rounded-2xl sm:rounded-3xl bg-white/5 border border-white/10 backdrop-blur-xl space-y-2">
                   <div className="flex items-center justify-between">
-                    <span className="text-xs font-extrabold uppercase tracking-wider text-white/70 flex items-center gap-1.5">
+                    <span className="text-[11px] sm:text-xs font-extrabold uppercase tracking-wider text-white/70 flex items-center gap-1.5">
                       <Layers className="h-3.5 w-3.5 text-cyan-400" />
-                      Class Onboarding Progress (Click to Filter)
+                      Class Onboarding Progress (Tap to filter)
                     </span>
                     {category !== 'all' && (
                       <Button
                         variant="ghost"
                         size="sm"
                         onClick={() => setCategory('all')}
-                        className="h-6 text-[11px] rounded-lg text-emerald-400 hover:text-emerald-300 hover:bg-emerald-500/10 p-1 px-2"
+                        className="h-6 text-[10px] sm:text-[11px] rounded-lg text-emerald-400 hover:text-emerald-300 hover:bg-emerald-500/10 p-1 px-2"
                       >
-                        Reset Class Filter ({category})
+                        Reset Class ({category})
                       </Button>
                     )}
                   </div>
-                  <div className="flex gap-2 overflow-x-auto pb-1 no-scrollbar">
+                  <div className="flex gap-2 overflow-x-auto pb-1.5 no-scrollbar snap-x snap-mandatory -mx-1 px-1">
                     {classes.map(([cls, stat]) => {
                       const pct = stat.total ? Math.round((stat.done / stat.total) * 100) : 0;
                       const isSelected = category === cls;
@@ -867,20 +931,20 @@ export default function EnrollmentMonitor() {
                           type="button"
                           onClick={() => setCategory(category === cls ? 'all' : cls)}
                           className={cn(
-                            'relative shrink-0 p-3 rounded-2xl border text-left transition-all duration-200 cursor-pointer min-w-[130px]',
+                            'relative shrink-0 p-2.5 sm:p-3 rounded-xl sm:rounded-2xl border text-left transition-all duration-200 cursor-pointer min-w-[115px] sm:min-w-[130px] snap-center active:scale-95 touch-manipulation',
                             isSelected
-                              ? 'border-emerald-400 bg-emerald-500/20 shadow-md shadow-emerald-500/20 ring-2 ring-emerald-400/30'
+                              ? 'border-emerald-400 bg-emerald-500/25 shadow-md shadow-emerald-500/20 ring-2 ring-emerald-400/40'
                               : 'border-white/10 bg-white/5 hover:bg-white/10'
                           )}
                         >
                           <div className="flex items-center justify-between gap-1">
-                            <span className="text-xs font-black text-white">Class {cls}</span>
-                            <span className="text-[11px] font-mono font-bold text-emerald-400">{pct}%</span>
+                            <span className="text-xs font-black text-white truncate">Class {cls}</span>
+                            <span className="text-[10px] sm:text-[11px] font-mono font-bold text-emerald-400">{pct}%</span>
                           </div>
-                          <div className="h-1.5 w-full bg-white/10 rounded-full mt-2 overflow-hidden">
+                          <div className="h-1.5 w-full bg-white/10 rounded-full mt-1.5 overflow-hidden">
                             <div className="h-full bg-gradient-to-r from-emerald-400 to-teal-300 rounded-full" style={{ width: `${pct}%` }} />
                           </div>
-                          <p className="text-[10px] text-white/50 mt-1.5 font-mono">
+                          <p className="text-[9px] sm:text-[10px] text-white/50 mt-1 font-mono">
                             {stat.done}/{stat.total} enrolled
                           </p>
                         </button>
@@ -891,9 +955,10 @@ export default function EnrollmentMonitor() {
               )}
 
               {/* FILTER PILLS & SEARCH BAR DOCK */}
-              <div className="p-4 rounded-3xl bg-white/5 border border-white/10 backdrop-blur-xl flex flex-col md:flex-row md:items-center justify-between gap-4">
-                {/* Filter Tabs */}
-                <div className="flex gap-1.5 overflow-x-auto no-scrollbar py-0.5">
+              <div className="p-3.5 sm:p-4 rounded-2xl sm:rounded-3xl bg-white/5 border border-white/10 backdrop-blur-xl flex flex-col md:flex-row md:items-center justify-between gap-3">
+                
+                {/* Filter Tabs (Smooth horizontal touch scrolling on mobile) */}
+                <div className="flex gap-1.5 overflow-x-auto no-scrollbar py-0.5 -mx-1 px-1 snap-x snap-mandatory">
                   {FILTERS.map((f) => {
                     const active = filter === f.id;
                     const Icon = f.icon;
@@ -916,18 +981,18 @@ export default function EnrollmentMonitor() {
                         type="button"
                         onClick={() => setFilter(f.id)}
                         className={cn(
-                          'relative shrink-0 h-9 px-3.5 rounded-2xl flex items-center gap-2 text-xs font-bold transition-all duration-200 cursor-pointer select-none active:scale-95',
+                          'relative shrink-0 h-8 sm:h-9 px-3 sm:px-3.5 rounded-xl sm:rounded-2xl flex items-center gap-1.5 sm:gap-2 text-[11px] sm:text-xs font-bold transition-all duration-200 cursor-pointer select-none active:scale-95 touch-manipulation snap-start',
                           active
                             ? 'bg-gradient-to-r from-emerald-500 to-teal-600 text-slate-950 font-black shadow-lg shadow-emerald-500/25'
                             : 'bg-white/5 text-white/70 hover:text-white hover:bg-white/10 border border-white/10'
                         )}
                       >
-                        <Icon className="h-3.5 w-3.5" />
-                        <span>{f.label}</span>
+                        <Icon className="h-3.5 w-3.5 shrink-0" />
+                        <span className="whitespace-nowrap">{f.label}</span>
                         <Badge
                           variant="secondary"
                           className={cn(
-                            'text-[10px] px-1.5 py-0 rounded-md font-mono',
+                            'text-[9px] sm:text-[10px] px-1.5 py-0 rounded-md font-mono shrink-0',
                             active ? 'bg-black/30 text-white border-0' : 'bg-white/10 text-white/80'
                           )}
                         >
@@ -938,20 +1003,21 @@ export default function EnrollmentMonitor() {
                   })}
                 </div>
 
-                {/* Search & Class Selector */}
-                <div className="flex items-center gap-2 min-w-[260px]">
+                {/* Search Bar */}
+                <div className="flex items-center gap-2 w-full md:w-auto md:min-w-[280px]">
                   <div className="relative flex-1">
-                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-white/40" />
+                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-white/40" />
                     <Input
                       placeholder="Search name, admission ID..."
                       value={query}
                       onChange={(e) => setQuery(e.target.value)}
-                      className="h-9 pl-9 pr-8 text-xs rounded-2xl bg-white/5 border-white/15 text-white placeholder:text-white/40 focus:border-emerald-400"
+                      className="h-9 pl-9 pr-8 text-xs rounded-xl sm:rounded-2xl bg-white/5 border-white/15 text-white placeholder:text-white/40 focus:border-emerald-400"
                     />
                     {query && (
                       <button
                         onClick={() => setQuery('')}
-                        className="absolute right-2.5 top-1/2 -translate-y-1/2 text-white/40 hover:text-white"
+                        className="absolute right-2.5 top-1/2 -translate-y-1/2 text-white/40 hover:text-white p-1"
+                        aria-label="Clear search"
                       >
                         <X className="h-3.5 w-3.5" />
                       </button>
@@ -962,16 +1028,16 @@ export default function EnrollmentMonitor() {
 
               {/* ROSTER GRID OF STUDENTS */}
               {visible.length === 0 ? (
-                <div className="text-center py-16 px-4 rounded-3xl bg-white/5 border border-white/10 backdrop-blur-xl space-y-3">
-                  <ShieldAlert className="h-12 w-12 mx-auto text-white/30" />
-                  <h3 className="text-base font-bold text-white">No students match your filter</h3>
+                <div className="text-center py-12 sm:py-16 px-4 rounded-2xl sm:rounded-3xl bg-white/5 border border-white/10 backdrop-blur-xl space-y-3">
+                  <ShieldAlert className="h-10 w-10 sm:h-12 sm:w-12 mx-auto text-white/30" />
+                  <h3 className="text-sm sm:text-base font-bold text-white">No students match your filter</h3>
                   <p className="text-xs text-white/60 max-w-sm mx-auto">
                     Try adjusting your search query, class selection, or status filter tab.
                   </p>
                   <Button
                     variant="outline"
                     size="sm"
-                    className="rounded-xl border-white/20 text-white hover:bg-white/10"
+                    className="rounded-xl border-white/20 text-white hover:bg-white/10 text-xs"
                     onClick={() => {
                       setQuery('');
                       setCategory('all');
@@ -982,7 +1048,7 @@ export default function EnrollmentMonitor() {
                   </Button>
                 </div>
               ) : (
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3.5">
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 sm:gap-3.5">
                   <AnimatePresence mode="popLayout">
                     {visible.slice(0, limit).map((s) => {
                       const isComplete = s.status === 'completed';
@@ -998,7 +1064,7 @@ export default function EnrollmentMonitor() {
                           exit={{ opacity: 0, scale: 0.95 }}
                           transition={{ duration: 0.2 }}
                           className={cn(
-                            'group relative rounded-3xl border p-4 backdrop-blur-xl transition-all duration-200 flex flex-col justify-between overflow-hidden shadow-md',
+                            'group relative rounded-2xl sm:rounded-3xl border p-3.5 sm:p-4 backdrop-blur-xl transition-all duration-200 flex flex-col justify-between overflow-hidden shadow-md touch-manipulation',
                             isComplete
                               ? 'border-emerald-500/20 bg-gradient-to-br from-emerald-500/10 via-white/5 to-transparent hover:border-emerald-500/40'
                               : isCapturing
@@ -1010,16 +1076,16 @@ export default function EnrollmentMonitor() {
                         >
                           {/* Student Header */}
                           <div>
-                            <div className="flex items-start justify-between gap-2.5">
-                              <div className="flex items-center gap-3 min-w-0">
-                                <div className="h-11 w-11 rounded-2xl bg-gradient-to-br from-white/20 to-white/5 border border-white/15 flex items-center justify-center font-black text-sm text-white overflow-hidden shrink-0 shadow-inner">
+                            <div className="flex items-start justify-between gap-2">
+                              <div className="flex items-center gap-2.5 sm:gap-3 min-w-0 flex-1">
+                                <div className="h-10 w-10 sm:h-11 sm:w-11 rounded-xl sm:rounded-2xl bg-gradient-to-br from-white/20 to-white/5 border border-white/15 flex items-center justify-center font-black text-xs sm:text-sm text-white overflow-hidden shrink-0 shadow-inner">
                                   {s.name.slice(0, 2).toUpperCase()}
                                 </div>
-                                <div className="min-w-0">
+                                <div className="min-w-0 flex-1">
                                   <h4 className="text-sm font-extrabold text-white truncate group-hover:text-emerald-300 transition-colors">
                                     {s.name}
                                   </h4>
-                                  <div className="flex items-center gap-1.5 text-xs text-white/60 font-mono mt-0.5">
+                                  <div className="flex flex-wrap items-center gap-1.5 text-[11px] sm:text-xs text-white/60 font-mono mt-0.5">
                                     <span>ID: {s.admission_number}</span>
                                     {s.category && <span>• Class {s.category}</span>}
                                   </div>
@@ -1030,7 +1096,7 @@ export default function EnrollmentMonitor() {
                             </div>
 
                             {/* Indicators Pill Strip */}
-                            <div className="flex flex-wrap gap-1.5 mt-3 pt-3 border-t border-white/10 text-[10px] font-medium">
+                            <div className="flex flex-wrap gap-1.5 mt-2.5 sm:mt-3 pt-2.5 sm:pt-3 border-t border-white/10 text-[10px] font-medium">
                               {s.samples.length > 0 && (
                                 <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg bg-cyan-500/15 border border-cyan-500/30 text-cyan-300">
                                   <Camera className="h-3 w-3" /> {s.samples.length} 3D views
@@ -1053,13 +1119,13 @@ export default function EnrollmentMonitor() {
                             </div>
                           </div>
 
-                          {/* Actions Footer */}
-                          <div className="flex items-center gap-2 mt-4 pt-3 border-t border-white/10">
+                          {/* Actions Footer (Enhanced touch target height on mobile) */}
+                          <div className="flex items-center gap-2 mt-3.5 pt-2.5 sm:pt-3 border-t border-white/10">
                             <Button
                               size="sm"
                               variant="ghost"
                               onClick={() => setSelectedStudentAdm(s.admission_number)}
-                              className="flex-1 h-8 rounded-xl text-xs font-bold bg-white/5 hover:bg-white/15 text-white gap-1.5"
+                              className="flex-1 h-9 sm:h-8 rounded-xl text-xs font-bold bg-white/5 hover:bg-white/15 text-white gap-1.5 active:scale-95 touch-manipulation"
                             >
                               <Eye className="h-3.5 w-3.5 text-cyan-400" />
                               Inspect
@@ -1077,7 +1143,7 @@ export default function EnrollmentMonitor() {
                                   })
                                 }
                                 className={cn(
-                                  'h-8 px-3 rounded-xl text-xs font-bold gap-1 shadow-sm',
+                                  'h-9 sm:h-8 px-3 rounded-xl text-xs font-bold gap-1 shadow-sm active:scale-95 touch-manipulation',
                                   isComplete
                                     ? 'bg-white/10 hover:bg-white/20 text-white border border-white/15'
                                     : 'bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-600 hover:to-teal-700 text-slate-950 font-black'
@@ -1097,11 +1163,11 @@ export default function EnrollmentMonitor() {
 
               {/* Load More Pagination */}
               {visible.length > limit && (
-                <div className="text-center pt-4">
+                <div className="text-center pt-3 sm:pt-4">
                   <Button
                     variant="outline"
                     onClick={() => setLimit((prev) => prev + PAGE)}
-                    className="rounded-2xl border-white/20 text-white hover:bg-white/10 px-6 font-bold"
+                    className="w-full sm:w-auto rounded-xl sm:rounded-2xl border-white/20 text-white hover:bg-white/10 px-6 font-bold text-xs sm:text-sm h-10"
                   >
                     Load More Students ({visible.length - limit} remaining)
                   </Button>
@@ -1111,6 +1177,25 @@ export default function EnrollmentMonitor() {
           )}
 
         </div>
+
+        {/* Mobile Quick Floating Status & Scroll-To-Top Button */}
+        {showScrollTop && (
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: 20 }}
+            className="fixed bottom-4 right-4 z-40 sm:hidden flex items-center gap-2"
+          >
+            <Button
+              size="sm"
+              onClick={scrollToTop}
+              className="h-10 px-3.5 rounded-full bg-slate-900/90 border border-white/20 text-white shadow-2xl backdrop-blur-xl gap-1 text-xs font-bold"
+            >
+              <ArrowUp className="h-4 w-4 text-emerald-400" />
+              Top
+            </Button>
+          </motion.div>
+        )}
 
         {/* Slide-over Inspection Sheet */}
         {selectedStudent && (
