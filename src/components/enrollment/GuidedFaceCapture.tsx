@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
 import { motion, useReducedMotion } from 'framer-motion';
-import { Camera, Check, Glasses, RotateCcw, ScanFace, Sparkles, Volume2, VolumeX, ArrowLeft, ArrowRight, ArrowUp, ArrowDown, Eye, User, Zap, Upload } from 'lucide-react';
+import { Camera, Check, Glasses, RotateCcw, ScanFace, Sparkles, Volume2, VolumeX, ArrowLeft, ArrowRight, ArrowUp, ArrowDown, Eye, User, Upload } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { poses, type CaptureResult, type FaceSample, type Pose } from '@/services/enrollment/types';
 import { eyeOpenness, estimateFacePose, imageQuality } from '@/services/enrollment/captureQuality';
@@ -308,75 +308,7 @@ export default function GuidedFaceCapture({
     }
   }, [finishEnrollment, triggerBurst]);
 
-  // Alternative Method 2: Instant 1-Click Enrollment using Current Camera
-  const handleQuickEnroll = useCallback(async () => {
-    try {
-      const v = video.current;
-      let image = latestFaceDataRef.current?.image || '';
-      let descriptor = latestFaceDataRef.current?.descriptor ? [...latestFaceDataRef.current.descriptor] : null;
-
-      if (!image && v && v.videoWidth) {
-        const c = document.createElement('canvas');
-        c.width = 384;
-        c.height = 384;
-        const ctx = c.getContext('2d');
-        if (ctx) {
-          const minDim = Math.min(v.videoWidth, v.videoHeight);
-          const sx = (v.videoWidth - minDim) / 2;
-          const sy = (v.videoHeight - minDim) / 2;
-          ctx.drawImage(v, sx, sy, minDim, minDim, 0, 0, 384, 384);
-          image = c.toDataURL('image/jpeg', 0.88);
-        }
-      }
-
-      if (!descriptor) {
-        if (v && v.videoWidth) {
-          try {
-            const faceapi = await import('face-api.js');
-            const det = await faceapi
-              .detectSingleFace(v, new faceapi.TinyFaceDetectorOptions({ inputSize: 320, scoreThreshold: 0.2 }))
-              .withFaceLandmarks()
-              .withFaceDescriptor();
-            if (det?.descriptor) descriptor = Array.from(det.descriptor);
-          } catch {}
-        }
-        if (!descriptor) {
-          const raw = Array.from({ length: 128 }, () => (Math.random() - 0.5) * 0.1);
-          const norm = Math.hypot(...raw) || 1;
-          descriptor = raw.map((x) => x / norm);
-        }
-      }
-
-      const newSamples: FaceSample[] = [];
-      if (glasses.current) {
-        newSamples.push({
-          pose: 'front',
-          glasses: 'without',
-          descriptor: [...descriptor],
-          image: image || '',
-          quality: { brightness: 120, sharpness: 30, faces: 1 },
-        });
-      }
-      for (const p of poses) {
-        newSamples.push({
-          pose: p,
-          glasses: glasses.current ? 'with' : 'without',
-          descriptor: [...descriptor],
-          image: image || '',
-          quality: { brightness: 120, sharpness: 30, faces: 1 },
-        });
-      }
-
-      samples.current = newSamples;
-      for (let i = 0; i < TOTAL_TICKS; i++) activeTicksRef.current.add(i);
-      setProgress(newSamples.length);
-      finishEnrollment();
-    } catch (err) {
-      console.warn('Quick enrollment failed:', err);
-    }
-  }, [finishEnrollment]);
-
-  // Alternative Method 3: Upload Photo from Device
+  // Alternative Method: Upload Photo from Device
   const handleFileUpload = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -1085,26 +1017,15 @@ export default function GuidedFaceCapture({
       {/* Alternative & Manual Controls */}
       {stage !== 'done' && (
         <div className="w-full max-w-md mx-auto my-3 flex flex-col gap-2">
-          <div className="flex gap-2">
-            <Button
-              type="button"
-              onClick={() => void handleManualCapture()}
-              className="flex-1 bg-emerald-600/90 hover:bg-emerald-500 text-white font-medium text-xs sm:text-sm py-2 px-3 rounded-xl border border-emerald-400/30 shadow-md flex items-center justify-center gap-1.5 active:scale-95 transition-all"
-              title="Manually capture current view"
-            >
-              <Camera size={15} />
-              <span>Snap View ({Math.min(progress + 1, totalRequired)}/{totalRequired})</span>
-            </Button>
-            <Button
-              type="button"
-              onClick={() => void handleQuickEnroll()}
-              className="flex-1 bg-gradient-to-r from-amber-500 to-emerald-500 hover:from-amber-400 hover:to-emerald-400 text-slate-950 font-semibold text-xs sm:text-sm py-2 px-3 rounded-xl border border-amber-300/40 shadow-md flex items-center justify-center gap-1.5 active:scale-95 transition-all"
-              title="Instant 1-Click enrollment with 1 photo"
-            >
-              <Zap size={15} className="fill-current" />
-              <span>⚡ Quick 1-Click</span>
-            </Button>
-          </div>
+          <Button
+            type="button"
+            onClick={() => void handleManualCapture()}
+            className="w-full bg-emerald-600/90 hover:bg-emerald-500 text-white font-medium text-xs sm:text-sm py-2.5 px-3 rounded-xl border border-emerald-400/30 shadow-md flex items-center justify-center gap-1.5 active:scale-95 transition-all"
+            title="Manually capture current view"
+          >
+            <Camera size={15} />
+            <span>Snap View ({Math.min(progress + 1, totalRequired)}/{totalRequired})</span>
+          </Button>
           <div className="flex items-center justify-center">
             <label className="text-xs text-slate-400 hover:text-emerald-300 flex items-center gap-1.5 cursor-pointer py-1 px-3 rounded-lg border border-dashed border-slate-700 hover:border-emerald-500/40 transition-colors bg-slate-900/40">
               <Upload size={13} className="text-emerald-400" />
