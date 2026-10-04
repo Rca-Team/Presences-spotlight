@@ -239,6 +239,67 @@ export function createEnrollmentService({ db, databaseId = 'presences_db', sms, 
           return { reverted: true, admission };
         });
       }
+      if (action === 'staff.delete' || action === 'staff.deleteStudent') {
+        const admission = cleanStudent(body).admission_number || String(body.admission || body.student_id || body.employee_id || body.id || '').trim();
+        if (!admission) reject(400, 'Student identifier is required.');
+        return lock('student:' + admission, async () => {
+          const student = await studentFor(admission);
+          const admissionKey = student?.admission_number || admission;
+          const userKey = student?.userId || body.user_id;
+          const profileId = student?.profileId;
+
+          // 1. Delete prior capture and files
+          const studentState = await get(hash('student:' + admissionKey));
+          if (studentState?.lastCapture) {
+            const oldCapture = await get(studentState.lastCapture);
+            if (oldCapture?.samples) {
+              for (const s of oldCapture.samples) {
+                if (s.fileId) await files.remove(s.fileId).catch(() => {});
+              }
+            }
+            await db.deleteDocument(databaseId, STATE, studentState.lastCapture).catch(() => {});
+          }
+
+          // 2. Delete student state documents
+          await db.deleteDocument(databaseId, STATE, hash('student:' + admissionKey)).catch(() => {});
+          await db.deleteDocument(databaseId, STATE, hash('session:' + admissionKey)).catch(() => {});
+          await db.deleteDocument(databaseId, STATE, hash('correction:' + admissionKey)).catch(() => {});
+
+          // 3. Delete descriptors from face_descriptors
+          const descriptorId = hash('enrollment-descriptor:' + admissionKey);
+          await db.deleteDocument(databaseId, 'face_descriptors', descriptorId).catch(() => {});
+          
+          const orDescQueries = [Query.equal('student_id', admissionKey)];
+          if (userKey) orDescQueries.push(Query.equal('user_id', userKey));
+          const existingDesc = await db.listDocuments(databaseId, 'face_descriptors', [Query.or(orDescQueries), Query.limit(100)]).catch(() => ({ documents: [] }));
+          for (const d of existingDesc.documents) {
+            await db.deleteDocument(databaseId, 'face_descriptors', d.$id).catch(() => {});
+          }
+
+          // 4. Delete attendance records
+          const existingAtt = await db.listDocuments(databaseId, 'attendance_records', [Query.or(orDescQueries), Query.limit(100)]).catch(() => ({ documents: [] }));
+          for (const a of existingAtt.documents) {
+            await db.deleteDocument(databaseId, 'attendance_records', a.$id).catch(() => {});
+          }
+
+          // 5. Delete profile(s)
+          if (profileId) {
+            await db.deleteDocument(databaseId, 'profiles', profileId).catch(() => {});
+          }
+          const profileQueries = [Query.or([
+            Query.equal('admission_number', admissionKey),
+            Query.equal('employee_id', admissionKey),
+            ...(userKey ? [Query.equal('user_id', userKey)] : [])
+          ]), Query.limit(25)];
+          const existingProfiles = await db.listDocuments(databaseId, 'profiles', profileQueries).catch(() => ({ documents: [] }));
+          for (const p of existingProfiles.documents) {
+            await db.deleteDocument(databaseId, 'profiles', p.$id).catch(() => {});
+          }
+
+          await audit('student-deleted-completely', admissionKey, user?.$id || 'admin');
+          return { deleted: true, admission: admissionKey };
+        });
+      }
       if (action === 'staff.cleanup') {
         const expired = await db.listDocuments(databaseId, STATE, [Query.lessThan('expires', now() - 120000), Query.limit(100)]);
         for (const d of expired.documents) {

@@ -19,6 +19,17 @@ import StudentIDCardGenerator from './StudentIDCardGenerator';
 import StudentCSVImporter from './StudentCSVImporter';
 import CaptureFaceDialog from './CaptureFaceDialog';
 import { pickPreferredPhotoCandidate, resolveStudentPhotoUrl } from '@/utils/studentPhotoResolver';
+import { universalDeleteStudent } from '@/services/student/studentDeletionService';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
 
 interface StudentRow {
   id: string;
@@ -45,6 +56,9 @@ const StudentDetailsTable: React.FC = () => {
   const [previewStudents, setPreviewStudents] = useState<StudentRow[] | null>(null);
   const [captureFor, setCaptureFor] = useState<StudentRow | null>(null);
   const [isRemovingDuplicates, setIsRemovingDuplicates] = useState(false);
+  const [studentToDelete, setStudentToDelete] = useState<StudentRow | null>(null);
+  const [isDeleting, setIsDeleting] = useState(false);
+  const [deleteProgress, setDeleteProgress] = useState('');
   const { toast } = useToast();
   const refreshTimerRef = useRef<number | null>(null);
 
@@ -380,6 +394,53 @@ const StudentDetailsTable: React.FC = () => {
     }
   };
 
+  const handleConfirmDelete = async () => {
+    if (!studentToDelete) return;
+    setIsDeleting(true);
+    setDeleteProgress(`Starting deletion for ${studentToDelete.name}...`);
+    try {
+      const res = await universalDeleteStudent(
+        {
+          id: studentToDelete.id,
+          user_id: studentToDelete.user_id,
+          employee_id: studentToDelete.employee_id,
+          roll_number: studentToDelete.roll_number,
+          name: studentToDelete.name,
+          avatar_url: studentToDelete.avatar_url,
+        },
+        (status) => setDeleteProgress(status)
+      );
+
+      if (res.success) {
+        toast({
+          title: "Student Deleted Completely",
+          description: `Permanently removed ${studentToDelete.name} (${studentToDelete.employee_id || studentToDelete.roll_number || ''}) from profiles, face descriptors, attendance records, and cloud storage.`,
+        });
+        setRows((prev) => prev.filter((r) => r.id !== studentToDelete.id && r.employee_id !== studentToDelete.employee_id));
+        setStudentToDelete(null);
+        await fetchStudents();
+      } else {
+        toast({
+          title: "Partial Deletion",
+          description: res.errors.join("; ") || "Some records could not be purged.",
+          variant: "destructive",
+        });
+        setStudentToDelete(null);
+        await fetchStudents();
+      }
+    } catch (err: any) {
+      console.error('Delete student error:', err);
+      toast({
+        title: "Delete Failed",
+        description: err?.message || "Could not delete student.",
+        variant: "destructive",
+      });
+    } finally {
+      setIsDeleting(false);
+      setDeleteProgress('');
+    }
+  };
+
 
   useEffect(() => {
     const queueRefresh = () => {
@@ -590,6 +651,15 @@ const StudentDetailsTable: React.FC = () => {
                       <Download className="h-3.5 w-3.5 mr-1" />
                       ID Card
                     </Button>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="h-8 text-xs text-destructive hover:bg-destructive/10 border-destructive/20 px-2.5"
+                      onClick={() => setStudentToDelete(s)}
+                      title="Delete Student Completely"
+                    >
+                      <Trash2 className="h-3.5 w-3.5" />
+                    </Button>
                   </div>
                 </div>
               ))}
@@ -677,6 +747,15 @@ const StudentDetailsTable: React.FC = () => {
                             <Download className="h-3.5 w-3.5 mr-1" />
                             ID Card
                           </Button>
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            className="text-destructive hover:bg-destructive/10 hover:text-destructive border-destructive/20"
+                            onClick={() => setStudentToDelete(s)}
+                            title="Delete Student Completely"
+                          >
+                            <Trash2 className="h-3.5 w-3.5" />
+                          </Button>
                         </div>
                       </TableCell>
                     </TableRow>
@@ -687,6 +766,48 @@ const StudentDetailsTable: React.FC = () => {
           </>
         )}
       </CardContent>
+
+      <AlertDialog open={!!studentToDelete} onOpenChange={(open) => { if (!open && !isDeleting) setStudentToDelete(null); }}>
+        <AlertDialogContent className="max-w-md">
+          <AlertDialogHeader>
+            <AlertDialogTitle className="text-destructive flex items-center gap-2">
+              <Trash2 className="h-5 w-5" />
+              Permanently Delete Student Everywhere?
+            </AlertDialogTitle>
+            <AlertDialogDescription className="space-y-3 pt-2 text-foreground/80">
+              <p>
+                Are you sure you want to completely erase <strong>{studentToDelete?.name}</strong> (Roll: {studentToDelete?.roll_number || 'N/A'}, ID: {studentToDelete?.employee_id || 'N/A'})?
+              </p>
+              <div className="rounded-xl border border-destructive/20 bg-destructive/10 p-3 text-xs text-destructive space-y-1.5">
+                <p className="font-bold">This will permanently delete from EVERYWHERE:</p>
+                <ul className="list-disc pl-4 space-y-0.5">
+                  <li>Student profile & registration accounts</li>
+                  <li>All AI face model descriptors & recognition weights</li>
+                  <li>All past and present attendance records</li>
+                  <li>All biometric photos in Cloud Storage</li>
+                  <li>Gate pass entries, badges, and notification records</li>
+                </ul>
+              </div>
+              {deleteProgress && (
+                <p className="text-xs font-semibold text-primary animate-pulse">{deleteProgress}</p>
+              )}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={isDeleting} onClick={() => setStudentToDelete(null)}>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              disabled={isDeleting}
+              onClick={(e) => {
+                e.preventDefault();
+                handleConfirmDelete();
+              }}
+              className="bg-destructive hover:bg-destructive/90 text-destructive-foreground font-bold shadow-md shadow-destructive/20"
+            >
+              {isDeleting ? 'Deleting Everywhere...' : 'Yes, Delete Completely'}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       <CaptureFaceDialog
         open={!!captureFor}

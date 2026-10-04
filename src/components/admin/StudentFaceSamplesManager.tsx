@@ -62,6 +62,7 @@ import FaceSampleDeduplicationModal from './FaceSampleDeduplicationModal';
 import { normalizeClassSection } from '@/utils/studentIdentityResolver';
 import CaptureFaceDialog from './CaptureFaceDialog';
 import { resolveStudentPhotoUrl } from '@/utils/studentPhotoResolver';
+import { universalDeleteStudent } from '@/services/student/studentDeletionService';
 import {
   scanDuplicateFaceSamples,
   executeDeduplication,
@@ -1063,110 +1064,27 @@ const StudentFaceSamplesManager: React.FC = () => {
     }
   };
 
-  // Delete Student Entirely from Database and Website
+  // Delete Student Entirely from Database, Storage, and Website
   const handleDeleteStudentEntirely = async (student: StudentGroup) => {
     if (!student) return;
     setDeletingStudent(true);
     try {
       const studentName = student.name;
-      const userId = student.userId;
-      const empId = student.employeeId;
-      const rollNo = student.rollNumber;
-      
-      const candidateUserIds = [userId].filter(Boolean) as string[];
-      const candidateEmpIds = [empId, rollNo].filter(Boolean) as string[];
-      const candidateNames = (studentName && studentName !== 'Student' && studentName !== 'Unknown') ? [studentName] : [];
+      const res = await universalDeleteStudent({
+        id: student.userId,
+        user_id: student.userId,
+        employee_id: student.employeeId,
+        roll_number: student.rollNumber,
+        name: student.name,
+        avatar_url: student.avatarUrl,
+        samples: student.samples.map((s) => ({
+          id: s.id,
+          image_url: s.image_url,
+          source_table: s.source_table,
+        })),
+      });
 
-      // 1. Delete all face descriptors
-      if (candidateUserIds.length > 0) {
-        await supabase.from('face_descriptors').delete().in('user_id', candidateUserIds);
-      }
-      if (candidateEmpIds.length > 0) {
-        await supabase.from('face_descriptors').delete().in('student_id', candidateEmpIds);
-      }
-      if (candidateNames.length > 0) {
-        await supabase.from('face_descriptors').delete().in('label', candidateNames);
-      }
-      const descriptorSampleIds = student.samples.filter((s) => s.source_table === 'face_descriptors').map((s) => s.id);
-      if (descriptorSampleIds.length > 0) {
-        await supabase.from('face_descriptors').delete().in('id', descriptorSampleIds);
-      }
-
-      // 2. Delete all attendance records
-      if (candidateUserIds.length > 0) {
-        await supabase.from('attendance_records').delete().in('user_id', candidateUserIds);
-      }
-      if (candidateEmpIds.length > 0) {
-        await supabase.from('attendance_records').delete().in('student_id', candidateEmpIds);
-      }
-      if (candidateNames.length > 0) {
-        await supabase.from('attendance_records').delete().in('student_name', candidateNames);
-      }
-      const attendanceSampleIds = student.samples.filter((s) => s.source_table === 'attendance_records').map((s) => s.id);
-      if (attendanceSampleIds.length > 0) {
-        await supabase.from('attendance_records').delete().in('id', attendanceSampleIds);
-      }
-
-      // 3. Delete profiles
-      if (candidateUserIds.length > 0) {
-        await supabase.from('profiles').delete().in('user_id', candidateUserIds);
-      }
-      if (candidateEmpIds.length > 0) {
-        await supabase.from('profiles').delete().in('employee_id', candidateEmpIds);
-        await supabase.from('profiles').delete().in('roll_number', candidateEmpIds);
-        await supabase.from('profiles').delete().in('admission_number', candidateEmpIds);
-      }
-      if (candidateNames.length > 0) {
-        await supabase.from('profiles').delete().in('full_name', candidateNames);
-        await supabase.from('profiles').delete().in('display_name', candidateNames);
-      }
-
-      // 4. Delete related secondary tables
-      if (candidateEmpIds.length > 0) {
-        await supabase.from('gate_entries').delete().in('student_id', candidateEmpIds);
-        await supabase.from('attendance_predictions').delete().in('student_id', candidateEmpIds);
-        await supabase.from('attendance_points').delete().in('student_id', candidateEmpIds);
-        await supabase.from('student_badges').delete().in('student_id', candidateEmpIds);
-        await supabase.from('wellness_scores').delete().in('student_id', candidateEmpIds);
-        await supabase.from('late_entries').delete().in('student_id', candidateEmpIds);
-      }
-      if (candidateNames.length > 0) {
-        await supabase.from('gate_entries').delete().in('student_name', candidateNames);
-        await supabase.from('late_entries').delete().in('student_name', candidateNames);
-      }
-      if (candidateUserIds.length > 0) {
-        await supabase.from('emotion_events').delete().in('user_id', candidateUserIds);
-        await supabase.from('notifications').delete().in('user_id', candidateUserIds);
-        await supabase.from('notification_log').delete().in('user_id', candidateUserIds);
-        await supabase.from('user_roles').delete().in('user_id', candidateUserIds);
-      }
-
-      // 5. Clean up Storage files if possible
-      const storageBuckets = ['face-images', 'attendance-training-faces', 'student-registration-faces', 'public'];
-      const pathsToDelete: { bucket: string; path: string }[] = [];
-      const allImageUrls = [student.avatarUrl, ...student.samples.map((s) => s.image_url)].filter(Boolean) as string[];
-
-      for (const rawUrl of allImageUrls) {
-        for (const bucket of storageBuckets) {
-          const path = parseStoragePathFromUrl(rawUrl, bucket);
-          if (path) {
-            pathsToDelete.push({ bucket, path });
-          }
-        }
-      }
-
-      for (const item of pathsToDelete) {
-        try {
-          await supabase.storage.from(item.bucket).remove([item.path]);
-        } catch {
-          // ignore storage delete failures silently
-        }
-      }
-
-      // 6. Synchronize AI model descriptor cache
-      await syncDescriptorCache().catch(() => {});
-
-      // 7. Update UI state
+      // Update UI state
       toast({
         title: 'Student Permanently Deleted',
         description: `Successfully removed ${studentName} (${student.samples.length} photos & all database records) entirely from the database and website.`,

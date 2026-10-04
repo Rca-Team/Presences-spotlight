@@ -14,6 +14,7 @@ import { useToast } from '@/hooks/use-toast';
 import { supabase } from '@/integrations/supabase/client';
 import { getCategoryLabel } from '@/constants/schoolConfig';
 import { pickPreferredPhotoCandidate, resolveStudentPhotoUrl } from '@/utils/studentPhotoResolver';
+import { universalDeleteStudentsBatch } from '@/services/student/studentDeletionService';
 import kvLogo from '@/assets/kv-logo.png';
 import { 
   CreditCard, 
@@ -564,38 +565,27 @@ const StudentIDCardGenerator: React.FC<StudentIDCardGeneratorProps> = ({ student
     if (selectedIds.size === 0) return;
     const selected = students.filter(s => selectedIds.has(s.id));
     const confirmed = window.confirm(
-      `Delete ${selected.length} selected student${selected.length === 1 ? '' : 's'} from the database?\n\nAll matching attendance_records and face_descriptors rows will be permanently removed. This cannot be undone.`
+      `Delete ${selected.length} selected student${selected.length === 1 ? '' : 's'} from EVERYWHERE?\n\nThis will completely purge all matching student profiles, face model descriptors, cloud storage photos, and attendance records. This cannot be undone.`
     );
     if (!confirmed) return;
 
     setIsDeletingSelected(true);
     try {
-      const attIds = Array.from(new Set(selected.flatMap(s => s._attendanceIds || [])));
-      const descIds = Array.from(new Set(selected.flatMap(s => s._descriptorIds || [])));
+      const targets = selected.map((s) => ({
+        id: s.id,
+        user_id: s._userIds?.[0],
+        employee_id: s.employee_id,
+        roll_number: s.roll_number,
+        name: s.name,
+        avatar_url: s.avatar_url,
+      }));
 
-      const chunk = <T,>(arr: T[], n: number) => {
-        const out: T[][] = [];
-        for (let i = 0; i < arr.length; i += n) out.push(arr.slice(i, i + n));
-        return out;
-      };
-
-      let deletedAtt = 0;
-      let deletedDesc = 0;
-
-      for (const ids of chunk(attIds, 100)) {
-        const { error } = await supabase.from('attendance_records').delete().in('id', ids);
-        if (error) console.error('Delete attendance failed:', error);
-        else deletedAtt += ids.length;
-      }
-      for (const ids of chunk(descIds, 100)) {
-        const { error } = await supabase.from('face_descriptors').delete().in('id', ids);
-        if (error) console.error('Delete descriptor failed:', error);
-        else deletedDesc += ids.length;
-      }
+      const res = await universalDeleteStudentsBatch(targets);
 
       toast({
-        title: `Deleted ${selected.length} student${selected.length === 1 ? '' : 's'}`,
-        description: `Attendance rows: ${deletedAtt} • Face descriptors: ${deletedDesc}`,
+        title: `Deleted ${res.successCount} of ${selected.length} student${selected.length === 1 ? '' : 's'}`,
+        description: res.failCount > 0 ? `Failed to delete ${res.failCount} students.` : 'All student profiles, face descriptors, attendance records, and photos were deleted from everywhere.',
+        variant: res.failCount > 0 ? 'destructive' : 'default',
       });
 
       setSelectedIds(new Set());
