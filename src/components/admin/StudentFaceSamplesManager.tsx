@@ -368,6 +368,7 @@ const StudentFaceSamplesManager: React.FC = () => {
   // Database Root-Cause Duplicate Merger states
   const [mergingAllDuplicates, setMergingAllDuplicates] = useState(false);
   const [recaptureDialogOpen, setRecaptureDialogOpen] = useState(false);
+  const [recaptureTargetGroup, setRecaptureTargetGroup] = useState<StudentGroup | null>(null);
 
   // Train from All Photos states
   const [trainingStudent, setTrainingStudent] = useState(false);
@@ -1893,6 +1894,7 @@ const StudentFaceSamplesManager: React.FC = () => {
                             onClick={(e) => {
                               e.stopPropagation();
                               setSelectedUserId(g.userId || g.employeeId);
+                              setRecaptureTargetGroup(g);
                               setRecaptureDialogOpen(true);
                             }}
                             className="h-7 w-7 rounded-lg text-muted-foreground hover:text-primary hover:bg-primary/15 opacity-0 group-hover:opacity-100 transition-all shrink-0"
@@ -1970,7 +1972,10 @@ const StudentFaceSamplesManager: React.FC = () => {
                   <Button
                     size="sm"
                     variant="default"
-                    onClick={() => setRecaptureDialogOpen(true)}
+                    onClick={() => {
+                      setRecaptureTargetGroup(selectedGroup);
+                      setRecaptureDialogOpen(true);
+                    }}
                     className="rounded-xl bg-gradient-to-r from-cyan-600 via-blue-600 to-indigo-600 hover:from-cyan-700 hover:to-indigo-700 text-white text-xs font-bold gap-1.5 shadow-md shadow-blue-500/20 active:scale-95 transition-all"
                   >
                     <ScanFace className="h-3.5 w-3.5" />
@@ -2351,25 +2356,35 @@ const StudentFaceSamplesManager: React.FC = () => {
       />
 
       {/* 3D Face Recapture Modal */}
-      <CaptureFaceDialog
-        open={recaptureDialogOpen}
-        onOpenChange={setRecaptureDialogOpen}
-        student={
-          selectedGroup
-            ? {
-                id: selectedGroup.userId || selectedGroup.employeeId,
-                user_id: selectedGroup.userId,
-                name: selectedGroup.name,
-                employee_id: selectedGroup.employeeId,
-                roll_number: selectedGroup.rollNumber,
-                category: selectedGroup.classSection,
-              }
-            : null
-        }
-        onSuccess={() => {
-          fetchSamples();
-        }}
-      />
+      {(() => {
+        const target = recaptureTargetGroup || selectedGroup;
+        return (
+          <CaptureFaceDialog
+            open={recaptureDialogOpen}
+            onOpenChange={(open) => {
+              setRecaptureDialogOpen(open);
+              if (!open) setRecaptureTargetGroup(null);
+            }}
+            student={
+              target
+                ? {
+                    id: target.userId || target.employeeId,
+                    user_id: target.userId,
+                    name: target.name,
+                    employee_id: target.employeeId,
+                    roll_number: target.rollNumber,
+                    category: target.classSection,
+                    classSection: target.classSection,
+                    avatarUrl: target.avatarUrl,
+                  }
+                : null
+            }
+            onSuccess={() => {
+              fetchSamples({ silent: true });
+            }}
+          />
+        );
+      })()}
 
       {/* Delete Student Entirely Confirmation Modal */}
       <Dialog

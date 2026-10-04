@@ -28,6 +28,7 @@ export default function StudentEnrollment() {
   const [error, setError] = useState('');
   const [pendingCorrections, setPendingCorrections] = useState(false);
   const [clock, setClock] = useState(Date.now());
+  const [replaceExisting, setReplaceExisting] = useState(true);
   const reduced = useReducedMotion();
   const staffStarted = useRef(false);
   const uploadedKeysRef = useRef<Set<string>>(new Set());
@@ -305,6 +306,28 @@ export default function StudentEnrollment() {
                     <p>Face a soft light and keep the camera at eye level. Follow the ring as we capture each angle automatically.</p>
                     <p className="flex gap-3"><Glasses className="shrink-0" size={20} />If the student wears glasses, we’ll take one photo without them, then the remaining views with them on.</p>
                   </div>
+                  {/* Face Data Strategy Option */}
+                  <div className="p-3.5 rounded-2xl bg-white/5 border border-white/10 space-y-2 text-left my-4">
+                    <label className="flex items-start gap-3 text-sm cursor-pointer select-none">
+                      <input
+                        type="checkbox"
+                        checked={replaceExisting}
+                        onChange={(e) => setReplaceExisting(e.target.checked)}
+                        className="mt-1 accent-emerald-500 rounded"
+                      />
+                      <div>
+                        <span className="font-semibold text-white flex items-center gap-1.5">
+                          {replaceExisting ? 'Clean Baseline: Erase & Replace Old Face Data' : 'Additive Mode: Keep & Merge with Old Face Data'}
+                        </span>
+                        <p className="text-xs text-white/60 mt-0.5 leading-relaxed">
+                          {replaceExisting
+                            ? 'Recommended: Completely erases old face captures and sets up a fresh 3D calibration.'
+                            : 'Appends these new photos alongside existing face records to expand angle and lighting coverage.'}
+                        </p>
+                      </div>
+                    </label>
+                  </div>
+
                   <label className="flex gap-3 text-sm leading-relaxed">
                     <input type="checkbox" checked={consent} onChange={e => setConsent(e.target.checked)} className="mt-1" />
                     I am the parent, guardian, or authorized school staff member. I agree to save these face samples for school attendance and confirm the student is present.
@@ -395,6 +418,7 @@ export default function StudentEnrollment() {
                           samples: result.samples,
                           wearsGlasses: result.wearsGlasses,
                           primaryPhotoUrl: primaryPhoto,
+                          replaceExisting,
                         }).catch((syncErr) => {
                           console.warn('Supabase descriptor sync non-fatal warning:', syncErr);
                           return { success: false, descriptorsCount: 0 };

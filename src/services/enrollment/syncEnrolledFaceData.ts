@@ -9,12 +9,14 @@ export interface SyncFaceDataOptions {
   samples: FaceSample[];
   wearsGlasses?: boolean;
   primaryPhotoUrl?: string;
+  replaceExisting?: boolean;
 }
 
 /**
  * Synchronizes newly enrolled face samples directly to Supabase and in-memory caches.
- * Completely removes any previous/old face descriptors and registration records for this student,
- * ensuring only fresh face data is stored and immediately used by real-time recognition engines.
+ * When replaceExisting is true (default), completely removes any previous/old face descriptors
+ * and registration records for this student, ensuring only fresh face data is stored.
+ * When replaceExisting is false, appends the new multi-angle descriptors.
  */
 export async function syncEnrolledFaceDataToSupabase({
   admission,
@@ -22,6 +24,7 @@ export async function syncEnrolledFaceDataToSupabase({
   samples,
   wearsGlasses = false,
   primaryPhotoUrl,
+  replaceExisting = true,
 }: SyncFaceDataOptions): Promise<{ success: boolean; descriptorsCount: number }> {
   const cleanAdmission = String(admission || '').trim();
   if (!cleanAdmission || !samples || samples.length === 0) {
@@ -55,15 +58,16 @@ export async function syncEnrolledFaceDataToSupabase({
 
     const finalPhotoUrl = primaryPhotoUrl || primarySample?.image || '';
 
-    // 3. COMPLETELY ERASE all prior face descriptors for this student
-    // This removes old/stale vectors across student_id and user_id
-    try {
-      await supabase
-        .from('face_descriptors')
-        .delete()
-        .or(`student_id.eq.${cleanAdmission},user_id.eq.${stableStudentUserId}`);
-    } catch (delErr) {
-      console.warn('[SyncFaceData] Notice during prior descriptor purge:', delErr);
+    // 3. Purge old descriptors if replaceExisting is true
+    if (replaceExisting) {
+      try {
+        await supabase
+          .from('face_descriptors')
+          .delete()
+          .or(`student_id.eq.${cleanAdmission},user_id.eq.${stableStudentUserId}`);
+      } catch (delErr) {
+        console.warn('[SyncFaceData] Notice during prior descriptor purge:', delErr);
+      }
     }
 
     // 4. Batch insert fresh multi-angle descriptors into face_descriptors table
