@@ -158,33 +158,17 @@ const KNOWN_TABLES = [
   'emergency_events',
   'notifications',
   'subjects',
-  'gate_passes',
-  'devices',
-  'settings',
-  'classes',
-  'audit_logs',
-  'enrollment_requests',
-  'student_corrections',
-  'push_subscriptions',
 ];
 
 const RESTORE_ORDER = [
   'user_roles',
   'profiles',
   'subjects',
-  'classes',
   'timetable',
   'face_descriptors',
   'attendance_records',
   'emergency_events',
   'notifications',
-  'gate_passes',
-  'devices',
-  'settings',
-  'audit_logs',
-  'enrollment_requests',
-  'student_corrections',
-  'push_subscriptions',
 ];
 
 const KNOWN_BUCKETS = [

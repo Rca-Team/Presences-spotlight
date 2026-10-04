@@ -385,9 +385,16 @@ export class AppwriteQueryBuilder<T = any> implements PromiseLike<{ data: T | nu
   private async readDocuments(all = false): Promise<{ documents: any[]; total: number }> {
     if (this.emptyResult) return { documents: [], total: 0 };
     if (this.headOnly && !this.mutation) {
-      const response = await databases.listDocuments(DATABASE_ID, this.collectionName,
-        [...this.queries.filter(q => !['limit', 'offset'].includes(JSON.parse(q).method)), Query.limit(1)]);
-      return { documents: [], total: response.total };
+      try {
+        const response = await databases.listDocuments(DATABASE_ID, this.collectionName,
+          [...this.queries.filter(q => { try { return !['limit', 'offset'].includes(JSON.parse(q).method); } catch { return true; } }), Query.limit(1)]);
+        return { documents: [], total: response.total };
+      } catch (err: any) {
+        if (err?.code === 404 || err?.message?.includes('could not be found') || err?.message?.includes('Collection with the requested ID')) {
+          return { documents: [], total: 0 };
+        }
+        throw err;
+      }
     }
     // Filter out any select query from network calls to avoid Appwrite 400 schema errors on 'id'
     const queries = this.queries.filter(q => {
@@ -434,6 +441,11 @@ export class AppwriteQueryBuilder<T = any> implements PromiseLike<{ data: T | nu
           queryCache.set(cacheKey, { data: result, expiresAt: Date.now() + ttl });
         }
         return result;
+      } catch (err: any) {
+        if (err?.code === 404 || err?.message?.includes('could not be found') || err?.message?.includes('Collection with the requested ID')) {
+          return { documents: [], total: 0 };
+        }
+        throw err;
       } finally {
         inFlightRequests.delete(cacheKey);
       }
