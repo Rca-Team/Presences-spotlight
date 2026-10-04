@@ -341,6 +341,16 @@ export const resolveStudentPhotoUrl = async (
 const coverPhotoCache = new Map<string, string>();
 const inFlightCoverPhoto = new Map<string, Promise<string | null>>();
 
+export function clearCoverPhotoCache(key?: string) {
+  if (key) {
+    coverPhotoCache.delete(key);
+    coverPhotoCache.delete(key.toLowerCase());
+  } else {
+    coverPhotoCache.clear();
+    inFlightCoverPhoto.clear();
+  }
+}
+
 /**
  * Get student's enrolled cover photo (profile avatar / registration photo),
  * NOT the webcam snapshot in which they were recognized.

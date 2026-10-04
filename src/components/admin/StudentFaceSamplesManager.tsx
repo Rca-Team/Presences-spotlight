@@ -61,7 +61,8 @@ import {
 import FaceSampleDeduplicationModal from './FaceSampleDeduplicationModal';
 import { normalizeClassSection } from '@/utils/studentIdentityResolver';
 import CaptureFaceDialog from './CaptureFaceDialog';
-import { resolveStudentPhotoUrl } from '@/utils/studentPhotoResolver';
+import { resolveStudentPhotoUrl, clearCoverPhotoCache } from '@/utils/studentPhotoResolver';
+import { invalidateCollectionCache } from '@/integrations/appwrite/adapter';
 import { universalDeleteStudent } from '@/services/student/studentDeletionService';
 import {
   scanDuplicateFaceSamples,
@@ -889,40 +890,42 @@ const StudentFaceSamplesManager: React.FC = () => {
     }
 
     try {
-      // 2. Update Profiles table
-      let profileUpdated = false;
+      // 2. Identify and update ONLY the single target profile document
+      let targetProfileDocId: string | null = null;
       if (targetUserId) {
-        const { error, count } = await supabase
-          .from('profiles')
-          .update({ avatar_url: persistentRef, updated_at: new Date().toISOString() })
-          .eq('user_id', targetUserId);
-        if (!error && (count ?? 1) > 0) profileUpdated = true;
+        const { data: p } = await supabase.from('profiles').select('id, user_id').eq('user_id', targetUserId).limit(1).maybeSingle();
+        if (p?.id) targetProfileDocId = p.id;
+      }
+      if (!targetProfileDocId && targetEmpId) {
+        const { data: p } = await supabase.from('profiles').select('id').eq('admission_number', targetEmpId).limit(1).maybeSingle();
+        if (p?.id) targetProfileDocId = p.id;
+      }
+      if (!targetProfileDocId && targetEmpId) {
+        const { data: p } = await supabase.from('profiles').select('id').eq('employee_id', targetEmpId).limit(1).maybeSingle();
+        if (p?.id) targetProfileDocId = p.id;
+      }
+      if (!targetProfileDocId && targetEmpId) {
+        const { data: p } = await supabase.from('profiles').select('id').eq('roll_number', targetEmpId).limit(1).maybeSingle();
+        if (p?.id) targetProfileDocId = p.id;
+      }
+      if (!targetProfileDocId && targetName && targetName !== 'Student' && targetName !== 'Unknown') {
+        const { data: p } = await supabase.from('profiles').select('id').eq('full_name', targetName).limit(1).maybeSingle();
+        if (p?.id) targetProfileDocId = p.id;
       }
 
-      if (!profileUpdated && targetEmpId) {
-        const { error, count } = await supabase
+      if (targetProfileDocId) {
+        await supabase
           .from('profiles')
           .update({ avatar_url: persistentRef, updated_at: new Date().toISOString() })
-          .or(`employee_id.eq.${targetEmpId},roll_number.eq.${targetEmpId},admission_number.eq.${targetEmpId}`);
-        if (!error && (count ?? 1) > 0) profileUpdated = true;
-      }
-
-      if (!profileUpdated && targetName && targetName !== 'Student' && targetName !== 'Unknown') {
-        const { error, count } = await supabase
-          .from('profiles')
-          .update({ avatar_url: persistentRef, updated_at: new Date().toISOString() })
-          .or(`full_name.ilike.${targetName},display_name.ilike.${targetName}`);
-        if (!error && (count ?? 1) > 0) profileUpdated = true;
-      }
-
-      // If no profile existed at all, insert one
-      if (!profileUpdated && (targetUserId || targetEmpId || targetName)) {
+          .eq('id', targetProfileDocId);
+      } else if (targetUserId || targetEmpId || targetName) {
         const classParts = (selectedGroup.classSection || '').split('-');
         const cls = classParts[0] || null;
         const sec = classParts[1] || null;
         await supabase.from('profiles').insert({
           user_id: targetUserId || `student-${targetEmpId || Date.now()}`,
           employee_id: targetEmpId || null,
+          admission_number: targetEmpId || null,
           full_name: targetName || 'Student',
           display_name: targetName || 'Student',
           avatar_url: persistentRef,
@@ -931,28 +934,41 @@ const StudentFaceSamplesManager: React.FC = () => {
         }).catch(() => {});
       }
 
-      // 3. Update attendance_records (for this student)
-      if (targetUserId) {
-        await supabase
-          .from('attendance_records')
-          .update({ image_url: persistentRef })
-          .eq('user_id', targetUserId)
-          .eq('status', 'registered');
-      }
+      // 3. Update attendance_records (for this specific student only)
       if (targetEmpId) {
         await supabase
           .from('attendance_records')
           .update({ image_url: persistentRef })
           .eq('student_id', targetEmpId)
           .eq('status', 'registered');
+      } else if (targetUserId) {
+        await supabase
+          .from('attendance_records')
+          .update({ image_url: persistentRef })
+          .eq('user_id', targetUserId)
+          .eq('status', 'registered');
       }
 
       // 4. Update face_descriptors
-      if (sample.source_table === 'face_descriptors') {
+      if (sample.source_table === 'face_descriptors' && sample.id) {
         await supabase
           .from('face_descriptors')
           .update({ image_url: persistentRef })
           .eq('id', sample.id);
+      } else if (targetEmpId) {
+        const { data: firstSlot } = await supabase
+          .from('face_descriptors')
+          .select('id')
+          .eq('student_id', targetEmpId)
+          .limit(1)
+          .maybeSingle();
+
+        if (firstSlot?.id) {
+          await supabase
+            .from('face_descriptors')
+            .update({ image_url: persistentRef })
+            .eq('id', firstSlot.id);
+        }
       } else if (targetUserId) {
         const { data: firstSlot } = await supabase
           .from('face_descriptors')
@@ -968,6 +984,12 @@ const StudentFaceSamplesManager: React.FC = () => {
             .eq('id', firstSlot.id);
         }
       }
+
+      // 5. Invalidate caches so other students' views are immediately pristine
+      invalidateCollectionCache('profiles');
+      clearCoverPhotoCache(targetUserId);
+      if (targetEmpId) clearCoverPhotoCache(targetEmpId);
+      if (targetName) clearCoverPhotoCache(targetName);
 
       toast({
         title: '★ Main Cover Photo Set',

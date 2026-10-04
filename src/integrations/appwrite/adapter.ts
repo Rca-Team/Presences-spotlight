@@ -287,6 +287,7 @@ export class AppwriteQueryBuilder<T = any> implements PromiseLike<{ data: T | nu
             const cleanCol = mapColumnName(col);
             if (op === 'eq') subQueries.push(Query.equal(cleanCol, val));
             else if (op === 'neq') subQueries.push(Query.notEqual(cleanCol, val));
+            else if (op === 'like' || op === 'ilike') subQueries.push(Query.search(cleanCol, val.replace(/%/g, '')));
           }
         }
         if (subQueries.length > 0) {
@@ -295,6 +296,7 @@ export class AppwriteQueryBuilder<T = any> implements PromiseLike<{ data: T | nu
         }
       }
     } catch (_) {}
+    this.emptyResult = true;
     return this;
   }
 
@@ -508,6 +510,11 @@ export class AppwriteQueryBuilder<T = any> implements PromiseLike<{ data: T | nu
             docs.push(await databases.createDocument(DATABASE_ID, this.collectionName, id || ID.unique(), payload));
           }
         } else {
+          // Critical safety check: Refuse to update or delete without any query filters!
+          if ((kind === 'update' || kind === 'delete') && this.queries.length === 0) {
+            console.error(`[AppwriteAdapter] Blocked dangerous unfiltered ${kind} on "${this.collectionName}"!`);
+            return { data: [], error: new Error(`Unfiltered bulk ${kind} is blocked for database safety.`), count: 0 };
+          }
           const matched = await this.readDocuments(true);
           for (const doc of matched.documents) {
             if (kind === 'update') docs.push(await databases.updateDocument(DATABASE_ID, this.collectionName, doc.$id, sanitizeDocForSave(data)));
