@@ -4,6 +4,7 @@ import { ArrowRight, Check, CheckCircle2, Fingerprint, Glasses, Loader2, LockKey
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import GuidedFaceCapture from '@/components/enrollment/GuidedFaceCapture';
+import IdCardPhotoStep from '@/components/enrollment/IdCardPhotoStep';
 import { enrollmentApi } from '@/services/enrollment/api';
 import { fieldLabels, studentFields, type CaptureResult, type EnrollmentSession, type StudentDetails } from '@/services/enrollment/types';
 import DobDatePicker from '@/components/enrollment/DobDatePicker';
@@ -15,7 +16,7 @@ export default function StudentEnrollment() {
   const [dob, setDob] = useState('');
   const [session, setSession] = useState<EnrollmentSession>();
   const [consent, setConsent] = useState(false);
-  const [phase, setPhase] = useState<'verify' | 'consent' | 'capture' | 'review' | 'done'>('verify');
+  const [phase, setPhase] = useState<'verify' | 'consent' | 'capture' | 'idphoto' | 'review' | 'done'>('verify');
   const [result, setResult] = useState<CaptureResult>();
   const [details, setDetails] = useState<StudentDetails>();
   const [editing, setEditing] = useState(false);
@@ -27,7 +28,24 @@ export default function StudentEnrollment() {
   const reduced = useReducedMotion();
   const staffStarted = useRef(false);
 
-  const onCapture = useCallback((capture: CaptureResult) => { setResult(capture); setPhase('review'); }, []);
+  const onCapture = useCallback((capture: CaptureResult) => { 
+    setResult(capture); 
+    setPhase('idphoto'); 
+  }, []);
+
+  const onIdPhotoConfirm = useCallback((finalPhotoUrl: string) => {
+    setResult((prev) => {
+      if (!prev) return prev;
+      const updatedSamples = prev.samples.map((s) => {
+        if (s.pose === 'front') {
+          return { ...s, image: finalPhotoUrl };
+        }
+        return s;
+      });
+      return { ...prev, samples: updatedSamples };
+    });
+    setPhase('review');
+  }, []);
   useEffect(() => { const timer = setInterval(() => setClock(Date.now()), 1000); return () => clearInterval(timer); }, []);
 
   const run = async (fn: () => Promise<void>) => {
@@ -85,11 +103,14 @@ export default function StudentEnrollment() {
           <h1>Your school day,<br /><span>ready in a few turns.</span></h1>
           <p>Help your child get ready for effortless attendance. Verify your details, follow the camera, and confirm their student card.</p>
           <div className="enrollment-steps">
-            {['Verify student', 'Capture student', 'Review ID card'].map((label, i) => (
-              <div key={label} className={(phase === 'verify' ? 0 : phase === 'consent' || phase === 'capture' ? 1 : 2) >= i ? 'active' : ''}>
-                <span>{i + 1}</span>{label}
-              </div>
-            ))}
+            {['Verify student', 'Capture face', 'ID card photo', 'Review & submit'].map((label, i) => {
+              const currentStep = phase === 'verify' ? 0 : phase === 'consent' || phase === 'capture' ? 1 : phase === 'idphoto' ? 2 : 3;
+              return (
+                <div key={label} className={currentStep >= i ? 'active' : ''}>
+                  <span>{i + 1}</span>{label}
+                </div>
+              );
+            })}
           </div>
           <div className="enrollment-assurance">
             <ShieldCheck size={20} />
@@ -188,6 +209,19 @@ export default function StudentEnrollment() {
                 <GuidedFaceCapture challenge={session.challenge} onComplete={onCapture} onCancel={() => void cancelCapture()} />
               )}
 
+              {phase === 'idphoto' && session && result && (
+                <IdCardPhotoStep
+                  student={session.student}
+                  defaultPhoto={
+                    result.samples.find(
+                      (s) => s.pose === 'front' && s.glasses === (result.wearsGlasses ? 'with' : 'without')
+                    )?.image || result.samples[0]?.image || ''
+                  }
+                  onConfirm={onIdPhotoConfirm}
+                  onBack={() => setPhase('capture')}
+                />
+              )}
+
               {phase === 'review' && result && details && (
                 <>
                   <div className="flex items-center gap-2 text-emerald-300 text-sm mb-5">
@@ -201,13 +235,21 @@ export default function StudentEnrollment() {
                       <img
                         src={result.samples.find(s => s.pose === 'front' && s.glasses === (result.wearsGlasses ? 'with' : 'without'))?.image}
                         alt="Captured student portrait"
-                        className="w-24 h-28 rounded-2xl object-cover ring-2 ring-emerald-400/30"
+                        className="w-24 h-28 rounded-2xl object-cover ring-2 ring-emerald-400/30 shadow-md"
                       />
                       <div>
                         <h2>{details.name}</h2>
                         <p className="mt-2 text-slate-300">Class {details.class} {details.section}</p>
                         <p className="text-sm font-mono mt-1 text-slate-400">{details.admission_number}</p>
                         {details.date_of_birth && <p className="text-xs text-emerald-300/80 mt-1">DOB: {details.date_of_birth}</p>}
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => setPhase('idphoto')}
+                          className="text-xs text-emerald-300 hover:text-emerald-200 mt-2 h-7 px-2"
+                        >
+                          Change / Edit ID Photo
+                        </Button>
                       </div>
                     </div>
                   </motion.div>

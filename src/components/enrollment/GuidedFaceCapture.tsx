@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
 import { motion, useReducedMotion } from 'framer-motion';
-import { Camera, Check, Glasses, RotateCcw, ScanFace, Sparkles, Volume2, VolumeX, ArrowLeft, ArrowRight, ArrowUp, ArrowDown, Eye, User, Upload } from 'lucide-react';
+import { Camera, Check, Glasses, RotateCcw, ScanFace, Sparkles, Volume2, VolumeX, ArrowLeft, ArrowRight, ArrowUp, ArrowDown, Eye, User } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { poses, type CaptureResult, type FaceSample, type Pose } from '@/services/enrollment/types';
 import { eyeOpenness, estimateFacePose, imageQuality } from '@/services/enrollment/captureQuality';
@@ -307,76 +307,6 @@ export default function GuidedFaceCapture({
       console.warn('Manual snap failed:', err);
     }
   }, [finishEnrollment, triggerBurst]);
-
-  // Alternative Method: Upload Photo from Device
-  const handleFileUpload = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-
-    const reader = new FileReader();
-    reader.onload = async (ev) => {
-      const dataUrl = ev.target?.result as string;
-      if (!dataUrl) return;
-
-      const img = new Image();
-      img.onload = async () => {
-        let descriptor: number[] | null = null;
-        try {
-          const faceapi = await import('face-api.js');
-          const det = await faceapi
-            .detectSingleFace(img, new faceapi.TinyFaceDetectorOptions({ inputSize: 320, scoreThreshold: 0.2 }))
-            .withFaceLandmarks()
-            .withFaceDescriptor();
-          if (det?.descriptor) descriptor = Array.from(det.descriptor);
-        } catch {}
-
-        if (!descriptor) {
-          const raw = Array.from({ length: 128 }, () => (Math.random() - 0.5) * 0.1);
-          const norm = Math.hypot(...raw) || 1;
-          descriptor = raw.map((x) => x / norm);
-        }
-
-        const c = document.createElement('canvas');
-        c.width = 384;
-        c.height = 384;
-        const ctx = c.getContext('2d');
-        if (ctx) {
-          const minDim = Math.min(img.width, img.height);
-          const sx = (img.width - minDim) / 2;
-          const sy = (img.height - minDim) / 2;
-          ctx.drawImage(img, sx, sy, minDim, minDim, 0, 0, 384, 384);
-        }
-        const portraitUrl = c.toDataURL('image/jpeg', 0.88);
-
-        const newSamples: FaceSample[] = [];
-        if (glasses.current) {
-          newSamples.push({
-            pose: 'front',
-            glasses: 'without',
-            descriptor: [...descriptor],
-            image: portraitUrl,
-            quality: { brightness: 120, sharpness: 30, faces: 1 },
-          });
-        }
-        for (const p of poses) {
-          newSamples.push({
-            pose: p,
-            glasses: glasses.current ? 'with' : 'without',
-            descriptor: [...descriptor],
-            image: portraitUrl,
-            quality: { brightness: 120, sharpness: 30, faces: 1 },
-          });
-        }
-
-        samples.current = newSamples;
-        for (let i = 0; i < TOTAL_TICKS; i++) activeTicksRef.current.add(i);
-        setProgress(newSamples.length);
-        finishEnrollment();
-      };
-      img.src = dataUrl;
-    };
-    reader.readAsDataURL(file);
-  }, [finishEnrollment]);
 
   // Apple Face ID 3D HUD Canvas Animation Loop
   useEffect(() => {
@@ -1014,9 +944,9 @@ export default function GuidedFaceCapture({
         </div>
       </motion.div>
 
-      {/* Alternative & Manual Controls */}
+      {/* Manual Override Snap Button */}
       {stage !== 'done' && (
-        <div className="w-full max-w-md mx-auto my-3 flex flex-col gap-2">
+        <div className="w-full max-w-md mx-auto my-3">
           <Button
             type="button"
             onClick={() => void handleManualCapture()}
@@ -1026,18 +956,6 @@ export default function GuidedFaceCapture({
             <Camera size={15} />
             <span>Snap View ({Math.min(progress + 1, totalRequired)}/{totalRequired})</span>
           </Button>
-          <div className="flex items-center justify-center">
-            <label className="text-xs text-slate-400 hover:text-emerald-300 flex items-center gap-1.5 cursor-pointer py-1 px-3 rounded-lg border border-dashed border-slate-700 hover:border-emerald-500/40 transition-colors bg-slate-900/40">
-              <Upload size={13} className="text-emerald-400" />
-              <span>Upload photo instead</span>
-              <input
-                type="file"
-                accept="image/*"
-                className="hidden"
-                onChange={handleFileUpload}
-              />
-            </label>
-          </div>
         </div>
       )}
 
