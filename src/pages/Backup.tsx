@@ -14,7 +14,8 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { useToast } from '@/hooks/use-toast';
 import { useUserRole } from '@/hooks/useUserRole';
 import { supabase } from '@/integrations/supabase/client';
-import { databases, storage, account, APPWRITE_CONFIG } from '@/integrations/appwrite/client';
+import { databases, storage, account, APPWRITE_CONFIG, getAppwriteStorageViewUrl } from '@/integrations/appwrite/client';
+import { storageFileId } from '@/integrations/appwrite/storage-id';
 import { Query } from 'appwrite';
 import {
   DatabaseBackup,
@@ -185,6 +186,41 @@ const KNOWN_BUCKETS = [
   'database-exports',
 ];
 
+export function resolveBucketId(rawBucket: string): string {
+  const norm = (rawBucket || '').trim().toLowerCase().replace(/_/g, '-');
+  if (norm.includes('registration')) return 'student-registration-faces';
+  if (norm.includes('training') || norm.includes('attendance')) return 'attendance-training-faces';
+  if (norm.includes('export') || norm.includes('backup')) return 'database-exports';
+  if (norm.includes('face') || norm.includes('avatar') || norm.includes('photo') || norm === 'public') return 'face-images';
+  return APPWRITE_CONFIG.buckets[rawBucket as keyof typeof APPWRITE_CONFIG.buckets] || rawBucket || 'face-images';
+}
+
+export function sanitizeStorageUrl(rawUrl: string, defaultBucket = 'face-images'): string {
+  const url = (rawUrl || '').trim();
+  if (!url) return '';
+  if (url.includes('/storage/buckets/') && url.includes('/view')) return url;
+  if (url.includes('supabase.co')) {
+    const match = url.match(/\/storage\/v1\/object\/(?:public|sign)\/([^/]+)\/(.*?)(?:\?|$)/);
+    if (match) {
+      const bucket = resolveBucketId(match[1]);
+      const fileId = storageFileId(decodeURIComponent(match[2]));
+      return getAppwriteStorageViewUrl(bucket, fileId);
+    }
+  }
+  if (!url.startsWith('http://') && !url.startsWith('https://') && !url.startsWith('data:')) {
+    const parts = url.replace(/^\/+/, '').split('/');
+    let bucket = defaultBucket;
+    let path = url;
+    if (parts.length > 1 && ['face-images', 'student-registration-faces', 'attendance-training-faces'].includes(parts[0])) {
+      bucket = parts[0];
+      path = parts.slice(1).join('/');
+    }
+    const fileId = storageFileId(path);
+    return getAppwriteStorageViewUrl(bucket, fileId);
+  }
+  return url;
+}
+
 async function executeClientBackupAction<T = any>(body: Record<string, unknown>): Promise<T> {
   const action = body.action as string;
 
@@ -275,28 +311,56 @@ async function executeClientBackupAction<T = any>(body: Record<string, unknown>)
   }
 
   if (action === 'list_storage_files') {
-    const bucket = body.bucket as string;
+    const rawBucket = body.bucket as string;
+    const bucket = resolveBucketId(rawBucket);
     try {
-      const res = await storage.listFiles(bucket, [Query.limit(100)]);
-      return { paths: res.files.map((f) => f.$id) } as unknown as T;
+      const allPaths: string[] = [];
+      let cursor: string | undefined = undefined;
+      while (true) {
+        const queries = [Query.limit(100)];
+        if (cursor) queries.push(Query.cursorAfter(cursor));
+        const res = await storage.listFiles(bucket, queries);
+        if (!res.files || res.files.length === 0) break;
+        for (const f of res.files) {
+          allPaths.push(f.$id);
+        }
+        if (res.files.length < 100) break;
+        const lastId = res.files[res.files.length - 1].$id;
+        if (lastId === cursor) break;
+        cursor = lastId;
+      }
+      return { paths: allPaths } as unknown as T;
     } catch (e) {
+      console.warn(`list_storage_files note on ${bucket}:`, e);
       return { paths: [] } as unknown as T;
     }
   }
 
   if (action === 'download_storage_file') {
-    const bucket = body.bucket as string;
+    const rawBucket = body.bucket as string;
+    const bucket = resolveBucketId(rawBucket);
     const path = body.path as string;
     try {
       const { data, error } = await supabase.storage.from(bucket).download(path);
       if (error || !data) {
-        throw new Error(error?.message || 'Download returned empty data');
+        const fileId = storageFileId(path);
+        const viewUrl = getAppwriteStorageViewUrl(bucket, fileId);
+        const resp = await fetch(viewUrl, { credentials: 'include' });
+        if (!resp.ok) throw new Error(error?.message || `Download failed: HTTP ${resp.status}`);
+        const blob = await resp.blob();
+        const arrayBuffer = await blob.arrayBuffer();
+        const base64 = uint8ArrayToBase64(new Uint8Array(arrayBuffer));
+        return {
+          path,
+          contentType: blob.type || 'image/jpeg',
+          base64,
+        } as unknown as T;
       }
       const arrayBuffer = await data.arrayBuffer();
       const base64 = uint8ArrayToBase64(new Uint8Array(arrayBuffer));
       return {
         path,
-        contentType: data.type || 'application/octet-stream',
+        contentType: data.type || 'image/jpeg',
         base64,
       } as unknown as T;
     } catch (e: any) {
@@ -314,6 +378,20 @@ async function executeClientBackupAction<T = any>(body: Record<string, unknown>)
       delete clean.$databaseId;
       delete clean.$collectionId;
       delete clean.$permissions;
+
+      if (clean.avatar_url && typeof clean.avatar_url === 'string') {
+        clean.avatar_url = sanitizeStorageUrl(clean.avatar_url, 'face-images');
+      }
+      if (clean.photo_url && typeof clean.photo_url === 'string') {
+        clean.photo_url = sanitizeStorageUrl(clean.photo_url, 'face-images');
+      }
+      if (clean.image_url && typeof clean.image_url === 'string') {
+        clean.image_url = sanitizeStorageUrl(
+          clean.image_url,
+          table === 'attendance_records' ? 'attendance-training-faces' : 'face-images'
+        );
+      }
+
       return clean;
     });
 
@@ -334,6 +412,14 @@ async function executeClientBackupAction<T = any>(body: Record<string, unknown>)
       delete clean.$databaseId;
       delete clean.$collectionId;
       delete clean.$permissions;
+
+      if (clean.avatar_url && typeof clean.avatar_url === 'string') {
+        clean.avatar_url = sanitizeStorageUrl(clean.avatar_url, 'face-images');
+      }
+      if (clean.photo_url && typeof clean.photo_url === 'string') {
+        clean.photo_url = sanitizeStorageUrl(clean.photo_url, 'face-images');
+      }
+
       return clean;
     });
 
@@ -350,16 +436,24 @@ async function executeClientBackupAction<T = any>(body: Record<string, unknown>)
   }
 
   if (action === 'upload_storage_file') {
-    const bucket = body.bucket as string;
+    const rawBucket = body.bucket as string;
+    const bucket = resolveBucketId(rawBucket);
     const path = body.path as string;
     const base64 = body.base64 as string;
-    const contentType = (body.contentType as string) || 'application/octet-stream';
+    if (!base64) {
+      return { success: false, skipped: true } as unknown as T;
+    }
+    const ext = path.split('.').pop()?.toLowerCase();
+    const contentType =
+      (body.contentType as string) ||
+      (ext === 'png' ? 'image/png' : ext === 'webp' ? 'image/webp' : ext === 'json' ? 'application/json' : 'image/jpeg');
 
     const bytes = base64ToUint8Array(base64);
     const blob = new Blob([bytes], { type: contentType });
-    const { error } = await supabase.storage.from(bucket).upload(path, blob);
+    const { error } = await supabase.storage.from(bucket).upload(path, blob, { upsert: true });
     if (error) {
       console.warn(`Upload storage notice on ${bucket}/${path}:`, error);
+      throw error;
     }
     return { success: true } as unknown as T;
   }
@@ -667,20 +761,80 @@ async function inspectBackupFile(file: File): Promise<PackageInspection> {
           backup.authUsers = JSON.parse(await authFile.async('text'));
         } catch (_) {}
       }
+    }
 
-      const storageFiles = Object.keys(zip.files).filter((k) => k.startsWith('storage/') && !zip.files[k].dir);
-      for (const sf of storageFiles) {
-        const parts = sf.split('/');
+    // Always scan all binary files in the zip archive for student photos & storage files!
+    if (!backup.storage) backup.storage = {};
+
+    for (const [entryPath, zipObj] of Object.entries(zip.files)) {
+      if (zipObj.dir) continue;
+      // Skip non-storage metadata files
+      if (
+        entryPath === 'backup_full.json' ||
+        entryPath === 'manifest.json' ||
+        entryPath.startsWith('database/') ||
+        entryPath.startsWith('auth/')
+      ) {
+        continue;
+      }
+
+      let bucket: string | null = null;
+      let filePath: string | null = null;
+
+      if (entryPath.startsWith('storage/')) {
+        const parts = entryPath.split('/');
         if (parts.length >= 3) {
-          const bucket = parts[1];
-          const path = parts.slice(2).join('/');
-          if (!backup.storage[bucket]) backup.storage[bucket] = [];
-          const fileBytes = await zip.file(sf)!.async('uint8array');
-          backup.storage[bucket].push({
-            path,
-            contentType: null,
-            base64: uint8ArrayToBase64(fileBytes),
-          });
+          bucket = parts[1];
+          filePath = parts.slice(2).join('/');
+        }
+      } else {
+        const parts = entryPath.split('/');
+        if (parts.length >= 2) {
+          const first = parts[0].toLowerCase().replace(/_/g, '-');
+          if (
+            first.includes('face') ||
+            first.includes('registration') ||
+            first.includes('training') ||
+            first.includes('attendance') ||
+            first.includes('export')
+          ) {
+            bucket = parts[0];
+            filePath = parts.slice(1).join('/');
+          }
+        }
+      }
+
+      if (bucket && filePath) {
+        const resolvedBucket = resolveBucketId(bucket);
+        if (!backup.storage[resolvedBucket]) backup.storage[resolvedBucket] = [];
+
+        const existingIdx = backup.storage[resolvedBucket].findIndex((f) => f.path === filePath);
+        if (existingIdx >= 0 && backup.storage[resolvedBucket][existingIdx].base64) {
+          // Already has base64 data
+        } else {
+          try {
+            const fileBytes = await zipObj.async('uint8array');
+            if (fileBytes && fileBytes.length > 0) {
+              const base64 = uint8ArrayToBase64(fileBytes);
+              const ext = filePath.split('.').pop()?.toLowerCase();
+              const contentType =
+                ext === 'png' ? 'image/png' : ext === 'webp' ? 'image/webp' : ext === 'json' ? 'application/json' : 'image/jpeg';
+              if (existingIdx >= 0) {
+                backup.storage[resolvedBucket][existingIdx].base64 = base64;
+                if (!backup.storage[resolvedBucket][existingIdx].contentType) {
+                  backup.storage[resolvedBucket][existingIdx].contentType = contentType;
+                }
+              } else {
+                backup.storage[resolvedBucket].push({
+                  path: filePath,
+                  contentType,
+                  base64,
+                });
+              }
+            }
+          } catch (readErr) {
+            console.warn(`Failed reading binary for ${entryPath}:`, readErr);
+          }
         }
       }
     }
@@ -838,35 +992,76 @@ async function restoreFromCloudZipOrJson(
 
   // 3. Restore Storage Buckets & Files
   if (settings.includeStorage && backup.storage) {
-    for (const [bucket, files] of Object.entries(backup.storage)) {
+    onProgress({ phase: 'importing_storage', label: 'Restoring student photos & biometric storage files...', total: grandTotal, done });
+
+    for (const [rawBucket, files] of Object.entries(backup.storage)) {
       if (!files || files.length === 0) continue;
+      const bucket = resolveBucketId(rawBucket);
 
-      for (let i = 0; i < files.length; i++) {
-        const fileItem = files[i];
-        onProgress({
-          phase: 'importing_storage',
-          currentScope: `${bucket}/${fileItem.path}`,
-          label: `Uploading storage file [${bucket}] ${i + 1}/${files.length}`,
-          done,
-          total: grandTotal,
-          pct: Math.min(98, Math.round((done / Math.max(1, grandTotal)) * 100)),
-        });
+      const CONCURRENCY = 4;
+      for (let i = 0; i < files.length; i += CONCURRENCY) {
+        const chunk = files.slice(i, i + CONCURRENCY);
+        await Promise.all(
+          chunk.map(async (fileItem, idx) => {
+            const currentIdx = i + idx;
+            onProgress({
+              phase: 'importing_storage',
+              currentScope: `${bucket}/${fileItem.path}`,
+              label: `Restoring storage file [${bucket}] (${currentIdx + 1}/${files.length})`,
+              done,
+              total: grandTotal,
+              pct: Math.min(98, Math.round((done / Math.max(1, grandTotal)) * 100)),
+            });
 
-        try {
-          await invokeAction({
-            action: 'upload_storage_file',
-            bucket,
-            path: fileItem.path,
-            base64: fileItem.base64,
-            contentType: fileItem.contentType,
-          });
-          report.storageFilesRestored += 1;
-        } catch (e: any) {
-          report.errors.push({ scope: `${bucket}/${fileItem.path}`, message: e?.message || 'upload failed' });
-        }
-        done += 2;
+            if (!fileItem.base64) {
+              return;
+            }
+
+            try {
+              await invokeAction({
+                action: 'upload_storage_file',
+                bucket,
+                path: fileItem.path,
+                base64: fileItem.base64,
+                contentType: fileItem.contentType,
+              });
+              report.storageFilesRestored += 1;
+            } catch (e: any) {
+              console.warn(`Storage file upload notice on ${bucket}/${fileItem.path}:`, e?.message || e);
+              report.errors.push({ scope: `${bucket}/${fileItem.path}`, message: e?.message || 'upload failed' });
+            }
+          })
+        );
+        done += chunk.length * 2;
       }
     }
+  }
+
+  // 4. Post-Restore Student Storage Cross-Healing
+  try {
+    const { data: profs } = await supabase.from('profiles').select('id, user_id, admission_number, employee_id, avatar_url, photo_url');
+    if (profs && profs.length > 0) {
+      const storageFaceFiles = backup.storage ? Object.values(backup.storage).flat() : [];
+      const fileMapByLowerName = new Map<string, string>();
+      for (const f of storageFaceFiles) {
+        const fname = f.path.split('/').pop()?.toLowerCase() || '';
+        if (fname) fileMapByLowerName.set(fname, f.path);
+      }
+
+      for (const p of profs) {
+        if (!p.avatar_url && !p.photo_url) {
+          const adm = String(p.admission_number || p.employee_id || '').trim().toLowerCase();
+          const uid = String(p.user_id || '').trim().toLowerCase();
+          const matchedPath = fileMapByLowerName.get(`${adm}.jpg`) || fileMapByLowerName.get(`${adm}.png`) || (uid ? fileMapByLowerName.get(`${uid}.jpg`) : null);
+          if (matchedPath) {
+            const targetUrl = getAppwriteStorageViewUrl('face-images', storageFileId(matchedPath));
+            await supabase.from('profiles').update({ avatar_url: targetUrl }).eq('id', p.id);
+          }
+        }
+      }
+    }
+  } catch (postHealErr) {
+    console.warn('Post-restore photo cross-healing non-fatal note:', postHealErr);
   }
 
   onProgress({ phase: 'done', label: 'Cloud restoration completed successfully!', pct: 100, done: grandTotal, total: grandTotal });

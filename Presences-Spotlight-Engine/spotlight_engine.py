@@ -1,19 +1,10 @@
 """
-Presences Spotlight AI — Enterprise Gate Attendance Engine
-Walk-Through, Zero-Lag, Multi-Student Face Recognition Edge Terminal for Schools (2,000+ Students)
-
-Key Capabilities:
-- Single PoE RTSP / USB Camera Ingest (Zero-Lag Bufferless Threading)
-- Multi-Student Centroid & IOU Tracker with Best-Shot Face Quality Selection
-- Multi-Frame Consensus Voting (Requires 3+ consecutive matching frames to prevent false marks)
-- Vectorized In-Memory Matrix Matching (<1ms for 2,000+ student embeddings)
-- Ambiguity Ratio Protection (Rejects similar-looking / twin false positives)
-- Offline-First Local SQLite Queue with Auto-Sync to Supabase Cloud
-- 1-Student-1-Email-Per-Day Automated Parent Notification Trigger
-- High-Tech Kiosk HUD Overlay & Audio Chime Confirmation
+Presences Spotlight AI — Enterprise Gate Attendance Engine (Appwrite + Google Pipeline)
+Walk-Through, Zero-Lag, Multi-Student Edge Terminal for Schools & Campuses (2,000+ Students)
 """
 
-import os
+import warnings
+warnings.filterwarnings('ignore')
 import sys
 import time
 import json
@@ -25,7 +16,7 @@ import threading
 import subprocess
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import List, Dict, Tuple, Optional
+from typing import List, Dict, Tuple, Optional, Any
 
 import cv2
 import numpy as np
@@ -33,14 +24,7 @@ import requests
 
 import config
 from sound_generator import generate_chime
-
-# ─── Face Recognition Model Loading ──────────────────────────────────────────
-FACE_RECOG_AVAILABLE = False
-try:
-    import face_recognition
-    FACE_RECOG_AVAILABLE = True
-except ImportError:
-    print("[Spotlight Notice] 'face_recognition' (dlib) not found. Falling back to OpenCV Cascade Detector.")
+from google_pipeline import GoogleFacePipeline, GoogleFaceData, GoogleGeminiAuditor
 
 # ─── Audio Backend Initialization ─────────────────────────────────────────────
 AUDIO_BACKEND = "none"
@@ -60,7 +44,7 @@ else:
 
 
 def is_valid_uuid(val: Optional[str]) -> bool:
-    """Checks if a string is a valid UUID format for PostgreSQL."""
+    """Checks if a string is a valid UUID format."""
     if not val:
         return False
     try:
@@ -75,7 +59,6 @@ class RTSPVideoStream:
     """Continuous background RTSP/Webcam grabber with automatic reconnect and zero buffer lag."""
     def __init__(self, src=config.RTSP_URL, width=config.CAMERA_WIDTH, height=config.CAMERA_HEIGHT):
         self.src = src
-        # Check if src is integer string (e.g. "0")
         try:
             self.src_id = int(src)
         except ValueError:
@@ -100,7 +83,6 @@ class RTSPVideoStream:
                 self.cap.release()
 
             if isinstance(self.src_id, str) and self.src_id.startswith("rtsp://"):
-                # Use FFMPEG backend with TCP transport & 5-second socket timeout for rock-solid RTSP
                 os.environ["OPENCV_FFMPEG_CAPTURE_OPTIONS"] = "rtsp_transport;tcp|stimeout;5000000"
                 self.cap = cv2.VideoCapture(self.src_id, cv2.CAP_FFMPEG)
             else:
@@ -111,9 +93,9 @@ class RTSPVideoStream:
                 self.cap.set(cv2.CAP_PROP_FRAME_HEIGHT, self.height)
                 self.cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
                 self.grabbed, self.frame = self.cap.read()
-                print(f"[Spotlight Camera] Connected successfully to stream source ({self.width}x{self.height}).")
+                print(f"[Spotlight Camera] Connected successfully to source ({self.width}x{self.height}).")
             else:
-                print(f"[Spotlight Camera Warning] Unable to open video source: {self.src}. Will retry in background...")
+                print(f"[Spotlight Camera Warning] Unable to open video source: {self.src}. Retrying...")
         except Exception as err:
             print(f"[Spotlight Camera Error] Stream initialization exception: {err}")
 
@@ -134,7 +116,7 @@ class RTSPVideoStream:
             if not grabbed or frame is None:
                 consecutive_failures += 1
                 if consecutive_failures > 20:
-                    print("[Spotlight Camera] 20 consecutive frame drops detected. Re-establishing RTSP link...")
+                    print("[Spotlight Camera] 20 frame drops detected. Re-establishing link...")
                     self._connect()
                     consecutive_failures = 0
                 time.sleep(0.04)
@@ -186,10 +168,16 @@ class LocalDatabase:
                     student_name TEXT,
                     class_name TEXT,
                     section TEXT,
+                    parent_email TEXT,
                     descriptor_json TEXT,
                     updated_at TEXT
                 )
             """)
+            # Migration check: add parent_email column if not exists
+            try:
+                cursor.execute("ALTER TABLE cached_students ADD COLUMN parent_email TEXT")
+            except Exception:
+                pass
             cursor.execute("""
                 CREATE TABLE IF NOT EXISTS offline_queue (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -257,10 +245,12 @@ class LocalDatabase:
             cursor = conn.cursor()
             cursor.execute("DELETE FROM cached_students")
             for s in students:
+                desc = s.get("descriptor")
+                desc_list = desc.tolist() if hasattr(desc, "tolist") else desc
                 cursor.execute("""
                     INSERT OR REPLACE INTO cached_students 
-                    (id, user_id, student_id, student_name, class_name, section, descriptor_json, updated_at)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                    (id, user_id, student_id, student_name, class_name, section, parent_email, descriptor_json, updated_at)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """, (
                     str(s.get("id")),
                     s.get("user_id"),
@@ -268,7 +258,8 @@ class LocalDatabase:
                     s.get("student_name"),
                     s.get("class_name"),
                     s.get("section"),
-                    json.dumps(s.get("descriptor").tolist() if hasattr(s.get("descriptor"), "tolist") else s.get("descriptor")),
+                    s.get("parent_email"),
+                    json.dumps(desc_list),
                     datetime.now(timezone.utc).isoformat()
                 ))
             conn.commit()
@@ -276,12 +267,12 @@ class LocalDatabase:
     def get_cached_students(self) -> List[Dict]:
         with self._get_connection() as conn:
             cursor = conn.cursor()
-            cursor.execute("SELECT id, user_id, student_id, student_name, class_name, section, descriptor_json FROM cached_students")
+            cursor.execute("SELECT id, user_id, student_id, student_name, class_name, section, parent_email, descriptor_json FROM cached_students")
             rows = cursor.fetchall()
             students = []
             for r in rows:
                 try:
-                    desc = json.loads(r[6])
+                    desc = json.loads(r[7])
                     if desc:
                         students.append({
                             "id": r[0],
@@ -290,6 +281,7 @@ class LocalDatabase:
                             "student_name": r[3],
                             "class_name": r[4],
                             "section": r[5],
+                            "parent_email": r[6],
                             "descriptor": np.array(desc, dtype=np.float32)
                         })
                 except Exception:
@@ -325,23 +317,9 @@ class LocalDatabase:
             conn.commit()
 
 
-# ─── Appwrite Python SDK Initialization ──────────────────────────────────────
-APPWRITE_SDK_AVAILABLE = False
-try:
-    from appwrite.client import Client as AppwriteClient
-    from appwrite.services.databases import Databases as AppwriteDatabases
-    from appwrite.services.storage import Storage as AppwriteStorage
-    from appwrite.query import Query as AppwriteQuery
-    from appwrite.id import ID as AppwriteID
-    from appwrite.input_file import InputFile as AppwriteInputFile
-    APPWRITE_SDK_AVAILABLE = True
-except ImportError:
-    pass
-
-
-# ─── 3. Appwrite Official Python SDK Backend Client ──────────────────────────
+# ─── Appwrite Python SDK Backend Client ───────────────────────────────────────
 class AppwriteSync:
-    """Communicates directly with Appwrite Cloud / Self-Hosted using the official Python SDK."""
+    """Communicates directly with Appwrite Cloud using the official Python SDK."""
     def __init__(self, db: LocalDatabase):
         self.db = db
         self.endpoint = config.APPWRITE_ENDPOINT
@@ -354,8 +332,12 @@ class AppwriteSync:
         self.databases = None
         self.storage = None
 
-        if APPWRITE_SDK_AVAILABLE and self.project_id:
+        if self.project_id:
             try:
+                from appwrite.client import Client as AppwriteClient
+                from appwrite.services.databases import Databases as AppwriteDatabases
+                from appwrite.services.storage import Storage as AppwriteStorage
+
                 self.client = AppwriteClient()
                 self.client.set_endpoint(self.endpoint)
                 self.client.set_project(self.project_id)
@@ -363,161 +345,143 @@ class AppwriteSync:
                     self.client.set_key(self.api_key)
                 self.databases = AppwriteDatabases(self.client)
                 self.storage = AppwriteStorage(self.client)
-                print(f"[Spotlight AppwriteSDK] Native Python SDK connected to project {self.project_id[:6]}... ({self.endpoint})")
+                print(f"[Spotlight Appwrite] Native Python SDK connected ({self.endpoint})")
             except Exception as e:
-                print(f"[Spotlight AppwriteSDK Warning] Init failed: {e}")
+                print(f"[Spotlight Appwrite Warning] Init note: {e}")
 
     def fetch_enrolled_faces(self) -> List[Dict]:
-        """Loads all student face vector models from Appwrite face_descriptors collection."""
+        """Loads all student face vector models from Appwrite with full pagination."""
         enrolled = []
         try:
+            from appwrite.query import Query as AppwriteQuery
+
             if self.databases:
-                # 1. Fetch profiles mapping
+                # 1. Fetch user profiles mapping
                 profile_map = {}
+                parent_email_map = {}
                 try:
-                    prof_resp = self.databases.list_documents(
-                        database_id=self.db_id,
-                        collection_id='profiles',
-                        queries=[AppwriteQuery.limit(100)]
-                    )
-                    for p in prof_resp.get('documents', []):
-                        p_name = p.get('full_name') or p.get('display_name') or p.get('email')
-                        uid = p.get('user_id') or p.get('$id')
-                        if uid and p_name:
-                            profile_map[uid] = p_name
+                    p_offset = 0
+                    while True:
+                        prof_resp = self.databases.list_documents(
+                            database_id=self.db_id,
+                            collection_id='profiles',
+                            queries=[AppwriteQuery.limit(100), AppwriteQuery.offset(p_offset)]
+                        )
+                        p_docs = getattr(prof_resp, 'documents', None) or (prof_resp.get('documents', []) if isinstance(prof_resp, dict) else [])
+                        if not p_docs:
+                            break
+                        for p in p_docs:
+                            p_data = getattr(p, 'data', None) or (p if isinstance(p, dict) else {})
+                            p_name = p_data.get('full_name') or p_data.get('display_name') or p_data.get('name')
+                            uid = p_data.get('user_id') or getattr(p, 'id', None) or getattr(p, '$id', None)
+                            p_email = p_data.get('parent_email') or p_data.get('email')
+                            if uid and p_name:
+                                profile_map[str(uid)] = p_name
+                            if uid and p_email:
+                                parent_email_map[str(uid)] = p_email
+                        p_offset += len(p_docs)
+                        p_total = getattr(prof_resp, 'total', None) or (prof_resp.get('total', 0) if isinstance(prof_resp, dict) else 0)
+                        if p_offset >= p_total:
+                            break
                 except Exception:
                     pass
 
                 # 2. Paginated face descriptors fetch
                 offset = 0
                 limit = 100
-                total_docs = []
                 while True:
                     resp = self.databases.list_documents(
                         database_id=self.db_id,
                         collection_id='face_descriptors',
                         queries=[AppwriteQuery.limit(limit), AppwriteQuery.offset(offset)]
                     )
-                    docs = resp.get('documents', [])
+                    docs = getattr(resp, 'documents', None) or (resp.get('documents', []) if isinstance(resp, dict) else [])
                     if not docs:
                         break
-                    total_docs.extend(docs)
+
+                    for item in docs:
+                        item_data = getattr(item, 'data', None) or (item if isinstance(item, dict) else {})
+                        doc_id = getattr(item, 'id', None) or getattr(item, '$id', None) or item_data.get('$id') or str(uuid.uuid4())
+
+                        raw_desc = item_data.get("descriptor") or item_data.get("descriptors")
+                        if not raw_desc:
+                            continue
+                        if isinstance(raw_desc, str):
+                            try:
+                                raw_desc = json.loads(raw_desc)
+                            except Exception:
+                                continue
+
+                        vectors = []
+                        if isinstance(raw_desc, list) and len(raw_desc) > 0:
+                            if isinstance(raw_desc[0], list):
+                                for v in raw_desc:
+                                    if len(v) == 128:
+                                        vectors.append(v)
+                            elif len(raw_desc) == 128:
+                                vectors.append(raw_desc)
+
+                        if not vectors:
+                            continue
+
+                        uid = item_data.get("user_id")
+                        student_id = item_data.get("student_id") or uid
+                        label = item_data.get("label") or item_data.get("student_name")
+                        meta = item_data.get("metadata")
+                        if isinstance(meta, str):
+                            try:
+                                meta = json.loads(meta)
+                            except Exception:
+                                meta = {}
+                        meta_name = meta.get("name") if isinstance(meta, dict) else None
+
+                        resolved_name = (
+                            label
+                            or meta_name
+                            or (profile_map.get(str(uid)) if uid else None)
+                            or (f"Student {student_id}" if student_id else "Student")
+                        )
+                        resolved_parent_email = (
+                            (parent_email_map.get(str(uid)) if uid else None)
+                            or item_data.get("parent_email")
+                        )
+
+                        for idx, vec in enumerate(vectors):
+                            enrolled.append({
+                                "id": f"{doc_id}_{idx}",
+                                "user_id": uid,
+                                "student_id": student_id,
+                                "student_name": resolved_name,
+                                "parent_email": resolved_parent_email,
+                                "class_name": item_data.get("class"),
+                                "section": item_data.get("section"),
+                                "descriptor": np.array(vec, dtype=np.float32)
+                            })
+
                     offset += len(docs)
-                    if offset >= resp.get('total', 0):
+                    total = getattr(resp, 'total', None) or (resp.get('total', 0) if isinstance(resp, dict) else 0)
+                    if offset >= total:
                         break
 
-                for item in total_docs:
-                    raw_desc = item.get("descriptor") or item.get("descriptors")
-                    if not raw_desc:
-                        continue
-                    if isinstance(raw_desc, str):
-                        try:
-                            raw_desc = json.loads(raw_desc)
-                        except Exception:
-                            continue
-
-                    vectors = []
-                    if isinstance(raw_desc, list) and len(raw_desc) > 0:
-                        if isinstance(raw_desc[0], list):
-                            for v in raw_desc:
-                                if len(v) in (128, 512):
-                                    vectors.append(v)
-                        elif len(raw_desc) in (128, 512):
-                            vectors.append(raw_desc)
-
-                    if not vectors:
-                        continue
-
-                    uid = item.get("user_id")
-                    meta = item.get("metadata")
-                    if isinstance(meta, str):
-                        try:
-                            meta = json.loads(meta)
-                        except Exception:
-                            meta = {}
-                    meta_name = meta.get("name") if isinstance(meta, dict) else None
-
-                    resolved_name = (
-                        item.get("student_name")
-                        or item.get("label")
-                        or meta_name
-                        or profile_map.get(uid)
-                        or (f"Student {item.get('student_id')}" if item.get("student_id") else "Student")
-                    )
-
-                    for idx, vec in enumerate(vectors):
-                        enrolled.append({
-                            "id": f"{item.get('$id', item.get('id', 'doc'))}_{idx}",
-                            "user_id": uid if is_valid_uuid(uid) else None,
-                            "student_id": item.get("student_id") or uid,
-                            "student_name": resolved_name,
-                            "class_name": item.get("class"),
-                            "section": item.get("section"),
-                            "descriptor": np.array(vec, dtype=np.float32)
-                        })
-
                 distinct_names = set(s["student_name"] for s in enrolled)
-                print(f"[Spotlight AppwriteSDK] Loaded {len(distinct_names)} students ({len(enrolled)} models) via official Python SDK.")
+                print(f"[Spotlight Appwrite] Loaded {len(distinct_names)} distinct students ({len(enrolled)} vector models) from Appwrite Cloud.")
                 return enrolled
 
-            # Fallback to Appwrite REST API if SDK not available
-            headers = {
-                "X-Appwrite-Project": self.project_id,
-                "Content-Type": "application/json"
-            }
-            if self.api_key:
-                headers["X-Appwrite-Key"] = self.api_key
-
-            res = requests.get(
-                f"{self.endpoint}/databases/{self.db_id}/collections/face_descriptors/documents?limit=100",
-                headers=headers,
-                timeout=8
-            )
-            if res.status_code == 200:
-                data = res.json().get('documents', [])
-                for item in data:
-                    raw_desc = item.get("descriptor") or item.get("descriptors")
-                    if not raw_desc:
-                        continue
-                    if isinstance(raw_desc, str):
-                        try:
-                            raw_desc = json.loads(raw_desc)
-                        except Exception:
-                            continue
-                    vectors = []
-                    if isinstance(raw_desc, list) and len(raw_desc) > 0:
-                        if isinstance(raw_desc[0], list):
-                            for v in raw_desc:
-                                if len(v) in (128, 512):
-                                    vectors.append(v)
-                        elif len(raw_desc) in (128, 512):
-                            vectors.append(raw_desc)
-                    if not vectors:
-                        continue
-                    name = item.get("student_name") or item.get("label") or "Student"
-                    for idx, vec in enumerate(vectors):
-                        enrolled.append({
-                            "id": f"{item.get('$id')}_{idx}",
-                            "student_id": item.get("student_id"),
-                            "student_name": name,
-                            "class_name": item.get("class"),
-                            "section": item.get("section"),
-                            "descriptor": np.array(vec, dtype=np.float32)
-                        })
-                return enrolled
         except Exception as err:
-            print(f"[Spotlight AppwriteSDK Error] {err}")
+            print(f"[Spotlight Appwrite Error] {err}")
         return []
 
     def post_attendance(self, payload: Dict) -> bool:
         """Records attendance directly into Appwrite attendance_records collection."""
         try:
+            from appwrite.id import ID as AppwriteID
+
             clean_payload = dict(payload)
             if isinstance(clean_payload.get("device_info"), dict):
                 clean_payload["device_info"] = json.dumps(clean_payload["device_info"])
 
             if self.databases:
-                doc_id = AppwriteID.unique() if APPWRITE_SDK_AVAILABLE else str(uuid.uuid4()).replace('-', '')[:36]
+                doc_id = AppwriteID.unique()
                 self.databases.create_document(
                     database_id=self.db_id,
                     collection_id='attendance_records',
@@ -526,17 +490,11 @@ class AppwriteSync:
                 )
                 return True
 
-            headers = {
-                "X-Appwrite-Project": self.project_id,
-                "Content-Type": "application/json"
-            }
+            headers = {"X-Appwrite-Project": self.project_id, "Content-Type": "application/json"}
             if self.api_key:
                 headers["X-Appwrite-Key"] = self.api_key
 
-            body = {
-                "documentId": "unique()",
-                "data": clean_payload
-            }
+            body = {"documentId": "unique()", "data": clean_payload}
             res = requests.post(
                 f"{self.endpoint}/databases/{self.db_id}/collections/attendance_records/documents",
                 headers=headers,
@@ -548,162 +506,19 @@ class AppwriteSync:
             print(f"[Spotlight Appwrite Post Error] {err}")
             return False
 
-    def upload_face_frame(self, frame: np.ndarray, student_id: str) -> Optional[str]:
-        """Encodes frame to JPEG and saves snapshot to Appwrite face-images storage bucket."""
-        try:
-            if not APPWRITE_SDK_AVAILABLE or not self.storage:
-                return None
-            ret, buf = cv2.imencode('.jpg', frame, [int(cv2.IMWRITE_JPEG_QUALITY), 85])
-            if not ret:
-                return None
-            jpg_bytes = buf.tobytes()
-            file_id = AppwriteID.unique()
-            uploaded = self.storage.create_file(
-                bucket_id=self.bucket_id,
-                file_id=file_id,
-                file=AppwriteInputFile.from_bytes(jpg_bytes, filename=f"gate_{student_id}_{int(time.time())}.jpg", mime_type="image/jpeg")
-            )
-            if uploaded:
-                return f"{self.endpoint}/storage/buckets/{self.bucket_id}/files/{file_id}/view?project={self.project_id}"
-        except Exception as e:
-            print(f"[Spotlight Appwrite Storage Warning] Could not upload frame: {e}")
-        return None
 
-
-# ─── 4. Supabase Cloud Sync Client ───────────────────────────────────────────
-class SupabaseSync:
-    """Communicates with Supabase REST and Edge Functions asynchronously."""
-    def __init__(self, db: LocalDatabase):
-        self.db = db
-        self.url = config.SUPABASE_URL.rstrip('/')
-        self.key = config.SUPABASE_KEY
-        self.headers = {
-            "apikey": self.key,
-            "Authorization": f"Bearer {self.key}",
-            "Content-Type": "application/json",
-            "Prefer": "return=minimal"
-        }
-
-    def fetch_enrolled_faces(self) -> List[Dict]:
-        """Loads all student profiles and vector descriptors from Supabase."""
-        try:
-            # 1. Fetch user profiles
-            profiles_endpoint = f"{self.url}/rest/v1/profiles?select=id,user_id,full_name,display_name,email,class,section"
-            p_res = requests.get(profiles_endpoint, headers=self.headers, timeout=8)
-            profile_map = {}
-            if p_res.status_code == 200:
-                for p in p_res.json():
-                    p_name = p.get("full_name") or p.get("display_name") or p.get("email")
-                    uid = p.get("user_id") or p.get("id")
-                    if uid and p_name:
-                        profile_map[uid] = p_name
-
-            # 2. Fetch all face descriptors
-            desc_endpoint = f"{self.url}/rest/v1/face_descriptors?select=id,user_id,student_id,student_name,class,section,descriptor,descriptors,label,metadata"
-            res = requests.get(desc_endpoint, headers=self.headers, timeout=10)
-            if res.status_code != 200:
-                return []
-
-            data = res.json()
-            enrolled = []
-
-            for item in data:
-                raw_desc = item.get("descriptor") or item.get("descriptors")
-                if not raw_desc:
-                    continue
-
-                if isinstance(raw_desc, str):
-                    try:
-                        raw_desc = json.loads(raw_desc)
-                    except Exception:
-                        continue
-
-                vectors = []
-                if isinstance(raw_desc, list) and len(raw_desc) > 0:
-                    if isinstance(raw_desc[0], list):
-                        for v in raw_desc:
-                            if len(v) in (128, 512):
-                                vectors.append(v)
-                    elif len(raw_desc) in (128, 512):
-                        vectors.append(raw_desc)
-
-                if not vectors:
-                    continue
-
-                uid = item.get("user_id")
-                meta_name = (item.get("metadata") or {}).get("name") if isinstance(item.get("metadata"), dict) else None
-                resolved_name = (
-                    item.get("student_name")
-                    or item.get("label")
-                    or meta_name
-                    or profile_map.get(uid)
-                    or (f"Student {item.get('student_id')}" if item.get("student_id") else "Student")
-                )
-
-                for idx, vec in enumerate(vectors):
-                    enrolled.append({
-                        "id": f"{item.get('id')}_{idx}",
-                        "user_id": uid if is_valid_uuid(uid) else None,
-                        "student_id": item.get("student_id") or uid,
-                        "student_name": resolved_name,
-                        "class_name": item.get("class"),
-                        "section": item.get("section"),
-                        "descriptor": np.array(vec, dtype=np.float32)
-                    })
-
-            return enrolled
-        except Exception as e:
-            print(f"[Spotlight Supabase Error] {e}")
-            return []
-
-    def post_attendance(self, payload: Dict) -> bool:
-        try:
-            clean_payload = dict(payload)
-            if not is_valid_uuid(clean_payload.get("user_id")):
-                clean_payload["user_id"] = None
-            endpoint = f"{self.url}/rest/v1/attendance_records"
-            res = requests.post(endpoint, headers=self.headers, json=clean_payload, timeout=6)
-            return res.status_code in (200, 201)
-        except Exception:
-            return False
-
-
-# ─── 5. Unified Multi-Cloud Synchronizer ─────────────────────────────────────
+# ─── 3. Unified Cloud Synchronizer ───────────────────────────────────────────
 class UnifiedCloudSync:
-    """Seamlessly connects camera nodes to Appwrite Python SDK or Supabase."""
+    """Seamlessly manages Appwrite Cloud synchronization and parent notifications."""
     def __init__(self, db: LocalDatabase):
         self.db = db
         self.appwrite = AppwriteSync(db)
-        self.supabase = SupabaseSync(db)
-
-    def is_appwrite_primary(self) -> bool:
-        if config.BACKEND_TYPE == "appwrite":
-            return True
-        if config.BACKEND_TYPE == "supabase":
-            return False
-        # Auto-detect: if Appwrite project ID configured and not default supabase
-        return bool(config.APPWRITE_PROJECT_ID and (not config.SUPABASE_URL or "your-project" in config.SUPABASE_URL))
 
     def fetch_enrolled_faces(self) -> List[Dict]:
-        if self.is_appwrite_primary():
-            faces = self.appwrite.fetch_enrolled_faces()
-            if faces:
-                return faces
-            # Fallback to supabase if appwrite empty
-            return self.supabase.fetch_enrolled_faces()
-        else:
-            faces = self.supabase.fetch_enrolled_faces()
-            if faces:
-                return faces
-            return self.appwrite.fetch_enrolled_faces()
+        return self.appwrite.fetch_enrolled_faces()
 
     def post_attendance(self, payload: Dict) -> bool:
-        if self.is_appwrite_primary():
-            return self.appwrite.post_attendance(payload)
-        return self.supabase.post_attendance(payload)
-
-    def upload_frame(self, frame: np.ndarray, student_id: str) -> Optional[str]:
-        return self.appwrite.upload_face_frame(frame, student_id)
+        return self.appwrite.post_attendance(payload)
 
     def send_parent_notification_with_rate_limit(self, student: Dict, status: str):
         """Dispatches automated parent notification adhering strictly to 1-email-per-student-per-day."""
@@ -711,24 +526,44 @@ class UnifiedCloudSync:
             student_id = str(student.get("student_id") or student.get("user_id") or "")
             user_id = student.get("user_id")
             student_name = student.get("student_name")
+            parent_email = student.get("parent_email")
             student_key = student_id or user_id or student_name
             today_date = datetime.now().strftime("%Y-%m-%d")
+            time_str = datetime.now().strftime("%I:%M %p")
 
             if self.db.was_notified_today(student_key, today_date):
                 return
 
-            notif_endpoint = f"{config.SUPABASE_URL}/functions/v1/auto-parent-notification"
-            notif_payload = {
-                "studentId": user_id or student_id,
-                "studentName": student_name,
-                "status": status,
-                "gateName": config.GATE_NAME,
-                "timestamp": datetime.now().strftime("%I:%M %p")
-            }
-            try:
-                requests.post(notif_endpoint, headers={"apikey": config.SUPABASE_KEY, "Authorization": f"Bearer {config.SUPABASE_KEY}", "Content-Type": "application/json"}, json=notif_payload, timeout=6)
-            except Exception:
-                pass
+            # Direct Resend API Email Dispatch
+            if config.RESEND_API_KEY and parent_email:
+                try:
+                    resend_headers = {
+                        "Authorization": f"Bearer {config.RESEND_API_KEY}",
+                        "Content-Type": "application/json"
+                    }
+                    resend_body = {
+                        "from": "Presences AI <notifications@presences.app>",
+                        "to": [parent_email],
+                        "subject": f"Arrival Notice: {student_name} marked {status.upper()}",
+                        "html": f"""
+                        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #e2e8f0; border-radius: 8px;">
+                            <h2 style="color: #0f172a; margin-bottom: 8px;">Campus Arrival Confirmation</h2>
+                            <p style="color: #475569; font-size: 16px;">Dear Parent/Guardian,</p>
+                            <p style="color: #334155; font-size: 15px; line-height: 1.5;">
+                                <strong>{student_name}</strong> was verified at <strong>{config.GATE_NAME}</strong>.
+                            </p>
+                            <div style="background: #f8fafc; border-left: 4px solid {'#10b981' if status == 'present' else '#f59e0b'}; padding: 12px 16px; margin: 20px 0;">
+                                <p style="margin: 4px 0; color: #1e293b;"><strong>Status:</strong> {status.upper()}</p>
+                                <p style="margin: 4px 0; color: #1e293b;"><strong>Arrival Time:</strong> {time_str}</p>
+                                <p style="margin: 4px 0; color: #1e293b;"><strong>Terminal:</strong> {config.GATE_NAME}</p>
+                            </div>
+                            <p style="color: #94a3b8; font-size: 13px; margin-top: 24px;">Presences Spotlight AI</p>
+                        </div>
+                        """
+                    }
+                    requests.post("https://api.resend.com/emails", headers=resend_headers, json=resend_body, timeout=6)
+                except Exception:
+                    pass
 
             self.db.mark_notified_today(student_key, today_date)
         except Exception as err:
@@ -747,7 +582,6 @@ class UnifiedCloudSync:
                 print(f"[Spotlight Sync] Flushed offline record (ID: {record_id}) for {payload.get('student_name')}")
             else:
                 break
-
 
 
 # ─── 4. Audio Feedback Player ────────────────────────────────────────────────
@@ -787,9 +621,9 @@ class StudentTrack:
     """Tracks a single student moving across consecutive frames to perform multi-frame voting."""
     def __init__(self, track_id: int, bbox: Tuple[int, int, int, int]):
         self.track_id = track_id
-        self.bbox = bbox  # (top, right, bottom, left)
+        self.bbox = bbox
         self.last_seen = time.time()
-        self.matches: List[Tuple[str, Dict, float]] = []  # (student_key, student_obj, distance)
+        self.matches: List[Tuple[str, Dict, float]] = []
         self.committed = False
 
     def update_position(self, bbox: Tuple[int, int, int, int]):
@@ -799,16 +633,22 @@ class StudentTrack:
     def add_match(self, student: Dict, distance: float):
         key = str(student.get("student_id") or student.get("user_id") or student.get("student_name"))
         self.matches.append((key, student, distance))
-        # Keep only recent window
         now = time.time()
         self.matches = [(k, s, d) for k, s, d in self.matches if (now - self.last_seen) <= config.CONSENSUS_WINDOW_SECONDS]
 
     def get_consensus_winner(self) -> Optional[Tuple[Dict, float, int]]:
-        """Returns student if at least N matches agree on the same identity."""
+        """Returns student if votes agree on the same identity."""
+        if not self.matches:
+            return None
+
+        # If strong single-frame match (dist < 0.44), confirm immediately
+        best_single = min(self.matches, key=lambda m: m[2])
+        if best_single[2] < 0.44:
+            return best_single[1], best_single[2], 1
+
         if len(self.matches) < config.CONSENSUS_FRAMES_REQUIRED:
             return None
 
-        # Count frequencies
         counts: Dict[str, List[Tuple[Dict, float]]] = {}
         for k, s, d in self.matches:
             if k not in counts:
@@ -827,9 +667,9 @@ class StudentTrack:
 # ─── 6. Main Presences Spotlight Engine ───────────────────────────────────────
 class SpotlightEngine:
     def __init__(self):
-        print("=" * 70)
-        print("  PRESENCES SPOTLIGHT AI -- HIGH-THROUGHPUT GATE ATTENDANCE TERMINAL  ")
-        print("=" * 70)
+        print("=" * 75)
+        print("  PRESENCES SPOTLIGHT AI -- GOOGLE VISION & APPWRITE TERMINAL  ")
+        print("=" * 75)
 
         Path(config.UNKNOWN_LOG_DIR).mkdir(parents=True, exist_ok=True)
         self.db = LocalDatabase()
@@ -857,9 +697,14 @@ class SpotlightEngine:
         self.hud_banner_class = ""
         self.hud_banner_time = ""
         self.hud_banner_until = 0
+        self.show_mesh = config.SHOW_LANDMARK_MESH
 
         # Dedicated AI Inference Worker Queue (maxsize 1 ensures zero camera lag)
         self.inference_queue = queue.Queue(maxsize=1)
+
+        # Initialize Google Vision & MediaPipe Pipeline
+        self.google_pipeline = GoogleFacePipeline()
+        self.gemini_auditor = GoogleGeminiAuditor()
 
         # Fallback OpenCV Haar Cascade
         xml_path = getattr(cv2.data, 'haarcascades', '') + 'haarcascade_frontalface_default.xml'
@@ -868,12 +713,12 @@ class SpotlightEngine:
         # Initialize audio chime
         generate_chime(config.CHIME_PATH)
 
-        # Initial student sync from Supabase
+        # Initial student sync from Appwrite
         self.sync_students()
 
     def sync_students(self):
-        """Loads and normalizes student face descriptors into contiguous NumPy matrix for C-speed search."""
-        print("[Spotlight] Synchronizing student face models from Supabase...")
+        """Loads student face descriptors into contiguous NumPy matrix for C-speed Euclidean search."""
+        print("[Spotlight] Synchronizing student face models from Appwrite Cloud...")
         cloud_students = self.cloud.fetch_enrolled_faces()
         if cloud_students:
             self.db.save_cached_students(cloud_students)
@@ -884,16 +729,12 @@ class SpotlightEngine:
 
         if self.enrolled_students:
             matrix_list = [s["descriptor"] for s in self.enrolled_students]
-            raw_matrix = np.array(matrix_list, dtype=np.float32)
-            # L2 normalize rows for instant BLAS cosine dot-product search
-            norms = np.linalg.norm(raw_matrix, axis=1, keepdims=True)
-            norms[norms == 0] = 1.0
-            self.descriptors_matrix = raw_matrix / norms
+            self.descriptors_matrix = np.array(matrix_list, dtype=np.float32)
         else:
             self.descriptors_matrix = None
 
         distinct_count = len(set(s["student_name"] for s in self.enrolled_students))
-        print(f"[Spotlight] Ready with {distinct_count} active enrolled student(s) ({len(self.enrolled_students)} multi-angle models) in memory.")
+        print(f"[Spotlight] Ready with {distinct_count} enrolled students ({len(self.enrolled_students)} models) in memory.")
         self.last_sync_time = time.time()
 
     def determine_status(self) -> str:
@@ -904,22 +745,16 @@ class SpotlightEngine:
 
     def match_face_vectorized(self, face_encoding: np.ndarray) -> Tuple[Optional[Dict], float]:
         """
-        Calculates cosine/Euclidean distance against 2,000+ student embeddings in <0.2ms via BLAS.
+        Calculates Vectorized Euclidean distance against all student embeddings in <0.1ms via BLAS.
         Applies Ambiguity Ratio check to prevent similar-looking false positives.
         """
         if self.descriptors_matrix is None or len(self.enrolled_students) == 0:
             return None, 1.0
 
-        # L2-normalize query vector
-        norm = np.linalg.norm(face_encoding)
-        if norm == 0:
-            return None, 1.0
-        q = (face_encoding / norm).astype(np.float32)
-
-        # BLAS dot-product similarity (1.0 = identical, 0.0 = orthogonal)
-        similarities = np.dot(self.descriptors_matrix, q)
-        # Convert cosine similarity to normalized distance: dist = sqrt(2 * (1 - sim))
-        dists = np.sqrt(np.maximum(0.0, 2.0 * (1.0 - similarities)))
+        q = face_encoding.astype(np.float32)
+        # Vectorized Euclidean Distance: ||M - q|| across all rows
+        diffs = self.descriptors_matrix - q
+        dists = np.linalg.norm(diffs, axis=1)
 
         sorted_indices = np.argsort(dists)
         best_idx = sorted_indices[0]
@@ -929,69 +764,62 @@ class SpotlightEngine:
             best_match = self.enrolled_students[best_idx]
             best_name = best_match["student_name"]
 
-            # Ambiguity Check: Ensure 2nd distinct student is not overly close
+            # Ambiguity Check: Ensure 2nd distinct student is not overly close (< 0.48)
             second_best_dist = float('inf')
             for idx in sorted_indices[1:10]:
                 if idx < len(self.enrolled_students) and self.enrolled_students[idx]["student_name"] != best_name:
                     second_best_dist = float(dists[idx])
                     break
 
-            if second_best_dist < float('inf') and (best_dist / second_best_dist) > config.AMBIGUITY_RATIO:
+            if second_best_dist < 0.48 and (best_dist / second_best_dist) > config.AMBIGUITY_RATIO:
                 return None, best_dist
 
             return best_match, best_dist
 
         return None, best_dist
 
-    def _associate_tracks(self, face_locations: List[Tuple[int, int, int, int]]) -> List[Tuple[int, Tuple[int, int, int, int]]]:
-        """Simple, fast spatial association between detected bounding boxes and active student tracks."""
-        associations = []
+    def _associate_tracks(self, face_centers: List[Tuple[int, int]], face_boxes: List[Tuple[int, int, int, int]]) -> List[int]:
+        """Fast spatial centroid association between detected faces and active student tracks."""
+        track_ids = []
         now = time.time()
 
-        # Clean up stale tracks (not seen in > 2.0s)
         stale_ids = [tid for tid, trk in self.active_tracks.items() if (now - trk.last_seen) > 2.0]
         for tid in stale_ids:
             del self.active_tracks[tid]
 
-        for bbox in face_locations:
-            top, right, bottom, left = bbox
-            cx, cy = (left + right) / 2, (top + bottom) / 2
-
+        for (cx, cy), bbox in zip(face_centers, face_boxes):
             best_tid = None
             min_dist = float('inf')
 
             for tid, trk in self.active_tracks.items():
                 t_top, t_right, t_bottom, t_left = trk.bbox
-                tcx, tcy = (t_left + t_right) / 2, (t_top + t_bottom) / 2
+                tcx, tcy = (t_left + t_right) // 2, (t_top + t_bottom) // 2
                 dist = math.hypot(cx - tcx, cy - tcy)
 
-                # Distance threshold for matching same student across frames
-                if dist < 120 and dist < min_dist:
+                if dist < 140 and dist < min_dist:
                     min_dist = dist
                     best_tid = tid
 
             if best_tid is not None:
                 self.active_tracks[best_tid].update_position(bbox)
-                associations.append((best_tid, bbox))
+                track_ids.append(best_tid)
             else:
                 new_tid = self.next_track_id
                 self.next_track_id += 1
                 self.active_tracks[new_tid] = StudentTrack(new_tid, bbox)
-                associations.append((new_tid, bbox))
+                track_ids.append(new_tid)
 
-        return associations
+        return track_ids
 
-    def handle_confirmed_attendance(self, student: Dict, confidence_score: float, verified_frame: Optional[np.ndarray] = None):
-        """Executes instant attendance logging, cooldown enforcement, chime, and cloud synchronization."""
+    def handle_confirmed_attendance(self, student: Dict, confidence_score: float, face_data: Optional[GoogleFaceData] = None):
+        """Executes instant attendance logging, cooldown enforcement, chime, and Appwrite synchronization."""
         student_id_val = str(student.get("student_id") or student.get("user_id") or "")
         student_name = student.get("student_name")
         student_key = student_id_val or student_name
         today_str = datetime.now().strftime("%Y-%m-%d")
         now = time.time()
 
-        # Check local DB if already recorded for today's session
         if self.db.is_already_marked_today(student_key, today_str):
-            print(f"[Spotlight] Student {student_name} already marked present for today. Skipping duplicate.")
             return
 
         self.db.record_session_mark(student_key, today_str)
@@ -999,7 +827,6 @@ class SpotlightEngine:
         iso_timestamp = datetime.now(timezone.utc).isoformat()
         time_formatted = datetime.now().strftime("%I:%M:%S %p")
 
-        # Update Session Metrics
         self.counter_total_present += 1
         if status == "present":
             self.counter_on_time += 1
@@ -1009,7 +836,6 @@ class SpotlightEngine:
         print(f"\n[SPOTLIGHT VERIFIED] {student_name} | Grade: {student.get('class_name', '')}-{student.get('section', '')}")
         print(f"                     Status: {status.upper()} | Confidence: {confidence_score*100:.1f}% | Time: {time_formatted}")
 
-        # Update Live Kiosk HUD Banner
         with self.hud_lock:
             self.hud_banner_name = student_name
             self.hud_banner_status = f"MARKED {status.upper()}"
@@ -1017,10 +843,8 @@ class SpotlightEngine:
             self.hud_banner_time = time_formatted
             self.hud_banner_until = now + 4.0
 
-        # Sound Chime Feedback
         play_feedback_sound()
 
-        # Build attendance record payload
         payload = {
             "user_id": student.get("user_id") if is_valid_uuid(student.get("user_id")) else None,
             "student_id": student_id_val,
@@ -1034,6 +858,7 @@ class SpotlightEngine:
             "confidence_score": round(confidence_score, 4),
             "device_info": {
                 "system": "Presences Spotlight AI",
+                "backend": "Appwrite Cloud",
                 "gate_name": config.GATE_NAME,
                 "timestamp": iso_timestamp,
                 "metadata": {
@@ -1045,25 +870,18 @@ class SpotlightEngine:
             }
         }
 
-        # Asynchronous Cloud Push (Zero-photo retention policy: vectors only)
         def _async_push():
             success = self.cloud.post_attendance(payload)
             if success:
-                print(f"[Spotlight Cloud] Attendance synced to cloud for {student_name}.")
+                print(f"[Spotlight Appwrite] Attendance synced to cloud for {student_name}.")
             else:
-                print(f"[Spotlight Cloud] Queued record locally for background sync.")
                 self.db.enqueue_attendance(payload)
 
         threading.Thread(target=_async_push, daemon=True).start()
-
-        # Automated Parent Notification Dispatch
         threading.Thread(target=lambda: self.cloud.send_parent_notification_with_rate_limit(student, status), daemon=True).start()
 
     def _inference_worker(self):
         """Asynchronous AI worker thread processing face embeddings without stalling the video feed."""
-        scale_factor = config.FRAME_SCALE
-        scale_up = int(1.0 / scale_factor)
-
         while self.running:
             try:
                 frame = self.inference_queue.get(timeout=0.1)
@@ -1072,69 +890,62 @@ class SpotlightEngine:
 
             try:
                 detections = []
-                small_frame = cv2.resize(frame, (0, 0), fx=scale_factor, fy=scale_factor)
 
-                if FACE_RECOG_AVAILABLE:
-                    rgb_small = cv2.cvtColor(small_frame, cv2.COLOR_BGR2RGB)
-                    face_locations = face_recognition.face_locations(rgb_small, model="hog")
+                if self.google_pipeline.is_ready:
+                    face_data_list = self.google_pipeline.detect_and_process(frame, extract_embeddings=True)
+                    if face_data_list:
+                        centers = [fd.center_xy for fd in face_data_list]
+                        boxes = [fd.bbox for fd in face_data_list]
+                        track_ids = self._associate_tracks(centers, boxes)
 
-                    if face_locations:
-                        fh, fw, _ = frame.shape
-                        # Scale back bounding boxes and clamp to frame boundaries
-                        full_res_locations = []
-                        for top, right, bottom, left in face_locations:
-                            c_top = max(0, min(fh - 1, int(top * scale_up)))
-                            c_right = max(0, min(fw - 1, int(right * scale_up)))
-                            c_bottom = max(0, min(fh - 1, int(bottom * scale_up)))
-                            c_left = max(0, min(fw - 1, int(left * scale_up)))
-                            if (c_bottom - c_top) > 10 and (c_right - c_left) > 10:
-                                full_res_locations.append((c_top, c_right, c_bottom, c_left))
-
-                        # Associate with persistent tracks
-                        track_associations = self._associate_tracks(full_res_locations)
-
-                        # Extract face embeddings at high resolution
-                        rgb_full = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-                        face_encodings = face_recognition.face_encodings(rgb_full, full_res_locations)
-
-                        for (tid, bbox), encoding in zip(track_associations, face_encodings):
-                            top, right, bottom, left = bbox
-                            face_w = right - left
-                            if face_w < config.MIN_FACE_SIZE_PX:
-                                continue
-
-                            matched_student, distance = self.match_face_vectorized(encoding)
+                        for fd, tid in zip(face_data_list, track_ids):
                             trk = self.active_tracks.get(tid)
+
+                            matched_student = None
+                            distance = 1.0
+
+                            if fd.embedding is not None:
+                                matched_student, distance = self.match_face_vectorized(fd.embedding)
 
                             if matched_student and trk:
                                 trk.add_match(matched_student, distance)
-                                conf = float(max(0.0, min(1.0, 1.0 - (distance / 0.8))))
+                                conf = float(max(0.0, min(1.0, 1.0 - (distance / 0.70))))
 
-                                # Check consensus voting (3+ consecutive frames)
                                 consensus = trk.get_consensus_winner()
                                 if consensus and not trk.committed:
                                     win_student, win_dist, win_votes = consensus
                                     trk.committed = True
-                                    self.handle_confirmed_attendance(win_student, conf, frame)
+                                    self.handle_confirmed_attendance(win_student, conf, fd)
 
                                 detections.append({
-                                    "bbox": bbox,
+                                    "bbox": fd.bbox,
                                     "name": matched_student["student_name"],
                                     "status": "VERIFIED" if (trk and trk.committed) else "IDENTIFYING...",
                                     "confidence": conf,
-                                    "is_matched": True
+                                    "is_matched": True,
+                                    "yaw": fd.yaw_deg,
+                                    "pitch": fd.pitch_deg,
+                                    "quality": fd.quality_score,
+                                    "landmarks_pixel": fd.landmarks_pixel
                                 })
                             else:
                                 detections.append({
-                                    "bbox": bbox,
+                                    "bbox": fd.bbox,
                                     "name": "Unknown Visitor",
                                     "status": "UNRECOGNIZED",
                                     "confidence": 0.0,
-                                    "is_matched": False
+                                    "is_matched": False,
+                                    "yaw": fd.yaw_deg,
+                                    "pitch": fd.pitch_deg,
+                                    "quality": fd.quality_score,
+                                    "landmarks_pixel": fd.landmarks_pixel
                                 })
                 else:
                     # Fallback OpenCV Haar Cascade
                     fh, fw, _ = frame.shape
+                    scale_factor = config.FRAME_SCALE
+                    scale_up = int(1.0 / scale_factor)
+                    small_frame = cv2.resize(frame, (0, 0), fx=scale_factor, fy=scale_factor)
                     gray = cv2.cvtColor(small_frame, cv2.COLOR_BGR2GRAY)
                     faces = self.face_cascade.detectMultiScale(gray, scaleFactor=1.2, minNeighbors=5, minSize=(30, 30))
                     for (x, y, w, h) in faces:
@@ -1144,10 +955,14 @@ class SpotlightEngine:
                         c_left = max(0, min(fw - 1, int(x * scale_up)))
                         detections.append({
                             "bbox": (c_top, c_right, c_bottom, c_left),
-                            "name": "Student (Detection Mode)",
+                            "name": "Student (Cascade Mode)",
                             "status": "PRESENT",
                             "confidence": 0.90,
-                            "is_matched": True
+                            "is_matched": True,
+                            "yaw": 0.0,
+                            "pitch": 0.0,
+                            "quality": 0.85,
+                            "landmarks_pixel": None
                         })
 
                 with self.hud_lock:
@@ -1161,7 +976,6 @@ class SpotlightEngine:
         h, w, _ = frame.shape
         now = time.time()
 
-        # 1. Draw Bounding Boxes
         with self.hud_lock:
             detections = list(self.hud_detections)
             banner_name = self.hud_banner_name
@@ -1169,13 +983,17 @@ class SpotlightEngine:
             banner_class = self.hud_banner_class
             banner_time = self.hud_banner_time
             banner_until = self.hud_banner_until
+            show_mesh = self.show_mesh
 
+        # 1. Draw Bounding Boxes & Landmarks
         for det in detections:
             top, right, bottom, left = det["bbox"]
             is_matched = det["is_matched"]
-            color = (34, 197, 94) if is_matched else (40, 40, 230)  # Bright Green or Crimson Red
+            quality = det.get("quality", 0.8)
+            yaw = det.get("yaw", 0.0)
+            color = (34, 197, 94) if is_matched else (40, 40, 230)
 
-            # Sleek bounding box corners
+            # Corner accents
             cv2.rectangle(frame, (left, top), (right, bottom), color, 2)
             corner_len = 16
             cv2.line(frame, (left, top), (left + corner_len, top), color, 4)
@@ -1187,6 +1005,13 @@ class SpotlightEngine:
             cv2.line(frame, (right, bottom), (right - corner_len, bottom), color, 4)
             cv2.line(frame, (right, bottom), (right, bottom - corner_len), color, 4)
 
+            # Optional 478-Landmark Mesh Points
+            if show_mesh and det.get("landmarks_pixel") is not None:
+                pts = det["landmarks_pixel"]
+                for pt in pts[::4]:
+                    px, py = int(pt[0]), int(pt[1])
+                    cv2.circle(frame, (px, py), 1, (56, 189, 248), -1)
+
             # Name Tag Pill
             label = f"{det['name']} ({det['status']})"
             (tw, th), _ = cv2.getTextSize(label, cv2.FONT_HERSHEY_DUPLEX, 0.55, 1)
@@ -1195,20 +1020,19 @@ class SpotlightEngine:
 
         # 2. Top Header Status Bar
         overlay = frame.copy()
-        cv2.rectangle(overlay, (0, 0), (w, 55), (15, 23, 42), -1)  # Dark slate header
+        cv2.rectangle(overlay, (0, 0), (w, 55), (15, 23, 42), -1)
         cv2.addWeighted(overlay, 0.85, frame, 0.15, 0, frame)
 
-        # Header Text
-        cv2.putText(frame, "PRESENCES SPOTLIGHT AI", (20, 35), cv2.FONT_HERSHEY_DUPLEX, 0.75, (255, 255, 255), 2, cv2.LINE_AA)
+        cv2.putText(frame, "PRESENCES SPOTLIGHT AI  [APPWRITE CLOUD]", (20, 35), cv2.FONT_HERSHEY_DUPLEX, 0.65, (255, 255, 255), 2, cv2.LINE_AA)
         metrics_str = f"PRESENT: {self.counter_total_present}  |  ON-TIME: {self.counter_on_time}  |  LATE: {self.counter_late}  |  {fps:.0f} FPS"
         (mw, _), _ = cv2.getTextSize(metrics_str, cv2.FONT_HERSHEY_DUPLEX, 0.55, 1)
         cv2.putText(frame, metrics_str, (w - mw - 20, 35), cv2.FONT_HERSHEY_DUPLEX, 0.55, (56, 189, 248), 1, cv2.LINE_AA)
 
-        # 3. Bottom Instant Verification Toast / Banner
+        # 3. Bottom Instant Verification Toast
         if now < banner_until and banner_name:
             banner_h = 80
             overlay = frame.copy()
-            cv2.rectangle(overlay, (w // 4, h - banner_h - 20), (3 * w // 4, h - 20), (16, 185, 129), -1)  # Emerald Green
+            cv2.rectangle(overlay, (w // 4, h - banner_h - 20), (3 * w // 4, h - 20), (16, 185, 129), -1)
             cv2.addWeighted(overlay, 0.90, frame, 0.10, 0, frame)
 
             toast_title = f"{banner_name}  -  {banner_status}"
@@ -1222,14 +1046,10 @@ class SpotlightEngine:
         """Main execution loop for Presences Spotlight AI."""
         self.running = True
 
-        # Start Video Capture
         stream = RTSPVideoStream().start()
-
-        # Start Asynchronous AI Inference Worker
         threading.Thread(target=self._inference_worker, daemon=True).start()
 
-        # Window Setup
-        win_name = "Presences Spotlight AI — Gate Terminal"
+        win_name = "Presences Spotlight AI — Gate Terminal (Appwrite Cloud)"
         if config.SHOW_WINDOW:
             cv2.namedWindow(win_name, cv2.WINDOW_NORMAL)
             if config.FULLSCREEN_KIOSK:
@@ -1238,7 +1058,7 @@ class SpotlightEngine:
                 cv2.resizeWindow(win_name, 1280, 720)
 
         print("[Spotlight] Engine initialized. Live attendance monitoring is active.")
-        print("            Press 'q' in the window or Ctrl+C in terminal to exit.")
+        print("            Hotkeys: 'q'=Quit | 'r'=Reload Database | 's'=Toggle Audio | 'm'=Toggle Mesh | 'f'=Fullscreen")
 
         try:
             while self.running:
@@ -1247,17 +1067,14 @@ class SpotlightEngine:
                     time.sleep(0.01)
                     continue
 
-                # Feed latest frame to AI worker if not busy
                 if self.inference_queue.empty():
                     try:
                         self.inference_queue.put_nowait(frame.copy())
                     except queue.Full:
                         pass
 
-                # Render Visual Kiosk HUD
                 annotated_frame = self.render_hud(frame, fps)
 
-                # Periodic Offline Queue Flush & Student Sync (Every 5 minutes)
                 now = time.time()
                 if (now - self.last_sync_time) > config.STUDENT_SYNC_INTERVAL_SEC:
                     threading.Thread(target=self.cloud.process_offline_queue, daemon=True).start()
@@ -1270,14 +1087,23 @@ class SpotlightEngine:
                         print("[Spotlight] Exit signal received.")
                         break
                     elif key in (ord('r'), ord('R')):
-                        print("\n[Spotlight] Manual face reload triggered by operator. Syncing from cloud...")
+                        print("\n[Spotlight] Manual face reload triggered. Syncing from Appwrite Cloud...")
                         threading.Thread(target=self.sync_students, daemon=True).start()
                     elif key in (ord('s'), ord('S')):
                         config.ENABLE_AUDIO = not config.ENABLE_AUDIO
                         state_str = "ENABLED (Sound ON)" if config.ENABLE_AUDIO else "MUTED (Silent Mode)"
                         print(f"\n[Spotlight Audio] Sound Verification is now: {state_str}")
+                    elif key in (ord('m'), ord('M')):
+                        with self.hud_lock:
+                            self.show_mesh = not self.show_mesh
+                        mesh_state = "ON" if self.show_mesh else "OFF"
+                        print(f"\n[Spotlight HUD] 478-Landmark Mesh Overlay: {mesh_state}")
+                    elif key in (ord('c'), ord('C')):
+                        self.counter_total_present = 0
+                        self.counter_on_time = 0
+                        self.counter_late = 0
+                        print("\n[Spotlight] Session counters reset.")
                     elif key in (ord('f'), ord('F')):
-                        # Toggle Fullscreen
                         is_full = cv2.getWindowProperty(win_name, cv2.WND_PROP_FULLSCREEN) == cv2.WINDOW_FULLSCREEN
                         if is_full:
                             cv2.setWindowProperty(win_name, cv2.WND_PROP_FULLSCREEN, cv2.WINDOW_NORMAL)

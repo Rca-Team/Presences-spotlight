@@ -865,18 +865,39 @@ class AppwriteStorageBucketClient {
       if (fileBody instanceof File) {
         file = fileBody;
       } else if (fileBody instanceof Blob) {
-        file = new File([fileBody], path.split('/').pop() || 'upload.bin', { type: fileBody.type || 'application/octet-stream' });
+        file = new File([fileBody], path.split('/').pop() || 'upload.bin', { type: fileBody.type || 'image/jpeg' });
       } else {
-        file = new File([fileBody], path.split('/').pop() || 'upload.bin');
+        file = new File([fileBody], path.split('/').pop() || 'upload.bin', { type: 'image/jpeg' });
       }
 
-      const res = await storage.createFile(
-        this.bucketId,
-        fileId,
-        file,
-        undefined
-      );
-      return { data: { ...res, id: res.$id, path }, error: null };
+      const permissions = [
+        Permission.read(Role.any()),
+        Permission.update(Role.any()),
+        Permission.delete(Role.any())
+      ];
+
+      try {
+        const res = await storage.createFile(
+          this.bucketId,
+          fileId,
+          file,
+          permissions
+        );
+        return { data: { ...res, id: res.$id, path }, error: null };
+      } catch (createErr: any) {
+        if (createErr?.code === 409) {
+          // File already exists with identical ID
+          if (_options?.upsert) {
+            try {
+              await storage.deleteFile(this.bucketId, fileId);
+              const res = await storage.createFile(this.bucketId, fileId, file, permissions);
+              return { data: { ...res, id: res.$id, path }, error: null };
+            } catch (_) {}
+          }
+          return { data: { id: fileId, path, $id: fileId }, error: null };
+        }
+        throw createErr;
+      }
     } catch (err: any) {
       return { data: null, error: err };
     }
@@ -886,7 +907,7 @@ class AppwriteStorageBucketClient {
     try {
       const fileId = storageFileId(path);
       const url = getAppwriteStorageDownloadUrl(this.bucketId, fileId);
-      const res = await fetch(url);
+      const res = await fetch(url, { credentials: 'include' });
       if (!res.ok) throw new Error('Storage download failed: ' + res.status);
       const blob = await res.blob();
       return { data: blob, error: null };
@@ -914,8 +935,14 @@ class AppwriteStorageBucketClient {
 
 class AppwriteStorageClient {
   from(bucketId: string) {
-    const mappedBucket = APPWRITE_CONFIG.buckets[bucketId as keyof typeof APPWRITE_CONFIG.buckets] || bucketId;
-    return new AppwriteStorageBucketClient(mappedBucket);
+    const raw = (bucketId || '').trim();
+    const norm = raw.toLowerCase().replace(/_/g, '-');
+    let target = APPWRITE_CONFIG.buckets[raw as keyof typeof APPWRITE_CONFIG.buckets] || raw;
+    if (norm.includes('registration')) target = 'student-registration-faces';
+    else if (norm.includes('training') || norm.includes('attendance')) target = 'attendance-training-faces';
+    else if (norm.includes('export') || norm.includes('backup')) target = 'database-exports';
+    else if (norm.includes('face') || norm.includes('avatar') || norm.includes('photo') || norm === 'public') target = 'face-images';
+    return new AppwriteStorageBucketClient(target);
   }
 }
 

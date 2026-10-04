@@ -1,6 +1,6 @@
 """
-Presences Spotlight AI — Multi-Angle Student Face Enrollment Tool
-High-Accuracy 3-Shot Enrollment (Frontal, Left 15°, Right 15°) for 100% Gate Recognition Accuracy
+Presences Spotlight AI — Multi-Angle Student Face Enrollment Station (Google Pipeline Edition)
+High-Accuracy 3D-Guided Multi-Angle Enrollment (Frontal, Left 15°, Right 15°) with Canonical Affine Alignment
 """
 
 import os
@@ -13,13 +13,7 @@ import cv2
 import numpy as np
 
 import config
-
-FACE_RECOG_AVAILABLE = False
-try:
-    import face_recognition
-    FACE_RECOG_AVAILABLE = True
-except ImportError:
-    print("[Enrollment Warning] 'face_recognition' (dlib) library is recommended for real embedding generation.")
+from google_pipeline import GoogleFacePipeline, GoogleFaceData
 
 APPWRITE_SDK_AVAILABLE = False
 try:
@@ -30,14 +24,6 @@ try:
 except ImportError:
     pass
 
-def is_valid_uuid(val):
-    if not val:
-        return False
-    try:
-        uuid.UUID(str(val))
-        return True
-    except Exception:
-        return False
 
 class FaceEnrollmentStation:
     def __init__(self):
@@ -49,7 +35,9 @@ class FaceEnrollmentStation:
             "Content-Type": "application/json",
             "Prefer": "return=minimal"
         }
+        self.pipeline = GoogleFacePipeline()
         self.appwrite_db = None
+
         if APPWRITE_SDK_AVAILABLE and config.APPWRITE_PROJECT_ID:
             try:
                 client = AppwriteClient()
@@ -58,13 +46,14 @@ class FaceEnrollmentStation:
                 if config.APPWRITE_API_KEY:
                     client.set_key(config.APPWRITE_API_KEY)
                 self.appwrite_db = AppwriteDatabases(client)
+                print(f"[Enrollment] Connected to Appwrite Project {config.APPWRITE_PROJECT_ID[:6]}...")
             except Exception as e:
                 print(f"[Enrollment Appwrite Warning] {e}")
 
     def enroll_student_live(self):
-        print("\n" + "=" * 60)
-        print("  📸 PRESENCES SPOTLIGHT AI — MULTI-ANGLE ENROLLMENT STATION")
-        print("=" * 60)
+        print("\n" + "=" * 70)
+        print("  📸 PRESENCES SPOTLIGHT AI — GOOGLE 3D-GUIDED ENROLLMENT STATION")
+        print("=" * 70)
 
         student_name = input("Enter Student Full Name: ").strip()
         if not student_name:
@@ -77,70 +66,112 @@ class FaceEnrollmentStation:
 
         cap = cv2.VideoCapture(0)
         if not cap.isOpened():
-            print("Error: Could not open webcam for enrollment.")
+            print("Error: Could not open camera device 0.")
             return
 
+        cap.set(cv2.CAP_PROP_FRAME_WIDTH, 1280)
+        cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 720)
+
         steps = [
-            ("Look STRAIGHT at camera (Frontal)", "frontal"),
-            ("Turn head SLIGHTLY LEFT (~15 degrees)", "left"),
-            ("Turn head SLIGHTLY RIGHT (~15 degrees)", "right")
+            {
+                "title": "Step 1: Look STRAIGHT at camera (Frontal)",
+                "target_yaw": 0.0,
+                "yaw_tol": 7.0,
+                "key": "frontal"
+            },
+            {
+                "title": "Step 2: Turn head SLIGHTLY LEFT (~15 degrees)",
+                "target_yaw": -15.0,
+                "yaw_tol": 6.0,
+                "key": "left_15"
+            },
+            {
+                "title": "Step 3: Turn head SLIGHTLY RIGHT (~15 degrees)",
+                "target_yaw": 15.0,
+                "yaw_tol": 6.0,
+                "key": "right_15"
+            }
         ]
 
         captured_embeddings = []
-
-        win_name = f"Enrollment: {student_name}"
+        win_name = f"Presences AI Enrollment — {student_name}"
         cv2.namedWindow(win_name, cv2.WINDOW_NORMAL)
-        cv2.resizeWindow(win_name, 800, 600)
+        cv2.resizeWindow(win_name, 1024, 600)
 
-        for instruction, step_key in steps:
-            print(f"\n[Step] {instruction}")
+        for step_idx, step in enumerate(steps):
+            print(f"\n[{step_idx+1}/3] {step['title']}")
             captured = False
+            target_yaw = step["target_yaw"]
+            yaw_tol = step["yaw_tol"]
 
             while not captured:
                 ret, frame = cap.read()
-                if not ret:
+                if not ret or frame is None:
+                    time.sleep(0.01)
                     continue
 
                 display = frame.copy()
                 h, w, _ = display.shape
 
-                # Draw guidance box
-                box_w, box_h = int(w * 0.45), int(h * 0.6)
-                x1, y1 = (w - box_w) // 2, (h - box_h) // 2
-                x2, y2 = x1 + box_w, y1 + box_h
-                cv2.rectangle(display, (x1, y1), (x2, y2), (56, 189, 248), 2)
+                # Process frame with Google MediaPipe Face Landmarker
+                results = self.pipeline.detect_and_process(frame, extract_embeddings=True)
 
-                # Header Pill
-                cv2.rectangle(display, (0, 0), (w, 50), (15, 23, 42), -1)
-                cv2.putText(display, f"ENROLLMENT: {instruction}", (20, 32), cv2.FONT_HERSHEY_DUPLEX, 0.6, (255, 255, 255), 1, cv2.LINE_AA)
-                cv2.putText(display, "Press SPACE to Capture | Q to Cancel", (20, h - 20), cv2.FONT_HERSHEY_DUPLEX, 0.5, (200, 200, 200), 1, cv2.LINE_AA)
+                is_in_pose = False
+                detected_fd: Optional[GoogleFaceData] = None
+
+                if results:
+                    # Pick the largest / most prominent face
+                    detected_fd = max(results, key=lambda f: (f.bbox[2] - f.bbox[0]) * (f.bbox[1] - f.bbox[3]))
+                    top, right, bottom, left = detected_fd.bbox
+                    yaw = detected_fd.yaw_deg
+                    pitch = detected_fd.pitch_deg
+                    sharpness = detected_fd.sharpness_score
+                    quality = detected_fd.quality_score
+
+                    # Check pose condition
+                    yaw_diff = abs(yaw - target_yaw)
+                    is_in_pose = (yaw_diff <= yaw_tol) and (sharpness >= config.MIN_SHARPNESS_LAPLACIAN)
+
+                    color = (34, 197, 94) if is_in_pose else (56, 189, 248)  # Green when aligned, Cyan when adjusting
+
+                    # Draw face box
+                    cv2.rectangle(display, (left, top), (right, bottom), color, 2)
+
+                    # Sub-badge with live pose
+                    pose_txt = f"Yaw: {yaw:+.1f} deg (Target: {target_yaw:+.0f}) | Quality: {int(quality*100)}%"
+                    cv2.rectangle(display, (left, bottom + 5), (left + 340, bottom + 32), (15, 23, 42), -1)
+                    cv2.putText(display, pose_txt, (left + 8, bottom + 24), cv2.FONT_HERSHEY_DUPLEX, 0.45, color, 1, cv2.LINE_AA)
+
+                    # Draw 5 anchor points
+                    for pt in detected_fd.landmarks_5pts:
+                        px, py = int(pt[0]), int(pt[1])
+                        cv2.circle(display, (px, py), 3, (244, 114, 182), -1)
+
+                # Header Overlay
+                cv2.rectangle(display, (0, 0), (w, 60), (15, 23, 42), -1)
+                cv2.putText(display, f"ENROLLMENT FOR: {student_name.upper()}  ({student_id})", (20, 26), cv2.FONT_HERSHEY_DUPLEX, 0.60, (255, 255, 255), 1, cv2.LINE_AA)
+                cv2.putText(display, step["title"], (20, 48), cv2.FONT_HERSHEY_DUPLEX, 0.55, (56, 189, 248), 1, cv2.LINE_AA)
+
+                # Bottom Instructions
+                status_color = (34, 197, 94) if is_in_pose else (200, 200, 200)
+                status_msg = "PRESS SPACE TO CAPTURE (Angle Perfect!)" if is_in_pose else "Adjust head angle until gauge turns GREEN... Press SPACE"
+                cv2.rectangle(display, (0, h - 45), (w, h), (15, 23, 42), -1)
+                cv2.putText(display, status_msg, (20, h - 16), cv2.FONT_HERSHEY_DUPLEX, 0.55, status_color, 1, cv2.LINE_AA)
 
                 cv2.imshow(win_name, display)
                 key = cv2.waitKey(1) & 0xFF
 
                 if key == ord(' '):
-                    # Capture and extract embedding
-                    if FACE_RECOG_AVAILABLE:
-                        rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-                        locs = face_recognition.face_locations(rgb)
-                        if not locs:
-                            print("⚠️ No face detected in frame. Please reposition and press SPACE again.")
-                            continue
-                        encodings = face_recognition.face_encodings(rgb, locs)
-                        if encodings:
-                            captured_embeddings.append(encodings[0].tolist())
-                            print(f"✅ Captured {step_key} angle vector.")
-                            captured = True
-                    else:
-                        # Mock 128-d vector for test environments
-                        mock_vec = np.random.uniform(-0.1, 0.1, 128).tolist()
-                        captured_embeddings.append(mock_vec)
-                        print(f"✅ Captured {step_key} angle mock vector.")
+                    if detected_fd and detected_fd.embedding is not None:
+                        captured_embeddings.append(detected_fd.embedding.tolist())
+                        print(f"✅ Successfully captured {step['key']} vector (Yaw: {detected_fd.yaw_deg:+.1f}°, Quality: {detected_fd.quality_score*100:.0f}%).")
                         captured = True
+                    else:
+                        print("⚠️ No valid face embedding found in this frame. Please hold steady and press SPACE again.")
                     time.sleep(0.3)
 
                 elif key in (ord('q'), 27):
-                    print("Enrollment cancelled by user.")
+                    print("Enrollment cancelled by operator.")
                     cap.release()
                     cv2.destroyAllWindows()
                     return
@@ -149,7 +180,7 @@ class FaceEnrollmentStation:
         cv2.destroyAllWindows()
 
         if len(captured_embeddings) == 3:
-            print(f"\n[Uploading] Saving 3 face vector models for {student_name} to cloud...")
+            print(f"\n[Cloud Upload] Uploading 3 multi-angle models for {student_name}...")
             payload = {
                 "student_id": student_id,
                 "student_name": student_name,
@@ -159,8 +190,9 @@ class FaceEnrollmentStation:
                 "descriptors": captured_embeddings,
                 "label": student_name,
                 "metadata": {
-                    "source": "spotlight-multi-angle",
+                    "source": "google-mediapipe-3d-guided",
                     "angles_count": 3,
+                    "pipeline": "Google MediaPipe 478 3D Mesh",
                     "created_at": time.time()
                 }
             }
@@ -178,20 +210,20 @@ class FaceEnrollmentStation:
                         document_id=AppwriteID.unique(),
                         data=appwrite_payload
                     )
-                    print(f"🎉 SUCCESS! {student_name} enrolled via official Appwrite Python SDK!")
+                    print(f"🎉 SUCCESS! {student_name} enrolled successfully into Appwrite Cloud!")
                     uploaded = True
                 except Exception as err:
-                    print(f"[Appwrite Upload Note] {err}")
+                    print(f"[Appwrite Note] {err}")
 
             if not uploaded:
                 try:
                     res = requests.post(f"{self.url}/rest/v1/face_descriptors", headers=self.headers, json=payload, timeout=10)
                     if res.status_code in (200, 201):
-                        print(f"🎉 SUCCESS! {student_name} is successfully enrolled into Presences Spotlight AI!")
+                        print(f"🎉 SUCCESS! {student_name} enrolled successfully into Supabase Cloud!")
                     else:
-                        print(f"Upload response ({res.status_code}): {res.text}")
+                        print(f"Cloud response ({res.status_code}): {res.text}")
                 except Exception as e:
-                    print(f"Failed to upload enrollment to cloud: {e}")
+                    print(f"Upload error: {e}")
 
 
 if __name__ == "__main__":
