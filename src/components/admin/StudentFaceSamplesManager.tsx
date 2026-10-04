@@ -64,6 +64,7 @@ import CaptureFaceDialog from './CaptureFaceDialog';
 import { resolveStudentPhotoUrl, clearCoverPhotoCache } from '@/utils/studentPhotoResolver';
 import { invalidateCollectionCache } from '@/integrations/appwrite/adapter';
 import { universalDeleteStudent } from '@/services/student/studentDeletionService';
+import { evaluateStudentCoverPhoto, selectBestCoverPhoto } from '@/services/student/bestCoverPhotoSelector';
 import {
   scanDuplicateFaceSamples,
   executeDeduplication,
@@ -380,6 +381,7 @@ const StudentFaceSamplesManager: React.FC = () => {
   // Full-Screen Image Preview Modal states
   const [previewImageUrl, setPreviewImageUrl] = useState<string | null>(null);
   const [previewTitle, setPreviewTitle] = useState<string>('');
+  const [isAutoSelectingCovers, setIsAutoSelectingCovers] = useState(false);
 
   // Cache of resolved image URLs for active view
   const [resolvedUrls, setResolvedUrls] = useState<Record<string, string>>({});
@@ -809,6 +811,12 @@ const StudentFaceSamplesManager: React.FC = () => {
     return { trainedSlots: trained, capturedPhotos: captured };
   }, [selectedGroup]);
 
+  // AI Best Cover Evaluation for Selected Student
+  const bestCoverEval = useMemo(() => {
+    if (!selectedGroup) return null;
+    return evaluateStudentCoverPhoto(selectedGroup);
+  }, [selectedGroup]);
+
   // Photo Crop Modal Handler
   const openCropper = (sample: FaceSample) => {
     const raw = sample.image_url || selectedGroup?.avatarUrl || '';
@@ -1004,6 +1012,144 @@ const StudentFaceSamplesManager: React.FC = () => {
         title: 'ID Photo Updated',
         description: `Updated cover image for ${selectedGroup.name}.`,
       });
+    }
+  };
+
+  // Intelligent 1-Click Auto Select Best Cover for Current Student
+  const handleAutoSelectCoverForCurrentStudent = async () => {
+    if (!selectedGroup || selectedGroup.samples.length === 0) {
+      toast({
+        title: 'No Samples Available',
+        description: 'This student does not have any face photo samples to choose from.',
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    setIsAutoSelectingCovers(true);
+    try {
+      const evalResult = evaluateStudentCoverPhoto(selectedGroup);
+      if (!evalResult.bestSample) {
+        toast({
+          title: 'No Suitable Photo Found',
+          description: 'Could not find a valid photo candidate for this student.',
+          variant: 'destructive',
+        });
+        return;
+      }
+
+      if (evalResult.isAlreadyBest) {
+        toast({
+          title: '✨ Already Optimal',
+          description: `${selectedGroup.name}'s current cover photo is already the best AI-scored portrait (Score: ${evalResult.score}).`,
+        });
+        return;
+      }
+
+      await handleSetAsIdPhoto(evalResult.bestSample);
+      toast({
+        title: '✨ AI Cover Photo Selected',
+        description: `Set best frontal portrait for ${selectedGroup.name} (Score: ${evalResult.score}). Highlights: ${evalResult.reasons.slice(0, 2).join(', ')}`,
+      });
+    } catch (err: any) {
+      console.error('Auto select cover error:', err);
+      toast({
+        title: 'Selection Failed',
+        description: err.message || 'Could not auto-select cover photo.',
+        variant: 'destructive',
+      });
+    } finally {
+      setIsAutoSelectingCovers(false);
+    }
+  };
+
+  // Intelligent Batch Auto-Select Best Cover Photo for ALL Students
+  const handleAutoSetBestCoversForAll = async () => {
+    if (groups.length === 0) return;
+    setIsAutoSelectingCovers(true);
+    let updatedCount = 0;
+    let skippedCount = 0;
+
+    try {
+      for (const group of groups) {
+        if (!group.samples || group.samples.length === 0) {
+          skippedCount++;
+          continue;
+        }
+
+        const evalResult = evaluateStudentCoverPhoto(group);
+        if (!evalResult.bestSample || evalResult.isAlreadyBest) {
+          skippedCount++;
+          continue;
+        }
+
+        const bestSample = evalResult.bestSample;
+        const rawUrl = bestSample.image_url;
+        if (!rawUrl) {
+          skippedCount++;
+          continue;
+        }
+
+        const persistentRef = toPersistentImageReference(rawUrl) || rawUrl;
+        const targetUserId = group.userId || '';
+        const targetEmpId = group.employeeId || '';
+        const targetName = group.name || '';
+
+        // Safely resolve the exact single target profile document ID
+        let targetProfileDocId: string | null = null;
+        if (targetUserId) {
+          const { data: p } = await supabase.from('profiles').select('id, user_id').eq('user_id', targetUserId).limit(1).maybeSingle();
+          if (p?.id) targetProfileDocId = p.id;
+        }
+        if (!targetProfileDocId && targetEmpId) {
+          const { data: p } = await supabase.from('profiles').select('id').eq('admission_number', targetEmpId).limit(1).maybeSingle();
+          if (p?.id) targetProfileDocId = p.id;
+        }
+        if (!targetProfileDocId && targetEmpId) {
+          const { data: p } = await supabase.from('profiles').select('id').eq('employee_id', targetEmpId).limit(1).maybeSingle();
+          if (p?.id) targetProfileDocId = p.id;
+        }
+        if (!targetProfileDocId && targetEmpId) {
+          const { data: p } = await supabase.from('profiles').select('id').eq('roll_number', targetEmpId).limit(1).maybeSingle();
+          if (p?.id) targetProfileDocId = p.id;
+        }
+        if (!targetProfileDocId && targetName && targetName !== 'Student' && targetName !== 'Unknown') {
+          const { data: p } = await supabase.from('profiles').select('id').eq('full_name', targetName).limit(1).maybeSingle();
+          if (p?.id) targetProfileDocId = p.id;
+        }
+
+        if (targetProfileDocId) {
+          await supabase
+            .from('profiles')
+            .update({ avatar_url: persistentRef, updated_at: new Date().toISOString() })
+            .eq('id', targetProfileDocId);
+        }
+
+        // Clear cover photo cache for this student
+        if (targetUserId) clearCoverPhotoCache(targetUserId);
+        if (targetEmpId) clearCoverPhotoCache(targetEmpId);
+        if (targetName) clearCoverPhotoCache(targetName);
+
+        updatedCount++;
+      }
+
+      invalidateCollectionCache('profiles');
+      await fetchSamples({ silent: true });
+      await syncDescriptorCache().catch(() => {});
+
+      toast({
+        title: '✨ Auto-Pick Covers Complete',
+        description: `Evaluated ${groups.length} students: updated ${updatedCount} cover photos with optimal AI portraits (${skippedCount} already optimal or without samples).`,
+      });
+    } catch (err: any) {
+      console.error('Batch auto cover select error:', err);
+      toast({
+        title: 'Auto-Select Failed',
+        description: err.message || 'Could not complete batch cover photo selection.',
+        variant: 'destructive',
+      });
+    } finally {
+      setIsAutoSelectingCovers(false);
     }
   };
 
@@ -1667,6 +1813,17 @@ const StudentFaceSamplesManager: React.FC = () => {
               </Button>
 
               <Button
+                variant="default"
+                size="sm"
+                onClick={handleAutoSetBestCoversForAll}
+                disabled={loading || isAutoSelectingCovers || groups.length === 0}
+                className="rounded-2xl bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-600 hover:to-orange-600 text-white font-bold text-xs gap-1.5 shadow-md shadow-amber-500/20 active:scale-95 transition-all"
+              >
+                <Sparkles className={`h-3.5 w-3.5 ${isAutoSelectingCovers ? 'animate-spin' : ''}`} />
+                {isAutoSelectingCovers ? 'Auto-Selecting Covers...' : '✨ Auto-Pick Best Covers for All'}
+              </Button>
+
+              <Button
                 variant="outline"
                 size="sm"
                 onClick={handleExportZip}
@@ -1936,6 +2093,17 @@ const StudentFaceSamplesManager: React.FC = () => {
                   <Button
                     size="sm"
                     variant="outline"
+                    onClick={handleAutoSelectCoverForCurrentStudent}
+                    disabled={isAutoSelectingCovers || selectedGroup.samples.length === 0}
+                    className="rounded-xl border-amber-500/40 bg-amber-500/10 hover:bg-amber-500/20 text-amber-600 dark:text-amber-400 text-xs font-bold gap-1.5 shadow-sm active:scale-95 transition-all"
+                  >
+                    <Sparkles className={`h-3.5 w-3.5 text-amber-500 ${isAutoSelectingCovers ? 'animate-spin' : ''}`} />
+                    {isAutoSelectingCovers ? 'Selecting...' : 'Auto-Pick Best Cover'}
+                  </Button>
+
+                  <Button
+                    size="sm"
+                    variant="outline"
                     onClick={() => {
                       setDedupTargetUserId(selectedGroup.userId || selectedGroup.employeeId);
                       setDedupModalOpen(true);
@@ -2029,6 +2197,7 @@ const StudentFaceSamplesManager: React.FC = () => {
                             fallbackUrl={fallbackCover}
                             isSelected={selectedSampleIds.has(sample.id)}
                             isCurrentIdPhoto={isCurrentId}
+                            isAiTopPick={Boolean(bestCoverEval?.bestSample && bestCoverEval.bestSample.id === sample.id)}
                             onToggleSelect={() => {
                               setSelectedSampleIds((prev) => {
                                 const next = new Set(prev);
@@ -2098,6 +2267,7 @@ const StudentFaceSamplesManager: React.FC = () => {
                             fallbackUrl={null}
                             isSelected={selectedSampleIds.has(sample.id)}
                             isCurrentIdPhoto={isCurrentId}
+                            isAiTopPick={Boolean(bestCoverEval?.bestSample && bestCoverEval.bestSample.id === sample.id)}
                             onToggleSelect={() => {
                               setSelectedSampleIds((prev) => {
                                 const next = new Set(prev);
@@ -2454,6 +2624,7 @@ interface PhotoCardProps {
   fallbackUrl?: string | null;
   isSelected: boolean;
   isCurrentIdPhoto: boolean;
+  isAiTopPick?: boolean;
   onToggleSelect: () => void;
   onPreview: () => void;
   onCrop: () => void;
@@ -2468,6 +2639,7 @@ const PhotoCard: React.FC<PhotoCardProps> = ({
   fallbackUrl,
   isSelected,
   isCurrentIdPhoto,
+  isAiTopPick,
   onToggleSelect,
   onPreview,
   onCrop,
@@ -2564,11 +2736,15 @@ const PhotoCard: React.FC<PhotoCardProps> = ({
           displayUrl && "cursor-pointer group/img"
         )}
       >
-        {isCurrentIdPhoto && (
+        {isCurrentIdPhoto ? (
           <div className="absolute top-2 left-2 z-10 rounded-full bg-gradient-to-r from-primary to-emerald-600 text-white font-extrabold text-[10px] px-2.5 py-0.5 shadow-md flex items-center gap-1 border border-white/20">
             ★ Active ID Cover
           </div>
-        )}
+        ) : isAiTopPick ? (
+          <div className="absolute top-2 left-2 z-10 rounded-full bg-gradient-to-r from-amber-500 to-orange-500 text-white font-extrabold text-[10px] px-2.5 py-0.5 shadow-md flex items-center gap-1 border border-white/20 animate-pulse">
+            ★ AI Top Pick
+          </div>
+        ) : null}
 
         {displayUrl ? (
           <>
