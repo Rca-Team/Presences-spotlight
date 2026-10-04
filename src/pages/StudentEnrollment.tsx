@@ -6,6 +6,7 @@ import { Input } from '@/components/ui/input';
 import GuidedFaceCapture from '@/components/enrollment/GuidedFaceCapture';
 import IdCardPhotoStep from '@/components/enrollment/IdCardPhotoStep';
 import InteractiveIdCard from '@/components/enrollment/InteractiveIdCard';
+import EnrollmentInformationCard from '@/components/enrollment/EnrollmentInformationCard';
 import { enrollmentApi } from '@/services/enrollment/api';
 import { fieldLabels, studentFields, type CaptureResult, type EnrollmentSession, type StudentDetails } from '@/services/enrollment/types';
 import DobDatePicker from '@/components/enrollment/DobDatePicker';
@@ -297,23 +298,18 @@ export default function StudentEnrollment() {
                     onEditPhoto={() => setPhase('idphoto')}
                   />
 
-                  <h2 className="mt-7">Does everything look right?</h2>
-                  <p className="enrollment-muted">Corrections are sent to your school for approval.</p>
-                  <div className="grid grid-cols-2 gap-3 my-5">
-                    {studentFields.map(field => (
-                      <label key={field} className={`enrollment-label ${field === 'address' ? 'col-span-2' : ''}`}>
-                        {fieldLabels[field]}
-                        {editing && field !== 'admission_number' ? (
-                          <Input value={details[field]} onChange={e => setDetails({ ...details, [field]: e.target.value })} />
-                        ) : (
-                          <span className="block text-slate-100 text-sm mt-1 break-words">{details[field] || 'Not provided'}</span>
-                        )}
-                      </label>
-                    ))}
+                  {/* Official Record Information Card */}
+                  <div className="mt-6 mb-5">
+                    <EnrollmentInformationCard
+                      details={details}
+                      editing={editing}
+                      onToggleEditing={() => setEditing((v) => !v)}
+                      onChangeField={(field, val) =>
+                        setDetails((prev) => (prev ? { ...prev, [field]: val } : prev))
+                      }
+                      disabled={busy}
+                    />
                   </div>
-                  <Button variant="ghost" disabled={busy} onClick={() => setEditing(v => !v)}>
-                    {editing ? 'Finish editing' : 'Request corrections'}
-                  </Button>
                   <Button
                     disabled={busy || expired}
                     className="enrollment-primary w-full mt-3"
