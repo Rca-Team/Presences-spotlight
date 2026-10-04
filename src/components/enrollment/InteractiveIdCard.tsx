@@ -17,6 +17,7 @@ import {
 import { QRCodeSVG } from 'qrcode.react';
 import { Button } from '@/components/ui/button';
 import type { StudentDetails } from '@/services/enrollment/types';
+import { resolveIdentityDisplay } from '@/utils/studentIdentityResolver';
 
 interface InteractiveIdCardProps {
   student: StudentDetails;
@@ -33,6 +34,14 @@ export default function InteractiveIdCard({
   onEditPhoto,
   showActions = true,
 }: InteractiveIdCardProps) {
+  const identity = resolveIdentityDisplay({
+    student_name: student.name,
+    class: student.class,
+    section: student.section,
+    category: student.category,
+    role: (student as any).role,
+  });
+
   const [isFlipped, setIsFlipped] = useState(false);
   const [theme, setTheme] = useState<CardTheme>('emerald');
   const [isDownloading, setIsDownloading] = useState(false);
@@ -184,7 +193,7 @@ export default function InteractiveIdCard({
                       <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-ping" />
                     </div>
                     <p className="text-[9px] font-medium tracking-widest text-slate-400 uppercase">
-                      Student Identity Pass · 2026-27
+                      {identity.isTeacher ? 'Faculty Identity Pass · 2026-27' : 'Student Identity Pass · 2026-27'}
                     </p>
                   </div>
                 </div>
@@ -196,7 +205,7 @@ export default function InteractiveIdCard({
                 </div>
               </div>
 
-              {/* Card Middle: Photo + Student Info */}
+              {/* Card Middle: Photo + Person Info */}
               <div className="flex items-center gap-4 sm:gap-5 my-auto relative z-10">
                 {/* Portrait with Holographic Glow Frame */}
                 <div className="relative shrink-0">
@@ -223,7 +232,7 @@ export default function InteractiveIdCard({
                 <div className="min-w-0 flex-1 space-y-1.5">
                   <div>
                     <span className="text-[9px] font-bold uppercase tracking-wider text-slate-400 block">
-                      Student Name
+                      {identity.isTeacher ? 'Faculty / Staff Member' : 'Student Name'}
                     </span>
                     <h3 className="text-base sm:text-lg font-black text-slate-100 tracking-tight truncate leading-tight">
                       {student.name}
@@ -232,11 +241,17 @@ export default function InteractiveIdCard({
 
                   {/* Pills Row */}
                   <div className="flex flex-wrap items-center gap-1.5 pt-0.5">
-                    <span className={`px-2 py-0.5 rounded-lg text-[10px] font-bold border ${themeStyles.pill}`}>
-                      Class {student.class} {student.section && `• Sec ${student.section}`}
-                    </span>
+                    {identity.isTeacher ? (
+                      <span className="px-2 py-0.5 rounded-lg text-[10px] font-bold bg-purple-500/20 text-purple-300 border border-purple-400/40">
+                        ★ {identity.roleLabel}
+                      </span>
+                    ) : (
+                      <span className={`px-2 py-0.5 rounded-lg text-[10px] font-bold border ${themeStyles.pill}`}>
+                        Class {student.class} {student.section && `• Sec ${student.section}`}
+                      </span>
+                    )}
                     <span className="px-2 py-0.5 rounded-lg text-[10px] font-mono font-bold bg-slate-900/80 text-slate-300 border border-white/10">
-                      ID #{student.admission_number}
+                      {identity.isTeacher ? 'Staff ID' : 'ID'} #{student.admission_number || '10341'}
                     </span>
                   </div>
 
@@ -263,14 +278,14 @@ export default function InteractiveIdCard({
                     ))}
                   </div>
                   <span className="text-[8px] font-mono tracking-widest text-slate-400 block uppercase">
-                    PASS-SEC-{student.admission_number}
+                    PASS-SEC-{student.admission_number || '10341'}
                   </span>
                 </div>
 
                 {/* Miniature Scannable QR Code */}
                 <div className="bg-white p-1 rounded-lg shadow-md shrink-0">
                   <QRCodeSVG 
-                    value={`STUDENT:${student.admission_number}:${student.name}`} 
+                    value={`${identity.isTeacher ? 'FACULTY' : 'STUDENT'}:${student.admission_number || '10341'}:${student.name}`} 
                     size={30}
                     level="M"
                   />

@@ -1,5 +1,5 @@
-import { useState, useRef, useEffect, useCallback } from 'react';
-import { motion } from 'framer-motion';
+import { useState, useRef, useEffect, useCallback, useMemo } from 'react';
+import { motion, AnimatePresence } from 'framer-motion';
 import { 
   Upload, 
   RotateCw, 
@@ -16,11 +16,19 @@ import {
   Contrast,
   Palette,
   ShieldCheck,
-  Crop
+  Crop,
+  Building2,
+  Wifi,
+  Maximize2,
+  RefreshCw,
+  Eye,
+  CheckCircle2
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Slider } from '@/components/ui/slider';
+import { Badge } from '@/components/ui/badge';
 import type { StudentDetails } from '@/services/enrollment/types';
+import { resolveIdentityDisplay } from '@/utils/studentIdentityResolver';
 
 interface IdCardPhotoStepProps {
   student: StudentDetails;
@@ -37,12 +45,21 @@ export default function IdCardPhotoStep({
   onConfirm,
   onBack,
 }: IdCardPhotoStepProps) {
+  // Identity Resolution for teacher vs student separation
+  const identity = useMemo(() => resolveIdentityDisplay({
+    student_name: student.name,
+    class: student.class,
+    section: student.section,
+    category: student.category,
+    role: (student as any).role,
+  }), [student]);
+
   // Source image state
   const [sourceImage, setSourceImage] = useState<string>(defaultPhoto);
   const [isUploaded, setIsUploaded] = useState(false);
 
   // Transform / Crop States
-  const [zoom, setZoom] = useState(1);
+  const [zoom, setZoom] = useState(1.15);
   const [rotation, setRotation] = useState(0);
   const [pan, setPan] = useState({ x: 0, y: 0 });
   const [aspectRatio, setAspectRatio] = useState<AspectRatio>('3:4');
@@ -51,14 +68,13 @@ export default function IdCardPhotoStep({
 
   // Enhancement States
   const [autoEnhanced, setAutoEnhanced] = useState(false);
-  const [brightness, setBrightness] = useState(0); // -50 to +50
-  const [contrast, setContrast] = useState(0); // -50 to +50
-  const [saturation, setSaturation] = useState(0); // -50 to +50
+  const [brightness, setBrightness] = useState(0); // -40 to +40
+  const [contrast, setContrast] = useState(0); // -40 to +40
+  const [saturation, setSaturation] = useState(0); // -40 to +40
   const [sharpness, setSharpness] = useState(0); // 0 to 50
   const [activeTab, setActiveTab] = useState<'crop' | 'enhance'>('crop');
 
   const canvasRef = useRef<HTMLCanvasElement>(null);
-  const previewCanvasRef = useRef<HTMLCanvasElement>(null);
   const [previewDataUrl, setPreviewDataUrl] = useState<string>(defaultPhoto);
   const imgElementRef = useRef<HTMLImageElement | null>(null);
 
@@ -85,7 +101,7 @@ export default function IdCardPhotoStep({
         setSourceImage(dataUrl);
         setIsUploaded(true);
         // Reset crop & enhancements for new image
-        setZoom(1);
+        setZoom(1.15);
         setRotation(0);
         setPan({ x: 0, y: 0 });
         setBrightness(0);
@@ -102,9 +118,9 @@ export default function IdCardPhotoStep({
   const toggleAutoEnhance = () => {
     if (!autoEnhanced) {
       setAutoEnhanced(true);
-      setBrightness(12);
-      setContrast(18);
-      setSaturation(14);
+      setBrightness(10);
+      setContrast(16);
+      setSaturation(12);
       setSharpness(25);
     } else {
       setAutoEnhanced(false);
@@ -117,7 +133,7 @@ export default function IdCardPhotoStep({
 
   // Reset all adjustments
   const handleReset = () => {
-    setZoom(1);
+    setZoom(1.15);
     setRotation(0);
     setPan({ x: 0, y: 0 });
     setBrightness(0);
@@ -136,7 +152,7 @@ export default function IdCardPhotoStep({
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
 
-    // Standard output dimension: 600px width
+    // Standard high-res output dimension: 600px width
     const targetW = 600;
     let targetH = 800; // 3:4 default
     if (aspectRatio === '1:1') targetH = 600;
@@ -181,8 +197,7 @@ export default function IdCardPhotoStep({
       try {
         const imgData = ctx.getImageData(0, 0, targetW, targetH);
         const d = imgData.data;
-        const factor = (sharpness / 100) * 0.6;
-        // Simple 3x3 sharpening convolution
+        const factor = (sharpness / 100) * 0.55;
         const copy = new Uint8ClampedArray(d);
         const stride = targetW * 4;
 
@@ -257,35 +272,41 @@ export default function IdCardPhotoStep({
   };
 
   return (
-    <div className="space-y-6">
-      {/* Header */}
-      <div>
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-2 text-emerald-400 text-xs font-semibold uppercase tracking-wider">
+    <div className="space-y-6 select-none">
+      {/* Offscreen High-Res Canvas */}
+      <canvas ref={canvasRef} className="hidden" />
+
+      {/* Top Header Bar */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-2 border-b border-white/10">
+        <div>
+          <div className="flex items-center gap-2 text-emerald-400 text-xs font-bold uppercase tracking-wider">
             <ShieldCheck size={16} />
-            <span>Step 3 of 4: Student ID Photo</span>
+            <span>Step 3 of 4: ID Card Photo Calibration</span>
           </div>
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={handleSkip}
-            className="text-xs text-slate-400 hover:text-slate-200"
-          >
-            Skip & Use Camera Photo
-          </Button>
+          <h2 className="text-xl sm:text-2xl font-black text-white mt-1">
+            {identity.isTeacher ? 'Faculty / Staff ID Badge Portrait' : 'Student ID Card Portrait'}
+          </h2>
+          <p className="text-xs sm:text-sm text-slate-400 mt-0.5">
+            Crop, enhance, or upload a portrait for {student.name}’s official school badge.
+          </p>
         </div>
-        <h2 className="text-xl font-bold text-slate-100 mt-1">Student ID Card Portrait</h2>
-        <p className="text-sm text-slate-400 mt-0.5">
-          Crop, enhance, or upload a portrait for {student.name.split(' ')[0]}’s official school ID badge.
-        </p>
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          onClick={handleSkip}
+          className="text-xs font-semibold h-8 rounded-xl border-white/15 bg-white/5 hover:bg-white/10 text-slate-300 self-start sm:self-auto"
+        >
+          Skip & Use Camera Photo
+        </Button>
       </div>
 
       {/* Main Studio Grid */}
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 items-start">
-        {/* Left / Center: Interactive Cropper Canvas */}
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
+        {/* Left / Center: Interactive Cropper Viewport */}
         <div className="lg:col-span-7 flex flex-col items-center">
           <div 
-            className="relative w-full max-w-sm aspect-[3/4] rounded-2xl overflow-hidden border-2 border-emerald-500/40 bg-slate-950 shadow-2xl shadow-emerald-950/30 flex items-center justify-center cursor-grab active:cursor-grabbing select-none"
+            className="relative w-full max-w-sm sm:max-w-md aspect-[3/4] rounded-3xl overflow-hidden border-2 border-emerald-500/40 bg-slate-950 shadow-2xl shadow-emerald-950/40 flex items-center justify-center cursor-grab active:cursor-grabbing touch-none select-none transition-shadow hover:shadow-emerald-500/15"
             onMouseDown={handleMouseDown}
             onMouseMove={handleMouseMove}
             onMouseUp={handleMouseUp}
@@ -294,17 +315,14 @@ export default function IdCardPhotoStep({
             onTouchMove={handleTouchMove}
             onTouchEnd={handleTouchEnd}
           >
-            {/* Live Cropper Canvas (Offscreen render) */}
-            <canvas ref={canvasRef} className="hidden" />
-
             {/* Display rendered live preview */}
             <img 
               src={previewDataUrl} 
-              alt="Cropped Student Preview" 
+              alt="Cropped Preview" 
               className="w-full h-full object-cover pointer-events-none"
             />
 
-            {/* Subtle Grid Guidelines (Rule of thirds) */}
+            {/* Subtle Rule of Thirds Grid Guidelines */}
             <div className="absolute inset-0 pointer-events-none border border-emerald-400/20 grid grid-cols-3 grid-rows-3">
               <div className="border-r border-b border-white/10" />
               <div className="border-r border-b border-white/10" />
@@ -317,42 +335,53 @@ export default function IdCardPhotoStep({
               <div />
             </div>
 
-            {/* Subtle Badge */}
-            <div className="absolute top-2.5 left-2.5 bg-slate-900/80 backdrop-blur-md px-2.5 py-1 rounded-full text-[10px] font-medium text-emerald-300 border border-emerald-500/30 flex items-center gap-1.5 shadow-sm">
-              <Crop size={11} />
+            {/* Viewfinder Corner Accents */}
+            <div className="absolute top-3 left-3 w-4 h-4 border-t-2 border-l-2 border-emerald-400 rounded-tl pointer-events-none" />
+            <div className="absolute top-3 right-3 w-4 h-4 border-t-2 border-r-2 border-emerald-400 rounded-tr pointer-events-none" />
+            <div className="absolute bottom-3 left-3 w-4 h-4 border-b-2 border-l-2 border-emerald-400 rounded-bl pointer-events-none" />
+            <div className="absolute bottom-3 right-3 w-4 h-4 border-b-2 border-r-2 border-emerald-400 rounded-br pointer-events-none" />
+
+            {/* Floating Top Badge */}
+            <div className="absolute top-3.5 left-3.5 bg-slate-950/80 backdrop-blur-md px-3 py-1 rounded-full text-[11px] font-semibold text-emerald-300 border border-emerald-500/30 flex items-center gap-1.5 shadow-lg">
+              <Crop size={12} className="text-emerald-400" />
               <span>Drag to position • {aspectRatio}</span>
+            </div>
+
+            {/* Zoom Percentage Chip */}
+            <div className="absolute bottom-3.5 right-3.5 bg-slate-950/80 backdrop-blur-md px-2.5 py-1 rounded-full text-[10px] font-mono font-bold text-slate-300 border border-white/15">
+              {Math.round(zoom * 100)}%
             </div>
           </div>
 
-          {/* Quick Toolbar below preview */}
-          <div className="flex items-center gap-2 mt-3 w-full max-w-sm justify-between">
-            <div className="flex items-center gap-1.5 bg-slate-900/60 p-1 rounded-xl border border-slate-800">
+          {/* Quick Action Toolbar Below Viewport */}
+          <div className="flex items-center gap-2 mt-3.5 w-full max-w-sm sm:max-w-md justify-between">
+            <div className="flex items-center gap-1.5 bg-slate-900/80 backdrop-blur-md p-1 rounded-2xl border border-white/10 shadow-md">
               <Button
                 type="button"
                 variant="ghost"
                 size="sm"
                 onClick={() => setRotation((r) => (r + 90) % 360)}
-                className="h-8 px-2.5 text-xs text-slate-300 hover:text-emerald-300"
-                title="Rotate 90°"
+                className="h-8 px-3 text-xs font-semibold text-slate-200 hover:text-emerald-300 rounded-xl hover:bg-white/5"
+                title="Rotate 90 degrees"
               >
-                <RotateCw size={14} className="mr-1" /> 90°
+                <RotateCw size={13} className="mr-1.5 text-emerald-400" /> 90°
               </Button>
               <Button
                 type="button"
                 variant="ghost"
                 size="sm"
                 onClick={handleReset}
-                className="h-8 px-2.5 text-xs text-slate-400 hover:text-slate-200"
-                title="Reset crop & filters"
+                className="h-8 px-3 text-xs font-semibold text-slate-300 hover:text-slate-100 rounded-xl hover:bg-white/5"
+                title="Reset adjustments"
               >
-                <Undo size={14} className="mr-1" /> Reset
+                <Undo size={13} className="mr-1.5 text-slate-400" /> Reset
               </Button>
             </div>
 
-            {/* Upload Separate ID Photo */}
-            <label className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-800/80 hover:bg-slate-700/80 text-xs text-slate-200 font-medium cursor-pointer border border-slate-700 transition-colors shadow-sm">
+            {/* Upload Custom ID Photo */}
+            <label className="flex items-center gap-1.5 px-3.5 py-2 rounded-2xl bg-gradient-to-r from-slate-800 to-slate-900 hover:from-slate-700 hover:to-slate-800 text-xs text-white font-bold cursor-pointer border border-white/15 transition-all shadow-md active:scale-95">
               <Upload size={13} className="text-emerald-400" />
-              <span>{isUploaded ? 'Change Photo' : 'Upload ID Photo'}</span>
+              <span>{isUploaded ? 'Change Photo' : 'Upload Photo'}</span>
               <input
                 type="file"
                 accept="image/*"
@@ -363,28 +392,28 @@ export default function IdCardPhotoStep({
           </div>
         </div>
 
-        {/* Right: Studio Controls & Live ID Card Mockup */}
+        {/* Right: Studio Controls & Live Official ID Card Mockup */}
         <div className="lg:col-span-5 space-y-4">
-          {/* Tabs: Crop & Sizing vs AI Enhance */}
-          <div className="flex bg-slate-900/80 p-1 rounded-xl border border-slate-800 text-xs font-semibold">
+          {/* Segmented Tab Navigation */}
+          <div className="flex bg-slate-900/90 backdrop-blur-md p-1.5 rounded-2xl border border-white/10 text-xs font-bold shadow-inner">
             <button
               type="button"
               onClick={() => setActiveTab('crop')}
-              className={`flex-1 py-1.5 rounded-lg flex items-center justify-center gap-1.5 transition-all ${
+              className={`flex-1 py-2 rounded-xl flex items-center justify-center gap-2 transition-all ${
                 activeTab === 'crop'
-                  ? 'bg-emerald-600 text-white shadow-md'
+                  ? 'bg-emerald-500 text-slate-950 shadow-md shadow-emerald-500/25 font-extrabold'
                   : 'text-slate-400 hover:text-slate-200'
               }`}
             >
               <Crop size={14} />
-              <span>Crop & Scale</span>
+              <span>Crop & Sizing</span>
             </button>
             <button
               type="button"
               onClick={() => setActiveTab('enhance')}
-              className={`flex-1 py-1.5 rounded-lg flex items-center justify-center gap-1.5 transition-all ${
+              className={`flex-1 py-2 rounded-xl flex items-center justify-center gap-2 transition-all ${
                 activeTab === 'enhance'
-                  ? 'bg-emerald-600 text-white shadow-md'
+                  ? 'bg-emerald-500 text-slate-950 shadow-md shadow-emerald-500/25 font-extrabold'
                   : 'text-slate-400 hover:text-slate-200'
               }`}
             >
@@ -395,10 +424,14 @@ export default function IdCardPhotoStep({
 
           {/* Tab 1: Crop & Scale Controls */}
           {activeTab === 'crop' && (
-            <div className="enrollment-inset space-y-4 p-4 rounded-2xl bg-slate-900/40 border border-slate-800/80">
+            <motion.div 
+              initial={{ opacity: 0, y: 6 }} 
+              animate={{ opacity: 1, y: 0 }} 
+              className="space-y-4 p-4 sm:p-5 rounded-2xl bg-slate-900/70 border border-white/10 shadow-xl"
+            >
               {/* Aspect Ratio Presets */}
               <div>
-                <label className="text-xs font-medium text-slate-300 block mb-1.5">
+                <label className="text-xs font-bold uppercase tracking-wider text-slate-300 block mb-2">
                   ID Card Aspect Ratio
                 </label>
                 <div className="grid grid-cols-3 gap-2">
@@ -407,10 +440,10 @@ export default function IdCardPhotoStep({
                       key={ratio}
                       type="button"
                       onClick={() => setAspectRatio(ratio)}
-                      className={`py-1.5 text-xs font-semibold rounded-lg border transition-all ${
+                      className={`py-2 text-xs font-bold rounded-xl border transition-all ${
                         aspectRatio === ratio
-                          ? 'border-emerald-400 bg-emerald-950/40 text-emerald-300 shadow-sm'
-                          : 'border-slate-800 bg-slate-900/60 text-slate-400 hover:text-slate-200'
+                          ? 'border-emerald-400 bg-emerald-500/20 text-emerald-300 shadow-md shadow-emerald-500/10'
+                          : 'border-white/10 bg-white/5 text-slate-400 hover:text-slate-200 hover:bg-white/10'
                       }`}
                     >
                       {ratio === '3:4' && 'Passport (3:4)'}
@@ -421,170 +454,219 @@ export default function IdCardPhotoStep({
                 </div>
               </div>
 
-              {/* Zoom Slider */}
-              <div className="space-y-1.5">
-                <div className="flex justify-between text-xs font-medium text-slate-300">
-                  <span className="flex items-center gap-1">
-                    <ZoomIn size={13} className="text-emerald-400" /> Zoom Level
+              {/* Zoom Slider with Precise Controls */}
+              <div className="space-y-2 pt-1">
+                <div className="flex justify-between text-xs font-bold text-slate-200">
+                  <span className="flex items-center gap-1.5">
+                    <ZoomIn size={14} className="text-emerald-400" /> Zoom & Framing
                   </span>
-                  <span className="text-emerald-300">{Math.round(zoom * 100)}%</span>
+                  <span className="text-emerald-400 font-mono">{Math.round(zoom * 100)}%</span>
                 </div>
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-2.5">
                   <Button
                     type="button"
                     variant="ghost"
                     size="sm"
-                    className="h-7 w-7 p-0 text-slate-400"
-                    onClick={() => setZoom((z) => Math.max(0.8, Number((z - 0.1).toFixed(1))))}
+                    className="h-8 w-8 p-0 rounded-xl bg-white/5 hover:bg-white/10 text-slate-300 border border-white/10 shrink-0"
+                    onClick={() => setZoom((z) => Math.max(0.7, Number((z - 0.1).toFixed(2))))}
                   >
                     <ZoomOut size={14} />
                   </Button>
                   <Slider
                     value={[zoom]}
-                    min={0.8}
+                    min={0.7}
                     max={2.8}
                     step={0.05}
                     onValueChange={([val]) => setZoom(val)}
-                    className="flex-1"
+                    className="flex-1 py-1"
                   />
                   <Button
                     type="button"
                     variant="ghost"
                     size="sm"
-                    className="h-7 w-7 p-0 text-slate-400"
-                    onClick={() => setZoom((z) => Math.min(2.8, Number((z + 0.1).toFixed(1))))}
+                    className="h-8 w-8 p-0 rounded-xl bg-white/5 hover:bg-white/10 text-slate-300 border border-white/10 shrink-0"
+                    onClick={() => setZoom((z) => Math.min(2.8, Number((z + 0.1).toFixed(2))))}
                   >
                     <ZoomIn size={14} />
                   </Button>
                 </div>
               </div>
-            </div>
+            </motion.div>
           )}
 
           {/* Tab 2: Image Enhancement & Filters */}
           {activeTab === 'enhance' && (
-            <div className="enrollment-inset space-y-3.5 p-4 rounded-2xl bg-slate-900/40 border border-slate-800/80">
+            <motion.div 
+              initial={{ opacity: 0, y: 6 }} 
+              animate={{ opacity: 1, y: 0 }} 
+              className="space-y-4 p-4 sm:p-5 rounded-2xl bg-slate-900/70 border border-white/10 shadow-xl"
+            >
               {/* 1-Click Auto Enhance Button */}
               <Button
                 type="button"
                 onClick={toggleAutoEnhance}
-                className={`w-full text-xs font-semibold py-2 rounded-xl flex items-center justify-center gap-2 transition-all ${
+                className={`w-full text-xs font-extrabold py-3 h-auto rounded-xl flex items-center justify-center gap-2 transition-all ${
                   autoEnhanced
-                    ? 'bg-emerald-500 text-slate-950 shadow-lg shadow-emerald-500/20'
-                    : 'bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white'
+                    ? 'bg-emerald-500 text-slate-950 shadow-lg shadow-emerald-500/30'
+                    : 'bg-gradient-to-r from-emerald-600 via-teal-600 to-cyan-600 hover:from-emerald-500 hover:to-cyan-500 text-white shadow-md'
                 }`}
               >
-                <Sparkles size={14} className={autoEnhanced ? 'animate-spin' : ''} />
-                <span>{autoEnhanced ? 'Auto-Enhanced (Active)' : '✨ 1-Click Auto Enhance Portrait'}</span>
+                <Sparkles size={15} className={autoEnhanced ? 'animate-spin' : ''} />
+                <span>{autoEnhanced ? '✨ Auto-Enhanced Active (Click to Reset)' : '✨ 1-Click AI Portrait Auto-Enhance'}</span>
               </Button>
 
-              {/* Brightness */}
-              <div className="space-y-1">
-                <div className="flex justify-between text-xs text-slate-300">
-                  <span className="flex items-center gap-1.5">
-                    <Sun size={13} className="text-amber-400" /> Brightness
-                  </span>
-                  <span className="text-slate-400">{brightness > 0 ? `+${brightness}` : brightness}</span>
+              <div className="grid grid-cols-1 gap-3 pt-1">
+                {/* Brightness */}
+                <div className="space-y-1">
+                  <div className="flex justify-between text-xs font-medium text-slate-300">
+                    <span className="flex items-center gap-1.5">
+                      <Sun size={13} className="text-amber-400" /> Brightness
+                    </span>
+                    <span className="text-slate-400 font-mono">{brightness > 0 ? `+${brightness}` : brightness}</span>
+                  </div>
+                  <Slider
+                    value={[brightness]}
+                    min={-40}
+                    max={40}
+                    step={1}
+                    onValueChange={([val]) => setBrightness(val)}
+                  />
                 </div>
-                <Slider
-                  value={[brightness]}
-                  min={-40}
-                  max={40}
-                  step={1}
-                  onValueChange={([val]) => setBrightness(val)}
-                />
-              </div>
 
-              {/* Contrast */}
-              <div className="space-y-1">
-                <div className="flex justify-between text-xs text-slate-300">
-                  <span className="flex items-center gap-1.5">
-                    <Contrast size={13} className="text-cyan-400" /> Contrast
-                  </span>
-                  <span className="text-slate-400">{contrast > 0 ? `+${contrast}` : contrast}</span>
+                {/* Contrast */}
+                <div className="space-y-1">
+                  <div className="flex justify-between text-xs font-medium text-slate-300">
+                    <span className="flex items-center gap-1.5">
+                      <Contrast size={13} className="text-cyan-400" /> Contrast
+                    </span>
+                    <span className="text-slate-400 font-mono">{contrast > 0 ? `+${contrast}` : contrast}</span>
+                  </div>
+                  <Slider
+                    value={[contrast]}
+                    min={-40}
+                    max={40}
+                    step={1}
+                    onValueChange={([val]) => setContrast(val)}
+                  />
                 </div>
-                <Slider
-                  value={[contrast]}
-                  min={-40}
-                  max={40}
-                  step={1}
-                  onValueChange={([val]) => setContrast(val)}
-                />
-              </div>
 
-              {/* Saturation */}
-              <div className="space-y-1">
-                <div className="flex justify-between text-xs text-slate-300">
-                  <span className="flex items-center gap-1.5">
-                    <Palette size={13} className="text-pink-400" /> Saturation / Skin Tone
-                  </span>
-                  <span className="text-slate-400">{saturation > 0 ? `+${saturation}` : saturation}</span>
+                {/* Saturation */}
+                <div className="space-y-1">
+                  <div className="flex justify-between text-xs font-medium text-slate-300">
+                    <span className="flex items-center gap-1.5">
+                      <Palette size={13} className="text-pink-400" /> Saturation / Warmth
+                    </span>
+                    <span className="text-slate-400 font-mono">{saturation > 0 ? `+${saturation}` : saturation}</span>
+                  </div>
+                  <Slider
+                    value={[saturation]}
+                    min={-40}
+                    max={40}
+                    step={1}
+                    onValueChange={([val]) => setSaturation(val)}
+                  />
                 </div>
-                <Slider
-                  value={[saturation]}
-                  min={-40}
-                  max={40}
-                  step={1}
-                  onValueChange={([val]) => setSaturation(val)}
-                />
-              </div>
 
-              {/* Sharpness & Facial Contour Clarity */}
-              <div className="space-y-1">
-                <div className="flex justify-between text-xs text-slate-300">
-                  <span className="flex items-center gap-1.5">
-                    <Sliders size={13} className="text-emerald-400" /> Portrait Clarity
-                  </span>
-                  <span className="text-slate-400">{sharpness}%</span>
+                {/* Sharpness & Clarity */}
+                <div className="space-y-1">
+                  <div className="flex justify-between text-xs font-medium text-slate-300">
+                    <span className="flex items-center gap-1.5">
+                      <Sliders size={13} className="text-emerald-400" /> Facial Clarity & Sharpness
+                    </span>
+                    <span className="text-emerald-400 font-mono">{sharpness}%</span>
+                  </div>
+                  <Slider
+                    value={[sharpness]}
+                    min={0}
+                    max={50}
+                    step={2}
+                    onValueChange={([val]) => setSharpness(val)}
+                  />
                 </div>
-                <Slider
-                  value={[sharpness]}
-                  min={0}
-                  max={50}
-                  step={2}
-                  onValueChange={([val]) => setSharpness(val)}
-                />
               </div>
-            </div>
+            </motion.div>
           )}
 
-          {/* Mini Live ID Card Preview Badge */}
-          <div className="p-3.5 rounded-2xl bg-gradient-to-br from-slate-900/90 to-slate-950 border border-emerald-500/30 shadow-lg relative overflow-hidden">
-            <div className="flex justify-between items-center text-[10px] uppercase font-bold tracking-widest text-emerald-400 mb-2">
-              <span>Official Student ID Preview</span>
-              <span>Presences</span>
+          {/* Authentic Official School ID Badge Card Preview */}
+          <div className="p-4 rounded-3xl bg-gradient-to-br from-[#0c1f1c] via-[#09151e] to-[#040a10] border-2 border-emerald-500/40 shadow-2xl relative overflow-hidden group">
+            {/* Holographic Header Bar */}
+            <div className="flex justify-between items-center pb-2.5 border-b border-white/10 mb-3">
+              <div className="flex items-center gap-2">
+                <div className="w-6 h-6 rounded-lg bg-emerald-500/20 border border-emerald-400/40 flex items-center justify-center text-emerald-300 shadow-sm">
+                  <Building2 size={13} />
+                </div>
+                <div>
+                  <span className="text-[10px] font-black uppercase tracking-wider text-white block leading-none">
+                    PM Shri KV · Vigyan Vihar
+                  </span>
+                  <span className="text-[8px] font-mono font-semibold tracking-widest text-emerald-400 uppercase">
+                    Official Identity Pass
+                  </span>
+                </div>
+              </div>
+              <div className="flex items-center gap-1 px-2 py-0.5 rounded-full bg-emerald-950/80 border border-emerald-500/30 text-emerald-300 text-[9px] font-mono font-bold">
+                <Wifi size={10} className="rotate-90 text-emerald-400" />
+                <span>RFID</span>
+              </div>
             </div>
-            <div className="flex items-center gap-3">
-              <img
-                src={previewDataUrl}
-                alt="Card Thumbnail"
-                className="w-14 h-16 rounded-xl object-cover ring-2 ring-emerald-400/40 shadow-md"
-              />
-              <div className="min-w-0 flex-1">
-                <p className="text-sm font-bold text-slate-100 truncate">{student.name}</p>
-                <p className="text-xs text-slate-300">Class {student.class} - {student.section}</p>
-                <p className="text-[11px] font-mono text-emerald-300/90 mt-0.5">{student.admission_number}</p>
+
+            {/* Badge Body: Cropped Photo + Person Info */}
+            <div className="flex items-center gap-3.5">
+              <div className="relative shrink-0">
+                <img
+                  src={previewDataUrl}
+                  alt={student.name}
+                  className="w-16 h-20 sm:w-18 sm:h-22 rounded-2xl object-cover ring-2 ring-emerald-400/60 shadow-lg bg-slate-950"
+                />
+                <div className="absolute -bottom-1 -right-1 bg-emerald-500 text-slate-950 rounded-full p-0.5 shadow-md">
+                  <CheckCircle2 size={12} className="stroke-[3]" />
+                </div>
+              </div>
+
+              <div className="min-w-0 flex-1 space-y-1">
+                <h4 className="text-sm sm:text-base font-extrabold text-white truncate leading-tight">
+                  {student.name}
+                </h4>
+
+                {/* Dynamic Role / Class Badge */}
+                <div className="flex flex-wrap items-center gap-1.5 pt-0.5">
+                  {identity.isTeacher ? (
+                    <span className="px-2 py-0.5 rounded-md text-[10px] font-bold bg-purple-500/20 text-purple-300 border border-purple-400/40">
+                      ★ {identity.roleLabel}
+                    </span>
+                  ) : (
+                    <span className="px-2 py-0.5 rounded-md text-[10px] font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-400/40">
+                      Class {student.class} {student.section && `· ${student.section}`}
+                    </span>
+                  )}
+                </div>
+
+                <p className="text-[11px] font-mono text-slate-300 pt-0.5">
+                  <span className="text-slate-500">{identity.admissionOrEmpLabel}: </span>
+                  <strong className="text-emerald-400 font-bold">{student.admission_number || 'N/A'}</strong>
+                </p>
               </div>
             </div>
           </div>
 
-          {/* Action Buttons */}
-          <div className="pt-2 space-y-2">
+          {/* Action Buttons Section with Zero Text Clipping */}
+          <div className="pt-2 space-y-2.5">
             <Button
               type="button"
               onClick={handleSaveAndContinue}
-              className="w-full enrollment-primary py-2.5 font-semibold text-sm shadow-xl flex items-center justify-center gap-2"
+              className="w-full h-12 rounded-2xl bg-gradient-to-r from-emerald-500 via-teal-500 to-emerald-600 hover:from-emerald-400 hover:to-teal-400 text-slate-950 font-extrabold text-sm sm:text-base shadow-xl shadow-emerald-500/25 flex items-center justify-center gap-2 border-0 transition-transform active:scale-[0.98]"
             >
               <span>Save & Continue to Review</span>
-              <ArrowRight size={16} />
+              <ArrowRight size={18} className="stroke-[2.5]" />
             </Button>
             <Button
               type="button"
               variant="ghost"
               onClick={onBack}
-              className="w-full text-xs text-slate-400 hover:text-slate-200"
+              className="w-full h-10 rounded-xl text-xs font-semibold text-slate-400 hover:text-white hover:bg-white/5 flex items-center justify-center gap-2"
             >
-              <ArrowLeft size={14} className="mr-1.5" /> Back to Face Capture
+              <ArrowLeft size={14} /> 
+              <span>Back to Face Capture</span>
             </Button>
           </div>
         </div>
@@ -592,3 +674,4 @@ export default function IdCardPhotoStep({
     </div>
   );
 }
+
