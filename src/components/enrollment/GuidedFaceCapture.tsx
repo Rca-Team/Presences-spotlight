@@ -4,7 +4,7 @@ import {
   Camera, Check, Glasses, RotateCcw, ScanFace, Sparkles, 
   Volume2, VolumeX, ArrowLeft, ArrowRight, ArrowUp, ArrowDown, 
   Eye, User, AlertTriangle, ShieldCheck, Compass, Lightbulb, 
-  Smile, Mic, MicOff, Activity, CheckCircle2, Zap 
+  Smile, Mic, MicOff, Activity, CheckCircle2, Zap, Bot 
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -22,27 +22,25 @@ import {
 
 type Phase = 'prepare' | 'glasses' | 'turn' | 'capture' | 'replace-glasses' | 'done';
 
-const directions: Record<Pose, string> = {
-  front: 'Look straight ahead (Neutral)',
+const directions: Partial<Record<Pose, string>> = {
+  front: 'Look straight at the camera',
   'front-smile': 'Smile naturally 😊',
   'front-up': 'Lift your chin slightly ⬆️',
   'front-down': 'Lower your chin slightly ⬇️',
-  left: 'Turn gently to your left ⬅️ (15°)',
-  'left-deep': 'Turn further to your left ⬅️ (30°)',
-  right: 'Turn gently to your right ➡️ (15°)',
-  'right-deep': 'Turn further to your right ➡️ (30°)',
-  up: 'Look up ⬆️ (25°)',
-  down: 'Look down ⬇️ (20°)',
-  'up-left': 'Look up and left ↖️',
-  'up-right': 'Look up and right ↗️',
-  'down-left': 'Look down and left ↙️',
-  'down-right': 'Look down and right ↘️',
-  'master-hd': 'Final calibration: Look straight & hold still 🌟',
+  left: 'Turn gently to your left ⬅️',
+  'left-deep': 'Turn further to your left ⬅️',
+  right: 'Turn gently to your right ➡️',
+  'right-deep': 'Turn further to your right ➡️',
+  up: 'Tilt your head up ⬆️',
+  down: 'Tilt your head down ⬇️',
+  'up-left': 'Look slightly up and left ↖️',
+  'up-right': 'Look slightly up and right ↗️',
+  'master-hd': 'Look straight and hold still 🌟',
 };
 
-const spokenDirections: Record<Pose, string> = {
+const spokenDirections: Partial<Record<Pose, string>> = {
   front: 'Please look straight ahead.',
-  'front-smile': 'Now smile naturally for verification.',
+  'front-smile': 'Now smile naturally.',
   'front-up': 'Lift your chin slightly up.',
   'front-down': 'Lower your chin slightly.',
   left: 'Turn gently to your left.',
@@ -53,12 +51,77 @@ const spokenDirections: Record<Pose, string> = {
   down: 'Tilt your head down.',
   'up-left': 'Angle up and to the left.',
   'up-right': 'Angle up and to the right.',
-  'down-left': 'Angle down and to the left.',
-  'down-right': 'Angle down and to the right.',
-  'master-hd': 'Hold still for final calibration.',
+  'master-hd': 'Hold still for final photo.',
 };
 
 const TOTAL_TICKS = 36;
+
+// Interactive Realtime AI Assistant Bot Avatar
+function AIBotAvatar({
+  mood,
+  direction,
+  holdProgress
+}: {
+  mood: 'guiding' | 'encouraging' | 'warning' | 'celebrating';
+  direction?: 'left' | 'right' | 'up' | 'down' | 'center' | 'none';
+  holdProgress: number;
+}) {
+  const pupilX = direction === 'left' ? -3 : direction === 'right' ? 3 : 0;
+  const pupilY = direction === 'up' ? -3 : direction === 'down' ? 3 : 0;
+  const isHappy = mood === 'celebrating' || holdProgress > 0;
+
+  return (
+    <div className="relative w-11 h-11 rounded-2xl bg-gradient-to-br from-slate-800 to-slate-900 border border-emerald-400/30 p-1 flex flex-col items-center justify-between shadow-lg shadow-emerald-500/10 shrink-0">
+      {/* Bot Antenna with status beacon */}
+      <div className="absolute -top-1.5 left-1/2 -translate-x-1/2 flex flex-col items-center">
+        <span className={`w-2 h-2 rounded-full border border-slate-900 ${
+          isHappy ? 'bg-emerald-400 animate-ping' : mood === 'warning' ? 'bg-amber-400 animate-pulse' : 'bg-cyan-400 animate-pulse'
+        }`} />
+      </div>
+
+      {/* Bot Face Screen */}
+      <div className="w-full h-full rounded-xl bg-slate-950/90 border border-white/10 flex flex-col items-center justify-center gap-0.5 relative overflow-hidden">
+        <div className="absolute inset-0 bg-gradient-to-b from-transparent via-emerald-400/5 to-transparent pointer-events-none" />
+
+        {/* Bot Eyes */}
+        <div className="flex items-center gap-1.5 relative z-10">
+          {isHappy ? (
+            <>
+              <span className="text-[11px] font-black text-emerald-400 leading-none">^</span>
+              <span className="text-[11px] font-black text-emerald-400 leading-none">^</span>
+            </>
+          ) : (
+            <>
+              <div className="w-2.5 h-2.5 rounded-full bg-emerald-500/20 border border-emerald-400/40 flex items-center justify-center">
+                <div
+                  className="w-1.5 h-1.5 rounded-full bg-emerald-400 transition-transform duration-200"
+                  style={{ transform: `translate(${pupilX}px, ${pupilY}px)` }}
+                />
+              </div>
+              <div className="w-2.5 h-2.5 rounded-full bg-emerald-500/20 border border-emerald-400/40 flex items-center justify-center">
+                <div
+                  className="w-1.5 h-1.5 rounded-full bg-emerald-400 transition-transform duration-200"
+                  style={{ transform: `translate(${pupilX}px, ${pupilY}px)` }}
+                />
+              </div>
+            </>
+          )}
+        </div>
+
+        {/* Bot Mouth */}
+        <div className="relative z-10">
+          {isHappy ? (
+            <div className="w-3 h-1 rounded-full bg-emerald-400" />
+          ) : mood === 'warning' ? (
+            <div className="w-2 h-0.5 rounded-full bg-amber-400" />
+          ) : (
+            <div className="w-2.5 h-0.5 rounded-full bg-emerald-400/70" />
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
 
 // Web Audio sound engine for Apple iPhone Face ID cues
 class AppleFaceIDSoundEngine {
@@ -419,7 +482,72 @@ export default function GuidedFaceCapture({
           y: (p.y / v.videoHeight) * h,
         });
 
-        // 1a. Triangulated Cyber Shading Lines
+        // 1a. Futuristic Holographic Scanning Bar Wave (Vertical Sweep)
+        const scanY = cy + Math.sin(Date.now() / 420) * (r * 0.65);
+        ctx.save();
+        ctx.beginPath();
+        ctx.arc(cx, cy, r - 10 * dpr, 0, Math.PI * 2);
+        ctx.clip();
+        const scanGrad = ctx.createLinearGradient(0, scanY - 18 * dpr, 0, scanY + 18 * dpr);
+        scanGrad.addColorStop(0, 'rgba(52, 211, 153, 0)');
+        scanGrad.addColorStop(0.5, 'rgba(52, 211, 153, 0.22)');
+        scanGrad.addColorStop(1, 'rgba(52, 211, 153, 0)');
+        ctx.fillStyle = scanGrad;
+        ctx.fillRect(cx - r, scanY - 18 * dpr, r * 2, 36 * dpr);
+        ctx.restore();
+
+        // 1b. Smooth Face ID Corner Reticle Brackets around Face Bounds
+        let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+        landmarks.forEach((p) => {
+          const pt = mapPt(p);
+          if (pt.x < minX) minX = pt.x;
+          if (pt.x > maxX) maxX = pt.x;
+          if (pt.y < minY) minY = pt.y;
+          if (pt.y > maxY) maxY = pt.y;
+        });
+        const pad = 14 * dpr;
+        const bx = minX - pad;
+        const by = minY - pad;
+        const bw = maxX - minX + pad * 2;
+        const bh = maxY - minY + pad * 2;
+        const cornerLen = Math.min(20 * dpr, bw * 0.25);
+
+        ctx.save();
+        ctx.strokeStyle = activeTicks.size > 0 ? '#34d399' : 'rgba(52, 211, 153, 0.75)';
+        ctx.lineWidth = 2.2 * dpr;
+        ctx.shadowColor = 'rgba(52, 211, 153, 0.6)';
+        ctx.shadowBlur = 8 * dpr;
+
+        // Top-Left
+        ctx.beginPath();
+        ctx.moveTo(bx, by + cornerLen);
+        ctx.lineTo(bx, by);
+        ctx.lineTo(bx + cornerLen, by);
+        ctx.stroke();
+
+        // Top-Right
+        ctx.beginPath();
+        ctx.moveTo(bx + bw - cornerLen, by);
+        ctx.lineTo(bx + bw, by);
+        ctx.lineTo(bx + bw, by + cornerLen);
+        ctx.stroke();
+
+        // Bottom-Left
+        ctx.beginPath();
+        ctx.moveTo(bx, by + bh - cornerLen);
+        ctx.lineTo(bx, by + bh);
+        ctx.lineTo(bx + cornerLen, by + bh);
+        ctx.stroke();
+
+        // Bottom-Right
+        ctx.beginPath();
+        ctx.moveTo(bx + bw - cornerLen, by + bh);
+        ctx.lineTo(bx + bw, by + bh);
+        ctx.lineTo(bx + bw, by + bh - cornerLen);
+        ctx.stroke();
+        ctx.restore();
+
+        // 1c. Triangulated Cyber Shading Lines
         ctx.strokeStyle = 'rgba(34, 211, 238, 0.16)';
         ctx.lineWidth = 1 * dpr;
 
@@ -1040,19 +1168,169 @@ export default function GuidedFaceCapture({
     };
   }, [challenge, generation, onComplete, triggerBurst]);
 
+  // Real-time Interactive AI Assistant Bot Guidance
+  const getBotGuidance = (): {
+    headline: string;
+    advice: string;
+    direction: 'left' | 'right' | 'up' | 'down' | 'center' | 'none';
+    icon: 'arrow-left' | 'arrow-right' | 'arrow-up' | 'arrow-down' | 'check' | 'smile' | 'center' | 'light' | 'distance';
+    mood: 'guiding' | 'encouraging' | 'warning' | 'celebrating';
+  } => {
+    if (failure) {
+      return {
+        headline: 'Camera check required',
+        advice: failure,
+        direction: 'none',
+        icon: 'center',
+        mood: 'warning',
+      };
+    }
+
+    if (holdProgress > 0) {
+      return {
+        headline: 'Perfect! Hold steady right there…',
+        advice: 'Calibrating face angles ✨',
+        direction: 'none',
+        icon: 'check',
+        mood: 'celebrating',
+      };
+    }
+
+    // Environmental Real-time Negotiation
+    if (aiReasoning?.distanceStatus === 'too_far') {
+      return {
+        headline: 'Move closer to the camera',
+        advice: 'Come a little closer so I can clearly scan you 📏',
+        direction: 'center',
+        icon: 'distance',
+        mood: 'guiding',
+      };
+    }
+    if (aiReasoning?.distanceStatus === 'too_close') {
+      return {
+        headline: 'Step back a little',
+        advice: 'Hold camera slightly further away 📐',
+        direction: 'center',
+        icon: 'distance',
+        mood: 'guiding',
+      };
+    }
+
+    if (aiReasoning?.lightingStatus === 'dark') {
+      return {
+        headline: 'A bit dark here — need more light',
+        advice: 'Please face a light or window 💡',
+        direction: 'none',
+        icon: 'light',
+        mood: 'warning',
+      };
+    }
+
+    if (qualityWarning) {
+      return {
+        headline: 'Hold still to focus',
+        advice: qualityWarning,
+        direction: 'center',
+        icon: 'center',
+        mood: 'warning',
+      };
+    }
+
+    // Pose Directional Negotiation
+    if (activeTargetPose === 'left' || activeTargetPose === 'left-deep') {
+      return {
+        headline: activeTargetPose === 'left-deep' ? 'Turn more to your left ⬅️' : 'Turn gently to your left ⬅️',
+        advice: 'Slowly turn head left until the ring turns green',
+        direction: 'left',
+        icon: 'arrow-left',
+        mood: 'guiding',
+      };
+    }
+
+    if (activeTargetPose === 'right' || activeTargetPose === 'right-deep') {
+      return {
+        headline: activeTargetPose === 'right-deep' ? 'Turn more to your right ➡️' : 'Turn gently to your right ➡️',
+        advice: 'Slowly turn head right until the ring turns green',
+        direction: 'right',
+        icon: 'arrow-right',
+        mood: 'guiding',
+      };
+    }
+
+    if (activeTargetPose === 'up' || activeTargetPose === 'front-up') {
+      return {
+        headline: 'Tilt your chin up ⬆️',
+        advice: 'Gently look upward towards the top arrow',
+        direction: 'up',
+        icon: 'arrow-up',
+        mood: 'guiding',
+      };
+    }
+
+    if (activeTargetPose === 'down' || activeTargetPose === 'front-down') {
+      return {
+        headline: 'Lower your chin slightly ⬇️',
+        advice: 'Gently tilt your head downward',
+        direction: 'down',
+        icon: 'arrow-down',
+        mood: 'guiding',
+      };
+    }
+
+    if (activeTargetPose === 'up-left') {
+      return {
+        headline: 'Look up and to the left ↖️',
+        advice: 'Tilt head slightly upward and turn left',
+        direction: 'left',
+        icon: 'arrow-left',
+        mood: 'guiding',
+      };
+    }
+
+    if (activeTargetPose === 'up-right') {
+      return {
+        headline: 'Look up and to the right ↗️',
+        advice: 'Tilt head slightly upward and turn right',
+        direction: 'right',
+        icon: 'arrow-right',
+        mood: 'guiding',
+      };
+    }
+
+    if (activeTargetPose === 'front-smile') {
+      return {
+        headline: 'Give a bright smile 😊',
+        advice: 'Smile naturally for liveness check',
+        direction: 'none',
+        icon: 'smile',
+        mood: 'encouraging',
+      };
+    }
+
+    return {
+      headline: 'Look straight at the camera',
+      advice: 'Keep your head upright and centered',
+      direction: 'center',
+      icon: 'center',
+      mood: 'guiding',
+    };
+  };
+
+  const botGuidance = getBotGuidance();
+
   return (
     <section className="faceid-stage relative max-w-xl mx-auto" aria-label="Intelligent multi-angle face capture">
-      {/* Upper Mode Pill Strip */}
+      {/* Upper Mode Strip */}
       <div className="flex items-center justify-between w-full max-w-md mx-auto mb-2 px-1">
         <div className="flex items-center gap-1.5">
           <Badge variant="outline" className="text-[11px] font-bold border-emerald-500/30 bg-emerald-500/10 text-emerald-300 gap-1">
             <ScanFace size={12} className="text-emerald-400" />
-            Neural 3D TrueDepth
+            Face ID Capture
           </Badge>
           {aiReasoning?.adaptiveAssisted && (
             <Badge variant="outline" className="text-[10px] font-bold border-cyan-500/30 bg-cyan-500/10 text-cyan-300 animate-pulse gap-1">
               <Zap size={10} className="text-cyan-400" />
-              Adaptive Assist
+              Assist Active
             </Badge>
           )}
         </div>
@@ -1116,22 +1394,22 @@ export default function GuidedFaceCapture({
         </div>
 
         {/* Directional Beacons Around Circle */}
-        {activeTargetPose === 'left' && (
+        {(activeTargetPose === 'left' || activeTargetPose === 'left-deep' || activeTargetPose === 'up-left') && (
           <div className="faceid-viewport-arrow pos-left" title="Turn Left">
             <ArrowLeft size={24} className="animate-pulse" />
           </div>
         )}
-        {activeTargetPose === 'right' && (
+        {(activeTargetPose === 'right' || activeTargetPose === 'right-deep' || activeTargetPose === 'up-right') && (
           <div className="faceid-viewport-arrow pos-right" title="Turn Right">
             <ArrowRight size={24} className="animate-pulse" />
           </div>
         )}
-        {activeTargetPose === 'up' && (
+        {(activeTargetPose === 'up' || activeTargetPose === 'front-up') && (
           <div className="faceid-viewport-arrow pos-up" title="Tilt Up">
             <ArrowUp size={24} className="animate-pulse" />
           </div>
         )}
-        {activeTargetPose === 'down' && (
+        {(activeTargetPose === 'down' || activeTargetPose === 'front-down') && (
           <div className="faceid-viewport-arrow pos-down" title="Tilt Down">
             <ArrowDown size={24} className="animate-pulse" />
           </div>
@@ -1141,123 +1419,107 @@ export default function GuidedFaceCapture({
         <canvas ref={overlayCanvasRef} className="faceid-canvas-overlay" />
       </div>
 
-      {/* INTELLIGENT AI REASONING & TELEMETRY CARD */}
+      {/* REALTIME INTERACTIVE AI BOT GUIDE (Replaces technical 4-column stats) */}
       {stage !== 'done' && (
         <motion.div 
           initial={{ opacity: 0, y: 10 }}
           animate={{ opacity: 1, y: 0 }}
-          className="mt-3.5 p-3.5 sm:p-4 rounded-3xl bg-slate-900/80 backdrop-blur-xl border border-white/10 shadow-xl space-y-3 max-w-md mx-auto text-left"
+          className="mt-3.5 p-3.5 sm:p-4 rounded-3xl bg-slate-900/90 backdrop-blur-xl border border-white/10 shadow-xl max-w-md mx-auto text-left"
         >
-          {/* Header row: Primary Guidance & Alignment */}
-          <div className="flex items-start justify-between gap-2">
+          <div className="flex items-center gap-3">
+            {/* Animated Bot Avatar */}
+            <AIBotAvatar
+              mood={botGuidance.mood}
+              direction={botGuidance.direction}
+              holdProgress={holdProgress}
+            />
+
+            {/* Conversational Speech Bubble */}
             <div className="min-w-0 flex-1">
-              <div className="flex items-center gap-1.5 text-[11px] font-bold text-emerald-400 uppercase tracking-wider">
-                <Activity size={13} className="animate-pulse text-emerald-400" />
-                <span>AI Live Guidance</span>
+              <div className="flex items-center justify-between gap-1 mb-0.5">
+                <div className="flex items-center gap-1.5">
+                  <span className="text-[10px] font-bold text-emerald-400 uppercase tracking-wider flex items-center gap-1">
+                    <Bot size={11} className="text-emerald-400" /> AI Guide
+                  </span>
+                  {aiReasoning?.targetSatisfied && (
+                    <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300">
+                      Angle Matched
+                    </span>
+                  )}
+                </div>
+
+                {/* Calibrated count badge */}
+                <span className="text-[10px] font-mono font-bold text-slate-400">
+                  {progress} / {totalRequired}
+                </span>
               </div>
-              <p className="text-sm sm:text-base font-bold text-white mt-0.5 truncate">
-                {aiReasoning?.guidanceReasoning || failure || message}
+
+              {/* Bot Main Headline */}
+              <p className="text-sm font-bold text-white leading-tight">
+                {botGuidance.headline}
+              </p>
+
+              {/* Bot Helpful Advice */}
+              <p className="text-xs text-slate-300/80 mt-0.5 truncate">
+                {botGuidance.advice}
               </p>
             </div>
 
-            {/* Target Alignment Score Pill */}
-            <div className="flex flex-col items-end shrink-0">
-              <span className="text-[10px] font-mono text-white/60">Pose Match</span>
-              <span className={`text-sm font-black font-mono ${
-                (aiReasoning?.targetAlignment || 0) >= 80 ? 'text-emerald-400' : 'text-amber-400'
-              }`}>
-                {aiReasoning?.targetAlignment || 0}%
-              </span>
+            {/* Visual Movement Cue Tile */}
+            <div className="w-10 h-10 rounded-2xl bg-white/5 border border-white/10 flex items-center justify-center shrink-0 shadow-sm">
+              {botGuidance.icon === 'arrow-left' && (
+                <ArrowLeft size={20} className="text-emerald-400 animate-pulse" />
+              )}
+              {botGuidance.icon === 'arrow-right' && (
+                <ArrowRight size={20} className="text-emerald-400 animate-pulse" />
+              )}
+              {botGuidance.icon === 'arrow-up' && (
+                <ArrowUp size={20} className="text-emerald-400 animate-pulse" />
+              )}
+              {botGuidance.icon === 'arrow-down' && (
+                <ArrowDown size={20} className="text-emerald-400 animate-pulse" />
+              )}
+              {botGuidance.icon === 'check' && (
+                <CheckCircle2 size={20} className="text-emerald-400 animate-bounce" />
+              )}
+              {botGuidance.icon === 'smile' && (
+                <Smile size={20} className="text-amber-400 animate-pulse" />
+              )}
+              {botGuidance.icon === 'light' && (
+                <Lightbulb size={20} className="text-amber-400 animate-pulse" />
+              )}
+              {botGuidance.icon === 'distance' && (
+                <Compass size={20} className="text-cyan-400 animate-pulse" />
+              )}
+              {botGuidance.icon === 'center' && (
+                <ScanFace size={20} className="text-emerald-400" />
+              )}
             </div>
           </div>
 
-          {/* Smooth Target Alignment & Hold Progress Bar */}
-          <div className="space-y-1">
-            <div className="h-2 w-full bg-white/10 rounded-full overflow-hidden relative">
+          {/* Smooth Alignment & Hold Progress Bar */}
+          <div className="mt-3 pt-2.5 border-t border-white/5 space-y-1">
+            <div className="flex items-center justify-between text-[10px] text-slate-400">
+              <span className="font-medium">
+                {holdProgress > 0 ? 'Holding steady…' : 'Angle alignment'}
+              </span>
+              <span className="font-mono font-bold text-emerald-400">
+                {holdProgress > 0 ? `${holdProgress}%` : `${aiReasoning?.targetAlignment || 0}%`}
+              </span>
+            </div>
+            <div className="h-1.5 w-full bg-white/10 rounded-full overflow-hidden">
               <div
-                className={`h-full transition-all duration-200 rounded-full ${
-                  holdProgress > 0 
-                    ? 'bg-gradient-to-r from-emerald-400 to-teal-300' 
-                    : 'bg-gradient-to-r from-cyan-500 to-emerald-500'
+                className={`h-full transition-all duration-150 rounded-full ${
+                  holdProgress > 0 ? 'bg-emerald-400' : 'bg-gradient-to-r from-emerald-500/70 to-teal-400/70'
                 }`}
                 style={{ width: `${holdProgress > 0 ? holdProgress : (aiReasoning?.targetAlignment || 0)}%` }}
               />
             </div>
-            {holdProgress > 0 && (
-              <p className="text-[10px] text-emerald-300 font-bold font-mono text-right animate-pulse">
-                Holding steady… {holdProgress}%
-              </p>
-            )}
-          </div>
-
-          {/* Realtime Spatial Reasoning Telemetry Chips */}
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 pt-1">
-            {/* Distance */}
-            <div className="p-2 rounded-xl bg-white/5 border border-white/5 flex flex-col">
-              <span className="text-[10px] text-white/50 flex items-center gap-1">
-                <Compass size={10} className="text-cyan-400" /> Distance
-              </span>
-              <span className={`text-[11px] font-bold mt-0.5 truncate ${
-                aiReasoning?.distanceStatus === 'optimal' ? 'text-emerald-300' : 'text-amber-300'
-              }`}>
-                {aiReasoning?.distanceStatus === 'optimal' ? 'Optimal (~50cm)' : aiReasoning?.distanceStatus === 'too_far' ? 'Move closer' : 'Back up'}
-              </span>
-            </div>
-
-            {/* Lighting */}
-            <div className="p-2 rounded-xl bg-white/5 border border-white/5 flex flex-col">
-              <span className="text-[10px] text-white/50 flex items-center gap-1">
-                <Lightbulb size={10} className="text-amber-400" /> Lighting
-              </span>
-              <span className={`text-[11px] font-bold mt-0.5 truncate ${
-                aiReasoning?.lightingStatus === 'balanced' ? 'text-emerald-300' : 'text-amber-300'
-              }`}>
-                {aiReasoning?.lightingStatus === 'balanced' ? `${aiReasoning.lightingSymmetry}% symmetry` : 'Shadows'}
-              </span>
-            </div>
-
-            {/* Live Euler Angles */}
-            <div className="p-2 rounded-xl bg-white/5 border border-white/5 flex flex-col">
-              <span className="text-[10px] text-white/50 flex items-center gap-1">
-                <ScanFace size={10} className="text-emerald-400" /> 3D Angles
-              </span>
-              <span className="text-[11px] font-mono font-bold text-white mt-0.5 truncate">
-                Y:{aiReasoning?.angles?.yaw ?? 0}° P:{aiReasoning?.angles?.pitch ?? 0}°
-              </span>
-            </div>
-
-            {/* Liveness / Expression */}
-            <div className="p-2 rounded-xl bg-white/5 border border-white/5 flex flex-col">
-              <span className="text-[10px] text-white/50 flex items-center gap-1">
-                <Smile size={10} className="text-purple-400" /> Expression
-              </span>
-              <span className="text-[11px] font-bold text-purple-300 mt-0.5 truncate">
-                {(aiReasoning?.liveness?.smileRatio ?? 0) > 0.70 ? 'Smiling 😊' : 'Neutral'}
-              </span>
-            </div>
           </div>
         </motion.div>
       )}
 
-      {/* Real-time Quality & Blur Diagnostics Alert Banner */}
-      {qualityWarning && stage !== 'done' && (
-        <motion.div
-          initial={{ opacity: 0, scale: 0.95 }}
-          animate={{ opacity: 1, scale: 1 }}
-          className="mx-auto mt-2 px-3 py-1.5 rounded-full bg-amber-500/15 border border-amber-500/30 text-amber-300 text-xs font-semibold flex items-center justify-center gap-1.5 shadow-sm max-w-sm text-center animate-pulse"
-        >
-          <AlertTriangle size={14} className="text-amber-400 shrink-0" />
-          <span>{qualityWarning}</span>
-        </motion.div>
-      )}
 
-      {/* Progress Chip */}
-      <div className="flex items-center justify-center gap-3 mt-3">
-        <span className="faceid-chip active text-xs font-bold">
-          <Sparkles size={13} className="text-emerald-400" />
-          {progress} of {totalRequired} angles calibrated
-        </span>
-      </div>
 
       {/* Manual Override Snap Button */}
       {stage !== 'done' && (

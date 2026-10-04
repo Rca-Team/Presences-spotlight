@@ -33,8 +33,6 @@ export const poses: Pose[] = [
   'down',
   'up-left',
   'up-right',
-  'down-left',
-  'down-right',
   'master-hd'
 ];
 
