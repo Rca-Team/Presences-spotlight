@@ -19,6 +19,7 @@ import {
   LayoutGrid,
   Camera,
   Users,
+  QrCode,
 } from 'lucide-react';
 import { Toggle } from '@/components/ui/toggle';
 import { useTheme } from '@/hooks/use-theme';
