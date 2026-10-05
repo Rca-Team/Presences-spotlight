@@ -171,6 +171,10 @@ const UserAccessManager: React.FC = () => {
   const [tCreating, setTCreating] = useState(false);
   const [createdCredentials, setCreatedCredentials] = useState<{ email: string; pass: string; class: string } | null>(null);
 
+  // Start in the loading state when there is no warm cache so the tab opens on the
+  // skeleton instead of an empty shell while the first parallel fetch runs.
+  const [isLoading, setIsLoading] = useState(() => !cachedMatrix || !cachedUsers);
+
   const loadData = useCallback(async (showLoading = false) => {
     if (showLoading || (!cachedMatrix && !cachedUsers)) {
       setIsLoading(true);

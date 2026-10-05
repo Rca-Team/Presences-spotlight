@@ -449,7 +449,7 @@ async function executeClientBackupAction<T = any>(body: Record<string, unknown>)
       (ext === 'png' ? 'image/png' : ext === 'webp' ? 'image/webp' : ext === 'json' ? 'application/json' : 'image/jpeg');
 
     const bytes = base64ToUint8Array(base64);
-    const blob = new Blob([bytes], { type: contentType });
+    const blob = new Blob([bytes as unknown as BlobPart], { type: contentType });
     const { error } = await supabase.storage.from(bucket).upload(path, blob, { upsert: true });
     if (error) {
       console.warn(`Upload storage notice on ${bucket}/${path}:`, error);

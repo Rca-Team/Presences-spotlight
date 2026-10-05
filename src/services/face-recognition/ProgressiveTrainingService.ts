@@ -379,28 +379,39 @@ export async function getUserTrainingStats(userId: string): Promise<{
   oldestSample:  Date | null;
   newestSample:  Date | null;
   trainingLevel: 'none' | 'basic' | 'moderate' | 'good' | 'excellent';
+  /** True only when both a with-glasses and a without-glasses sample exist. */
+  hasGlassesProfile: boolean;
 }> {
   try {
     const { data, error } = await supabase
       .from('face_descriptors')
-      .select('created_at')
+      .select('created_at, metadata')
       .eq('user_id', userId)
       .order('created_at', { ascending: true });
 
     if (error || !data?.length) {
-      return { sampleCount: 0, oldestSample: null, newestSample: null, trainingLevel: 'none' };
+      return { sampleCount: 0, oldestSample: null, newestSample: null, trainingLevel: 'none', hasGlassesProfile: false };
     }
 
     const n = data.length;
+    // metadata is a free-form Json column; narrow it instead of assuming its shape.
+    const glassesStates = new Set<'with' | 'without'>();
+    for (const row of data) {
+      const meta: unknown = row.metadata;
+      if (!meta || typeof meta !== 'object' || Array.isArray(meta)) continue;
+      const glasses = (meta as { glasses?: unknown }).glasses;
+      if (glasses === 'with' || glasses === 'without') glassesStates.add(glasses);
+    }
     return {
       sampleCount:  n,
       oldestSample: new Date(data[0].created_at),
       newestSample: new Date(data[n - 1].created_at),
       trainingLevel: n === 0 ? 'none' : n < 3 ? 'basic' : n < 5 ? 'moderate' : n < 8 ? 'good' : 'excellent',
+      hasGlassesProfile: glassesStates.has('with') && glassesStates.has('without'),
     };
   } catch (err) {
     console.error('getUserTrainingStats error:', err);
-    return { sampleCount: 0, oldestSample: null, newestSample: null, trainingLevel: 'none' };
+    return { sampleCount: 0, oldestSample: null, newestSample: null, trainingLevel: 'none', hasGlassesProfile: false };
   }
 }
 

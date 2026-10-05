@@ -164,7 +164,7 @@ function fileFromDataUrl(fileData: string, fileName?: string, fileType?: string)
   const { mimeType, base64 } = parseDataUrl(fileData, fileType);
   let bytes: Uint8Array;
   try { bytes = Uint8Array.from(atob(base64), c => c.charCodeAt(0)); } catch { throw new Error('The document could not be decoded. Select it again.'); }
-  return new File([bytes], fileName || (mimeType === 'application/pdf' ? 'id-cards.pdf' : 'id-card.jpg'), { type: mimeType });
+  return new File([bytes as unknown as BlobPart], fileName || (mimeType === 'application/pdf' ? 'id-cards.pdf' : 'id-card.jpg'), { type: mimeType });
 }
 
 function normalizeUser(raw: any, _index: number, targetCategory?: string): ExtractedPdfUser {

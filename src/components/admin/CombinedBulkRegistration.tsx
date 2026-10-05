@@ -162,12 +162,13 @@ const CombinedBulkRegistration: React.FC = () => {
             }
           }
 
+          const studentId = typeof user.student_id === 'string' ? user.student_id : '';
           newEntries.push({
             id: `pdf-${Date.now()}-${Math.random().toString(36).substr(2, 5)}`,
             blob,
             preview,
             name: user.name || 'Unknown',
-            employeeId: user.employee_id || user.student_id || `STU-${Date.now()}-${Math.random().toString(36).substr(2, 5)}`,
+            employeeId: user.employee_id || studentId || `STU-${Date.now()}-${Math.random().toString(36).substr(2, 5)}`,
             department: user.department || user.class || 'General',
             status: 'pending',
           });

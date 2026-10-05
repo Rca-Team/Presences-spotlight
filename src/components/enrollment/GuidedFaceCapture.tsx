@@ -1031,7 +1031,7 @@ export default function GuidedFaceCapture({
               const pCtx = portraitCanvas.getContext('2d');
               if (!pCtx) return '';
               drawFaceCropInto(pCtx, PORTRAIT_SIZE);
-              return pCtx.toDataURL('image/jpeg', 0.9);
+              return portraitCanvas.toDataURL('image/jpeg', 0.9);
             };
 
             // Helper to finalize a captured frame: descriptor + identity reference
@@ -1043,7 +1043,7 @@ export default function GuidedFaceCapture({
             ): Promise<boolean> => {
               let descriptorArr: number[] | null = null;
               try {
-                const desc = await faceapi.computeFaceDescriptor(canvas, face.landmarks);
+                const desc = await faceapi.computeFaceDescriptor(canvas);
                 descriptorArr = Array.from(desc as Float32Array);
               } catch { /* best effort */ }
               if (!descriptorArr) {
@@ -1353,7 +1353,7 @@ export default function GuidedFaceCapture({
       };
     }
 
-    if (aiReasoning?.lightingStatus === 'dark') {
+    if (aiReasoning?.lightingStatus === 'dim') {
       return {
         headline: 'A bit dark here — need more light',
         advice: 'Please face a light or window 💡',

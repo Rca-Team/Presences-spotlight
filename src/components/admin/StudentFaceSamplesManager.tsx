@@ -2530,7 +2530,7 @@ const StudentFaceSamplesManager: React.FC = () => {
                   <SidebarAvatar
                     name={studentToDelete.name}
                     avatarUrl={resolvedUrls[studentToDelete.avatarUrl || ''] || studentToDelete.avatarUrl}
-                    isTrained={studentToDelete.isTrained}
+                    isTrained={studentToDelete.samples.some((s) => s.source_table === 'face_descriptors')}
                     className="h-12 w-12 text-sm"
                   />
                   <div>
