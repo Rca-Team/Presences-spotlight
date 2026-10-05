@@ -68,6 +68,20 @@ export function ClassPDFIDCardImporter({ isOpen, onClose, onImportDrafts, initia
   const invalid = chosen.some(c => !c.student.name.trim() || !c.student.employee_id.trim()) || duplicateIds.size > 0;
   const clear = () => { setCards([]); setSelected(new Set()); setError(''); setPercent(0); setStage(''); };
   const close = () => { if (saving) return; abort.current?.abort(); clear(); setFile(undefined); onClose(); };
+
+  // Enroll every currently‑selected card to the Biometric Enrollment Hub.
+  const enrollSelected = async () => {
+    if (!chosen.length || invalid || busy || !classAllowed) return;
+    setSaving(true); setError('');
+    try {
+      const students = chosen.map(({ student }) => ({ ...student, department: [student.class.trim(), student.section.trim()].filter(Boolean).join('-'), student_id_kv: student.student_id_kv?.trim() || '', parent_name: student.father_name || student.mother_name || student.parent_name, name: student.name.trim(), employee_id: student.employee_id.trim() }));
+      await onImportDrafts(students, `Class ${selectedClass === 'auto' ? 'ID Cards' : selectedClass} (${students.length} students)`);
+      toast({ title: 'Import saved', description: `${students.length} reviewed student records saved successfully.` });
+      clear(); setFile(undefined); onClose();
+    } catch (failure) {
+      setError(failure instanceof Error ? failure.message : 'Could not save the import. Your reviewed cards are still here; retry after correcting the error.');
+    } finally { if (mounted.current) setSaving(false); }
+  };
   async function extract() {
     if (!file || !isAuthorized || !classAllowed || busy) return;
     const controller = new AbortController(); abort.current = controller;
@@ -138,7 +152,19 @@ export function ClassPDFIDCardImporter({ isOpen, onClose, onImportDrafts, initia
             <div><div className="flex justify-between items-center mb-3"><label className="flex gap-2 text-sm items-center"><input type="checkbox" checked={selected.has(card.id)} disabled={busy} onChange={e => setSelected(current => { const next = new Set(current); if (e.target.checked) next.add(card.id); else next.delete(card.id); return next; })} />Include student</label><Button variant="ghost" size="sm" disabled={busy} aria-label={`Remove ${card.student.name || 'card'}`} onClick={() => { setCards(current => current.filter(c => c.id !== card.id)); setSelected(current => { const next = new Set(current); next.delete(card.id); return next; }); }}><Trash2 size={15} /></Button></div><div className="grid grid-cols-2 gap-3">{editableFields.map(([field, label]) => <label key={field} className={`text-xs text-muted-foreground ${field === 'address' ? 'col-span-2' : ''}`}>{label}<Input value={String(card.student[field] || '')} disabled={busy || (!isAdminOrPrincipal && (field === 'class' || field === 'section'))} onChange={e => edit(card.id, field, e.target.value)} className="mt-1 h-9" aria-invalid={field === 'employee_id' && duplicateIds.has(card.student.employee_id.trim().toLowerCase())} /></label>)}</div></div>
           </article>)}</>}
       </div>}
-      <div className="p-4 border-t flex justify-between gap-3"><Button variant="ghost" disabled={saving} onClick={close}>Close</Button>{isAuthorized && <Button disabled={busy || !chosen.length || invalid || !classAllowed} onClick={() => void confirm()}>{saving && <Loader2 className="mr-2 w-4 h-4 animate-spin" />}{saveLabel} ({chosen.length})</Button>}</div>
+      <div className="p-4 border-t flex justify-between gap-3">
+        <Button variant="ghost" disabled={saving} onClick={close}>Close</Button>
+        {isAuthorized && chosen.length > 0 && (
+          <Button
+            disabled={busy || invalid || !classAllowed}
+            onClick={enrollSelected}
+            className="flex-1"
+          >
+            Enroll All Selected ({chosen.length})
+          </Button>
+        )}
+        {isAuthorized && <Button disabled={busy || !chosen.length || invalid || !classAllowed} onClick={() => void confirm()}>{saving && <Loader2 className="mr-2 w-4 h-4 animate-spin" />}{saveLabel} ({chosen.length})</Button>}
+      </div>
     </DialogContent>
   </Dialog>;
 }
