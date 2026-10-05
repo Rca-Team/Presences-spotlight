@@ -27,12 +27,17 @@ export const poses: Pose[] = [
   'up',
   'down',
   'up-left',
-  'up-right'
+  'up-right',
+  'down-left',
+  'down-right',
+  'front-smile'
 ];
 
 /**
  * Adapts client captured face samples into the exact 9-view format (plus front:without if wearing glasses)
- * required by the Appwrite backend session validator.
+ * required by the Appwrite backend session validator (which enforces an exact sample count).
+ * Extra client-captured views (e.g. the front-smile liveness shot) are intentionally excluded
+ * from the backend payload — they are still synced to Supabase for richer gate matching.
  */
 export function prepareAppwriteBackendSamples(
   rawSamples: FaceSample[],
@@ -77,7 +82,8 @@ export function prepareAppwriteBackendSamples(
     }
 
     if (!sourceSample) {
-      // Synthesize missing poses (specifically down-left and down-right which are excluded from frontend capture)
+      // Fallback only if a pose was somehow skipped during capture (e.g. manual snap) —
+      // down-left / down-right / front-smile are now captured directly when possible.
       if (pose === 'down-left') {
         sourceSample = downSample || leftSample || frontSample;
       } else if (pose === 'down-right') {

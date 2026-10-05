@@ -1087,6 +1087,23 @@ class AppwriteRealtimeChannel {
 class AppwriteFunctionsBridge {
   async invoke(functionName: string, options?: { body?: any; headers?: Record<string, string> }): Promise<{ data: any; error: any }> {
     try {
+      if (functionName === 'extract-pdf-users') {
+        try {
+          const { extractPdfUsers } = await import('@/services/enrollment/extractPdfUsers');
+          let body: any = options?.body ?? {};
+          if (typeof body === 'string') {
+            try {
+              body = JSON.parse(body);
+            } catch {
+              return { data: null, error: { message: 'Choose a PDF or ID-card image and try again.' } };
+            }
+          }
+          return { data: await extractPdfUsers(body || {}), error: null };
+        } catch (failure: any) {
+          if (failure?.name === 'AbortError') return { data: null, error: { message: 'Extraction cancelled.' } };
+          return { data: null, error: { message: failure?.message || 'PDF extraction failed' } };
+        }
+      }
       const bodyStr = typeof options?.body === 'string' ? options.body : JSON.stringify(options?.body || {});
       const execution = await functions.createExecution(
         functionName,

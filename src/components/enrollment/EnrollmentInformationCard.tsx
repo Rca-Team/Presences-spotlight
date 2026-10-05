@@ -43,7 +43,7 @@ export default function EnrollmentInformationCard({
     class: details.class,
     section: details.section,
     category: details.class,
-    role: (details as any).role,
+    role: details.role,
   });
 
   const isTeacher = identity.isTeacher;

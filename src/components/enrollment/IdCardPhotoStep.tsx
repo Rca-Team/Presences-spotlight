@@ -52,7 +52,7 @@ export default function IdCardPhotoStep({
     class: student.class,
     section: student.section,
     category: student.category,
-    role: (student as any).role,
+    role: student.role,
   }), [student]);
 
   // Source image state
@@ -66,6 +66,9 @@ export default function IdCardPhotoStep({
   const [aspectRatio, setAspectRatio] = useState<AspectRatio>('3:4');
   const [isDragging, setIsDragging] = useState(false);
   const [dragStart, setDragStart] = useState({ x: 0, y: 0 });
+  // Bumped when a drag ends so a full-quality export replaces the fast preview
+  const [previewTick, setPreviewTick] = useState(0);
+  const isDraggingRef = useRef(false);
 
   // Enhancement States
   const [autoEnhanced, setAutoEnhanced] = useState(false);
@@ -153,11 +156,14 @@ export default function IdCardPhotoStep({
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
 
-    // Standard high-res output dimension: 600px width
-    const targetW = 600;
-    let targetH = 800; // 3:4 default
-    if (aspectRatio === '1:1') targetH = 600;
-    else if (aspectRatio === '2:3') targetH = 900;
+    // Full-quality export is 600px wide. While dragging we render a lighter
+    // 2/3-scale preview (no sharpness pass, lower JPEG quality) so panning
+    // stays smooth on phones; releasing the drag triggers a full-quality pass.
+    const fast = isDraggingRef.current;
+    const scale = fast ? 2 / 3 : 1;
+    const baseH = aspectRatio === '1:1' ? 600 : aspectRatio === '2:3' ? 900 : 800;
+    const targetW = Math.round(600 * scale);
+    const targetH = Math.round(baseH * scale);
 
     canvas.width = targetW;
     canvas.height = targetH;
@@ -193,8 +199,10 @@ export default function IdCardPhotoStep({
     ctx.drawImage(img, -drawW / 2, -drawH / 2, drawW, drawH);
     ctx.restore();
 
-    // Optional unsharp mask / sharpness convolution pass if sharpness > 0
-    if (sharpness > 0) {
+    // Optional unsharp mask / sharpness convolution pass if sharpness > 0.
+    // Skipped while dragging — the per-pixel loop is far too slow for a
+    // drag-time preview (it runs again at full quality once released).
+    if (sharpness > 0 && !fast) {
       try {
         const imgData = ctx.getImageData(0, 0, targetW, targetH);
         const d = imgData.data;
@@ -222,16 +230,20 @@ export default function IdCardPhotoStep({
       }
     }
 
-    const exportedUrl = canvas.toDataURL('image/jpeg', 0.92);
+    const exportedUrl = canvas.toDataURL('image/jpeg', fast ? 0.85 : 0.92);
     setPreviewDataUrl(exportedUrl);
   }, [aspectRatio, brightness, contrast, pan.x, pan.y, rotation, saturation, sharpness, zoom]);
 
+  // rAF-coalesced: rapid slider/drag updates collapse into at most one
+  // render per frame, and the previous scheduled render is cancelled.
   useEffect(() => {
-    renderEnhancedImage();
-  }, [renderEnhancedImage]);
+    const id = requestAnimationFrame(() => renderEnhancedImage());
+    return () => cancelAnimationFrame(id);
+  }, [renderEnhancedImage, previewTick]);
 
   // Drag & Pan handlers
   const handleMouseDown = (e: React.MouseEvent) => {
+    isDraggingRef.current = true;
     setIsDragging(true);
     setDragStart({ x: e.clientX - pan.x, y: e.clientY - pan.y });
   };
@@ -244,11 +256,18 @@ export default function IdCardPhotoStep({
     });
   };
 
-  const handleMouseUp = () => setIsDragging(false);
+  const handleMouseUp = () => {
+    if (!isDraggingRef.current) return;
+    isDraggingRef.current = false;
+    setIsDragging(false);
+    // Re-render at full quality now that the fast preview is done
+    setPreviewTick((t) => t + 1);
+  };
 
   // Touch support for mobile/tablets
   const handleTouchStart = (e: React.TouchEvent) => {
     if (e.touches.length === 1) {
+      isDraggingRef.current = true;
       setIsDragging(true);
       setDragStart({ x: e.touches[0].clientX - pan.x, y: e.touches[0].clientY - pan.y });
     }
@@ -262,7 +281,12 @@ export default function IdCardPhotoStep({
     });
   };
 
-  const handleTouchEnd = () => setIsDragging(false);
+  const handleTouchEnd = () => {
+    if (!isDraggingRef.current) return;
+    isDraggingRef.current = false;
+    setIsDragging(false);
+    setPreviewTick((t) => t + 1);
+  };
 
   const handleSkip = () => {
     onConfirm(defaultPhoto);

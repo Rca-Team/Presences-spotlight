@@ -182,7 +182,7 @@ const IDCardAutoFillScanner: React.FC<Props> = ({
 
       const photoBBox = isValidBBox(user.photo_bbox) ? user.photo_bbox : undefined;
       const extractedPhoto = extractPhoto
-        ? await extractStudentPhotoFromCard(dataUrl, photoBBox)
+        ? user.student_photo_data_url || await extractStudentPhotoFromCard(dataUrl, photoBBox)
         : null;
       if (extractedPhoto) setLastExtractedPhoto(extractedPhoto);
 

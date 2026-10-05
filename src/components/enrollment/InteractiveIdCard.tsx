@@ -39,7 +39,7 @@ export default function InteractiveIdCard({
     class: student.class,
     section: student.section,
     category: student.category,
-    role: (student as any).role,
+    role: student.role,
   });
 
   const [isFlipped, setIsFlipped] = useState(false);

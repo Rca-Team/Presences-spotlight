@@ -219,25 +219,16 @@ const PDFBulkRegistration: React.FC = () => {
   };
 
   const processPdfWithAI = async (file: File) => {
-    setExtractionStep('Converting document...');
-    const base64 = await fileToBase64(file);
-    
-    setExtractionStep('AI analyzing document...');
+    setExtractionStep('Reading ID cards on this device...');
     toast({
       title: "Processing Document",
-      description: "Using AI to extract user information...",
+      description: "Extracting student records without uploading the PDF to Appwrite.",
     });
 
-    // Call AI edge function to extract data
-    const { data, error } = await supabase.functions.invoke('extract-pdf-users', {
-      body: { 
-        fileData: base64,
-        fileName: file.name,
-        fileType: file.type
-      }
+    const { extractPdfUsersFromFile } = await import('@/services/enrollment/extractPdfUsers');
+    const data = await extractPdfUsersFromFile(file, {
+      onProgress: (message) => setExtractionStep(message),
     });
-
-    if (error) throw error;
 
     if (data?.users && data.users.length > 0) {
       const users: ExtractedUser[] = data.users.map((user: any) => ({
@@ -245,7 +236,7 @@ const PDFBulkRegistration: React.FC = () => {
         employee_id: user.employee_id || user.student_id || `STU-${Date.now()}-${Math.random().toString(36).substr(2, 5)}`,
         department: user.department || user.class || '',
         position: user.position || user.grade || 'Student',
-        imageUrl: user.photo_url || user.image_url,
+        imageUrl: user.student_photo_data_url || user.photo_url || user.image_url,
         faceDetected: false,
         status: 'pending' as const
       }));
@@ -307,15 +298,6 @@ const PDFBulkRegistration: React.FC = () => {
     }
     
     setExtractedUsers(updatedUsers);
-  };
-
-  const fileToBase64 = (file: File): Promise<string> => {
-    return new Promise((resolve, reject) => {
-      const reader = new FileReader();
-      reader.onload = () => resolve(reader.result as string);
-      reader.onerror = reject;
-      reader.readAsDataURL(file);
-    });
   };
 
   const fetchUserImages = async (users: ExtractedUser[]) => {

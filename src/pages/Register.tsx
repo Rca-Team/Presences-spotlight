@@ -340,6 +340,7 @@ const Register = () => {
       });
     } catch (err) {
       console.error('Failed to save imported drafts:', err);
+      throw new Error('Could not save the student drafts on this device. Free browser storage and retry; the reviewed cards remain open.');
     }
   };
 

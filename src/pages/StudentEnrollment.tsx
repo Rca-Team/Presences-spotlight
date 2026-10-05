@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
 import {
@@ -20,7 +20,7 @@ import InteractiveIdCard from '@/components/enrollment/InteractiveIdCard';
 import EnrollmentInformationCard from '@/components/enrollment/EnrollmentInformationCard';
 import { enrollmentApi } from '@/services/enrollment/api';
 import { syncEnrolledFaceDataToSupabase } from '@/services/enrollment/syncEnrolledFaceData';
-import { fieldLabels, studentFields, prepareAppwriteBackendSamples, type CaptureResult, type EnrollmentSession, type StudentDetails } from '@/services/enrollment/types';
+import { prepareAppwriteBackendSamples, type CaptureResult, type EnrollmentSession, type StudentDetails } from '@/services/enrollment/types';
 import DobDatePicker from '@/components/enrollment/DobDatePicker';
 import { cn } from '@/lib/utils';
 import { supabase } from '@/integrations/supabase/client';
@@ -40,7 +40,7 @@ export default function StudentEnrollment() {
   const [message, setMessage] = useState('');
   const [error, setError] = useState('');
   const [pendingCorrections, setPendingCorrections] = useState(false);
-  const [clock, setClock] = useState(Date.now());
+  const [expired, setExpired] = useState(false);
   const [replaceExisting, setReplaceExisting] = useState(true);
   const [isStaffBypass, setIsStaffBypass] = useState(false);
   const navigate = useNavigate();
@@ -128,24 +128,34 @@ export default function StudentEnrollment() {
   }, [session?.session, uploadSamplesParallel]);
 
   const onIdPhotoConfirm = useCallback((finalPhotoUrl: string) => {
-    setResult((prev) => {
-      if (!prev) return prev;
-      const updatedSamples = prev.samples.map((s) => {
-        if (s.pose === 'front') {
-          return { ...s, image: finalPhotoUrl };
-        }
-        return s;
-      });
+    if (result) {
+      const updatedSamples = result.samples.map((s) => (s.pose === 'front' ? { ...s, image: finalPhotoUrl } : s));
+      const next = { ...result, samples: updatedSamples };
+      setResult(next);
       // Background upload updated front portrait while student reviews
       if (session?.session) {
-        const backendSamples = prepareAppwriteBackendSamples(updatedSamples, prev.wearsGlasses);
+        const backendSamples = prepareAppwriteBackendSamples(updatedSamples, next.wearsGlasses);
         activeUploadRef.current = uploadSamplesParallel(session.session, backendSamples).catch(() => {});
       }
-      return { ...prev, samples: updatedSamples };
-    });
+    }
     setPhase('review');
-  }, [session?.session, uploadSamplesParallel]);
-  useEffect(() => { const timer = setInterval(() => setClock(Date.now()), 1000); return () => clearInterval(timer); }, []);
+  }, [result, session?.session, uploadSamplesParallel]);
+
+  // Session expiry is checked once a second but only re-renders when the flag
+  // actually flips — this used to re-render the whole page every second.
+  useEffect(() => {
+    if (!session) {
+      setExpired(false);
+      return;
+    }
+    const check = () => {
+      const isExpired = Date.now() >= session.expires;
+      setExpired((prev) => (prev === isExpired ? prev : isExpired));
+    };
+    check();
+    const timer = window.setInterval(check, 1000);
+    return () => window.clearInterval(timer);
+  }, [session]);
 
   const run = async (fn: () => Promise<void>) => {
     setBusy(true);
@@ -242,8 +252,10 @@ export default function StudentEnrollment() {
     });
   }, []);
 
-  const queryParams = new URLSearchParams(window.location.search);
-  const returnTo = queryParams.get('returnTo') || (isStaffBypass ? '/enrollment-monitor' : '/');
+  const returnTo = useMemo(
+    () => new URLSearchParams(window.location.search).get('returnTo') || (isStaffBypass ? '/enrollment-monitor' : '/'),
+    [isStaffBypass]
+  );
   const returnLabel = returnTo.includes('enrollment-monitor')
     ? 'Biometric Hub'
     : returnTo.includes('admin')
@@ -266,6 +278,7 @@ export default function StudentEnrollment() {
     if (session) {
       if (Date.now() >= session.expires) {
         setSession(undefined); setResult(undefined); setDetails(undefined); setConsent(false); setError('');
+        uploadedKeysRef.current.clear();
         if (isStaffBypass || returnTo !== '/') {
           navigate(returnTo);
         } else {
@@ -277,7 +290,9 @@ export default function StudentEnrollment() {
         await enrollmentApi('cancel', { session: session.session });
         setSession(undefined);
         setResult(undefined);
+        setDetails(undefined);
         setConsent(false);
+        uploadedKeysRef.current.clear();
         if (isStaffBypass || returnTo !== '/') {
           navigate(returnTo);
         } else {
@@ -288,8 +303,6 @@ export default function StudentEnrollment() {
       navigate(returnTo);
     }
   }
-
-  const expired = session && clock >= session.expires;
 
   const stepsList = [
     { step: 1, label: 'Student Info', shortLabel: 'Find Student' },
@@ -306,6 +319,112 @@ export default function StudentEnrollment() {
       : phase === 'idphoto'
       ? 2
       : 3;
+
+  const completeEnrollment = useCallback(async () => {
+    if (!session || !result || !details) return;
+
+    const emailVal = details.email?.trim();
+    if (!emailVal) {
+      setError('Email address is required. Please fill in your email above to complete registration.');
+      setEditing(true);
+      return;
+    }
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(emailVal)) {
+      setError('Please enter a valid email address (e.g. name@email.com).');
+      setEditing(true);
+      return;
+    }
+
+    const backendSamples = prepareAppwriteBackendSamples(result.samples, result.wearsGlasses);
+
+    // Await any background upload that started during photo crop or review
+    if (activeUploadRef.current) {
+      try {
+        await activeUploadRef.current;
+      } catch { /* background upload already reported its own failure */ }
+    }
+
+    setMessage('Saving photos…');
+    await uploadSamplesParallel(session.session, backendSamples, (done, total) => {
+      setMessage(`Saving photos (${done}/${total})…`);
+    });
+    setMessage('Saving enrollment…');
+    const primaryPhoto =
+      result.samples.find(
+        (s) => s.pose === 'front' && s.glasses === (result.wearsGlasses ? 'with' : 'without')
+      )?.image || result.samples[0]?.image || '';
+
+    // 1. Sync face descriptors and details directly to Supabase (primary system of record)
+    const supabaseSyncPromise = syncEnrolledFaceDataToSupabase({
+      admission: details.admission_number || admission,
+      details,
+      samples: result.samples,
+      wearsGlasses: result.wearsGlasses,
+      primaryPhotoUrl: primaryPhoto,
+      replaceExisting,
+    }).catch((syncErr) => {
+      console.warn('Supabase descriptor sync notice:', syncErr);
+      return { success: false, descriptorsCount: 0 };
+    });
+
+    // 2. Submit to Appwrite backend session with resilient fallback
+    let appwriteSaved: { completed?: boolean; correctionPending?: boolean } | null = null;
+    let appwriteErrMessage = '';
+
+    try {
+      appwriteSaved = await enrollmentApi<{ completed: boolean; correctionPending: boolean }>('submit', {
+        session: session.session,
+        consent,
+        wearsGlasses: result.wearsGlasses,
+        challenge: result.challenge,
+        blinked: result.blinked,
+        changes: details,
+      });
+    } catch (err: unknown) {
+      console.warn('Appwrite session submission fallback:', err);
+      appwriteErrMessage = err instanceof Error ? err.message : String(err || '');
+    }
+
+    // Await Supabase sync completion
+    const supabaseResult = await supabaseSyncPromise;
+
+    // If both failed, notify the user with an actionable message
+    if (!appwriteSaved && (!supabaseResult || !supabaseResult.success)) {
+      throw new Error(appwriteErrMessage || 'Enrollment could not be saved. Please try again.');
+    }
+
+    // Update student profile in Supabase profiles table
+    if (details.admission_number || admission) {
+      try {
+        const adm = (details.admission_number || admission).trim();
+        await supabase
+          .from('profiles')
+          .update({
+            email: emailVal,
+            parent_email: emailVal,
+            parent_phone: details.parent_phone?.trim() || undefined,
+            phone: details.parent_phone?.trim() || undefined,
+            full_name: details.name?.trim() || undefined,
+            display_name: details.name?.trim() || undefined,
+            class: details.class?.trim() || undefined,
+            section: details.section?.trim() || undefined,
+            avatar_url: primaryPhoto || undefined,
+            updated_at: new Date().toISOString(),
+          })
+          .or(`admission_number.eq.${adm},employee_id.eq.${adm}`);
+      } catch (profileUpdateErr) {
+        console.warn('Profile metadata sync notice:', profileUpdateErr);
+      }
+    }
+
+    setPendingCorrections(Boolean(appwriteSaved?.correctionPending));
+    setResult(undefined);
+    setDetails(undefined);
+    setSession(undefined);
+    uploadedKeysRef.current.clear();
+    setPhase('done');
+    setMessage('');
+  }, [admission, consent, details, replaceExisting, result, session, uploadSamplesParallel]);
 
   return (
     <main className="enrollment-shell">
@@ -399,6 +518,7 @@ export default function StudentEnrollment() {
                       </label>
                       <Input
                         required
+                        disabled={busy}
                         value={admission}
                         onChange={e => setAdmission(e.target.value)}
                         placeholder="e.g. 10425"
@@ -413,6 +533,7 @@ export default function StudentEnrollment() {
                       </label>
                       <Input
                         required
+                        disabled={busy}
                         value={phone}
                         onChange={e => setPhone(e.target.value)}
                         inputMode="tel"
@@ -430,6 +551,7 @@ export default function StudentEnrollment() {
                         value={dob}
                         onChange={setDob}
                         required
+                        disabled={busy}
                       />
                     </div>
 
@@ -551,113 +673,7 @@ export default function StudentEnrollment() {
                   <Button
                     disabled={busy || expired}
                     className="enrollment-primary w-full mt-3 font-bold h-12 text-sm sm:text-base rounded-2xl"
-                    onClick={() => void run(async () => {
-                      const emailVal = details?.email?.trim();
-                      if (!emailVal) {
-                        setError('Email address is required. Please fill in your email above to complete registration.');
-                        setEditing(true);
-                        return;
-                      }
-                      if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(emailVal)) {
-                        setError('Please enter a valid email address (e.g. name@email.com).');
-                        setEditing(true);
-                        return;
-                      }
-
-                      const backendSamples = prepareAppwriteBackendSamples(result.samples, result.wearsGlasses);
-
-                      // Await any background upload that started during photo crop or review
-                      if (activeUploadRef.current) {
-                        try {
-                          await activeUploadRef.current;
-                        } catch {}
-                      }
-
-                      setMessage('Saving photos…');
-                      await uploadSamplesParallel(
-                        session!.session,
-                        backendSamples,
-                        (done, total) => {
-                          setMessage(`Saving photos (${done}/${total})…`);
-                        }
-                      );
-                      setMessage('Saving enrollment…');
-                      const primaryPhoto =
-                        result.samples.find(
-                          (s) => s.pose === 'front' && s.glasses === (result.wearsGlasses ? 'with' : 'without')
-                        )?.image || result.samples[0]?.image || '';
-
-                      // 1. Sync face descriptors and details directly to Supabase (primary system of record)
-                      const supabaseSyncPromise = syncEnrolledFaceDataToSupabase({
-                        admission: details?.admission_number || admission,
-                        details,
-                        samples: result.samples,
-                        wearsGlasses: result.wearsGlasses,
-                        primaryPhotoUrl: primaryPhoto,
-                        replaceExisting,
-                      }).catch((syncErr) => {
-                        console.warn('Supabase descriptor sync notice:', syncErr);
-                        return { success: false, descriptorsCount: 0 };
-                      });
-
-                      // 2. Submit to Appwrite backend session with resilient fallback
-                      let appwriteSaved: { completed?: boolean; correctionPending?: boolean } | null = null;
-                      let appwriteErrMessage = '';
-
-                      try {
-                        appwriteSaved = await enrollmentApi<{ completed: boolean; correctionPending: boolean }>('submit', {
-                          session: session!.session,
-                          consent,
-                          wearsGlasses: result.wearsGlasses,
-                          challenge: result.challenge,
-                          blinked: result.blinked,
-                          changes: details,
-                        });
-                      } catch (err: any) {
-                        console.warn('Appwrite session submission fallback:', err);
-                        appwriteErrMessage = err instanceof Error ? err.message : String(err || '');
-                      }
-
-                      // Await Supabase sync completion
-                      const supabaseResult = await supabaseSyncPromise;
-
-                      // If both failed, notify the user with an actionable message
-                      if (!appwriteSaved && (!supabaseResult || !supabaseResult.success)) {
-                        throw new Error(appwriteErrMessage || 'Enrollment could not be saved. Please try again.');
-                      }
-
-                      // Update student profile in Supabase profiles table
-                      if (details?.admission_number || admission) {
-                        try {
-                          const adm = (details?.admission_number || admission).trim();
-                          await supabase
-                            .from('profiles')
-                            .update({
-                              email: emailVal,
-                              parent_email: emailVal,
-                              parent_phone: details?.parent_phone?.trim() || undefined,
-                              phone: details?.parent_phone?.trim() || undefined,
-                              full_name: details?.name?.trim() || undefined,
-                              display_name: details?.name?.trim() || undefined,
-                              class: details?.class?.trim() || undefined,
-                              section: details?.section?.trim() || undefined,
-                              avatar_url: primaryPhoto || undefined,
-                              updated_at: new Date().toISOString(),
-                            })
-                            .or(`admission_number.eq.${adm},employee_id.eq.${adm}`);
-                        } catch (profileUpdateErr) {
-                          console.warn('Profile metadata sync notice:', profileUpdateErr);
-                        }
-                      }
-
-                      setPendingCorrections(Boolean(appwriteSaved?.correctionPending));
-                      setResult(undefined);
-                      setDetails(undefined);
-                      setSession(undefined);
-                      uploadedKeysRef.current.clear();
-                      setPhase('done');
-                      setMessage('');
-                    })}
+                    onClick={() => void run(completeEnrollment)}
                   >
                     {busy ? <><Loader2 className="animate-spin mr-2 h-4 w-4" />{message}</> : <><Check className="mr-2 h-4 w-4" />Save and Finish</>}
                   </Button>

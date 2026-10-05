@@ -125,22 +125,13 @@ const CombinedBulkRegistration: React.FC = () => {
     setIsExtracting(true);
 
     try {
-      const base64 = await fileToBase64(file);
-
       toast({
         title: "Processing Document",
-        description: "Using AI to extract user information and photos...",
+        description: "Reading ID cards on this device. The PDF is not uploaded to Appwrite.",
       });
 
-      const { data, error } = await supabase.functions.invoke('extract-pdf-users', {
-        body: {
-          fileData: base64,
-          fileName: file.name,
-          fileType: file.type
-        }
-      });
-
-      if (error) throw error;
+      const { extractPdfUsersFromFile } = await import('@/services/enrollment/extractPdfUsers');
+      const data = await extractPdfUsersFromFile(file, { targetCategory: category === 'Teacher' ? undefined : category });
 
       if (data?.users && data.users.length > 0) {
         const newEntries: ImageEntry[] = [];
@@ -148,32 +139,26 @@ const CombinedBulkRegistration: React.FC = () => {
         for (const user of data.users) {
           let blob: Blob | undefined;
           let preview = '';
+          const photo = typeof user.student_photo_data_url === 'string' ? user.student_photo_data_url
+            : typeof user.photo_url === 'string' ? user.photo_url
+            : typeof user.image_data === 'string' ? `data:image/jpeg;base64,${user.image_data}` : '';
 
-          // Try to fetch image if URL provided
-          if (user.photo_url || user.image_url) {
+          if (photo.startsWith('data:')) {
+            preview = photo;
             try {
-              const response = await fetch(user.photo_url || user.image_url);
+              blob = await (await fetch(photo)).blob();
+            } catch {
+              blob = undefined;
+            }
+          } else if (user.photo_url || user.image_url) {
+            try {
+              const response = await fetch(String(user.photo_url || user.image_url));
               if (response.ok) {
                 blob = await response.blob();
                 preview = URL.createObjectURL(blob);
               }
             } catch (err) {
               console.warn(`Failed to fetch image for ${user.name}`);
-            }
-          }
-
-          // If we have base64 image data
-          if (user.image_data) {
-            try {
-              const binaryData = atob(user.image_data);
-              const bytes = new Uint8Array(binaryData.length);
-              for (let i = 0; i < binaryData.length; i++) {
-                bytes[i] = binaryData.charCodeAt(i);
-              }
-              blob = new Blob([bytes], { type: 'image/jpeg' });
-              preview = URL.createObjectURL(blob);
-            } catch (err) {
-              console.warn(`Failed to process image data for ${user.name}`);
             }
           }
 
@@ -214,15 +199,6 @@ const CombinedBulkRegistration: React.FC = () => {
         pdfInputRef.current.value = '';
       }
     }
-  };
-
-  const fileToBase64 = (file: File): Promise<string> => {
-    return new Promise((resolve, reject) => {
-      const reader = new FileReader();
-      reader.onload = () => resolve(reader.result as string);
-      reader.onerror = reject;
-      reader.readAsDataURL(file);
-    });
   };
 
   // Update image details
