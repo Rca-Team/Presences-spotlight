@@ -160,9 +160,24 @@ const IDCardAutoFillScanner: React.FC<Props> = ({
   const runExtraction = async (dataUrl: string, fileName: string, fileType: string) => {
     setIsProcessing(true);
     try {
-      const { data, error } = await supabase.functions.invoke('extract-pdf-users', {
-        body: { fileData: dataUrl, fileName, fileType },
-      });
+      // Try Supabase edge function first (may not be deployed);
+      // fall back to showing guidance if unavailable.
+      let data: any, error: any;
+      try {
+        data = await supabase.functions.invoke('extract-pdf-users', {
+          body: { fileData: dataUrl, fileName, fileType },
+        });
+        error = null;
+      } catch (supaErr: any) {
+        // Supabase function not deployed — guide user to the Class PDF ID Card importer
+        // which uses the same Appwrite backend correctly.
+        throw new Error(
+          'ID-card extraction edge function not configured on this Supabase project.\n\n' +
+          'Use the "Bulk Class ID Cards (PDF)" button on the Register page, ' +
+          'or go to the Biometric Enrollment Hub → Upload ID Cards to extract cards ' +
+          'via the Appwrite backend and queue them for face capture.'
+        );
+      }
       if (error) {
         let detailedMsg = error.message;
         if ((error as any).context && typeof (error as any).context.json === 'function') {
