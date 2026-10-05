@@ -10,6 +10,7 @@ lerna-debug.log*
 
 # Node dependencies
 node_modules
+.npm-cache/
 dist
 dist-ssr
 *.local

@@ -4,16 +4,20 @@ import ocrWorkerUrl from 'tesseract.js/dist/worker.min.js?url';
 import ocrCoreUrl from 'tesseract.js-core/tesseract-core-lstm.wasm.js?url';
 import pdfWorkerUrl from 'pdfjs-dist/build/pdf.worker.min.mjs?url';
 
-export interface ExtractionOptions { portraits?: boolean; onProgress?: (completed: number, total: number) => void }
+export interface ExtractionOptions {
+  portraits?: boolean;
+  onProgress?: (completed: number, total: number) => void;
+
+}
 export const MAX_DOCUMENT_BYTES = 25 * 1024 * 1024;
 const abortError = () => new DOMException('Extraction cancelled.', 'AbortError');
 
-/** Documents and photos never leave the device. Only OCR language assets download. */
+/** Documents and photos are processed locally by this legacy OCR helper. */
 export async function extractCards(file: File, columns = 0, rows = 0, progress: (message: string) => void = () => {}, signal = new AbortController().signal, options: ExtractionOptions = {}): Promise<ImportCard[]> {
   if (signal.aborted) throw abortError();
   if (!file.size) throw new Error('The selected document is empty.');
   if (file.size > MAX_DOCUMENT_BYTES) throw new Error('Use a document smaller than 25 MB. Split larger PDFs into smaller batches.');
-  if (![0, 1, 2, 3, 4].includes(columns) || ![0, 1, 2, 3, 4, 5, 6].includes(rows) || Boolean(columns) !== Boolean(rows)) throw new Error('Choose a valid card grid.');
+  if (![0, 1, 2].includes(columns) || ![0, 1, 2, 3, 4].includes(rows) || Boolean(columns) !== Boolean(rows)) throw new Error('Choose a valid card grid.');
   const isPdf = file.type === 'application/pdf' || /\.pdf$/i.test(file.name);
   if (!isPdf && !/^image\/(png|jpeg|webp|bmp)$/.test(file.type)) throw new Error('Choose a PDF, JPEG, PNG or WebP ID card.');
   let worker: Awaited<ReturnType<typeof import('tesseract.js')['createWorker']>> | undefined;
@@ -54,6 +58,7 @@ export async function extractCards(file: File, columns = 0, rows = 0, progress: 
       items = (scanned.data.blocks || []).flatMap(b => b.paragraphs.flatMap(p => p.lines.map(l => ({ text: l.text.trim(), x: l.bbox.x0, y: l.bbox.y0, height: l.bbox.y1 - l.bbox.y0 }))));
       grid = detectCardGrid(items, canvas.width, canvas.height);
     }
+
     // Multi-card sheets are cut on the printed content box and gutters instead
     // of equal page slices, so margins and headers never slice a card in half.
     // The layout may also shrink when a page holds fewer cards than requested.
@@ -75,11 +80,38 @@ export async function extractCards(file: File, columns = 0, rows = 0, progress: 
         crop.getContext('2d')!.drawImage(canvas, x, y, crop.width, crop.height, 0, 0, crop.width, crop.height);
         let text = textInRegion(items, x, y, crop.width, crop.height) || (active.columns === 1 && active.rows === 1 ? fullOcr : '');
         let student = parseCardText(text);
-        if (text.replace(/\s/g, '').length < 30 || (!student.name && !student.admission_number)) {
+        if (text.replace(/\s/g, '').length < 30 || !student.name || !student.admission_number || !student.parent_phone || !student.address || !student.father_name || !student.mother_name) {
           ocrStage = `Reading card ${row * active.columns + col + 1} on page ${page}`;
           text = (await recognize(crop)).data.text;
           student = parseCardText(text);
         }
+        // Read the KV details table separately from the photo caption, so OCR
+        // cannot merge the student's name into a parent's row.
+        if (/identity\s*card|father\s*name|admn\s*no/i.test(text) && crop.width / crop.height > 1.25 && crop.width / crop.height < 1.9) {
+          const region = document.createElement('canvas');
+          try {
+            const readRegion = async (rx: number, ry: number, rw: number, rh: number) => {
+              const scale = Math.max(1, Math.min(4, 1400 / (crop.width * rw)));
+              region.width = Math.ceil(crop.width * rw * scale);
+              region.height = Math.ceil(crop.height * rh * scale);
+              region.getContext('2d')!.drawImage(crop, crop.width * rx, crop.height * ry, crop.width * rw, crop.height * rh, 0, 0, region.width, region.height);
+              return (await recognize(region)).data.text;
+            };
+            ocrStage = `Reading details of card ${row * active.columns + col + 1} on page ${page}`;
+            const detailText = await readRegion(0.31, 0.30, 0.59, 0.49);
+            const detail = parseCardText(detailText);
+            const caption = (await readRegion(0.025, 0.65, 0.25, 0.065)).trim().replace(/\s+/g, ' ');
+            const identity = await readRegion(0.04, 0.22, 0.20, 0.105);
+            for (const field of ['father_name', 'mother_name', 'date_of_birth', 'class', 'section', 'admission_number', 'pen_number', 'blood_group', 'parent_phone', 'address'] as const) {
+              if (detail[field]) student[field] = detail[field];
+            }
+            if (/^[A-Z][A-Z .'’-]{2,50}$/i.test(caption) && !/student|identity|signature|principal/i.test(caption)) student.name = caption;
+            const id = identity.match(/\d{8,12}/)?.[0];
+            if (id) student.student_id_kv = id;
+            text += `\n\nSeparate details region:\n${detailText}`;
+          } finally { region.width = region.height = 0; }
+        }
+        if (!student.name && !student.admission_number) continue;
         if (text.trim().length < 5) continue;
         let portrait: string | undefined;
         if (options.portraits !== false) {

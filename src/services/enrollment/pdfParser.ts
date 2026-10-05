@@ -139,7 +139,7 @@ export function detectCardGrid(items: PositionedText[], width: number, height: n
   for (const anchors of groups) {
     const columns = cluster(anchors.map(a => a.x), width * 0.12).length;
     const rows = cluster(anchors.map(a => a.y), height * 0.055).length;
-    if (columns >= 1 && rows >= 1 && columns <= 4 && rows <= 6 && columns * rows <= anchors.length + 2) return { columns, rows };
+    if (columns >= 1 && rows >= 1 && columns <= 2 && rows <= 4 && columns * rows <= anchors.length + 2) return { columns, rows };
   }
   return { columns: 1, rows: 1 };
 }

@@ -25,7 +25,7 @@ interface ClassPDFIDCardImporterProps {
   saveLabel?: string;
 }
 const editableFields: [keyof ExtractedStudentCard, string][] = [
-  ['name', 'Student name'], ['employee_id', 'Admission number'], ['class', 'Class'], ['section', 'Section'],
+  ['name', 'Student name'], ['employee_id', 'Admission number'], ['student_id_kv', 'Student ID'], ['class', 'Class'], ['section', 'Section'],
   ['father_name', 'Father’s name'], ['mother_name', 'Mother’s name'], ['parent_phone', 'Parent phone'],
   ['date_of_birth', 'Date of birth'], ['roll_number', 'Roll number'], ['blood_group', 'Blood group'],
   ['student_email', 'Student email'], ['parent_email', 'Parent email'], ['pen_number', 'PEN number'], ['address', 'Address'],
@@ -34,13 +34,14 @@ export function ClassPDFIDCardImporter({ isOpen, onClose, onImportDrafts, initia
   const { toast } = useToast();
   const { isAdmin, isPrincipal, isTeacher, userId } = useUserRole();
   const isAdminOrPrincipal = isAdmin || isPrincipal;
-  const isAuthorized = isAdminOrPrincipal || isTeacher;
+  const isAuthorized = isAdminOrPrincipal;
   const [teacherClasses, setTeacherClasses] = useState<string[]>([]);
   const [selectedClass, setSelectedClass] = useState(initialClass || 'auto');
   const [file, setFile] = useState<File>();
+
   const [columns, setColumns] = useState(2);
   const [rows, setRows] = useState(4);
-  const [layout, setLayout] = useState<'auto' | 'grid'>('grid');
+
   const [cards, setCards] = useState<ReviewCard[]>([]);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [search, setSearch] = useState('');
@@ -70,54 +71,36 @@ export function ClassPDFIDCardImporter({ isOpen, onClose, onImportDrafts, initia
   async function extract() {
     if (!file || !isAuthorized || !classAllowed || busy) return;
     const controller = new AbortController(); abort.current = controller;
-    clear(); setExtracting(true); setStage('Opening document on this device…');
+    clear(); setExtracting(true);
     try {
-      const target = selectedClass === 'auto' ? undefined : selectedClass;
-      const progress = (message: string) => { if (mounted.current && !controller.signal.aborted) setStage(message); };
-      if (layout === 'grid') {
-        const [{ extractCards }, { cardToRegistrationStudent }] = await Promise.all([import('@/services/enrollment/pdfImport'), import('@/services/enrollment/localIdCardExtraction')]);
-        const result = await extractCards(file, columns, rows, progress, controller.signal, {
-          onProgress: (completed, total) => { if (mounted.current && !controller.signal.aborted) setPercent(Math.round(completed / total * 100)); },
-        });
-        if (controller.signal.aborted || !mounted.current) return;
-        if (!result.length) throw new Error('No readable cards were found. Try a clearer scan or select the card grid printed on each page.');
-        const reviewed = result.map(card => ({ id: card.id, student: cardToRegistrationStudent(card, target) as ExtractedStudentCard, preview: card.preview, text: card.text, page: card.page }));
-        setCards(reviewed); setSelected(new Set(reviewed.map(c => c.id))); setPercent(100);
-        setStage(`${reviewed.length} cards extracted. Compare every record with its original before saving.`);
-        return;
-      }
-      const { extractPdfUsersFromFile } = await import('@/services/enrollment/extractPdfUsers');
-      const result = await extractPdfUsersFromFile(file, { targetCategory: target, signal: controller.signal, onProgress: progress });
-      if (controller.signal.aborted || !mounted.current) return;
-      if (!result.users.length) throw new Error(result.reason || 'No readable cards were found. Try a clearer scan or select the card grid printed on each page.');
-      const reviewed = result.users.map((user, index) => ({
-        id: crypto.randomUUID(),
-        student: {
-          name: String(user.name || ''), employee_id: String(user.employee_id || ''), student_id_kv: String(user.student_id_kv || ''),
-          class: String(user.class || ''), section: String(user.section || ''), department: String(user.department || ''),
-          roll_number: String(user.roll_number || ''), father_name: String(user.father_name || ''), mother_name: String(user.mother_name || ''),
-          parent_name: String(user.parent_name || ''), parent_phone: String(user.parent_phone || ''), parent_email: String(user.parent_email || ''),
-          student_email: String(user.student_email || ''), phone: String(user.phone || ''), blood_group: String(user.blood_group || ''),
-          date_of_birth: String(user.date_of_birth || ''), pen_number: String(user.pen_number || ''), address: String(user.address || ''),
-          barcode: String(user.barcode || ''), has_photo: Boolean(user.has_photo),
-          student_photo_data_url: typeof user.student_photo_data_url === 'string' ? user.student_photo_data_url : undefined,
+      const [{ extractBulkPdf }, { cardToRegistrationStudent }] = await Promise.all([
+        import('@/services/enrollment/bulkPdfExtractor'), import('@/services/enrollment/localIdCardExtraction'),
+      ]);
+      await extractBulkPdf(file, {
+        columns, rows, signal: controller.signal,
+        progress: (message, value) => {
+          if (mounted.current && !controller.signal.aborted) { setStage(message); setPercent(value); }
         },
-        preview: typeof user.student_photo_data_url === 'string' ? user.student_photo_data_url : '',
-        text: ['name', 'employee_id', 'class', 'section', 'father_name', 'mother_name', 'parent_phone', 'date_of_birth', 'blood_group', 'address']
-          .map(field => `${field}: ${user[field] || ''}`).join('\n'),
-        page: index + 1,
-      }));
-      setCards(reviewed); setSelected(new Set(reviewed.map(c => c.id))); setPercent(100);
-      setStage(`${reviewed.length} cards extracted. Compare every record with its original before saving.`);
+        onCard: card => {
+          if (!mounted.current || controller.signal.aborted) return;
+          const student = cardToRegistrationStudent(card, selectedClass === 'auto' ? undefined : selectedClass) as ExtractedStudentCard;
+          setCards(current => [...current, { id: card.id, student, preview: card.preview, text: card.text, page: card.page }]);
+          if (student.name && student.employee_id && !card.text.startsWith('SCAN FAILED:')) {
+            setSelected(current => new Set([...current, card.id]));
+          }
+        },
+      });
     } catch (failure) {
-      if (mounted.current && !controller.signal.aborted) setError(failure instanceof Error ? failure.message : 'Could not read this file. Try another PDF or image.');
+      if (mounted.current) {
+        if (controller.signal.aborted) setStage('Scan cancelled. Completed cards are available for review.');
+        else setError(failure instanceof Error ? failure.message : 'PDF scan failed. Completed cards remain available.');
+      }
     } finally { if (mounted.current) setExtracting(false); }
-  }
-  async function confirm() {
+  }  async function confirm() {
     if (!chosen.length || invalid || busy || !classAllowed) return;
     setSaving(true); setError('');
     try {
-      const students = chosen.map(({ student }) => ({ ...student, department: [student.class.trim(), student.section.trim()].filter(Boolean).join('-'), student_id_kv: student.employee_id.trim(), parent_name: student.father_name || student.mother_name || student.parent_name, name: student.name.trim(), employee_id: student.employee_id.trim() }));
+      const students = chosen.map(({ student }) => ({ ...student, department: [student.class.trim(), student.section.trim()].filter(Boolean).join('-'), student_id_kv: student.student_id_kv?.trim() || '', parent_name: student.father_name || student.mother_name || student.parent_name, name: student.name.trim(), employee_id: student.employee_id.trim() }));
       await onImportDrafts(students, `Class ${selectedClass === 'auto' ? 'ID Cards' : selectedClass} (${students.length} students)`);
       toast({ title: 'Import saved', description: `${students.length} reviewed student records saved successfully.` });
       clear(); setFile(undefined); onClose();
@@ -131,19 +114,20 @@ export function ClassPDFIDCardImporter({ isOpen, onClose, onImportDrafts, initia
   return <Dialog open={isOpen} onOpenChange={open => { if (!open) close(); }}>
     <DialogContent className="max-w-5xl max-h-[92dvh] flex flex-col p-0 overflow-hidden rounded-3xl">
       <DialogHeader className="p-6 border-b bg-gradient-to-r from-cyan-500/10 via-blue-500/5 to-transparent">
-        <DialogTitle className="flex items-center gap-3"><FileText className="text-primary" />Class ID Cards Importer</DialogTitle>
-        <DialogDescription>Student cards are read in the browser with Gemini when available, or on-device OCR. The file is never sent to Appwrite Functions.</DialogDescription>
+        <DialogTitle className="flex items-center gap-3"><FileText className="text-primary" />Bulk PDF ID Card Extractor</DialogTitle>
+        <DialogDescription>The PDF is sent to Appwrite. Its function uses Gemini to read each page and returns student details for review before saving.</DialogDescription>
       </DialogHeader>
-      {!isAuthorized ? <div className="p-10 text-center space-y-3"><ShieldAlert className="mx-auto" /><p>Sign in as a teacher or administrator to import student records.</p></div> : <div className="overflow-y-auto flex-1 p-5 space-y-5">
+      {!isAuthorized ? <div className="p-10 text-center space-y-3"><ShieldAlert className="mx-auto" /><p>Sign in as a school administrator or principal to bulk-import student records.</p></div> : <div className="overflow-y-auto flex-1 p-5 space-y-5">
         <div className="grid sm:grid-cols-2 gap-4 rounded-2xl bg-muted/40 p-4 border">
           <label className="text-sm">Target class and section<select aria-label="Target class and section" value={selectedClass} disabled={busy} onChange={e => { setSelectedClass(e.target.value); clear(); }} className="block w-full bg-background border rounded-xl px-3 h-10 mt-2">
             {isAdminOrPrincipal ? <><option value="auto">Read from each ID card</option>{CLASSES.flatMap(cls => SECTIONS.map(sec => <option key={`${cls}-${sec}`} value={`${cls}-${sec}`}>{cls}-{sec}</option>))}</> : <><option value="" disabled>Select assigned class</option>{teacherClasses.map(cls => <option key={cls}>{cls}</option>)}</>}
           </select></label>
-          <label className="text-sm">PDF or image<Input className="mt-2 cursor-pointer" type="file" accept=".pdf,application/pdf,image/jpeg,image/png,image/webp" disabled={busy} onChange={e => { const next = e.target.files?.[0]; if (!next) return; clear(); const supported = /\.pdf$/i.test(next.name) || next.type === 'application/pdf' || /^image\/(png|jpeg|webp|bmp)$/.test(next.type); if (!supported) { setFile(undefined); setError('Choose a PDF or an image of the printed card sheet.'); return; } if (next.size > 25 * 1024 * 1024) { setFile(undefined); setError('Choose a file under 25 MB. Split larger files into smaller batches.'); return; } setFile(next); }} /></label>
-          <label className="text-sm">Cards per page<select aria-label="Card layout" value={layout} disabled={busy} onChange={e => { setLayout(e.target.value as 'auto' | 'grid'); clear(); }} className="block w-full bg-background border rounded-xl px-3 h-10 mt-2"><option value="grid">2 across × 4 down (printed sheet)</option><option value="auto">Detect card grid automatically</option></select></label>
-          {layout === 'grid' ? <div className="flex gap-3"><label className="text-sm flex-1">Across<select aria-label="Cards across" value={columns} disabled={busy} onChange={e => { setColumns(Number(e.target.value)); clear(); }} className="block w-full border bg-background rounded-xl h-10 mt-2">{[1, 2, 3, 4].map(n => <option key={n}>{n}</option>)}</select></label><label className="text-sm flex-1">Down<select aria-label="Cards down" value={rows} disabled={busy} onChange={e => { setRows(Number(e.target.value)); clear(); }} className="block w-full border bg-background rounded-xl h-10 mt-2">{[1, 2, 3, 4, 5, 6].map(n => <option key={n}>{n}</option>)}</select></label></div> : <p className="text-xs text-muted-foreground self-center">Whole-class files are extracted in the browser. If a sheet is grouped incorrectly, choose its printed grid and extract again.</p>}
-          {layout === 'grid' && <p className="text-xs text-muted-foreground sm:col-span-2 -mt-1">Each page is cut on the printed gutters, so margins and headers never split a card. A page holding fewer cards than the maximum is detected automatically.</p>}
-          <Button disabled={!file || busy || !classAllowed} onClick={() => void extract()} className="sm:col-span-2"><Upload className="w-4 h-4 mr-2" />Extract student cards</Button>
+          <label className="text-sm">Student ID-card PDF<Input className="mt-2 cursor-pointer" type="file" accept=".pdf,application/pdf" disabled={busy} onChange={e => { const next = e.target.files?.[0]; if (!next) return; clear(); const supported = /\.pdf$/i.test(next.name) || next.type === 'application/pdf'; if (!supported) { setFile(undefined); setError('Choose a PDF of the printed card sheet.'); return; } if (next.size > 6 * 1024 * 1024) { setFile(undefined); setError('Choose a file under 6 MB. Split larger files into smaller batches.'); return; } setFile(next); }} /></label>
+          <div className="flex gap-3 sm:col-span-2">
+            <label className="text-sm flex-1">Maximum columns<select aria-label="Cards across" disabled={busy} value={columns} onChange={e => { setColumns(Number(e.target.value)); clear(); }} className="block w-full border bg-background rounded-xl h-10 mt-2">{[1, 2].map(n => <option key={n}>{n}</option>)}</select></label>
+            <label className="text-sm flex-1">Maximum rows<select aria-label="Cards down" disabled={busy} value={rows} onChange={e => { setRows(Number(e.target.value)); clear(); }} className="block w-full border bg-background rounded-xl h-10 mt-2">{[1, 2, 3, 4].map(n => <option key={n}>{n}</option>)}</select></label>
+          </div>
+          <p className="text-xs text-muted-foreground sm:col-span-2">Up to 8 cards per page. Each page is read by the backend. Every scanned card appears below, including incomplete records.</p>          <Button disabled={!file || busy || !classAllowed} onClick={() => void extract()} className="sm:col-span-2"><Upload className="w-4 h-4 mr-2" />Extract student cards</Button>
         </div>
         {stage && <div className="space-y-2" role="status"><p className="text-sm flex items-center gap-2">{extracting && <Loader2 className="w-4 h-4 animate-spin" />}{stage}</p><Progress value={percent} />{extracting && <Button size="sm" variant="ghost" onClick={() => { abort.current?.abort(); setStage('Extraction cancelled. Choose a file or retry.'); }}>Cancel extraction</Button>}</div>}
         {error && <p role="alert" className="p-3 border border-destructive/30 bg-destructive/5 text-destructive rounded-xl text-sm">{error}</p>}
@@ -151,7 +135,7 @@ export function ClassPDFIDCardImporter({ isOpen, onClose, onImportDrafts, initia
           {invalid && <p className="text-sm text-amber-600" role="status">Selected records need a name and admission number. Resolve duplicate admission numbers before saving.</p>}
           {cards.filter(c => `${c.student.name} ${c.student.employee_id}`.toLowerCase().includes(search.toLowerCase())).map(card => <article key={card.id} className="grid md:grid-cols-[220px_1fr] gap-4 border rounded-2xl p-4">
             <div>{card.preview ? <img src={card.preview} alt={`Student card ${card.page}`} className="w-full max-h-72 object-contain rounded-xl bg-muted" /> : <div className="w-full h-40 rounded-xl bg-muted flex items-center justify-center text-sm text-muted-foreground">Card {card.page}</div>}<p className="text-xs mt-2 text-muted-foreground">Record {card.page} · {card.student.has_photo ? 'Portrait found' : 'Portrait not detected'}</p><details className="text-xs mt-2"><summary>Extracted text</summary><pre className="whitespace-pre-wrap mt-2">{card.text}</pre></details></div>
-            <div><div className="flex justify-between items-center mb-3"><label className="flex gap-2 text-sm items-center"><input type="checkbox" checked={selected.has(card.id)} disabled={saving} onChange={e => setSelected(current => { const next = new Set(current); if (e.target.checked) next.add(card.id); else next.delete(card.id); return next; })} />Include student</label><Button variant="ghost" size="sm" disabled={saving} aria-label={`Remove ${card.student.name || 'card'}`} onClick={() => { setCards(current => current.filter(c => c.id !== card.id)); setSelected(current => { const next = new Set(current); next.delete(card.id); return next; }); }}><Trash2 size={15} /></Button></div><div className="grid grid-cols-2 gap-3">{editableFields.map(([field, label]) => <label key={field} className={`text-xs text-muted-foreground ${field === 'address' ? 'col-span-2' : ''}`}>{label}<Input value={String(card.student[field] || '')} disabled={saving || (!isAdminOrPrincipal && (field === 'class' || field === 'section'))} onChange={e => edit(card.id, field, e.target.value)} className="mt-1 h-9" aria-invalid={field === 'employee_id' && duplicateIds.has(card.student.employee_id.trim().toLowerCase())} /></label>)}</div></div>
+            <div><div className="flex justify-between items-center mb-3"><label className="flex gap-2 text-sm items-center"><input type="checkbox" checked={selected.has(card.id)} disabled={busy} onChange={e => setSelected(current => { const next = new Set(current); if (e.target.checked) next.add(card.id); else next.delete(card.id); return next; })} />Include student</label><Button variant="ghost" size="sm" disabled={busy} aria-label={`Remove ${card.student.name || 'card'}`} onClick={() => { setCards(current => current.filter(c => c.id !== card.id)); setSelected(current => { const next = new Set(current); next.delete(card.id); return next; }); }}><Trash2 size={15} /></Button></div><div className="grid grid-cols-2 gap-3">{editableFields.map(([field, label]) => <label key={field} className={`text-xs text-muted-foreground ${field === 'address' ? 'col-span-2' : ''}`}>{label}<Input value={String(card.student[field] || '')} disabled={busy || (!isAdminOrPrincipal && (field === 'class' || field === 'section'))} onChange={e => edit(card.id, field, e.target.value)} className="mt-1 h-9" aria-invalid={field === 'employee_id' && duplicateIds.has(card.student.employee_id.trim().toLowerCase())} /></label>)}</div></div>
           </article>)}</>}
       </div>}
       <div className="p-4 border-t flex justify-between gap-3"><Button variant="ghost" disabled={saving} onClick={close}>Close</Button>{isAuthorized && <Button disabled={busy || !chosen.length || invalid || !classAllowed} onClick={() => void confirm()}>{saving && <Loader2 className="mr-2 w-4 h-4 animate-spin" />}{saveLabel} ({chosen.length})</Button>}</div>

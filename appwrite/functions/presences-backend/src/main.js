@@ -1,5 +1,6 @@
 import { Client, Account, Databases, Users, Query, Permission, Role } from 'node-appwrite';
 import { createHash } from 'node:crypto';
+import { bulkIdCards } from './bulk-id-cards.js';
 
 const dbId = process.env.APPWRITE_DATABASE_ID || 'presences_db';
 const statuses = new Set(['detected','verified','corrected','present','late','absent','excused','unauthorized']);
@@ -12,6 +13,7 @@ export async function dispatch(body, user, db, users) {
   const admin = labels.includes('admin') || labels.includes('principal') || labels.includes('superadmin');
   const staff = admin || labels.includes('teacher') || labels.includes('guard') || labels.includes('security');
   const action = body.action;
+  if (action === 'idcards.extract' || action === 'idcards.save') return bulkIdCards(body, user, db, dbId);
   if (action === 'upsert_class_attendance_event') {
     if (!staff) fail(403, 'Staff access required');
     if (!body.p_session_id || !body.p_student_id || !statuses.has(body.p_status)) fail(400, 'Invalid attendance event');

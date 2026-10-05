@@ -14,10 +14,11 @@ const client=new Client().setEndpoint('https://sgp.cloud.appwrite.io/v1').setPro
 const functions=new Functions(client);
 const functionId='presences-backend';
 try {
-  await functions.get(functionId);
+  const existing = await functions.get(functionId);
+  await functions.update({ functionId, name: existing.name, runtime: existing.runtime, execute: existing.execute, events: existing.events, schedule: existing.schedule, timeout: Math.max(existing.timeout || 30, 90), enabled: existing.enabled, logging: existing.logging, entrypoint: 'src/main.js', commands: existing.commands || 'npm install --omit=dev --ignore-scripts', scopes: existing.scopes });
 } catch(error) {
   if(error.code!==404) throw error;
-  await functions.create({functionId,name:'Presences Backend',runtime:Runtime.Node22,execute:[Role.users()],timeout:30,entrypoint:'src/main.js',commands:'npm install --omit=dev --ignore-scripts',scopes:[ProjectKeyScopes.DocumentsRead,ProjectKeyScopes.DocumentsWrite,ProjectKeyScopes.UsersRead]});
+  await functions.create({functionId,name:'Presences Backend',runtime:Runtime.Node22,execute:[Role.users()],timeout:90,entrypoint:'src/main.js',commands:'npm install --omit=dev --ignore-scripts',scopes:[ProjectKeyScopes.DocumentsRead,ProjectKeyScopes.DocumentsWrite,ProjectKeyScopes.UsersRead]});
 }
 const archive=path.resolve('appwrite/functions/presences-backend.tar.gz');
 execFileSync('tar',['-czf',archive,'-C','appwrite/functions/presences-backend','package.json','src']);

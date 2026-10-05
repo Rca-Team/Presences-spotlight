@@ -792,68 +792,16 @@ export default function EnrollmentMonitor() {
     });
 
     try {
-      const profileRows = cards
-        .map((c) => {
-          const rawDept = (c.department || (c.class && c.section ? `${c.class}-${c.section}` : c.class || '')).trim();
-          const adm = (c.employee_id || c.student_id_kv || '').trim();
-          return {
-            full_name: c.name.trim(),
-            display_name: c.name.trim(),
-            admission_number: adm,
-            employee_id: adm,
-            category: rawDept || 'Unassigned',
-            class: c.class || '',
-            section: c.section || '',
-            parent_phone: c.parent_phone || c.phone || '',
-            parent_name: c.parent_name || c.father_name || c.mother_name || '',
-            parent_email: c.parent_email || '',
-            date_of_birth: c.date_of_birth || '',
-            father_name: c.father_name || '',
-            mother_name: c.mother_name || '',
-            roll_number: c.roll_number || '',
-            role: 'student',
-            phone: c.parent_phone || c.phone || '',
-            address: c.address || '',
-          };
-        })
-        .filter((r) => Boolean(r.admission_number && r.full_name));
-
-      if (profileRows.length > 0) {
-        await supabase.from('profiles').upsert(profileRows, {
-          onConflict: 'admission_number',
-          ignoreDuplicates: false,
+      const { idCardFunction } = await import('@/services/enrollment/bulkPdfExtractor');
+      const result: { saved: string[]; failed: { admission_number: string; error: string }[] } = { saved: [], failed: [] };
+      for (let offset = 0; offset < cards.length; offset += 10) {
+        const batch = await idCardFunction<typeof result>({
+          action: 'idcards.save', approveUpdates: true,
+          students: cards.slice(offset, offset + 10).map(card => ({ ...card, admission_number: card.employee_id, email: card.student_email || '' })),
         });
+        result.saved.push(...batch.saved); result.failed.push(...batch.failed);
       }
-
-      // Sync into Appwrite monitor roster
-      for (const c of cards) {
-        const rawDept = (c.department || (c.class && c.section ? `${c.class}-${c.section}` : c.class || '')).trim();
-        const adm = (c.employee_id || c.student_id_kv || '').trim();
-        if (!adm || !c.name) continue;
-        try {
-          await enrollmentApi('staff.import', {
-            student: {
-              name: c.name.trim(),
-              admission_number: adm,
-              class: c.class || '',
-              section: c.section || '',
-              category: rawDept || 'Unassigned',
-              parent_phone: c.parent_phone || c.phone || '',
-              parent_name: c.parent_name || c.father_name || c.mother_name || '',
-              parent_email: c.parent_email || '',
-              date_of_birth: c.date_of_birth || '',
-              father_name: c.father_name || '',
-              mother_name: c.mother_name || '',
-              address: c.address || '',
-              role: 'student',
-            },
-          });
-        } catch (apiErr) {
-          console.warn('Appwrite staff.import non-fatal note for student:', adm, apiErr);
-        }
-      }
-
-      toast({
+      if (result.failed.length) throw new Error(`${result.saved.length} students saved; ${result.failed.length} failed. ${result.failed.map(item => `${item.admission_number}: ${item.error}`).join('; ')}`);      toast({
         title: 'Class ID Cards Imported! 🚀',
         description: `Successfully added ${cards.length} students to Biometric Enrollment Hub.`,
       });
@@ -868,7 +816,7 @@ export default function EnrollmentMonitor() {
         variant: 'destructive',
       });
       await load(true);
-      setUploadOpen(false);
+      throw err;
     }
   };
 
