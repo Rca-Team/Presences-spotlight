@@ -122,4 +122,23 @@ await test('Direct credential verification binds session when admission, phone a
   await assert.rejects(() => service({ action: 'verify-student', admission: 'A200', phone: '9876543211', dob: '16/05/2010' }, { ip: 'direct' }), e => e.status === 400);
   await assert.rejects(() => service({ action: 'verify-student', admission: 'A200', phone: '9999999999', dob: '15/05/2010' }, { ip: 'direct' }), e => e.status === 400);
 });
+await test('Face unenrollment rejects teachers and preserves other students and attendance', async () => {
+  await assert.rejects(() => service({ action: 'staff.revert', admission: 'A100' }, { user: { $id: 'teacher', labels: ['teacher'] } }), error => error.status === 403);
+  await db.createDocument('', 'face_descriptors', 'other-face', { student_id: 'A200', user_id: 'other' });
+  await db.createDocument('', 'face_descriptors', 'legacy-face', { student_id: 'A100' });
+  await db.createDocument('', 'attendance_records', 'history', { student_id: 'A100', status: 'present' });
+  const remove = db.deleteDocument;
+  db.deleteDocument = async (...args) => { if (args[1] === 'face_descriptors') throw err(500); return remove(...args); };
+  await assert.rejects(() => service({ action: 'staff.revert', admission: 'A100' }, admin), /database failure/);
+  db.deleteDocument = remove;
+  assert.equal((await service({ action: 'staff.revert', admission: 'A100' }, admin)).reverted, true);
+  const remaining = [...documents.entries()];
+  assert.ok(!remaining.some(([key, doc]) => key.startsWith('face_descriptors:') && doc.student_id === 'A100'));
+  assert.ok(documents.has('face_descriptors:other-face'));
+  assert.ok(documents.has('attendance_records:history'));
+  assert.ok(remaining.some(([key, doc]) => key.startsWith('profiles:') && doc.admission_number === 'A100'));
+  assert.ok(!remaining.some(([key, doc]) => key.startsWith('student_enrollment:') && ['session', 'capture'].includes(doc.kind) && JSON.parse(doc.payload).student === 'A100'));
+  assert.equal((await service({ action: 'staff.monitor' }, admin)).students.find(student => student.admission_number === 'A100').faceOnFile, false);
+  assert.equal((await service({ action: 'staff.revert', admission: 'A100' }, admin)).reverted, true);
+});
 console.log(`${passed} enrollment tests passed`);

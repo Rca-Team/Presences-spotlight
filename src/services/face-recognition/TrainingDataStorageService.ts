@@ -1,6 +1,7 @@
 import { storage as appwriteStorage, APPWRITE_CONFIG } from '@/integrations/appwrite/client';
 import { ID, Permission, Role } from 'appwrite';
 import { supabase } from '@/integrations/supabase/client';
+import { storageFileId } from '@/integrations/appwrite/storage-id';
 import { uploadImage } from './StorageService';
 
 type AttendanceCaptureMode = 'ai-scan' | 'qr-scan' | 'gate-mode' | string;
@@ -91,7 +92,7 @@ export const uploadRegistrationTrainingImage = async (
     const filename = `${timestamp}-${label}.jpg`;
     const path = `${uploaderId}/class-${className}/section-${sectionName}/student-${studentKey}/${filename}`;
     const file = new File([input.imageBlob], filename, { type: 'image/jpeg' });
-    const fileId = ID.unique();
+    const fileId = storageFileId(path);
 
     try {
       await appwriteStorage.createFile(
@@ -213,7 +214,7 @@ export const uploadRegistrationFaceModel = async (
     };
 
     const jsonFile = new File([JSON.stringify(payload)], filename, { type: 'application/json' });
-    const fileId = ID.unique();
+    const fileId = storageFileId(path);
 
     try {
       await appwriteStorage.createFile(

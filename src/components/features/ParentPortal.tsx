@@ -80,28 +80,89 @@ const ParentPortal: React.FC<ParentPortalProps> = ({ parentEmail, parentPhone })
     setIsLoading(true);
     try {
       // In real app, this would filter by parent email/phone
-      // For now, fetch all registered students to demo
-      const { data, error } = await supabase
-        .from('attendance_records')
-        .select('*')
-        .eq('status', 'registered')
-        .limit(10);
+      // For now, fetch registered students from profiles and attendance records to demo
+      const [profileRes, attendanceRes, descriptorsRes] = await Promise.all([
+        supabase
+          .from('profiles')
+          .select('*')
+          .or('role.eq.student,role.eq.user,admission_number.not.is.null')
+          .limit(500),
+        supabase
+          .from('attendance_records')
+          .select('*')
+          .eq('status', 'registered')
+          .limit(500),
+        supabase
+          .from('face_descriptors')
+          .select('id, user_id, student_id, label, image_url, metadata')
+          .limit(500),
+      ]);
 
-      if (error) throw error;
+      const studentMap = new Map<string, ChildInfo>();
 
-      const processedChildren: ChildInfo[] = (data || []).map(record => {
+      // 1. Populate from profiles
+      (profileRes.data || []).forEach(p => {
+        const name = p.full_name || p.display_name || (p.metadata as any)?.name;
+        const empId = p.admission_number || p.employee_id || (p.metadata as any)?.employee_id;
+        if (name && empId) {
+          studentMap.set(String(empId).trim(), {
+            id: p.id,
+            name: String(name).trim(),
+            employee_id: String(empId).trim(),
+            category: p.category || (p.class && p.section ? `${p.class}-${p.section}` : 'A'),
+            image_url: p.avatar_url || p.photo_url || '',
+            department: p.department || (p.class && p.section ? `${p.class}-${p.section}` : undefined),
+          });
+        }
+      });
+
+      // 2. Populate or enrich from attendance_records
+      (attendanceRes.data || []).forEach(record => {
         const deviceInfo = record.device_info as any;
         const metadata = deviceInfo?.metadata || {};
-        return {
-          id: record.id,
-          name: metadata.name || 'Student',
-          employee_id: metadata.employee_id || 'N/A',
-          category: record.category || 'A',
-          image_url: record.image_url || '',
-          department: metadata.department,
-        };
-      }).filter(c => c.name !== 'Student');
+        const empId = metadata.employee_id || record.student_id || record.id;
+        const name = metadata.name || record.student_name || 'Student';
+        const img = record.image_url || metadata.id_card_photo_url || '';
 
+        if (!empId) return;
+        const key = String(empId).trim();
+
+        if (studentMap.has(key)) {
+          const existing = studentMap.get(key)!;
+          if (!existing.image_url && img) existing.image_url = img;
+          if (existing.name === 'Student' && name !== 'Student') existing.name = name;
+        } else if (name !== 'Unknown') {
+          studentMap.set(key, {
+            id: record.id,
+            name,
+            employee_id: key,
+            category: record.category || 'A',
+            image_url: img,
+            department: metadata.department || record.category,
+          });
+        }
+      });
+
+      // 3. Populate from face_descriptors for any newly enrolled students
+      (descriptorsRes.data || []).forEach(d => {
+        const empId = d.student_id || d.user_id;
+        const name = d.label || 'Student';
+        if (!empId || name === 'Unknown' || name === 'User') return;
+        const key = String(empId).trim();
+
+        if (!studentMap.has(key)) {
+          studentMap.set(key, {
+            id: d.id,
+            name,
+            employee_id: key,
+            category: (d.metadata as any)?.category || (d.metadata as any)?.class_section || 'A',
+            image_url: d.image_url || (d.metadata as any)?.avatar_url || '',
+            department: (d.metadata as any)?.department,
+          });
+        }
+      });
+
+      const processedChildren: ChildInfo[] = Array.from(studentMap.values());
       setChildren(processedChildren);
       if (processedChildren.length > 0 && !selectedChild) {
         setSelectedChild(processedChildren[0]);

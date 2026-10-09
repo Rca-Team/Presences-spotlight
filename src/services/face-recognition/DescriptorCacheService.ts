@@ -64,22 +64,71 @@ export async function syncFromSupabase(): Promise<number> {
     descriptorMap.clear();
     kdTree = null;
 
-    if (!data || data.length === 0) {
-      console.log('No descriptors found in Lovable Cloud');
-      return 0;
+    if (data && data.length > 0) {
+      for (const record of data) {
+        let parsedDesc = record.descriptor;
+        if (typeof parsedDesc === 'string') {
+          try {
+            parsedDesc = JSON.parse(parsedDesc);
+          } catch {
+            parsedDesc = null;
+          }
+        }
+        if (!Array.isArray(parsedDesc) || parsedDesc.length === 0) continue;
+
+        const descriptor: CachedDescriptor = {
+          id: record.id,
+          userId: record.user_id,
+          name: record.label || 'Unknown',
+          descriptor: parsedDesc as number[],
+          imageUrl: record.image_url,
+          createdAt: new Date(record.created_at).getTime(),
+          lastUsed: Date.now()
+        };
+        descriptorMap.set(descriptor.id, descriptor);
+      }
     }
 
-    for (const record of data) {
-      const descriptor: CachedDescriptor = {
-        id: record.id,
-        userId: record.user_id,
-        name: record.label || 'Unknown',
-        descriptor: record.descriptor as number[],
-        imageUrl: record.image_url,
-        createdAt: new Date(record.created_at).getTime(),
-        lastUsed: Date.now()
-      };
-      descriptorMap.set(descriptor.id, descriptor);
+    // Resilient fallback: ensure registered students from attendance_records are also indexed
+    try {
+      const { data: regRecords } = await supabase
+        .from('attendance_records')
+        .select('id, user_id, student_id, student_name, face_descriptor, image_url, created_at, timestamp')
+        .eq('status', 'registered');
+
+      if (regRecords && regRecords.length > 0) {
+        for (const reg of regRecords) {
+          const studentKey = reg.student_id || reg.user_id || reg.id;
+          const alreadyIndexed = Array.from(descriptorMap.values()).some(
+            d => d.userId === studentKey || d.userId === reg.id || (reg.student_name && d.name === reg.student_name)
+          );
+
+          if (!alreadyIndexed && reg.face_descriptor) {
+            let parsed = reg.face_descriptor;
+            if (typeof parsed === 'string') {
+              try {
+                parsed = JSON.parse(parsed);
+              } catch {
+                parsed = null;
+              }
+            }
+            if (Array.isArray(parsed) && parsed.length > 0) {
+              const descriptor: CachedDescriptor = {
+                id: reg.id,
+                userId: studentKey,
+                name: reg.student_name || 'Unknown',
+                descriptor: parsed as number[],
+                imageUrl: reg.image_url,
+                createdAt: new Date(reg.created_at || reg.timestamp || Date.now()).getTime(),
+                lastUsed: Date.now()
+              };
+              descriptorMap.set(descriptor.id, descriptor);
+            }
+          }
+        }
+      }
+    } catch (fallbackErr) {
+      console.warn('Fallback attendance_records descriptor sync notice:', fallbackErr);
     }
 
     const allDescriptors = Array.from(descriptorMap.values());
@@ -87,10 +136,10 @@ export async function syncFromSupabase(): Promise<number> {
       kdTree = buildKDTree(allDescriptors);
     }
 
-    console.log(`Loaded ${allDescriptors.length} descriptors from Lovable Cloud`);
+    console.log(`Loaded ${allDescriptors.length} descriptors into recognition cache`);
     return allDescriptors.length;
   } catch (error) {
-    console.error('Error loading from Lovable Cloud:', error);
+    console.error('Error loading face descriptors:', error);
     throw error;
   }
 }

@@ -1,0 +1,16 @@
+{
+  "name": "presences-email-worker",
+  "version": "1.0.0",
+  "description": "High-throughput attendance email microservice for PM Shri KV NFC Vigyan Vihar on Cloudflare Workers",
+  "main": "src/index.ts",
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy",
+    "build": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^4.20241004.0",
+    "typescript": "^5.4.5",
+    "wrangler": "^3.80.0"
+  }
+}

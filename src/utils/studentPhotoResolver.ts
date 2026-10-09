@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { supabase } from '@/integrations/supabase/client';
+import { storageFileId } from '@/integrations/appwrite/storage-id';
 import {
   APPWRITE_CONFIG,
   getAppwriteStorageViewUrl,
@@ -290,8 +291,13 @@ export const resolveStudentPhotoUrl = async (
     return value;
   }
 
-  // 2. Direct Supabase Storage URLs (already accessible public / signed URLs)
+  // Resolve migrated registration photos through their deterministic Appwrite IDs.
   if (/^https?:\/\//i.test(value) && value.includes('.supabase.co/storage/v1/object/')) {
+    const ref = extractStorageRef(value);
+    if (ref && ['student-registration-faces', 'face-images', 'attendance-training-faces'].includes(ref.bucket)) {
+      const id = storageFileId(ref.path);
+      return options ? getAppwriteStoragePreviewUrl(ref.bucket, id, options) : getAppwriteStorageViewUrl(ref.bucket, id);
+    }
     return value;
   }
 

@@ -33,6 +33,7 @@ const importers: Record<string, Importer> = {
   '/unsubscribe': () => import('@/pages/Unsubscribe'),
   '/data': () => import('@/pages/DataBackup'),
   '/jarvis': () => import('@/pages/Jarvis'),
+  '/enrollment-monitor': () => import('@/pages/EnrollmentMonitor'),
 };
 
 const inflight: Record<string, Promise<unknown> | undefined> = {};

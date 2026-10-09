@@ -1,7 +1,7 @@
 import React, { lazy, Suspense, useCallback, useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { formatDistanceToNow, format } from 'date-fns';
-import { motion, AnimatePresence } from 'framer-motion';
+import { motion } from 'framer-motion';
 import {
   ArrowLeft,
   RefreshCw,
@@ -40,7 +40,10 @@ import {
   MessageSquare,
   LockKeyhole,
   Building2,
-  RotateCcw
+  RotateCcw,
+  Trash2,
+  MoreHorizontal,
+  UserMinus,
 } from 'lucide-react';
 import PageTransition from '@/components/PageTransition';
 import { Button } from '@/components/ui/button';
@@ -49,6 +52,24 @@ import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from '@/components/ui/sheet';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
+import { universalDeleteStudent, universalDeleteStudentsBatch } from '@/services/student/studentDeletionService';
 import { useToast } from '@/hooks/use-toast';
 import { useUserRole } from '@/hooks/useUserRole';
 import { cn } from '@/lib/utils';
@@ -56,6 +77,7 @@ import { fieldLabels, type StudentDetails, type EnrollmentSession } from '@/serv
 import {
   fetchMonitor,
   fetchMonitorPhoto,
+  getCachedMonitorOverview,
   reviewCorrection,
   statusMeta,
   eventLabels,
@@ -70,6 +92,8 @@ import { ClassPDFIDCardImporter, type ExtractedStudentCard } from '@/components/
 import { supabase } from '@/integrations/supabase/client';
 import { enrollmentApi } from '@/services/enrollment/api';
 import '@/components/enrollment/enrollment.css';
+
+const StudentStoredFaceAssets = lazy(() => import('@/components/enrollment/StudentStoredFaceAssets'));
 
 type Filter = 'all' | 'not_started' | 'in_progress' | 'failed' | 'completed' | 'attention';
 
@@ -200,6 +224,14 @@ function GlowStatCard({
 function SamplePhoto({ admission, fileId }: { admission: string; fileId: string }) {
   const [src, setSrc] = useState('');
   const [state, setState] = useState<'idle' | 'loading' | 'error'>('idle');
+  useEffect(() => {
+    let active = true;
+    setSrc(''); setState('loading');
+    void fetchMonitorPhoto(admission, fileId).then(image => {
+      if (active) { setSrc(image); setState('idle'); }
+    }).catch(() => { if (active) setState('error'); });
+    return () => { active = false; };
+  }, [admission, fileId]);
 
   const load = async () => {
     setState('loading');
@@ -216,6 +248,7 @@ function SamplePhoto({ admission, fileId }: { admission: string; fileId: string 
       <img
         src={src}
         alt="Enrollment capture"
+        onError={() => { setSrc(''); setState('error'); }}
         loading="lazy"
         className="absolute inset-0 h-full w-full object-cover rounded-xl transition-all duration-300 hover:scale-105"
       />
@@ -342,6 +375,7 @@ function StudentDetailSheet({
   onChanged,
   onOpenRecapture,
   onRevert,
+  onDelete,
   onCopyBypassLink,
 }: {
   student: MonitorStudent | null;
@@ -350,6 +384,7 @@ function StudentDetailSheet({
   onChanged: () => void;
   onOpenRecapture: (student: MonitorStudent) => void;
   onRevert?: (student: MonitorStudent) => void;
+  onDelete?: (student: MonitorStudent) => void;
   onCopyBypassLink?: (student: MonitorStudent) => void;
 }) {
   const events = useMemo(
@@ -446,10 +481,23 @@ function StudentDetailSheet({
                     onClose();
                     onRevert(student);
                   }}
-                  className="flex-1 sm:flex-none rounded-xl h-10 sm:h-9 font-bold text-xs border-rose-500/30 bg-rose-500/10 text-rose-300 hover:bg-rose-500/20 hover:text-white gap-1.5 shrink-0 touch-manipulation"
+                  className="flex-1 sm:flex-none rounded-xl h-10 sm:h-9 font-bold text-xs border-amber-500/30 bg-amber-500/10 text-amber-300 hover:bg-amber-500/20 hover:text-white gap-1.5 shrink-0 touch-manipulation"
                 >
-                  <RotateCcw className="h-4 w-4 text-rose-400" />
+                  <RotateCcw className="h-4 w-4 text-amber-400" />
                   Revert
+                </Button>
+              )}
+              {onDelete && (
+                <Button
+                  variant="outline"
+                  onClick={() => {
+                    onClose();
+                    onDelete(student);
+                  }}
+                  className="flex-1 sm:flex-none rounded-xl h-10 sm:h-9 font-bold text-xs border-rose-500/40 bg-rose-500/15 text-rose-300 hover:bg-rose-500/25 hover:text-white gap-1.5 shrink-0 touch-manipulation"
+                >
+                  <Trash2 className="h-4 w-4 text-rose-400" />
+                  Delete Student
                 </Button>
               )}
               <Button
@@ -524,6 +572,17 @@ function StudentDetailSheet({
             ))}
           </div>
         </section>
+
+        <Suspense
+          fallback={
+            <div className="mt-5 p-5 rounded-2xl bg-white/5 border border-white/10 text-center space-y-2">
+              <div className="h-6 w-6 border-2 border-cyan-400 border-t-transparent rounded-full animate-spin mx-auto" />
+              <p className="text-xs text-white/60">Loading Biometric 3D Models & Assets…</p>
+            </div>
+          }
+        >
+          <StudentStoredFaceAssets key={student.admission_number} student={student} />
+        </Suspense>
 
         {/* Captured 15-Angle Samples Grid */}
         {student.samples.length > 0 && (
@@ -616,9 +675,9 @@ export default function EnrollmentMonitor() {
   const { role } = useUserRole();
   const { toast } = useToast();
   const navigate = useNavigate();
-  const [data, setData] = useState<MonitorOverview | null>(null);
+  const [data, setData] = useState<MonitorOverview | null>(() => getCachedMonitorOverview());
   const [error, setError] = useState('');
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(() => !getCachedMonitorOverview());
   const [query, setQuery] = useState('');
   const [category, setCategory] = useState('all');
   const [filter, setFilter] = useState<Filter>('all');
@@ -628,6 +687,14 @@ export default function EnrollmentMonitor() {
   const [launchingCaptureAdm, setLaunchingCaptureAdm] = useState<string | null>(null);
   const [revertingStudent, setRevertingStudent] = useState<MonitorStudent | null>(null);
   const [isReverting, setIsReverting] = useState(false);
+  const [selectedAdmissions, setSelectedAdmissions] = useState<Set<string>>(new Set());
+  const [unenrollTargets, setUnenrollTargets] = useState<MonitorStudent[]>([]);
+  const [unenrollBusy, setUnenrollBusy] = useState(false);
+  const [unenrollProgress, setUnenrollProgress] = useState('');
+  const [studentToDelete, setStudentToDelete] = useState<MonitorStudent | null>(null);
+  const [bulkDeleteTargets, setBulkDeleteTargets] = useState<MonitorStudent[]>([]);
+  const [isDeleting, setIsDeleting] = useState(false);
+  const [deleteProgress, setDeleteProgress] = useState('');
   const [showScrollTop, setShowScrollTop] = useState(false);
 
   const parentLink = `${window.location.origin}/enroll`;
@@ -708,30 +775,8 @@ export default function EnrollmentMonitor() {
   const handleRevert = async (s: MonitorStudent) => {
     setIsReverting(true);
     try {
-      // 1. Backend revert action
-      await enrollmentApi('staff.revert', { admission: s.admission_number }).catch((err) => {
-        console.warn('Backend staff.revert notice:', err);
-      });
-
-      // 2. Direct client purge as safety net
-      const cleanAdm = s.admission_number.trim();
-      await Promise.all([
-        supabase
-          .from('face_descriptors')
-          .delete()
-          .or(`student_id.eq.${cleanAdm}`),
-        supabase
-          .from('profiles')
-          .update({ avatar_url: null, updated_at: new Date().toISOString() })
-          .or(`admission_number.eq.${cleanAdm},employee_id.eq.${cleanAdm}`),
-        supabase
-          .from('attendance_records')
-          .update({ face_descriptor: null, status: 'absent' })
-          .eq('student_id', cleanAdm)
-          .eq('status', 'registered'),
-      ]).catch((err) => {
-        console.warn('Client cleanup notice:', err);
-      });
+      const result = await enrollmentApi<{ reverted: boolean }>('staff.revert', { admission: s.admission_number });
+      if (!result.reverted) throw new Error('The server did not confirm face unenrollment.');
 
       toast({
         title: 'Enrollment Reverted',
@@ -752,6 +797,130 @@ export default function EnrollmentMonitor() {
     }
   };
 
+  const handleBulkUnenroll = async () => {
+    setUnenrollBusy(true);
+    const failed: MonitorStudent[] = [];
+    const errors: string[] = [];
+    let saved = 0;
+    try {
+      for (const [index, student] of unenrollTargets.entries()) {
+        setUnenrollProgress(`Unenrolling ${index + 1}/${unenrollTargets.length}: ${student.name}`);
+        try {
+          const result = await enrollmentApi<{ reverted: boolean }>('staff.revert', { admission: student.admission_number });
+          if (!result.reverted) throw new Error('Server did not confirm unenrollment.');
+          saved++;
+          setSelectedAdmissions(previous => { const next = new Set(previous); next.delete(student.admission_number); return next; });
+        } catch (error) {
+          failed.push(student);
+          errors.push(`${student.name}: ${error instanceof Error ? error.message : 'Request failed'}`);
+        }
+      }
+      setUnenrollTargets(failed);
+      setUnenrollProgress(errors.slice(0, 3).join('\n'));
+      toast({ title: `${saved} students unenrolled`, description: failed.length ? `${failed.length} failed. Review the errors and retry.` : 'Students can enroll their faces again. Profiles and attendance history were kept.', variant: failed.length ? 'destructive' : 'default' });
+      setSelectedStudentAdm(null);
+      await load(true);
+    } finally { setUnenrollBusy(false); }
+  };
+
+  const handleConfirmPermanentDelete = async () => {
+    if (!studentToDelete) return;
+    setIsDeleting(true);
+    setDeleteProgress(`Starting permanent deletion for ${studentToDelete.name}...`);
+    try {
+      const res = await universalDeleteStudent(
+        {
+          admission_number: studentToDelete.admission_number,
+          employee_id: studentToDelete.admission_number,
+          name: studentToDelete.name,
+          samples: studentToDelete.samples.map(s => ({ fileId: s.fileId })),
+        },
+        (status) => setDeleteProgress(status)
+      );
+
+      if (res.success) {
+        toast({
+          title: "Student Permanently Deleted",
+          description: `Completely removed ${studentToDelete.name} (${studentToDelete.admission_number}) from the database and storage.`,
+        });
+        setStudentToDelete(null);
+        setSelectedStudentAdm(null);
+        setSelectedAdmissions(prev => {
+          const next = new Set(prev);
+          next.delete(studentToDelete.admission_number);
+          return next;
+        });
+        await load(true);
+      } else {
+        toast({
+          title: "Deletion Completed with Warnings",
+          description: res.errors.join("; ") || "Some records could not be purged.",
+          variant: "destructive",
+        });
+        setStudentToDelete(null);
+        await load(true);
+      }
+    } catch (err: any) {
+      console.error('Delete student error:', err);
+      toast({
+        title: "Deletion Failed",
+        description: err?.message || "Could not permanently delete student.",
+        variant: "destructive",
+      });
+    } finally {
+      setIsDeleting(false);
+      setDeleteProgress('');
+    }
+  };
+
+  const handleBulkPermanentDelete = async () => {
+    if (!bulkDeleteTargets.length) return;
+    setIsDeleting(true);
+    let successCount = 0;
+    const errors: string[] = [];
+
+    try {
+      for (const [index, student] of bulkDeleteTargets.entries()) {
+        setDeleteProgress(`Deleting ${index + 1}/${bulkDeleteTargets.length}: ${student.name}...`);
+        try {
+          const res = await universalDeleteStudent({
+            admission_number: student.admission_number,
+            employee_id: student.admission_number,
+            name: student.name,
+            samples: student.samples.map(s => ({ fileId: s.fileId })),
+          });
+          if (res.success) {
+            successCount++;
+            setSelectedAdmissions(prev => {
+              const next = new Set(prev);
+              next.delete(student.admission_number);
+              return next;
+            });
+          } else {
+            errors.push(`${student.name}: ${res.errors.join(', ')}`);
+          }
+        } catch (err: any) {
+          errors.push(`${student.name}: ${err.message || 'Failed'}`);
+        }
+      }
+
+      toast({
+        title: `${successCount} Students Permanently Deleted`,
+        description: errors.length
+          ? `${errors.length} could not be completely removed. Check logs.`
+          : `Permanently removed ${successCount} students and their biometric records from the database.`,
+        variant: errors.length ? 'destructive' : 'default',
+      });
+
+      setBulkDeleteTargets([]);
+      setSelectedStudentAdm(null);
+      await load(true);
+    } finally {
+      setIsDeleting(false);
+      setDeleteProgress('');
+    }
+  };
+
   // Scroll to top listener for mobile FAB
   useEffect(() => {
     const handleScroll = () => {
@@ -762,16 +931,17 @@ export default function EnrollmentMonitor() {
   }, []);
 
   const load = useCallback(async (quiet = false) => {
-    if (!quiet) setLoading(true);
+    if (!quiet && !data) setLoading(true);
     try {
-      setData(await fetchMonitor());
+      const fresh = await fetchMonitor();
+      setData(fresh);
       setError('');
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Could not load enrollment data.');
+      if (!data) setError(e instanceof Error ? e.message : 'Could not load enrollment data.');
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [data]);
 
   useEffect(() => {
     void load();
@@ -794,10 +964,10 @@ export default function EnrollmentMonitor() {
     try {
       const { idCardFunction } = await import('@/services/enrollment/bulkPdfExtractor');
       const result: { saved: string[]; failed: { admission_number: string; error: string }[] } = { saved: [], failed: [] };
-      for (let offset = 0; offset < cards.length; offset += 10) {
+      for (let offset = 0; offset < cards.length; offset += 3) {
         const batch = await idCardFunction<typeof result>({
           action: 'idcards.save', approveUpdates: true,
-          students: cards.slice(offset, offset + 10).map(card => ({ ...card, admission_number: card.employee_id, email: card.student_email || '' })),
+          students: cards.slice(offset, offset + 3).map(card => ({ ...card, admission_number: card.employee_id, email: card.student_email || '' })),
         });
         result.saved.push(...batch.saved); result.failed.push(...batch.failed);
       }
@@ -1036,6 +1206,17 @@ export default function EnrollmentMonitor() {
                 Refresh
               </Button>
 
+              {data?.canManage && (
+                <Button
+                  size="sm"
+                  className="h-8 sm:h-9 px-3 sm:px-3.5 rounded-xl sm:rounded-2xl text-xs font-bold bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-600 hover:to-teal-700 text-white shadow-lg shadow-emerald-500/20 active:scale-95 shrink-0"
+                  onClick={() => setUploadOpen(true)}
+                >
+                  <Upload className="h-3.5 w-3.5 mr-1.5" />
+                  Upload ID Cards
+                </Button>
+              )}
+
               <Button
                 size="sm"
                 variant="outline"
@@ -1059,14 +1240,97 @@ export default function EnrollmentMonitor() {
               </Button>
 
               {data?.canManage && (
-                <Button
-                  size="sm"
-                  className="h-8 sm:h-9 px-3 sm:px-3.5 rounded-xl sm:rounded-2xl text-xs font-bold bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-600 hover:to-teal-700 text-white shadow-lg shadow-emerald-500/20 active:scale-95 shrink-0"
-                  onClick={() => setUploadOpen(true)}
-                >
-                  <Upload className="h-3.5 w-3.5 mr-1.5" />
-                  Upload ID Cards
-                </Button>
+                <>
+                  {selectedAdmissions.size > 0 ? (
+                    /* Active Selection Operations */
+                    <div className="flex items-center gap-2 pl-2 border-l border-white/15 shrink-0">
+                      <Badge variant="outline" className="border-emerald-500/30 bg-emerald-500/10 text-emerald-400 text-xs px-2.5 py-1 font-semibold">
+                        {selectedAdmissions.size} Selected
+                      </Badge>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="h-8 sm:h-9 px-2.5 rounded-xl sm:rounded-2xl text-xs text-slate-300 hover:text-white"
+                        disabled={unenrollBusy || isDeleting}
+                        onClick={() => setSelectedAdmissions(new Set())}
+                      >
+                        <X className="h-3.5 w-3.5 mr-1" />
+                        Clear
+                      </Button>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="h-8 sm:h-9 px-3 rounded-xl sm:rounded-2xl border-amber-500/30 bg-amber-500/10 text-amber-300 hover:bg-amber-500/20 text-xs font-semibold"
+                        disabled={unenrollBusy || isReverting || isDeleting}
+                        onClick={() => {
+                          setUnenrollProgress('');
+                          setUnenrollTargets(students.filter(student => selectedAdmissions.has(student.admission_number)));
+                        }}
+                      >
+                        <RotateCcw className="h-3.5 w-3.5 mr-1.5" />
+                        Unenroll ({selectedAdmissions.size})
+                      </Button>
+                      <Button
+                        variant="destructive"
+                        size="sm"
+                        className="h-8 sm:h-9 px-3 rounded-xl sm:rounded-2xl bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold shadow-md shadow-rose-600/20"
+                        disabled={unenrollBusy || isReverting || isDeleting}
+                        onClick={() => setBulkDeleteTargets(students.filter(student => selectedAdmissions.has(student.admission_number)))}
+                      >
+                        <Trash2 className="h-3.5 w-3.5 mr-1.5" />
+                        Permanently Delete
+                      </Button>
+                    </div>
+                  ) : (
+                    /* Inactive Selection Controls */
+                    <div className="flex items-center gap-2 pl-2 border-l border-white/15 shrink-0">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="h-8 sm:h-9 px-3 rounded-xl sm:rounded-2xl border-white/15 bg-white/5 text-slate-300 hover:text-white text-xs font-semibold"
+                        disabled={unenrollBusy || isReverting || isDeleting || !visible.length}
+                        onClick={() => setSelectedAdmissions(new Set(visible.map(student => student.admission_number)))}
+                      >
+                        Select Filtered ({visible.length})
+                      </Button>
+
+                      <DropdownMenu>
+                        <DropdownMenuTrigger asChild>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-8 w-8 sm:h-9 sm:w-9 rounded-xl sm:rounded-2xl border border-white/15 bg-white/5 text-slate-300 hover:text-white"
+                            aria-label="More actions"
+                          >
+                            <MoreHorizontal className="h-4 w-4" />
+                          </Button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent align="end" className="bg-slate-900 border-white/10 text-white w-56 rounded-2xl shadow-2xl p-1.5">
+                          <DropdownMenuItem
+                            className="text-xs py-2 rounded-xl cursor-pointer hover:bg-white/10"
+                            disabled={!visible.length}
+                            onClick={() => setSelectedAdmissions(new Set(visible.map(student => student.admission_number)))}
+                          >
+                            <Check className="h-3.5 w-3.5 mr-2 text-emerald-400" />
+                            Select all filtered ({visible.length})
+                          </DropdownMenuItem>
+                          <DropdownMenuSeparator className="bg-white/10 my-1" />
+                          <DropdownMenuItem
+                            className="text-xs py-2 rounded-xl cursor-pointer text-rose-300 hover:bg-rose-500/20 focus:bg-rose-500/20 focus:text-rose-200"
+                            disabled={unenrollBusy || isReverting || isDeleting || !students.length}
+                            onClick={() => {
+                              setUnenrollProgress('');
+                              setUnenrollTargets([...students]);
+                            }}
+                          >
+                            <RotateCcw className="h-3.5 w-3.5 mr-2 text-rose-400" />
+                            Unenroll all school students ({students.length})
+                          </DropdownMenuItem>
+                        </DropdownMenuContent>
+                      </DropdownMenu>
+                    </div>
+                  )}
+                </>
               )}
             </div>
           </div>
@@ -1281,20 +1545,14 @@ export default function EnrollmentMonitor() {
                 </div>
               ) : (
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 sm:gap-3.5">
-                  <AnimatePresence mode="popLayout">
                     {visible.slice(0, limit).map((s) => {
                       const isComplete = isStudentEnrolled(s);
                       const isCapturing = s.status === 'capturing' || s.status === 'verified';
                       const hasAttention = needsAttention(s);
 
                       return (
-                        <motion.div
+                        <div
                           key={s.admission_number}
-                          layout
-                          initial={{ opacity: 0, scale: 0.95 }}
-                          animate={{ opacity: 1, scale: 1 }}
-                          exit={{ opacity: 0, scale: 0.95 }}
-                          transition={{ duration: 0.2 }}
                           className={cn(
                             'group relative rounded-2xl sm:rounded-3xl border p-3.5 sm:p-4 backdrop-blur-xl transition-all duration-200 flex flex-col justify-between overflow-hidden shadow-md touch-manipulation',
                             isComplete
@@ -1307,6 +1565,12 @@ export default function EnrollmentMonitor() {
                           )}
                         >
                           {/* Student Header */}
+                          {data?.canManage && (
+                            <label className="flex items-center gap-2 mb-3 text-xs text-white/80">
+                              <input type="checkbox" checked={selectedAdmissions.has(s.admission_number)} disabled={unenrollBusy || isReverting} onChange={event => setSelectedAdmissions(previous => { const next = new Set(previous); if (event.target.checked) next.add(s.admission_number); else next.delete(s.admission_number); return next; })} aria-label={`Select ${s.name} (${s.admission_number}) for face unenrollment`} />
+                              Select student
+                            </label>
+                          )}
                           <div>
                             <div className="flex items-start justify-between gap-2">
                               <div className="flex items-center gap-2.5 sm:gap-3 min-w-0 flex-1">
@@ -1382,12 +1646,22 @@ export default function EnrollmentMonitor() {
                                     variant="ghost"
                                     title="Revert biometric enrollment"
                                     onClick={() => setRevertingStudent(s)}
-                                    className="h-9 sm:h-8 px-2.5 rounded-xl text-xs font-bold text-rose-300 hover:text-rose-100 hover:bg-rose-500/20 border border-rose-500/30 gap-1 active:scale-95 touch-manipulation"
+                                    className="h-9 sm:h-8 px-2 rounded-xl text-xs font-bold text-amber-300 hover:text-amber-100 hover:bg-amber-500/20 border border-amber-500/30 gap-1 active:scale-95 touch-manipulation"
                                   >
-                                    <RotateCcw className="h-3.5 w-3.5 text-rose-400" />
+                                    <RotateCcw className="h-3.5 w-3.5 text-amber-400" />
                                     <span className="hidden xs:inline">Revert</span>
                                   </Button>
                                 )}
+                                <Button
+                                  size="sm"
+                                  variant="ghost"
+                                  title="Permanently delete student from database"
+                                  onClick={() => setStudentToDelete(s)}
+                                  className="h-9 sm:h-8 px-2 rounded-xl text-xs font-bold text-rose-400 hover:text-rose-200 hover:bg-rose-500/20 border border-rose-500/30 gap-1 active:scale-95 touch-manipulation"
+                                >
+                                  <Trash2 className="h-3.5 w-3.5 text-rose-400" />
+                                  <span className="hidden xs:inline">Delete</span>
+                                </Button>
                                 <Button
                                   size="sm"
                                   disabled={launchingCaptureAdm === s.admission_number}
@@ -1414,10 +1688,9 @@ export default function EnrollmentMonitor() {
                               </>
                             )}
                           </div>
-                        </motion.div>
+                        </div>
                       );
                     })}
-                  </AnimatePresence>
                 </div>
               )}
 
@@ -1467,8 +1740,24 @@ export default function EnrollmentMonitor() {
             onOpenRecapture={(st) => void handleLaunchDirectCapture(st)}
             onCopyBypassLink={(st) => void copyDirectCaptureLink(st)}
             onRevert={(st) => setRevertingStudent(st)}
+            onDelete={(st) => setStudentToDelete(st)}
           />
         )}
+
+        <Dialog open={unenrollTargets.length > 0} onOpenChange={open => { if (!open && !unenrollBusy) setUnenrollTargets([]); }}>
+          <DialogContent className="max-w-md bg-slate-900 border-white/10 text-white" onInteractOutside={event => { if (unenrollBusy) event.preventDefault(); }} onEscapeKeyDown={event => { if (unenrollBusy) event.preventDefault(); }}>
+            <DialogHeader>
+              <DialogTitle>Unenroll faces for {unenrollTargets.length} students?</DialogTitle>
+              <DialogDescription>This permanently removes saved face samples and recognition vectors and invalidates enrollment sessions. Student profiles and attendance history are kept. Students will need to enroll again.</DialogDescription>
+            </DialogHeader>
+            <div className="max-h-48 overflow-auto text-sm space-y-1">{unenrollTargets.map(student => <p key={student.admission_number}>{student.name} · {student.admission_number} · {student.category}</p>)}</div>
+            {unenrollProgress && <p role="status" className="text-xs whitespace-pre-line">{unenrollProgress}</p>}
+            <DialogFooter>
+              <Button variant="outline" disabled={unenrollBusy} onClick={() => setUnenrollTargets([])}>Cancel</Button>
+              <Button variant="destructive" disabled={unenrollBusy} onClick={() => void handleBulkUnenroll()}>{unenrollBusy ? 'Unenrolling…' : 'Confirm face unenrollment'}</Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
 
         {/* Revert Confirmation Dialog */}
         <Dialog open={Boolean(revertingStudent)} onOpenChange={(open) => !open && setRevertingStudent(null)}>
@@ -1526,6 +1815,122 @@ export default function EnrollmentMonitor() {
             </DialogFooter>
           </DialogContent>
         </Dialog>
+
+        {/* Permanent Delete Single Student AlertDialog */}
+        <AlertDialog open={Boolean(studentToDelete)} onOpenChange={(open) => { if (!open && !isDeleting) setStudentToDelete(null); }}>
+          <AlertDialogContent className="max-w-md bg-slate-900 border-white/10 text-white">
+            <AlertDialogHeader>
+              <AlertDialogTitle className="flex items-center gap-2 text-rose-400">
+                <Trash2 className="h-5 w-5" />
+                Permanently Delete Student from Database?
+              </AlertDialogTitle>
+              <AlertDialogDescription className="text-white/80 text-xs sm:text-sm space-y-3 pt-2">
+                <p>
+                  Are you sure you want to permanently erase <strong className="text-white">{studentToDelete?.name}</strong> (Admission ID:{' '}
+                  <span className="font-mono text-emerald-300">{studentToDelete?.admission_number}</span>)?
+                </p>
+                <div className="rounded-xl border border-rose-500/20 bg-rose-500/10 p-3 text-xs text-rose-200 space-y-1.5">
+                  <p className="font-bold text-rose-300">This will permanently delete from EVERYWHERE:</p>
+                  <ul className="list-disc pl-4 space-y-0.5 text-rose-200/90">
+                    <li>Student profile & registration accounts</li>
+                    <li>All facial biometric descriptors and recognition models</li>
+                    <li>All attendance records and verification history</li>
+                    <li>All stored face samples and ID photos in Cloud Storage</li>
+                    <li>Enrollment credentials and session documents</li>
+                  </ul>
+                </div>
+                {deleteProgress && (
+                  <p className="text-xs font-semibold text-cyan-400 animate-pulse">{deleteProgress}</p>
+                )}
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter className="gap-2 sm:gap-0 mt-2">
+              <AlertDialogCancel
+                disabled={isDeleting}
+                onClick={() => setStudentToDelete(null)}
+                className="border-white/10 bg-white/5 hover:bg-white/10 text-white"
+              >
+                Cancel
+              </AlertDialogCancel>
+              <AlertDialogAction
+                disabled={isDeleting}
+                onClick={(e) => {
+                  e.preventDefault();
+                  void handleConfirmPermanentDelete();
+                }}
+                className="bg-rose-600 hover:bg-rose-700 text-white font-bold gap-1.5 shadow-md shadow-rose-600/20"
+              >
+                {isDeleting ? (
+                  <>
+                    <RefreshCw className="h-3.5 w-3.5 animate-spin" />
+                    <span>Deleting Permanently...</span>
+                  </>
+                ) : (
+                  <>
+                    <Trash2 className="h-3.5 w-3.5" />
+                    <span>Yes, Permanently Delete</span>
+                  </>
+                )}
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
+
+        {/* Bulk Permanent Delete AlertDialog */}
+        <AlertDialog open={bulkDeleteTargets.length > 0} onOpenChange={(open) => { if (!open && !isDeleting) setBulkDeleteTargets([]); }}>
+          <AlertDialogContent className="max-w-md bg-slate-900 border-white/10 text-white">
+            <AlertDialogHeader>
+              <AlertDialogTitle className="flex items-center gap-2 text-rose-400">
+                <Trash2 className="h-5 w-5" />
+                Permanently Delete {bulkDeleteTargets.length} Students?
+              </AlertDialogTitle>
+              <AlertDialogDescription className="text-white/80 text-xs sm:text-sm space-y-3 pt-2">
+                <p>
+                  This will permanently erase all selected students from the database including their profiles, biometric face models, attendance records, and cloud storage images. This action cannot be undone.
+                </p>
+                <div className="max-h-36 overflow-auto text-xs space-y-1 p-2 rounded-lg bg-black/40 border border-white/10">
+                  {bulkDeleteTargets.map(s => (
+                    <p key={s.admission_number} className="text-white/80 truncate">
+                      {s.name} · {s.admission_number} · {s.category || 'N/A'}
+                    </p>
+                  ))}
+                </div>
+                {deleteProgress && (
+                  <p className="text-xs font-semibold text-cyan-400 animate-pulse">{deleteProgress}</p>
+                )}
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter className="gap-2 sm:gap-0 mt-2">
+              <AlertDialogCancel
+                disabled={isDeleting}
+                onClick={() => setBulkDeleteTargets([])}
+                className="border-white/10 bg-white/5 hover:bg-white/10 text-white"
+              >
+                Cancel
+              </AlertDialogCancel>
+              <AlertDialogAction
+                disabled={isDeleting}
+                onClick={(e) => {
+                  e.preventDefault();
+                  void handleBulkPermanentDelete();
+                }}
+                className="bg-rose-600 hover:bg-rose-700 text-white font-bold gap-1.5 shadow-md shadow-rose-600/20"
+              >
+                {isDeleting ? (
+                  <>
+                    <RefreshCw className="h-3.5 w-3.5 animate-spin" />
+                    <span>Deleting Selected...</span>
+                  </>
+                ) : (
+                  <>
+                    <Trash2 className="h-3.5 w-3.5" />
+                    <span>Confirm Permanent Deletion</span>
+                  </>
+                )}
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
 
         {/* Class PDF Bulk ID Cards Importer Modal */}
         {uploadOpen && (

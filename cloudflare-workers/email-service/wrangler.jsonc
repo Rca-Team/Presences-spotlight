@@ -1,0 +1,21 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "presences-email-worker",
+  "main": "src/index.ts",
+  "compatibility_date": "2024-10-01",
+  "compatibility_flags": [
+    "nodejs_compat"
+  ],
+  "vars": {
+    "SCHOOL_NAME": "PM Shri KV NFC Vigyan Vihar",
+    "DEFAULT_FROM_NAME": "PM Shri KV NFC Vigyan Vihar Attendance",
+    "ENABLE_ONE_EMAIL_PER_DAY": "true"
+  }
+  // Optional: add KV namespace if you want distributed multi-edge deduplication
+  // "kv_namespaces": [
+  //   {
+  //     "binding": "DEDUP_KV",
+  //     "id": "<your-kv-namespace-id>"
+  //   }
+  // ]
+}

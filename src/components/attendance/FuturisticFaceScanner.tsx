@@ -498,18 +498,44 @@ const FuturisticFaceScanner: React.FC<FuturisticFaceScannerProps> = ({ onScanCom
   // succeed, so tell the operator instead of silently showing "Face 1".
   useEffect(() => {
     let cancelled = false;
-    (async () => {
+
+    const checkGalleryCount = async () => {
       try {
+        let totalCount = 0;
         const { count, error } = await supabase
           .from('face_descriptors')
           .select('id', { count: 'exact', head: true });
-        if (!cancelled) setGalleryCount(error ? null : Number(count ?? 0));
+
+        if (!error && typeof count === 'number' && count > 0) {
+          totalCount = count;
+        } else {
+          // Fallback: check registered students in attendance_records
+          const { count: regCount } = await supabase
+            .from('attendance_records')
+            .select('id', { count: 'exact', head: true })
+            .eq('status', 'registered');
+          if (typeof regCount === 'number') {
+            totalCount = regCount;
+          }
+        }
+
+        if (!cancelled) setGalleryCount(totalCount);
       } catch {
         if (!cancelled) setGalleryCount(null);
       }
-    })();
+    };
+
+    void checkGalleryCount();
+
+    const handleUpdate = () => {
+      void checkGalleryCount();
+    };
+
+    window.addEventListener('presence:descriptors-updated', handleUpdate);
+
     return () => {
       cancelled = true;
+      window.removeEventListener('presence:descriptors-updated', handleUpdate);
     };
   }, []);
 

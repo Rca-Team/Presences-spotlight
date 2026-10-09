@@ -52,7 +52,7 @@ type RegistrationRecord = {
 
 type PointCloudPoint = { id: number; x: number; y: number; z: number };
 
-const PointCloud3DViewer = ({ points }: { points: PointCloudPoint[] }) => {
+export const PointCloud3DViewer = ({ points }: { points: PointCloudPoint[] }) => {
   const containerRef = useRef<HTMLDivElement | null>(null);
 
   const normalizedPoints = useMemo(() => {
@@ -95,7 +95,7 @@ const PointCloud3DViewer = ({ points }: { points: PointCloudPoint[] }) => {
     const width = container.clientWidth || 600;
     const height = container.clientHeight || 320;
     const scene = new THREE.Scene();
-    scene.background = new THREE.Color(colorFromToken('--background', '#0b1020'));
+    scene.background = new THREE.Color(0x060a14);
 
     const camera = new THREE.PerspectiveCamera(55, width / height, 0.1, 1000);
     camera.position.set(2.4, 2.2, 2.4);
@@ -106,14 +106,14 @@ const PointCloud3DViewer = ({ points }: { points: PointCloudPoint[] }) => {
     container.innerHTML = '';
     container.appendChild(renderer.domElement);
 
-    const ambient = new THREE.AmbientLight(0xffffff, 0.7);
-    const pointLight = new THREE.PointLight(0xffffff, 1);
+    const ambient = new THREE.AmbientLight(0xffffff, 0.8);
+    const pointLight = new THREE.PointLight(0x06b6d4, 1.5);
     pointLight.position.set(3, 4, 5);
     scene.add(ambient, pointLight);
 
-    const grid = new THREE.GridHelper(8, 8, new THREE.Color(colorFromToken('--border', '#334155')), new THREE.Color(colorFromToken('--accent', '#1e293b')));
+    const grid = new THREE.GridHelper(8, 8, 0x1e293b, 0x0f172a);
     scene.add(grid);
-    scene.add(new THREE.AxesHelper(2));
+    scene.add(new THREE.AxesHelper(1.5));
 
     if (normalizedPoints.length > 0) {
       const positions = new Float32Array(normalizedPoints.length * 3);
@@ -127,13 +127,18 @@ const PointCloud3DViewer = ({ points }: { points: PointCloudPoint[] }) => {
       const geometry = new THREE.BufferGeometry();
       geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
       const material = new THREE.PointsMaterial({
-        color: new THREE.Color(colorFromToken('--primary', '#22d3ee')),
-        size: 0.09,
+        color: new THREE.Color('#06b6d4'),
+        size: 0.18,
         sizeAttenuation: true,
       });
 
       const cloud = new THREE.Points(geometry, material);
       scene.add(cloud);
+
+      // Connecting lines
+      const lineMat = new THREE.LineBasicMaterial({ color: 0x06b6d4, transparent: true, opacity: 0.35 });
+      const lineMesh = new THREE.LineSegments(geometry, lineMat);
+      scene.add(lineMesh);
     }
 
     const controls = new OrbitControls(camera, renderer.domElement);

@@ -1,0 +1,16 @@
+import fs from 'node:fs';
+import assert from 'node:assert/strict';
+import ts from 'typescript';
+import { createHash } from 'node:crypto';
+const file = fs.readFileSync('src/integrations/appwrite/adapter.ts', 'utf8');
+globalThis.metadataStorageId = path => /^[a-zA-Z0-9._-]{1,36}$/.test(path) ? path : createHash('md5').update(path).digest('hex');
+const source = 'const storageFileId = globalThis.metadataStorageId; const getAppwriteStorageViewUrl = (bucket,id) => "https://appwrite.test/"+bucket+"/"+id;\n' + file.slice(file.indexOf('function sanitizeImageUrl'), file.indexOf('// Convert column name')) + '\nexport { normalizeDoc };';
+const code = ts.transpileModule(source, { compilerOptions: { module: ts.ModuleKind.ESNext, target: ts.ScriptTarget.ES2022 } }).outputText;
+const { normalizeDoc } = await import('data:text/javascript;base64,' + Buffer.from(code).toString('base64'));
+const metadata = { metadata: { employee_id: '001', face_model: { storage_model_path: 'folder/model.json' }, training_registration_path: 'folder/primary.jpg' } };
+assert.deepEqual(normalizeDoc({ $id: 'student', device_info: JSON.stringify(metadata) }).device_info, metadata);
+assert.deepEqual(normalizeDoc({ $id: 'student', device_info: metadata }).device_info, metadata);
+assert.equal(normalizeDoc({ $id: 'student', device_info: '{invalid' }).device_info, '{invalid');
+const linked = normalizeDoc({ device_info: JSON.stringify({ metadata: { face_model: { id_card_photo_url: 'https://old.supabase.co/storage/v1/object/public/face-images/folder/photo.jpg' } } }) });
+assert.equal(linked.device_info.metadata.face_model.id_card_photo_url, 'https://appwrite.test/face-images/' + globalThis.metadataStorageId('folder/photo.jpg'));
+console.log('PASS: model/primary-photo metadata parses correctly, objects preserved, corrupt metadata does not crash document reads.');

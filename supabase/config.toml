@@ -1,0 +1,6 @@
+project_id = "cvdcbcsonlianbfeessy"
+
+[functions.extract-pdf-users]
+# Appwrite sessions are verified inside the handler; these are not Supabase JWTs.
+verify_jwt = false
+

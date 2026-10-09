@@ -69,13 +69,13 @@ export function createEnrollmentService({ db, databaseId = 'presences_db', sms, 
     if (!session || session.expires <= now()) reject(401, 'Enrollment session expired. Verify again.');
     return session;
   };
-  const newSession = async (student, method) => lock('student:' + student.admission_number, async () => {
+  const newSession = async (student, method) => {
     const secret = token();
     const session = { student: student.admission_number, method, expires: now() + 45 * 60000, samples: [], completed: false, challenge: Math.random() < 0.5 ? 'left' : 'right' };
     await save(hash('session:' + secret), 'session', session, session.expires);
     await audit('verified', student.admission_number, method);
     return { session: secret, student: Object.fromEntries(fields.map(k => [k, student[k] || ''])), challenge: session.challenge, expires: session.expires };
-  });
+  };
   // A durable commit intent allows cleanup to finish an interrupted submission.
   // Once publishing begins, its photos must never be treated as abandoned uploads.
   async function finishCommit(id, current) {
@@ -207,48 +207,34 @@ export function createEnrollmentService({ db, databaseId = 'presences_db', sms, 
           const student = await studentFor(admission);
           if (!student) reject(404, 'Student not found.');
 
-          const removeDocument = async (collection, id) => {
-            try { await db.deleteDocument(databaseId, collection, id); }
-            catch (error) { if (error.code !== 404) throw error; }
-          };
-          const listAll = async (collection, queries) => {
-            const out = []; let cursor;
-            while (true) {
-              const page = await db.listDocuments(databaseId, collection, [...queries, Query.limit(100), ...(cursor ? [Query.cursorAfter(cursor)] : [])]);
-              out.push(...page.documents);
-              const last = page.documents.at(-1)?.$id;
-              if (page.documents.length < 100 || !last || last === cursor) break;
-              cursor = last;
+          // 1. Delete prior capture and files
+          const studentState = await get(hash('student:' + admission));
+          if (studentState?.lastCapture) {
+            const oldCapture = await get(studentState.lastCapture);
+            if (oldCapture?.samples) {
+              for (const s of oldCapture.samples) {
+                if (s.fileId) await files.remove(s.fileId).catch(() => {});
+              }
             }
-            return out;
-          };
-          const payload = doc => JSON.parse(doc.payload);
-          // Invalidate every session, waiting for its in-flight capture/submit lock.
-          // A revoked session must never republish a face after unenrollment.
-          const sessions = await listAll(STATE, [Query.equal('kind', 'session')]);
-          for (const doc of sessions) {
-            if (payload(doc).student !== admission) continue;
-            await lock(doc.$id, async () => {
-              const session = await get(doc.$id);
-              if (session?.commit) await finishCommit(doc.$id, session);
-              for (const sample of session?.samples || []) if (sample.fileId) await files.remove(sample.fileId);
-              await removeDocument(STATE, doc.$id);
-            });
+            await db.deleteDocument(databaseId, STATE, studentState.lastCapture).catch(() => {});
           }
-          const captures = await listAll(STATE, [Query.equal('kind', 'capture')]);
-          for (const doc of captures) {
-            if (payload(doc).student !== admission) continue;
-            for (const sample of payload(doc).samples || []) if (sample.fileId) await files.remove(sample.fileId);
-            await removeDocument(STATE, doc.$id);
+
+          // 2. Delete descriptor from face_descriptors
+          const descriptorId = hash('enrollment-descriptor:' + admission);
+          await db.deleteDocument(databaseId, 'face_descriptors', descriptorId).catch(() => {});
+          const existingDesc = await db.listDocuments(databaseId, 'face_descriptors', [Query.or([Query.equal('student_id', admission), Query.equal('user_id', student.userId)]), Query.limit(50)]).catch(() => ({ documents: [] }));
+          for (const d of existingDesc.documents) {
+            await db.deleteDocument(databaseId, 'face_descriptors', d.$id).catch(() => {});
           }
-          const identityKeys = [...new Set([admission, student.userId, student.profileId].filter(Boolean))];
-          const queries = [Query.equal('student_id', identityKeys), Query.equal('user_id', identityKeys)];
-          const descriptors = await listAll('face_descriptors', [Query.or(queries)]);
-          for (const doc of descriptors) await removeDocument('face_descriptors', doc.$id);
-          await removeDocument('face_descriptors', hash('enrollment-descriptor:' + admission));
-          // Keep identity/contact records and attendance history.
-          await db.updateDocument(databaseId, 'profiles', student.profileId, { avatar_url: '', updated_at: new Date(now()).toISOString() });
+
+          // 3. Reset student state
           await save(hash('student:' + admission), 'student', { ...student, status: 'pending', lastCapture: null }, now() + 3650 * DAY);
+
+          // 4. Clear avatar_url from profile
+          if (student.profileId) {
+            await db.updateDocument(databaseId, 'profiles', student.profileId, { avatar_url: '', updated_at: new Date(now()).toISOString() }).catch(() => {});
+          }
+
           await audit('reverted', admission, user.$id);
           return { reverted: true, admission };
         });
@@ -425,7 +411,6 @@ export function createEnrollmentService({ db, databaseId = 'presences_db', sms, 
       const id = hash('session:' + body.session);
       return lock(id, async () => {
         const current = await get(id);
-        if (!current || current.expires <= now()) reject(401, 'Enrollment session expired. Verify again.');
         if (current.completed) { if (action === 'submit') return { completed: true, correctionPending: current.correctionPending }; reject(409, 'Enrollment is already complete.'); }
         if (current.commit) {
           if (action === 'submit') return finishCommit(id, current);

@@ -11,6 +11,7 @@ lerna-debug.log*
 # Node dependencies
 node_modules
 .npm-cache/
+.deno-cache/
 dist
 dist-ssr
 *.local

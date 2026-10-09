@@ -1,7 +1,7 @@
 import { initializeApp, cert } from 'firebase-admin/app';
 import { getAuth } from 'firebase-admin/auth';
 import CryptoJS from 'crypto-js';
-import { Client, Account, Databases, Storage, Users, Permission, Role } from 'node-appwrite';
+import { Client, Account, Databases, Storage, Users } from 'node-appwrite';
 import { InputFile } from 'node-appwrite/file';
 import { createEnrollmentService, BUCKET } from './enrollment.js';
 import { hash, reject } from './enrollment-domain.js';

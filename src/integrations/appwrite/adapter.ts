@@ -47,6 +47,20 @@ function normalizeDoc(doc: any): any {
   if (normalized.photo_url) normalized.photo_url = sanitizeImageUrl(normalized.photo_url);
 
   // Parse JSON strings if necessary
+  if (typeof normalized.device_info === 'string') {
+    try { normalized.device_info = JSON.parse(normalized.device_info); } catch (_) {}
+  }
+  if (normalized.device_info?.metadata && typeof normalized.device_info.metadata === 'object') {
+    const metadata = { ...normalized.device_info.metadata };
+    for (const key of ['firebase_image_url', 'avatar_url', 'photo_url', 'id_card_photo_url', 'primary_photo_url']) {
+      if (metadata[key]) metadata[key] = sanitizeImageUrl(metadata[key]);
+    }
+    if (metadata.face_model && typeof metadata.face_model === 'object') {
+      metadata.face_model = { ...metadata.face_model };
+      if (metadata.face_model.id_card_photo_url) metadata.face_model.id_card_photo_url = sanitizeImageUrl(metadata.face_model.id_card_photo_url);
+    }
+    normalized.device_info = { ...normalized.device_info, metadata };
+  }
   if (typeof normalized.descriptor === 'string' && (normalized.descriptor.startsWith('[') || normalized.descriptor.startsWith('{'))) {
     try {
       normalized.descriptor = JSON.parse(normalized.descriptor);
@@ -414,7 +428,7 @@ export class AppwriteQueryBuilder<T = any> implements PromiseLike<{ data: T | nu
     if (!hasLimit) queries.push(Query.limit(boundedSingleRead ? 2 : 100));
 
     const cacheKey = `${this.collectionName}:${JSON.stringify(queries)}:${boundedSingleRead ? 'single' : 'list'}`;
-    if (!this.mutation && !all) {
+    if (!this.mutation && !all && !boundedSingleRead) {
       const cached = queryCache.get(cacheKey);
       if (cached && cached.expiresAt > Date.now()) {
         return { documents: [...cached.data.documents], total: cached.data.total };
@@ -437,7 +451,7 @@ export class AppwriteQueryBuilder<T = any> implements PromiseLike<{ data: T | nu
           }
         }
         const result = { documents, total: response.total };
-        if (!this.mutation && !all) {
+        if (!this.mutation && !all && !boundedSingleRead) {
           const fastChanging = ['attendance_records', 'gate_entries', 'notifications', 'emergency_events'];
           const ttl = fastChanging.includes(this.collectionName) ? 8000 : 30000;
           queryCache.set(cacheKey, { data: result, expiresAt: Date.now() + ttl });
@@ -453,7 +467,7 @@ export class AppwriteQueryBuilder<T = any> implements PromiseLike<{ data: T | nu
       }
     })();
 
-    if (!this.mutation && !all) {
+    if (!this.mutation && !all && !boundedSingleRead) {
       inFlightRequests.set(cacheKey, fetchPromise);
     }
 
@@ -1087,6 +1101,7 @@ class AppwriteRealtimeChannel {
 class AppwriteFunctionsBridge {
   async invoke(functionName: string, options?: { body?: any; headers?: Record<string, string> }): Promise<{ data: any; error: any }> {
     try {
+      // 1. Client-Side Fast Path for extract-pdf-users
       if (functionName === 'extract-pdf-users') {
         try {
           const { extractPdfUsers } = await import('@/services/enrollment/extractPdfUsers');
@@ -1098,29 +1113,116 @@ class AppwriteFunctionsBridge {
               return { data: null, error: { message: 'Choose a PDF or ID-card image and try again.' } };
             }
           }
-          return { data: await extractPdfUsers(body || {}), error: null };
+          if (body?.file || body?.fileData) {
+            const clientResult = await extractPdfUsers(body || {});
+            if (clientResult && Array.isArray(clientResult.users) && clientResult.users.length > 0) {
+              return { data: clientResult, error: null };
+            }
+          }
         } catch (failure: any) {
           if (failure?.name === 'AbortError') return { data: null, error: { message: 'Extraction cancelled.' } };
-          return { data: null, error: { message: failure?.message || 'PDF extraction failed' } };
+          console.warn('[FunctionsBridge] Client PDF extraction attempt notice:', failure?.message);
         }
       }
+
       const bodyStr = typeof options?.body === 'string' ? options.body : JSON.stringify(options?.body || {});
-      const execution = await functions.createExecution(
-        functionName,
-        bodyStr,
-        false,
-        '/',
-        'POST' as any,
-        options?.headers || {}
-      );
-      if (execution.status === 'failed' || execution.responseStatusCode >= 400) {
-        return { data: null, error: { message: execution.responseBody || 'Appwrite function execution failed', code: execution.responseStatusCode } };
-      }
-      let responseBody = execution.responseBody;
+
+      // 2. Try Supabase Edge Function Endpoint
+      let supaUrl = 'https://cvdcbcsonlianbfeessy.supabase.co';
+      let supaKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImN2ZGNiY3NvbmxpYW5iZmVlc3N5Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODc2NDQ5MDcsImV4cCI6MjEwMzIyMDkwN30.fzJfZKKTw2Y3oFgk6fxVkfhdnIXNzXDeNa0CP84RxDg';
       try {
-        responseBody = JSON.parse(responseBody);
-      } catch (_) {}
-      return { data: responseBody, error: null };
+        if (typeof process !== 'undefined' && process?.env?.VITE_SUPABASE_URL) {
+          supaUrl = process.env.VITE_SUPABASE_URL;
+        }
+        if (typeof process !== 'undefined' && process?.env?.VITE_SUPABASE_ANON_KEY) {
+          supaKey = process.env.VITE_SUPABASE_ANON_KEY;
+        }
+      } catch {}
+      try {
+        const getMetaEnv = new Function('try { return import.meta.env; } catch(e) { return null; }');
+        const env = getMetaEnv();
+        if (env?.VITE_SUPABASE_URL) supaUrl = env.VITE_SUPABASE_URL;
+        if (env?.VITE_SUPABASE_ANON_KEY) supaKey = env.VITE_SUPABASE_ANON_KEY;
+      } catch {}
+      supaUrl = supaUrl.replace(/\/$/, '');
+
+      if (supaUrl && supaKey) {
+        try {
+          let jwtStr: string | null = null;
+          try {
+            const jwtRes = await account.createJWT();
+            jwtStr = jwtRes?.jwt || null;
+          } catch {
+            // Guest or public session
+          }
+
+          const supaHeaders: Record<string, string> = {
+            'Content-Type': 'application/json',
+            apikey: supaKey,
+            Authorization: `Bearer ${supaKey}`,
+            ...(jwtStr ? { 'x-appwrite-user-jwt': jwtStr } : {}),
+            ...(options?.headers || {}),
+          };
+
+          const supaResponse = await fetch(`${supaUrl}/functions/v1/${functionName}`, {
+            method: 'POST',
+            headers: supaHeaders,
+            body: bodyStr,
+          });
+
+          // Successful execution from Supabase Edge Functions
+          if (supaResponse.ok) {
+            let data: any;
+            try {
+              data = await supaResponse.json();
+            } catch {
+              data = await supaResponse.text();
+            }
+            return { data, error: null };
+          }
+
+          // If the edge function returned an application response (e.g. auth required, validation error)
+          if (supaResponse.status !== 404 && supaResponse.status !== 502 && supaResponse.status !== 503) {
+            let errData: any;
+            try {
+              errData = await supaResponse.json();
+            } catch {
+              errData = { message: await supaResponse.text() };
+            }
+            return {
+              data: null,
+              error: {
+                message: errData?.error || errData?.message || `Function ${functionName} returned status ${supaResponse.status}`,
+                status: supaResponse.status,
+              },
+            };
+          }
+        } catch (supaErr: any) {
+          console.warn(`[FunctionsBridge] Supabase edge call for ${functionName} note:`, supaErr?.message);
+        }
+      }
+
+      // 3. Fallback to Appwrite Functions Execution
+      try {
+        const execution = await functions.createExecution(
+          functionName,
+          bodyStr,
+          false,
+          '/',
+          'POST' as any,
+          options?.headers || {}
+        );
+        if (execution.status === 'failed' || execution.responseStatusCode >= 400) {
+          return { data: null, error: { message: execution.responseBody || 'Function execution failed', code: execution.responseStatusCode } };
+        }
+        let responseBody = execution.responseBody;
+        try {
+          responseBody = JSON.parse(responseBody);
+        } catch (_) {}
+        return { data: responseBody, error: null };
+      } catch (appwriteErr: any) {
+        return { data: null, error: { message: appwriteErr?.message || 'Function execution unavailable.' } };
+      }
     } catch (err: any) {
       return { data: null, error: err };
     }

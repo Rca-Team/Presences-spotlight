@@ -175,13 +175,17 @@ export default function StudentEnrollment() {
       email: value.student?.email || '',
     };
 
+    if (!studentDetails.category && studentDetails.class && studentDetails.section) {
+      studentDetails.category = `${studentDetails.class}-${studentDetails.section.toUpperCase()}`;
+    }
+
     // Preload email from profiles if not in enrollment session
     if (!studentDetails.email && value.student?.admission_number) {
       try {
         const { data: p } = await supabase
           .from('profiles')
           .select('email, parent_email')
-          .or(`admission_number.eq.${value.student.admission_number},employee_id.eq.${value.student.admission_number}`)
+          .or(`admission_number.ilike.${value.student.admission_number},employee_id.ilike.${value.student.admission_number}`)
           .limit(1)
           .maybeSingle();
 
@@ -364,7 +368,7 @@ export default function StudentEnrollment() {
       replaceExisting,
     }).catch((syncErr) => {
       console.warn('Supabase descriptor sync notice:', syncErr);
-      return { success: false, descriptorsCount: 0 };
+      return { success: false, descriptorsCount: 0, photoUrl: undefined };
     });
 
     // 2. Submit to Appwrite backend session with resilient fallback
@@ -397,6 +401,12 @@ export default function StudentEnrollment() {
     if (details.admission_number || admission) {
       try {
         const adm = (details.admission_number || admission).trim();
+        const finalPhotoUrl = (supabaseResult?.photoUrl && !supabaseResult.photoUrl.startsWith('data:'))
+          ? supabaseResult.photoUrl
+          : (primaryPhoto && !primaryPhoto.startsWith('data:'))
+            ? primaryPhoto
+            : undefined;
+
         await supabase
           .from('profiles')
           .update({
@@ -408,10 +418,10 @@ export default function StudentEnrollment() {
             display_name: details.name?.trim() || undefined,
             class: details.class?.trim() || undefined,
             section: details.section?.trim() || undefined,
-            avatar_url: primaryPhoto || undefined,
+            ...(finalPhotoUrl ? { avatar_url: finalPhotoUrl, photo_url: finalPhotoUrl } : {}),
             updated_at: new Date().toISOString(),
           })
-          .or(`admission_number.eq.${adm},employee_id.eq.${adm}`);
+          .or(`admission_number.ilike.${adm},employee_id.ilike.${adm}`);
       } catch (profileUpdateErr) {
         console.warn('Profile metadata sync notice:', profileUpdateErr);
       }

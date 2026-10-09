@@ -78,8 +78,8 @@ const StudentDetailsTable: React.FC = () => {
           .order('created_at', { ascending: true }),
         supabase
           .from('profiles')
-          .select('id, user_id, admission_number, employee_id, roll_number, avatar_url, photo_url')
-          .or('avatar_url.not.is.null,photo_url.not.is.null'),
+          .select('id, user_id, full_name, display_name, admission_number, employee_id, roll_number, class, section, category, department, avatar_url, photo_url, role, parent_phone, phone, email, parent_email, father_name, mother_name, blood_group, address')
+          .or('role.eq.student,avatar_url.not.is.null,photo_url.not.is.null,admission_number.not.is.null'),
       ]);
 
       if (attendanceRes.error) throw attendanceRes.error;
@@ -90,18 +90,32 @@ const StudentDetailsTable: React.FC = () => {
 
       const profileImageByUserId = new Map<string, string>();
       const profileImageByEmpId = new Map<string, string>();
+      const profileByUserId = new Map<string, any>();
+      const profileByEmpId = new Map<string, any>();
+
       (profilesRes.data || []).forEach((profile: any) => {
         const img = (profile?.avatar_url || profile?.photo_url || '').toString().trim();
-        if (!img) return;
-        if (profile?.user_id && !profileImageByUserId.has(profile.user_id)) {
-          profileImageByUserId.set(profile.user_id, img);
+        if (img) {
+          if (profile?.user_id && !profileImageByUserId.has(profile.user_id)) {
+            profileImageByUserId.set(profile.user_id, img);
+          }
+          if (profile?.id && !profileImageByUserId.has(profile.id)) {
+            profileImageByUserId.set(profile.id, img);
+          }
+          const emp = (profile?.admission_number || profile?.employee_id || profile?.roll_number || '').toString().trim().toLowerCase();
+          if (emp && !profileImageByEmpId.has(emp)) {
+            profileImageByEmpId.set(emp, img);
+          }
         }
-        if (profile?.id && !profileImageByUserId.has(profile.id)) {
-          profileImageByUserId.set(profile.id, img);
+        if (profile?.user_id && !profileByUserId.has(profile.user_id)) {
+          profileByUserId.set(profile.user_id, profile);
+        }
+        if (profile?.id && !profileByUserId.has(profile.id)) {
+          profileByUserId.set(profile.id, profile);
         }
         const emp = (profile?.admission_number || profile?.employee_id || profile?.roll_number || '').toString().trim().toLowerCase();
-        if (emp && !profileImageByEmpId.has(emp)) {
-          profileImageByEmpId.set(emp, img);
+        if (emp && !profileByEmpId.has(emp)) {
+          profileByEmpId.set(emp, profile);
         }
       });
 
@@ -239,19 +253,22 @@ const StudentDetailsTable: React.FC = () => {
           empKey ? descriptorImageByStudentKey.get(empKey) : '',
         );
 
+        const matchingProfile = (canonicalUserId && profileByUserId.get(canonicalUserId)) ||
+          (empKey && profileByEmpId.get(empKey));
+
         upsertStudent({
           id: key,
           user_id: canonicalUserId || key,
-          name,
-          employee_id: meta.employee_id || deviceInfo.employee_id || r.student_id || '—',
-          roll_number: meta.roll_number || meta.employee_id || deviceInfo.employee_id || '—',
-          category: r.category || 'A',
-          blood_group: meta.blood_group || '—',
-          parent_name: meta.parent_name || '—',
-          parent_phone: meta.parent_phone || meta.phone || '—',
-          parent_email: meta.parent_email || '—',
+          name: name || matchingProfile?.full_name || matchingProfile?.display_name || 'Student',
+          employee_id: meta.employee_id || deviceInfo.employee_id || r.student_id || matchingProfile?.admission_number || matchingProfile?.employee_id || '—',
+          roll_number: meta.roll_number || meta.employee_id || deviceInfo.employee_id || matchingProfile?.roll_number || '—',
+          category: r.category || matchingProfile?.category || (matchingProfile?.class && matchingProfile?.section ? `${matchingProfile.class}-${matchingProfile.section}` : 'A'),
+          blood_group: meta.blood_group || matchingProfile?.blood_group || '—',
+          parent_name: meta.parent_name || matchingProfile?.father_name || matchingProfile?.mother_name || '—',
+          parent_phone: meta.parent_phone || meta.phone || matchingProfile?.parent_phone || matchingProfile?.phone || '—',
+          parent_email: meta.parent_email || matchingProfile?.parent_email || matchingProfile?.email || '—',
           transport_mode: meta.transport_mode || '—',
-          address: meta.address || '—',
+          address: meta.address || matchingProfile?.address || '—',
           avatar_url: avatar,
         });
       });
@@ -276,19 +293,22 @@ const StudentDetailsTable: React.FC = () => {
           descriptor?.image_url,
         );
 
+        const matchingProfile = (descriptorUserId && profileByUserId.get(descriptorUserId)) ||
+          (descriptorStudentId && profileByEmpId.get(descriptorStudentId));
+
         upsertStudent({
           id: descriptorKey,
           user_id: descriptorUserId || descriptorKey,
-          name: descriptorName,
-          employee_id: descriptorStudentId || '—',
-          roll_number: descriptorStudentId || '—',
-          category: descriptor?.category || 'A',
-          blood_group: '—',
-          parent_name: '—',
-          parent_phone: '—',
-          parent_email: '—',
+          name: descriptorName || matchingProfile?.full_name || matchingProfile?.display_name || 'Student',
+          employee_id: descriptorStudentId || matchingProfile?.admission_number || matchingProfile?.employee_id || '—',
+          roll_number: descriptorStudentId || matchingProfile?.roll_number || '—',
+          category: descriptor?.category || matchingProfile?.category || (matchingProfile?.class && matchingProfile?.section ? `${matchingProfile.class}-${matchingProfile.section}` : 'A'),
+          blood_group: matchingProfile?.blood_group || '—',
+          parent_name: matchingProfile?.father_name || matchingProfile?.mother_name || '—',
+          parent_phone: matchingProfile?.parent_phone || matchingProfile?.phone || '—',
+          parent_email: matchingProfile?.parent_email || matchingProfile?.email || '—',
           transport_mode: '—',
-          address: '—',
+          address: matchingProfile?.address || '—',
           avatar_url: avatar,
         });
       });
