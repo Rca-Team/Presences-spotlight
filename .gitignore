@@ -49,4 +49,10 @@ supabase/.temp/
 appwrite/functions/*.tar.gz
 *.txt
 appwrite-schema-report.json
-
+*.exe
+*.dat
+*.spec
+dist_installer/
+Presences-Spotlight-Engine/dist_installer/
+Presences-Spotlight-Engine/build/
+Presences-Spotlight-Engine/models/

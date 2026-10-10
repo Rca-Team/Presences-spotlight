@@ -15,10 +15,14 @@ python -m pip install pyinstaller mediapipe appwrite PyQt6 opencv-python numpy r
 
 echo.
 echo [2/3] Compiling Single-File Standalone Executable (.exe)...
-pyinstaller --noconfirm --clean --onefile ^
+pyinstaller --noconfirm --clean --onefile --windowed ^
     --name "Presences-Spotlight-AI" ^
+    --icon "app_icon.ico" ^
+    --add-data "app_icon.ico;." ^
+    --add-data "logo.png;." ^
     --add-data "face_landmarker.task;." ^
     --add-data "spotlight_chime.wav;." ^
+    --add-data "models;models" ^
     --add-data ".env;." ^
     --hidden-import=mediapipe ^
     --hidden-import=mediapipe.tasks.python.vision ^

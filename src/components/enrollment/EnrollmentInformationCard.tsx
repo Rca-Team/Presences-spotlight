@@ -250,7 +250,7 @@ export default function EnrollmentInformationCard({
                   {isLockedForCurrentUser && (
                     <p className="text-[10px] text-amber-300/80 mt-1.5 flex items-center gap-1 leading-tight">
                       <Lock className="w-2.5 h-2.5 shrink-0 text-amber-400" />
-                      <span>Verified school record. Only Admin, Principal, or Teacher can edit phone.</span>
+                      <span>Verified school PDF record. Only Enrollment Agent, Teacher, Principal, or Admin can edit phone number.</span>
                     </p>
                   )}
                 </div>

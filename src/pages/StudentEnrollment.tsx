@@ -309,10 +309,16 @@ export default function StudentEnrollment() {
     });
   }, []);
 
-  const returnTo = useMemo(
-    () => new URLSearchParams(window.location.search).get('returnTo') || (isStaffBypass ? '/enrollment-monitor' : '/'),
-    [isStaffBypass]
-  );
+  const returnTo = useMemo(() => {
+    const specified = new URLSearchParams(window.location.search).get('returnTo');
+    if (specified) {
+      if (specified.includes('enrollment-monitor') && !canEditPhone) {
+        return '/';
+      }
+      return specified;
+    }
+    return (isStaffBypass && canEditPhone) ? '/enrollment-monitor' : '/';
+  }, [isStaffBypass, canEditPhone]);
   const returnLabel = returnTo.includes('enrollment-monitor')
     ? 'Biometric Hub'
     : returnTo.includes('admin')
@@ -740,9 +746,12 @@ export default function StudentEnrollment() {
                       details={details}
                       editing={editing}
                       onToggleEditing={() => setEditing((v) => !v)}
-                      onChangeField={(field, val) =>
-                        setDetails((prev) => (prev ? { ...prev, [field]: val } : prev))
-                      }
+                      onChangeField={(field, val) => {
+                        if (field === 'parent_phone' && isPhoneLocked && !canEditPhone) {
+                          return;
+                        }
+                        setDetails((prev) => (prev ? { ...prev, [field]: val } : prev));
+                      }}
                       disabled={busy}
                       isPhoneLocked={isPhoneLocked}
                       canEditPhone={canEditPhone}

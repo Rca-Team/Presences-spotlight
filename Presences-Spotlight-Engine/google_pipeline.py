@@ -41,6 +41,28 @@ except ImportError:
 # ─── Embeddings Backend (dlib / face_recognition / PyTorch) ────────────────────
 DLIB_AVAILABLE = False
 try:
+    try:
+        import face_recognition_models
+        base_dir = getattr(sys, '_MEIPASS', os.path.dirname(os.path.abspath(__file__)))
+        candidates = [
+            os.path.join(base_dir, "models"),
+            os.path.join(base_dir, "face_recognition_models", "models"),
+            os.path.join(os.path.dirname(face_recognition_models.__file__), "models")
+        ]
+        m_dir = None
+        for c in candidates:
+            if os.path.exists(os.path.join(c, "shape_predictor_68_face_landmarks.dat")):
+                m_dir = c
+                break
+
+        if m_dir:
+            face_recognition_models.pose_predictor_model_location = lambda: os.path.join(m_dir, "shape_predictor_68_face_landmarks.dat")
+            face_recognition_models.pose_predictor_five_point_model_location = lambda: os.path.join(m_dir, "shape_predictor_5_face_landmarks.dat")
+            face_recognition_models.face_recognition_model_location = lambda: os.path.join(m_dir, "dlib_face_recognition_resnet_model_v1.dat")
+            face_recognition_models.cnn_face_detector_model_location = lambda: os.path.join(m_dir, "mmod_human_face_detector.dat")
+    except Exception:
+        pass
+
     import face_recognition
     DLIB_AVAILABLE = True
 except ImportError:

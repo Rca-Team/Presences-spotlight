@@ -168,7 +168,7 @@ export async function syncEnrolledFaceDataToSupabase({
     try {
       const { data } = await supabase
         .from('profiles')
-        .select('id, user_id, display_name, full_name, admission_number, employee_id')
+        .select('id, user_id, display_name, full_name, admission_number, employee_id, parent_phone, phone, metadata')
         .or(`admission_number.ilike.${cleanAdmission},employee_id.ilike.${cleanAdmission}`)
         .order('updated_at', { ascending: false })
         .limit(1)
@@ -375,6 +375,35 @@ export async function syncEnrolledFaceDataToSupabase({
 
     // 6. Update or upsert profiles record strictly bound to cleanAdmission
     try {
+      let prevMeta: Record<string, any> = {};
+      try {
+        prevMeta = typeof existingProfile?.metadata === 'string'
+          ? JSON.parse(existingProfile.metadata)
+          : (existingProfile?.metadata || {});
+      } catch {}
+
+      const isPhoneLocked = Boolean(
+        prevMeta.phone_locked ||
+        prevMeta.imported_from_pdf ||
+        prevMeta.source === 'pdf_upload' ||
+        prevMeta.source === 'pdf_import' ||
+        details?.phone_locked ||
+        details?.imported_from_pdf
+      );
+
+      const verifiedParentPhone = (
+        prevMeta.verified_parent_phone ||
+        existingProfile?.parent_phone ||
+        existingProfile?.phone ||
+        details?.verified_parent_phone ||
+        ''
+      ).trim();
+
+      // If phone is locked from PDF upload, strictly preserve verified parent phone
+      const effectiveParentPhone = (isPhoneLocked && verifiedParentPhone)
+        ? verifiedParentPhone
+        : (details?.parent_phone || existingProfile?.parent_phone || '');
+
       const profileUpdates: Record<string, any> = {
         user_id: stableStudentUserId,
         full_name: studentName,
@@ -390,6 +419,7 @@ export async function syncEnrolledFaceDataToSupabase({
         role: 'student',
         updated_at: new Date().toISOString(),
         metadata: {
+          ...prevMeta,
           name: studentName,
           student_id: cleanAdmission,
           admission_number: cleanAdmission,
@@ -403,20 +433,26 @@ export async function syncEnrolledFaceDataToSupabase({
           sample_images: allSampleUrls,
           sample_storage_paths: allSamplePaths,
           primary_photo_path: `students/${cleanAdmission}/faces/front.jpg`,
-          parent_name: details?.parent_name || details?.father_name || '',
-          parent_phone: details?.parent_phone || '',
-          parent_email: details?.email || '',
-          student_email: details?.email || '',
-          date_of_birth: details?.date_of_birth || '',
-          address: details?.address || '',
-          blood_group: details?.blood_group || '',
+          parent_name: details?.parent_name || details?.father_name || prevMeta.parent_name || '',
+          parent_phone: effectiveParentPhone,
+          phone_locked: isPhoneLocked,
+          imported_from_pdf: isPhoneLocked ? true : Boolean(prevMeta.imported_from_pdf),
+          source: prevMeta.source || (isPhoneLocked ? 'pdf_upload' : ''),
+          verified_parent_phone: verifiedParentPhone,
+          parent_email: details?.email || prevMeta.parent_email || '',
+          student_email: details?.email || prevMeta.student_email || '',
+          date_of_birth: details?.date_of_birth || prevMeta.date_of_birth || '',
+          address: details?.address || prevMeta.address || '',
+          blood_group: details?.blood_group || prevMeta.blood_group || '',
           avatar_url: primaryPublicUrl || '',
           photo_url: primaryPublicUrl || '',
         },
       };
 
-      if (details?.parent_phone) profileUpdates.parent_phone = details.parent_phone;
-      if (details?.parent_phone) profileUpdates.phone = details.parent_phone;
+      if (effectiveParentPhone) {
+        profileUpdates.parent_phone = effectiveParentPhone;
+        profileUpdates.phone = effectiveParentPhone;
+      }
       if (details?.email) {
         profileUpdates.email = details.email.trim();
         profileUpdates.parent_email = details.email.trim();

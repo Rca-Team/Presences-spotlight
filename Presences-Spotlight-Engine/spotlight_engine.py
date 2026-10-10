@@ -764,8 +764,15 @@ class SpotlightEngine:
         self.counter_on_time = sum(1 for log in existing_logs if log.get("status") == "present")
         self.counter_late = sum(1 for log in existing_logs if log.get("status") == "late")
 
-        # Initial student sync from Appwrite
-        self.sync_students()
+        # Load local SQLite cached student models immediately for 0ms startup
+        self.enrolled_students = self.db.get_cached_students()
+        if self.enrolled_students:
+            matrix_list = [s["descriptor"] for s in self.enrolled_students]
+            self.descriptors_matrix = np.array(matrix_list, dtype=np.float32)
+            distinct_count = len(set(s["student_name"] for s in self.enrolled_students))
+            print(f"[Spotlight] Instant startup: loaded {distinct_count} enrolled students ({len(self.enrolled_students)} models) from local database.")
+        else:
+            self.sync_students()
 
     def start_worker(self):
         """Starts the background AI inference thread if not already running."""
