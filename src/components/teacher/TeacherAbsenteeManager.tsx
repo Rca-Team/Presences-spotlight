@@ -37,6 +37,7 @@ interface TeacherAbsenteeManagerProps {
   teacherEmail: string;
   previousDayLabel: string;
   onRefresh: () => void;
+  onOpenWhatsAppNotifier?: () => void;
 }
 
 export const TeacherAbsenteeManager: React.FC<TeacherAbsenteeManagerProps> = ({
@@ -46,6 +47,7 @@ export const TeacherAbsenteeManager: React.FC<TeacherAbsenteeManagerProps> = ({
   teacherEmail,
   previousDayLabel,
   onRefresh,
+  onOpenWhatsAppNotifier,
 }) => {
   const { toast } = useToast();
 
@@ -334,7 +336,17 @@ export const TeacherAbsenteeManager: React.FC<TeacherAbsenteeManagerProps> = ({
           </div>
 
           {/* Quick Filter Counts Pill */}
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 flex-wrap">
+            {onOpenWhatsAppNotifier && (
+              <Button
+                size="sm"
+                onClick={onOpenWhatsAppNotifier}
+                className="text-xs h-8 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 text-white font-bold rounded-xl gap-1.5 shadow-md shadow-emerald-600/20"
+                title="1-Click WhatsApp Class Summary & Parent Alerts"
+              >
+                <MessageSquare className="h-3.5 w-3.5" /> 1-Click WhatsApp Class
+              </Button>
+            )}
             <Button
               size="sm"
               variant="outline"

@@ -53,6 +53,7 @@ interface TeacherDashboardOverviewProps {
   onAutoMarkAbsent: (onlyPrevDayPresent?: boolean) => void;
   onMarkAllPresent: () => void;
   onOpenExportModal: () => void;
+  onOpenWhatsAppNotifier?: () => void;
   isMarkingAttendance: boolean;
 }
 
@@ -71,6 +72,7 @@ export const TeacherDashboardOverview: React.FC<TeacherDashboardOverviewProps> =
   onAutoMarkAbsent,
   onMarkAllPresent,
   onOpenExportModal,
+  onOpenWhatsAppNotifier,
   isMarkingAttendance,
 }) => {
   // Compute key summary statistics
@@ -242,7 +244,25 @@ export const TeacherDashboardOverview: React.FC<TeacherDashboardOverviewProps> =
             </div>
             <div>
               <p className="text-xs font-black text-foreground">Parent Notices</p>
-              <p className="text-[10px] text-muted-foreground mt-0.5">AI Writer & WhatsApp</p>
+              <p className="text-[10px] text-muted-foreground mt-0.5">AI Writer & Notices</p>
+            </div>
+          </button>
+
+          {/* 1-Click WhatsApp Class Attendance */}
+          <button
+            type="button"
+            onClick={onOpenWhatsAppNotifier || (() => onSelectTab('notifications'))}
+            className="p-3 rounded-2xl border border-emerald-500/40 bg-emerald-500/5 hover:border-emerald-500 hover:bg-emerald-500/10 active:scale-95 transition-all text-left flex flex-col justify-between gap-3 group shadow-xs"
+          >
+            <div className="h-9 w-9 rounded-xl bg-emerald-500/15 text-emerald-600 flex items-center justify-center group-hover:scale-110 transition-transform">
+              <MessageSquare className="h-5 w-5" />
+            </div>
+            <div>
+              <p className="text-xs font-black text-foreground flex items-center gap-1">
+                <span>WhatsApp Class</span>
+                <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse" />
+              </p>
+              <p className="text-[10px] text-muted-foreground mt-0.5">1-Click Group Post</p>
             </div>
           </button>
 

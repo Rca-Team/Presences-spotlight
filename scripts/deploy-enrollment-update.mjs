@@ -3,6 +3,17 @@ import path from 'node:path';
 import { execFileSync } from 'node:child_process';
 import { Client, Functions } from 'node-appwrite';
 import { InputFile } from 'node-appwrite/file';
+if (!process.env.APPWRITE_API_KEY && fs.existsSync('.env')) {
+  for (const line of fs.readFileSync('.env', 'utf8').split('\n')) {
+    const match = line.match(/^\s*([\w.-]+)\s*=\s*(.*)?\s*$/);
+    if (match) {
+      let val = (match[2] || '').trim();
+      if (val.startsWith('"') && val.endsWith('"')) val = val.slice(1, -1);
+      if (val.startsWith("'") && val.endsWith("'")) val = val.slice(1, -1);
+      process.env[match[1]] = val;
+    }
+  }
+}
 if (!process.env.APPWRITE_API_KEY) throw new Error('APPWRITE_API_KEY required.');
 const functions = new Functions(new Client().setEndpoint('https://sgp.cloud.appwrite.io/v1').setProject('6abfd34f000604fcf074').setKey(process.env.APPWRITE_API_KEY));
 const functionId = 'presences-enrollment';

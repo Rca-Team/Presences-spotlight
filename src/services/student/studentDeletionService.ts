@@ -187,14 +187,15 @@ export async function universalDeleteStudent(
   // 3. Invoke Cloud Function `staff.deleteStudent` (Appwrite Backend)
   onProgress?.('Triggering backend biometric & enrollment purge...');
   try {
-    const admissionParam = Array.from(candidateStudentKeys)[0] || Array.from(candidateUserIds)[0] || target.id;
+    const admissionParam = target.admission_number || target.employee_id || Array.from(candidateStudentKeys)[0] || Array.from(candidateUserIds)[0] || target.id;
     if (admissionParam) {
       await enrollmentApi('staff.deleteStudent', {
-        admission: admissionParam,
-        user_id: Array.from(candidateUserIds)[0],
-      }).catch((apiErr) => {
-        // Fallback to staff.revert if deleteStudent is pending
-        return enrollmentApi('staff.revert', { admission: admissionParam }).catch(() => {});
+        admission: String(admissionParam).trim(),
+        admission_number: String(admissionParam).trim(),
+        user_id: Array.from(candidateUserIds)[0] || target.user_id,
+      }).catch(async (apiErr) => {
+        console.warn('[universalDeleteStudent] staff.deleteStudent notice:', apiErr?.message);
+        return enrollmentApi('staff.revert', { admission: String(admissionParam).trim() }).catch(() => {});
       });
     }
   } catch (backendErr: any) {

@@ -75,6 +75,7 @@ interface TeacherMobileAppViewProps {
   onMarkAllPresent: () => Promise<void>;
   onOpenAddStudent?: () => void;
   onOpenFaceCapture?: (student: ClassStudent) => void;
+  onOpenWhatsAppNotifier?: () => void;
   onRefresh?: () => void;
   isRefreshing?: boolean;
 }
@@ -96,6 +97,7 @@ export const TeacherMobileAppView: React.FC<TeacherMobileAppViewProps> = ({
   onMarkAllPresent,
   onOpenAddStudent,
   onOpenFaceCapture,
+  onOpenWhatsAppNotifier,
   onRefresh,
   isRefreshing = false,
 }) => {
@@ -400,6 +402,21 @@ export const TeacherMobileAppView: React.FC<TeacherMobileAppViewProps> = ({
                     Mark All Present
                   </Button>
                 </div>
+
+                {/* 1-Click WhatsApp Class Attendance Broadcast */}
+                {onOpenWhatsAppNotifier && (
+                  <Button
+                    size="sm"
+                    onClick={() => {
+                      haptic('selection');
+                      onOpenWhatsAppNotifier();
+                    }}
+                    className="w-full rounded-2xl h-10 text-xs font-black bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 text-white shadow-md shadow-emerald-600/20 gap-2"
+                  >
+                    <MessageSquare className="h-4 w-4" />
+                    1-Click WhatsApp Class Share (Free)
+                  </Button>
+                )}
               </CardContent>
             </Card>
 

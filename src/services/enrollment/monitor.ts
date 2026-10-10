@@ -83,6 +83,40 @@ export function saveCachedMonitorOverview(data: MonitorOverview) {
   } catch {}
 }
 
+export function removeStudentFromMonitorCache(admissionNumber: string) {
+  const clean = String(admissionNumber || '').trim().toLowerCase();
+  if (!clean) return;
+
+  if (inMemoryOverviewCache) {
+    inMemoryOverviewCache = {
+      ...inMemoryOverviewCache,
+      students: inMemoryOverviewCache.students.filter(
+        (s) => s.admission_number.trim().toLowerCase() !== clean
+      ),
+    };
+  }
+
+  try {
+    const raw = sessionStorage.getItem(CACHE_STORAGE_KEY);
+    if (raw) {
+      const parsed = JSON.parse(raw) as MonitorOverview;
+      if (parsed && Array.isArray(parsed.students)) {
+        parsed.students = parsed.students.filter(
+          (s) => s.admission_number.trim().toLowerCase() !== clean
+        );
+        sessionStorage.setItem(CACHE_STORAGE_KEY, JSON.stringify(parsed));
+      }
+    }
+  } catch {}
+}
+
+export function clearMonitorCache() {
+  inMemoryOverviewCache = null;
+  try {
+    sessionStorage.removeItem(CACHE_STORAGE_KEY);
+  } catch {}
+}
+
 export const fetchMonitor = async (): Promise<MonitorOverview> => {
   const fetchProfiles = async () => {
     try {

@@ -11,6 +11,8 @@ import {
   CheckCircle2, 
   Sparkles,
   BookOpen,
+  UserCheck,
+  AlertTriangle,
 } from 'lucide-react';
 import { motion } from 'framer-motion';
 import LiteModeToggle from '@/components/LiteModeToggle';
@@ -25,6 +27,9 @@ interface TeacherHeroDeckProps {
   onRefresh: () => void;
   isRefreshing: boolean;
   totalStudents: number;
+  classTeacherName?: string | null;
+  canManageClassTeacher?: boolean;
+  onAssignClassTeacher?: () => void;
 }
 
 const SCHOOL_PERIODS = [
@@ -48,6 +53,9 @@ export const TeacherHeroDeck: React.FC<TeacherHeroDeckProps> = ({
   onRefresh,
   isRefreshing,
   totalStudents,
+  classTeacherName,
+  canManageClassTeacher = false,
+  onAssignClassTeacher,
 }) => {
   const [currentTime, setCurrentTime] = useState(new Date());
 
@@ -127,6 +135,38 @@ export const TeacherHeroDeck: React.FC<TeacherHeroDeckProps> = ({
                   <BookOpen className="h-3 w-3 mr-1" />
                   Primary Class: {activeClass.category} ({totalStudents} Students)
                 </Badge>
+              )}
+              {activeClass && (
+                classTeacherName ? (
+                  <Badge variant="outline" className="text-[11px] font-semibold border-indigo-500/30 bg-indigo-500/10 text-indigo-700 dark:text-indigo-300 rounded-lg py-0.5 flex items-center gap-1">
+                    <UserCheck className="h-3 w-3 text-indigo-500" />
+                    <span>In-Charge: {classTeacherName}</span>
+                    {canManageClassTeacher && onAssignClassTeacher && (
+                      <button 
+                        type="button"
+                        onClick={(e) => { e.stopPropagation(); onAssignClassTeacher(); }}
+                        className="ml-1 hover:text-indigo-900 dark:hover:text-white underline text-[10px]"
+                        title="Change Class Teacher"
+                      >
+                        (Change)
+                      </button>
+                    )}
+                  </Badge>
+                ) : (
+                  <Badge variant="outline" className="text-[11px] font-semibold border-amber-500/40 bg-amber-500/10 text-amber-700 dark:text-amber-300 rounded-lg py-0.5 flex items-center gap-1">
+                    <AlertTriangle className="h-3 w-3 text-amber-500" />
+                    <span>⚠️ No Class Teacher</span>
+                    {canManageClassTeacher && onAssignClassTeacher && (
+                      <button
+                        type="button"
+                        onClick={(e) => { e.stopPropagation(); onAssignClassTeacher(); }}
+                        className="ml-1 px-1.5 py-0.5 bg-amber-500/20 hover:bg-amber-500/30 text-amber-800 dark:text-amber-200 rounded font-bold text-[10px] cursor-pointer"
+                      >
+                        + Assign
+                      </button>
+                    )}
+                  </Badge>
+                )
               )}
               <Badge variant="outline" className="text-[10px] font-medium border-border/70 text-muted-foreground rounded-lg py-0.5">
                 <ShieldCheck className="h-3 w-3 mr-1 text-emerald-500" />

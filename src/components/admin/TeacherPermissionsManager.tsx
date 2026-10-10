@@ -10,7 +10,7 @@ import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { CLASSES, SECTIONS, getCategoryLabel } from '@/constants/schoolConfig';
-import { fetchTeacherCategories, saveTeacherCategories } from '@/utils/teacherAccess';
+import { fetchTeacherCategories, saveTeacherCategories, fetchAllTeachersUnified } from '@/utils/teacherAccess';
 
 interface Teacher {
   id: string;
@@ -42,19 +42,15 @@ const TeacherPermissionsManager: React.FC = () => {
   const fetchTeachersAndPermissions = async () => {
     setIsLoading(true);
     try {
-      const { data: teacherRecords, error } = await supabase
-        .from('attendance_records')
-        .select('id, user_id, device_info, image_url')
-        .eq('status', 'registered')
-        .eq('category', 'Teacher');
-      if (error) throw error;
+      const unifiedTeachers = await fetchAllTeachersUnified();
 
-      const processedTeachers: Teacher[] = (teacherRecords || [])
-        .map(r => {
-          const meta = (r.device_info as any)?.metadata || {};
-          return { id: r.id, user_id: r.user_id || undefined, name: meta.name || 'Unknown', employee_id: meta.employee_id || 'N/A', image_url: r.image_url || meta.firebase_image_url || '' };
-        })
-        .filter(t => t.name !== 'Unknown');
+      const processedTeachers: Teacher[] = unifiedTeachers.map(u => ({
+        id: u.id,
+        user_id: u.user_id || undefined,
+        name: u.name,
+        employee_id: u.employee_id || 'N/A',
+        image_url: u.avatar_url || '',
+      }));
       setTeachers(processedTeachers);
 
       const permissionRows: Permission[] = [];

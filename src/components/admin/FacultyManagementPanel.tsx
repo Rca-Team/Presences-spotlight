@@ -40,7 +40,7 @@ import {
 import { useToast } from '@/hooks/use-toast';
 import { supabase } from '@/integrations/supabase/client';
 import { ALL_CLASS_SECTIONS, getCategoryLabel, CLASSES, SECTIONS } from '@/constants/schoolConfig';
-import { parseClassSection } from '@/utils/teacherAccess';
+import { parseClassSection, assignClassTeacher } from '@/utils/teacherAccess';
 import { getSubjectsForClass, deduplicateSubjects } from '@/constants/classSubjectsConfig';
 import { cn } from '@/lib/utils';
 
@@ -247,6 +247,11 @@ export const FacultyManagementPanel: React.FC<FacultyManagementPanelProps> = ({
       await supabase.from('class_teachers').delete().eq('category', selectedClass);
       if (rowsToSave.length > 0) {
         await supabase.from('class_teachers').insert(rowsToSave);
+      }
+
+      if (currentAssignment.classTeacherId) {
+        const t = teachers.find((tch) => tch.id === currentAssignment.classTeacherId);
+        await assignClassTeacher(selectedClass, currentAssignment.classTeacherId, t?.name || 'Class Teacher');
       }
 
       localStorage.setItem('class_faculty_assignments', JSON.stringify(classAssignments));

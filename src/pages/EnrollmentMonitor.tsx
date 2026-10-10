@@ -78,6 +78,7 @@ import {
   fetchMonitor,
   fetchMonitorPhoto,
   getCachedMonitorOverview,
+  removeStudentFromMonitorCache,
   reviewCorrection,
   statusMeta,
   eventLabels,
@@ -825,14 +826,32 @@ export default function EnrollmentMonitor() {
 
   const handleConfirmPermanentDelete = async () => {
     if (!studentToDelete) return;
+    const admissionToRemove = studentToDelete.admission_number;
+    const nameToRemove = studentToDelete.name;
     setIsDeleting(true);
-    setDeleteProgress(`Starting permanent deletion for ${studentToDelete.name}...`);
+    setDeleteProgress(`Starting permanent deletion for ${nameToRemove}...`);
+
+    // Optimistically update the UI and cache immediately for 0ms latency
+    removeStudentFromMonitorCache(admissionToRemove);
+    setData(prev => {
+      if (!prev) return prev;
+      return {
+        ...prev,
+        students: prev.students.filter(s => s.admission_number !== admissionToRemove)
+      };
+    });
+    setSelectedAdmissions(prev => {
+      const next = new Set(prev);
+      next.delete(admissionToRemove);
+      return next;
+    });
+
     try {
       const res = await universalDeleteStudent(
         {
-          admission_number: studentToDelete.admission_number,
-          employee_id: studentToDelete.admission_number,
-          name: studentToDelete.name,
+          admission_number: admissionToRemove,
+          employee_id: admissionToRemove,
+          name: nameToRemove,
           samples: studentToDelete.samples.map(s => ({ fileId: s.fileId })),
         },
         (status) => setDeleteProgress(status)
@@ -841,15 +860,10 @@ export default function EnrollmentMonitor() {
       if (res.success) {
         toast({
           title: "Student Permanently Deleted",
-          description: `Completely removed ${studentToDelete.name} (${studentToDelete.admission_number}) from the database and storage.`,
+          description: `Completely removed ${nameToRemove} (${admissionToRemove}) from the database and storage.`,
         });
         setStudentToDelete(null);
         setSelectedStudentAdm(null);
-        setSelectedAdmissions(prev => {
-          const next = new Set(prev);
-          next.delete(studentToDelete.admission_number);
-          return next;
-        });
         await load(true);
       } else {
         toast({
@@ -867,6 +881,7 @@ export default function EnrollmentMonitor() {
         description: err?.message || "Could not permanently delete student.",
         variant: "destructive",
       });
+      await load(true);
     } finally {
       setIsDeleting(false);
       setDeleteProgress('');
@@ -878,6 +893,19 @@ export default function EnrollmentMonitor() {
     setIsDeleting(true);
     let successCount = 0;
     const errors: string[] = [];
+
+    // Optimistically remove bulk targets immediately
+    for (const student of bulkDeleteTargets) {
+      removeStudentFromMonitorCache(student.admission_number);
+    }
+    const targetAdms = new Set(bulkDeleteTargets.map(s => s.admission_number));
+    setData(prev => {
+      if (!prev) return prev;
+      return {
+        ...prev,
+        students: prev.students.filter(s => !targetAdms.has(s.admission_number))
+      };
+    });
 
     try {
       for (const [index, student] of bulkDeleteTargets.entries()) {

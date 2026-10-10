@@ -22,7 +22,12 @@ import { supabase } from '@/integrations/supabase/client';
 import FullTimetableManager from '@/components/admin/TimetableManager';
 import { useToast } from '@/hooks/use-toast';
 import { getCategoryLabel, ALL_CLASS_SECTIONS } from '@/constants/schoolConfig';
-import { parseClassSection } from '@/utils/teacherAccess';
+import { 
+  parseClassSection, 
+  fetchAllTeachersUnified, 
+  assignClassTeacher, 
+  unassignClassTeacher 
+} from '@/utils/teacherAccess';
 import { format } from 'date-fns';
 
 interface TeacherOption {
@@ -146,8 +151,8 @@ const ClassTeacherManager: React.FC<Props> = ({ category, onBack }) => {
   const loadAll = useCallback(async () => {
     setIsLoading(true);
     try {
-      const [teacherRes, subjectRes, ptRes] = await Promise.all([
-        supabase.from('attendance_records').select('id, user_id, device_info').eq('status', 'registered').eq('category', 'Teacher'),
+      const [unifiedTeachers, subjectRes, ptRes] = await Promise.all([
+        fetchAllTeachersUnified(),
         supabase.from('subjects').select('*').order('name'),
         supabase.from('period_timings').select('*').order('period_number'),
       ]);
@@ -220,17 +225,13 @@ const ClassTeacherManager: React.FC<Props> = ({ category, onBack }) => {
         ctData = legacyRes.data || [];
       }
 
-      if (teacherRes.data) {
-        const t: TeacherOption[] = teacherRes.data.map(r => {
-          const di = r.device_info as any;
-          return {
-            id: r.user_id || r.id,
-            user_id: r.user_id || undefined,
-            name: di?.metadata?.name || 'Unknown',
-            employee_id: di?.metadata?.employee_id || 'N/A',
-          };
-        }).filter(t => t.name !== 'Unknown');
-        setTeachers(t);
+      const t: TeacherOption[] = (unifiedTeachers || []).map(u => ({
+        id: u.id,
+        user_id: u.user_id || undefined,
+        name: u.name,
+        employee_id: u.employee_id || 'N/A',
+      }));
+      setTeachers(t);
 
         const subjectList: Subject[] = (subjectRes.data || []).map((s: any) => ({
           id: s.id,
@@ -301,7 +302,6 @@ const ClassTeacherManager: React.FC<Props> = ({ category, onBack }) => {
         }
 
         setClassTeachers(assignmentRows);
-      }
 
       if (ptRes.data) {
         const mappedPeriods = (ptRes.data as any[]).map((row: any, idx: number) => {
@@ -454,6 +454,17 @@ const ClassTeacherManager: React.FC<Props> = ({ category, onBack }) => {
     const teacher = teachers.find(t => t.id === teacherId);
     if (!teacher) return;
 
+    if (role === 'class_teacher' && parsedClassSection) {
+      try {
+        await assignClassTeacher(parsedClassSection.className, parsedClassSection.section, teacher.id, teacher.name);
+        await loadAll();
+        toast({ title: 'Class Teacher Assigned', description: `${teacher.name} assigned as Class Teacher for ${category}.` });
+      } catch {
+        toast({ title: 'Error', description: 'Failed to assign class teacher', variant: 'destructive' });
+      }
+      return;
+    }
+
     if (parsedClassSection) {
       if (role === 'subject_teacher') {
         if (!subjectId) {
@@ -479,38 +490,7 @@ const ClassTeacherManager: React.FC<Props> = ({ category, onBack }) => {
         toast({ title: 'Subject Teacher Assigned' });
         return;
       }
-
-      const removeExisting = await supabase
-        .from('class_teachers')
-        .delete()
-        .eq('class', parsedClassSection.className)
-        .eq('section', parsedClassSection.section);
-
-      if (removeExisting.error) {
-        toast({ title: 'Error', description: removeExisting.error.message, variant: 'destructive' });
-        return;
-      }
-
-      const payload = {
-        class: parsedClassSection.className,
-        section: parsedClassSection.section,
-        teacher_id: teacher.id,
-        teacher_name: teacher.name,
-        metadata: {
-          role,
-          subject_id: subjectId || null,
-        },
-      } as any;
-
-      const { error } = await supabase.from('class_teachers').insert(payload);
-
-      if (error) { toast({ title: 'Error', description: error.message, variant: 'destructive' }); return; }
     } else {
-      // Remove existing assignment for this role+subject on legacy schema
-      if (role === 'class_teacher') {
-        await supabase.from('class_teachers').delete().eq('category', category).eq('role', 'class_teacher');
-      }
-
       const { error } = await supabase.from('class_teachers').insert({
         category,
         teacher_record_id: teacher.id,
@@ -533,8 +513,13 @@ const ClassTeacherManager: React.FC<Props> = ({ category, onBack }) => {
       return;
     }
 
+    const ct = classTeachers.find(item => item.id === id);
+    if (ct) {
+      await unassignClassTeacher(category, ct.teacher_record_id || id);
+    }
     await supabase.from('class_teachers').delete().eq('id', id);
     loadAll();
+    toast({ title: 'Assignment Removed' });
   };
 
   // --- Timetable ---

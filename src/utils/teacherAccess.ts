@@ -101,13 +101,17 @@ export const parseClassSection = (category: string): { className: string; sectio
 };
 
 export const matchesClassAndSection = (
-  item: { class?: string | number | null; section?: string | null; category?: string | null; department?: string | null },
+  item: { class?: string | number | null; section?: string | null; category?: string | null; department?: string | null; device_info?: any },
   targetClass: string | number,
   targetSection: string
 ): boolean => {
   const targetNorm = normalizeCategory(`${targetClass}-${targetSection}`);
   if (!targetNorm) return false;
   const [tClass, tSec] = targetNorm.split('-');
+
+  const romanMap: Record<string, string> = {
+    i: '1', ii: '2', iii: '3', iv: '4', v: '5', vi: '6', vii: '7', viii: '8', ix: '9', x: '10', xi: '11', xii: '12'
+  };
 
   // 1. Direct category match
   if (item.category) {
@@ -121,18 +125,39 @@ export const matchesClassAndSection = (
     if (deptNorm === targetNorm) return true;
   }
 
-  // 3. Class + Section match
-  if (item.class !== undefined && item.class !== null) {
-    const cleanCls = String(item.class).replace(/[^0-9]/g, '');
-    const cleanSec = item.section ? String(item.section).trim().toUpperCase() : '';
+  // 3. Nested device_info metadata match
+  const meta = (item as any)?.device_info?.metadata;
+  if (meta) {
+    if (meta.category && normalizeCategory(meta.category) === targetNorm) return true;
+    if (meta.department && normalizeCategory(meta.department) === targetNorm) return true;
+  }
 
-    if (item.section) {
-      const rawCat = `${item.class}-${item.section}`;
+  // 4. Class + Section match
+  const rawCls = item.class ?? meta?.class;
+  const rawSec = item.section ?? meta?.section;
+
+  if (rawCls !== undefined && rawCls !== null) {
+    const rawClsStr = String(rawCls).trim();
+    const parsedClsCat = normalizeCategory(rawClsStr);
+    if (parsedClsCat === targetNorm) return true;
+
+    const lowerCls = rawClsStr.toLowerCase().replace(/^class\s+/i, '').trim();
+    const cleanCls = romanMap[lowerCls] || rawClsStr.replace(/[^0-9]/g, '');
+
+    let cleanSec = '';
+    if (rawSec) {
+      const sStr = String(rawSec).trim().replace(/^sec(?:tion)?\s+/i, '');
+      const secMatch = sStr.match(/([A-Za-z])$/);
+      cleanSec = secMatch ? secMatch[1].toUpperCase() : sStr.replace(/[^A-Za-z]/g, '').slice(-1).toUpperCase();
+    }
+
+    if (rawSec) {
+      const rawCat = `${rawCls}-${rawSec}`;
       const norm = normalizeCategory(rawCat);
       if (norm === targetNorm) return true;
     }
 
-    if (cleanCls === tClass && (!item.section || cleanSec === tSec)) {
+    if (cleanCls === tClass && (!rawSec || cleanSec === tSec)) {
       return cleanSec === tSec;
     }
   }
@@ -382,8 +407,180 @@ export async function fetchClassTeacherMatrix(existingRows?: any[]): Promise<Cla
   });
 }
 
+export interface UnifiedTeacher {
+  id: string;
+  user_id?: string;
+  name: string;
+  email?: string;
+  employee_id?: string;
+  avatar_url?: string;
+  role: string;
+  assignedClasses: string[];
+}
+
 /**
- * Assign a teacher to a class-section
+ * Fetch all authentic teachers in the school, merging profiles, user_roles,
+ * and biometric attendance records to ensure zero missing teachers across the app.
+ */
+export async function fetchAllTeachersUnified(): Promise<UnifiedTeacher[]> {
+  const db = supabase as any;
+  const teacherMap = new Map<string, UnifiedTeacher>();
+
+  try {
+    const [profilesRes, attRes, rolesRes, ctRes] = await Promise.all([
+      db.from('profiles').select('id, user_id, display_name, full_name, email, avatar_url, role, employee_id, department'),
+      db.from('attendance_records').select('id, user_id, student_name, device_info, image_url').eq('status', 'registered').eq('category', 'Teacher'),
+      db.from('user_roles').select('user_id, role').in('role', ['teacher', 'admin', 'principal', 'staff']),
+      db.from('class_teachers').select('*'),
+    ]);
+
+    // 1. Process profiles table
+    (profilesRes?.data || []).forEach((p: any) => {
+      const roleStr = (p.role || '').toLowerCase();
+      const deptStr = (p.department || '').toLowerCase();
+      const isStaffOrTeacher = roleStr === 'teacher' || roleStr === 'principal' || roleStr === 'admin' || roleStr === 'staff' || deptStr.includes('teacher') || deptStr.includes('faculty');
+      if (!isStaffOrTeacher) return;
+      const uid = p.user_id || p.id;
+      if (!uid) return;
+      const name = p.display_name || p.full_name || p.email?.split('@')[0] || 'Teacher';
+      teacherMap.set(uid, {
+        id: uid,
+        user_id: p.user_id || p.id,
+        name,
+        email: p.email || undefined,
+        employee_id: p.employee_id || undefined,
+        avatar_url: p.avatar_url || undefined,
+        role: p.role || 'teacher',
+        assignedClasses: [],
+      });
+    });
+
+    // 2. Process user_roles table
+    (rolesRes?.data || []).forEach((r: any) => {
+      if (!r.user_id) return;
+      const existing = teacherMap.get(r.user_id);
+      if (existing) {
+        existing.role = r.role || existing.role;
+      } else {
+        teacherMap.set(r.user_id, {
+          id: r.user_id,
+          user_id: r.user_id,
+          name: 'Faculty Teacher',
+          role: r.role || 'teacher',
+          assignedClasses: [],
+        });
+      }
+    });
+
+    // 3. Process attendance_records table (biometrically registered teachers)
+    (attRes?.data || []).forEach((rec: any) => {
+      const dInfo = (rec.device_info as any) || {};
+      const meta = dInfo.metadata || {};
+      const name = meta.name || rec.student_name || dInfo.name || 'Teacher';
+      const empId = meta.employee_id || dInfo.employee_id || '';
+      const img = rec.image_url || meta.firebase_image_url || '';
+      const uId = rec.user_id;
+
+      if (uId && teacherMap.has(uId)) {
+        const cur = teacherMap.get(uId)!;
+        if (!cur.name || cur.name === 'Faculty Teacher' || cur.name === 'Teacher') cur.name = name;
+        if (!cur.employee_id && empId) cur.employee_id = empId;
+        if (!cur.avatar_url && img) cur.avatar_url = img;
+      } else {
+        const key = uId || rec.id;
+        let matchedKey: string | null = null;
+        for (const [existingId, t] of teacherMap.entries()) {
+          if (t.name.toLowerCase().trim() === name.toLowerCase().trim()) {
+            matchedKey = existingId;
+            break;
+          }
+        }
+
+        if (matchedKey) {
+          const cur = teacherMap.get(matchedKey)!;
+          if (!cur.employee_id && empId) cur.employee_id = empId;
+          if (!cur.avatar_url && img) cur.avatar_url = img;
+        } else {
+          teacherMap.set(key, {
+            id: key,
+            user_id: uId || undefined,
+            name,
+            employee_id: empId || undefined,
+            avatar_url: img || undefined,
+            role: 'teacher',
+            assignedClasses: [],
+          });
+        }
+      }
+    });
+
+    // 4. Attach assigned classes from class_teachers
+    (ctRes?.data || []).forEach((ct: any) => {
+      const cat = normalizeCategory(ct.category || `${ct.class}-${ct.section}`);
+      if (!cat) return;
+      const tId = ct.teacher_id;
+      if (tId && teacherMap.has(tId)) {
+        const t = teacherMap.get(tId)!;
+        if (!t.assignedClasses.includes(cat)) t.assignedClasses.push(cat);
+        if (ct.teacher_name && (!t.name || t.name === 'Teacher' || t.name === 'Faculty Teacher')) {
+          t.name = ct.teacher_name;
+        }
+      } else if (ct.teacher_name) {
+        for (const t of teacherMap.values()) {
+          if (t.name.toLowerCase().trim() === ct.teacher_name.toLowerCase().trim()) {
+            if (!t.assignedClasses.includes(cat)) t.assignedClasses.push(cat);
+            break;
+          }
+        }
+      }
+    });
+  } catch (err) {
+    console.warn('Error fetching unified teachers:', err);
+  }
+
+  return Array.from(teacherMap.values()).sort((a, b) => a.name.localeCompare(b.name));
+}
+
+/**
+ * Fetch the primary designated Class Teacher for a given category (e.g. '8-A' or 'Class 8-A')
+ */
+export async function fetchClassTeacherForCategory(category: string): Promise<ClassTeacherAssignment | null> {
+  const normCat = normalizeCategory(category);
+  if (!normCat) return null;
+  const [cls, sec] = normCat.split('-');
+  const db = supabase as any;
+
+  try {
+    const res = await db
+      .from('class_teachers')
+      .select('*')
+      .or(`category.eq.${normCat},and(class.eq.${cls},section.eq.${sec})`)
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    if (res?.data) {
+      return {
+        id: res.data.id,
+        category: normCat,
+        class: res.data.class || cls,
+        section: res.data.section || sec,
+        teacher_id: res.data.teacher_id,
+        teacher_name: res.data.teacher_name || 'Class Teacher',
+        teacher_email: res.data.teacher_email || undefined,
+        role: res.data.role || 'class_teacher',
+        created_at: res.data.created_at,
+      };
+    }
+  } catch (err) {
+    console.warn(`Error fetching class teacher for ${category}:`, err);
+  }
+  return null;
+}
+
+/**
+ * Assign a teacher to a class-section.
+ * Atomically updates class_teachers, teacher_permissions, user_roles, and profiles.
  */
 export async function assignClassTeacher(
   classNum: string,
@@ -396,11 +593,12 @@ export async function assignClassTeacher(
   const db = supabase as any;
   const category = `${classNum}-${section.toUpperCase()}`;
 
-  // If assigning as primary class teacher, unassign existing primary class teacher for this category
+  // 1. If primary class teacher, remove any existing primary class teacher for this class
   if (role === 'class_teacher') {
-    await db.from('class_teachers').delete().eq('category', category).eq('role', 'class_teacher');
+    await db.from('class_teachers').delete().or(`category.eq.${category},and(class.eq.${classNum},section.eq.${section.toUpperCase()})`).eq('role', 'class_teacher');
   }
 
+  // 2. Insert into class_teachers with robust fallbacks
   const payload: Record<string, any> = {
     class: classNum,
     section: section.toUpperCase(),
@@ -413,7 +611,6 @@ export async function assignClassTeacher(
 
   const { error } = await db.from('class_teachers').insert(payload);
   if (error) {
-    // Retry without email/role if schema variant differs
     await db.from('class_teachers').insert({
       class: classNum,
       section: section.toUpperCase(),
@@ -423,41 +620,72 @@ export async function assignClassTeacher(
     });
   }
 
-  // Also ensure teacher_permissions has this category entry
-  const { data: existingPerm } = await db
-    .from('teacher_permissions')
-    .select('id')
-    .eq('user_id', teacherId)
-    .eq('category', category)
-    .maybeSingle();
+  // 3. Ensure teacher_permissions has this category entry
+  try {
+    await db.from('teacher_permissions').delete().eq('user_id', teacherId).eq('category', category);
+  } catch {}
 
-  if (!existingPerm?.id) {
-    await db.from('teacher_permissions').insert({
-      teacher_id: teacherId,
-      user_id: teacherId,
-      class: classNum,
-      section: section.toUpperCase(),
-      category,
-      can_take_attendance: true,
-      can_edit_timetable: true,
-      can_export_reports: true,
-    });
+  await db.from('teacher_permissions').insert({
+    teacher_id: teacherId,
+    user_id: teacherId,
+    class: classNum,
+    section: section.toUpperCase(),
+    category,
+    can_take_attendance: true,
+    can_edit_timetable: true,
+    can_export_reports: true,
+  });
+
+  // 4. Ensure user role is elevated to 'teacher' if currently 'user'
+  const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(teacherId);
+  if (isUuid) {
+    try {
+      const { data: currentRole } = await db.from('user_roles').select('role').eq('user_id', teacherId).maybeSingle();
+      if (!currentRole || currentRole.role === 'user') {
+        await db.from('user_roles').upsert({ user_id: teacherId, role: 'teacher' });
+      }
+      await db.from('profiles').update({ role: 'teacher', department: category }).eq('user_id', teacherId);
+    } catch (roleErr) {
+      console.warn('Could not update user_roles/profile during teacher assignment:', roleErr);
+    }
+  }
+
+  // 5. Broadcast change event for real-time local sync across tabs & widgets
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(
+      new CustomEvent('presences:class-teacher-changed', {
+        detail: { category, teacherId, teacherName, action: 'assign' },
+      })
+    );
   }
 }
 
 /**
- * Unassign a teacher from a class-section
+ * Unassign a teacher from a class-section across all tables.
  */
 export async function unassignClassTeacher(category: string, teacherId?: string): Promise<void> {
   const db = supabase as any;
-  let query = db.from('class_teachers').delete().eq('category', category);
+  const normCat = normalizeCategory(category) || category;
+  const [cls, sec] = normCat.split('-');
+
+  let query = db.from('class_teachers').delete().or(`category.eq.${normCat},and(class.eq.${cls},section.eq.${sec})`);
   if (teacherId) {
     query = query.eq('teacher_id', teacherId);
   }
   await query;
 
+  let permQuery = db.from('teacher_permissions').delete().or(`category.eq.${normCat},and(class.eq.${cls},section.eq.${sec})`);
   if (teacherId) {
-    await db.from('teacher_permissions').delete().eq('category', category).eq('user_id', teacherId);
+    permQuery = permQuery.or(`user_id.eq.${teacherId},teacher_id.eq.${teacherId}`);
+  }
+  await permQuery;
+
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(
+      new CustomEvent('presences:class-teacher-changed', {
+        detail: { category: normCat, teacherId, action: 'unassign' },
+      })
+    );
   }
 }
 

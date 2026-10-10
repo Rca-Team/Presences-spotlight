@@ -62,12 +62,16 @@ import {
 import { useToast } from '@/hooks/use-toast';
 import { supabase } from '@/integrations/supabase/client';
 import { useUserRole } from '@/hooks/useUserRole';
+import { ALL_CLASS_SECTIONS, getCategoryLabel } from '@/constants/schoolConfig';
 import {
   fetchTeacherCategories,
   fetchTeacherPermissions,
   parseClassSection,
   matchesClassAndSection,
   assignClassTeacher,
+  fetchAllTeachersUnified,
+  fetchClassTeacherForCategory,
+  type UnifiedTeacher,
   DEFAULT_TEACHER_PERMISSIONS,
   type TeacherPermissions,
 } from '@/utils/teacherAccess';
@@ -77,6 +81,7 @@ import { TeacherMonthlyRegister } from './TeacherMonthlyRegister';
 import { TeacherGatePassReview } from './TeacherGatePassReview';
 import { TeacherAttendanceExporter } from './TeacherAttendanceExporter';
 import { TeacherAbsenteeManager } from './TeacherAbsenteeManager';
+import { TeacherClassWhatsAppNotifier } from './TeacherClassWhatsAppNotifier';
 import TeacherAssignmentManager from './TeacherAssignmentManager';
 import TeacherTimetableEditor from './TeacherTimetableEditor';
 import TeacherNotificationHub from './TeacherNotificationHub';
@@ -155,6 +160,7 @@ export const TeacherAdminWorkspace: React.FC<TeacherAdminWorkspaceProps> = ({ in
   const [isMarkingAttendance, setIsMarkingAttendance] = useState(false);
   const [pendingGatePassesCount, setPendingGatePassesCount] = useState(0);
   const [isExportModalOpen, setIsExportModalOpen] = useState(false);
+  const [isWhatsAppNotifierOpen, setIsWhatsAppNotifierOpen] = useState(false);
 
   // Student Edit Dialog
   const [editStudent, setEditStudent] = useState<ClassStudent | null>(null);
@@ -208,6 +214,13 @@ export const TeacherAdminWorkspace: React.FC<TeacherAdminWorkspaceProps> = ({ in
     avatarUrl: '',
   });
 
+  // Designated Class Teacher for active class
+  const [assignedClassTeacher, setAssignedClassTeacher] = useState<{ id: string; name: string; employeeId?: string; email?: string } | null>(null);
+  const [isAssignClassTeacherDialogOpen, setIsAssignClassTeacherDialogOpen] = useState(false);
+  const [unifiedTeachersList, setUnifiedTeachersList] = useState<UnifiedTeacher[]>([]);
+  const [selectedNewTeacherId, setSelectedNewTeacherId] = useState<string>('');
+  const [isAssigningTeacher, setIsAssigningTeacher] = useState(false);
+
   // Load teacher class assignments, permissions, and profile
   const loadTeacherAssignments = useCallback(async () => {
     if (!userId) return;
@@ -244,6 +257,21 @@ export const TeacherAdminWorkspace: React.FC<TeacherAdminWorkspaceProps> = ({ in
         if (parsedMeta && !list.some(a => a.category === metaClass)) {
           list.unshift({ class: parsedMeta.className, section: parsedMeta.section, category: metaClass });
         }
+      }
+
+      // If user is Admin or Principal, give access to ALL classes in the school
+      if (isAdminOrPrincipal || role === 'admin' || role === 'principal') {
+        const allSchoolClasses: ClassAssignment[] = ALL_CLASS_SECTIONS.map(c => {
+          const parsed = parseClassSection(c);
+          return {
+            class: parsed?.className || c.split('-')[0],
+            section: parsed?.section || c.split('-')[1] || 'A',
+            category: c,
+          };
+        });
+        const assignedCats = new Set(list.map(a => a.category.toUpperCase()));
+        const rest = allSchoolClasses.filter(a => !assignedCats.has(a.category.toUpperCase()));
+        list = [...list, ...rest];
       }
 
       // Default fallback roster classes so the portal always opens directly to the class page
@@ -323,6 +351,24 @@ export const TeacherAdminWorkspace: React.FC<TeacherAdminWorkspaceProps> = ({ in
     return () => {
       isMounted = false;
       unsub();
+    };
+  }, [activeClass]);
+
+  // Sync assigned class teacher for currently active class
+  useEffect(() => {
+    if (!activeClass) return;
+    fetchClassTeacherForCategory(activeClass.category).then(setAssignedClassTeacher);
+  }, [activeClass]);
+
+  useEffect(() => {
+    const handleClassTeacherChange = () => {
+      if (activeClass) {
+        fetchClassTeacherForCategory(activeClass.category).then(setAssignedClassTeacher);
+      }
+    };
+    window.addEventListener('presences:class-teacher-changed', handleClassTeacherChange);
+    return () => {
+      window.removeEventListener('presences:class-teacher-changed', handleClassTeacherChange);
     };
   }, [activeClass]);
 
@@ -572,6 +618,38 @@ export const TeacherAdminWorkspace: React.FC<TeacherAdminWorkspaceProps> = ({ in
 
         if (existingKey && studentMap.has(existingKey)) {
           const cur = studentMap.get(existingKey)!;
+          // Resolve attendance status properly: manual override > present > late > absent > unmarked
+          let resolvedStatus = cur.today_status || candidate.today_status || 'unmarked';
+          let resolvedTime = cur.today_time || candidate.today_time || '';
+          let resolvedIsManual = cur.is_manual ?? candidate.is_manual;
+          let resolvedSource = cur.attendance_source || candidate.attendance_source;
+          let resolvedMode = cur.capture_mode || candidate.capture_mode;
+
+          if (candidate.is_manual && !cur.is_manual) {
+            resolvedStatus = candidate.today_status || 'unmarked';
+            resolvedTime = candidate.today_time || cur.today_time || '';
+            resolvedIsManual = true;
+            resolvedSource = candidate.attendance_source || cur.attendance_source;
+            resolvedMode = candidate.capture_mode || cur.capture_mode;
+          } else if (cur.is_manual && !candidate.is_manual) {
+            // Keep current manual status
+          } else {
+            const rank = (s?: string) => {
+              if (s === 'present') return 3;
+              if (s === 'late') return 2;
+              if (s === 'absent') return 1;
+              return 0;
+            };
+            const curRank = rank(cur.today_status);
+            const candRank = rank(candidate.today_status);
+            if (candRank > curRank) {
+              resolvedStatus = candidate.today_status || 'unmarked';
+              resolvedTime = candidate.today_time || cur.today_time || '';
+              resolvedSource = candidate.attendance_source || cur.attendance_source;
+              resolvedMode = candidate.capture_mode || cur.capture_mode;
+            }
+          }
+
           const merged: ClassStudent = {
             ...cur,
             user_id: cur.user_id || candidate.user_id,
@@ -583,12 +661,12 @@ export const TeacherAdminWorkspace: React.FC<TeacherAdminWorkspaceProps> = ({ in
             parent_phone: cur.parent_phone || candidate.parent_phone || '',
             photo_url: cur.photo_url || candidate.photo_url || '',
             has_face_descriptor: cur.has_face_descriptor || candidate.has_face_descriptor,
-            today_status: cur.today_status && cur.today_status !== 'unmarked' ? cur.today_status : candidate.today_status,
-            today_time: cur.today_time || candidate.today_time,
+            today_status: resolvedStatus,
+            today_time: resolvedTime,
             was_present_yesterday: cur.was_present_yesterday ?? candidate.was_present_yesterday,
-            capture_mode: cur.capture_mode || candidate.capture_mode,
-            attendance_source: cur.attendance_source || candidate.attendance_source,
-            is_manual: cur.is_manual ?? candidate.is_manual,
+            capture_mode: resolvedMode,
+            attendance_source: resolvedSource,
+            is_manual: resolvedIsManual,
           };
           studentMap.set(existingKey, merged);
         } else {
@@ -1422,6 +1500,7 @@ export const TeacherAdminWorkspace: React.FC<TeacherAdminWorkspaceProps> = ({ in
           onMarkAllPresent={handleMarkAllUnmarkedPresent}
           onOpenAddStudent={() => setIsAddStudentOpen(true)}
           onOpenFaceCapture={(st) => setSelectedFaceStudent(st)}
+          onOpenWhatsAppNotifier={() => setIsWhatsAppNotifierOpen(true)}
           onRefresh={loadClassStudents}
           isRefreshing={isRefreshing}
         />
@@ -1429,6 +1508,17 @@ export const TeacherAdminWorkspace: React.FC<TeacherAdminWorkspaceProps> = ({ in
         <Button variant="outline" size="sm" className="w-full h-9 text-xs rounded-xl gap-1.5" onClick={() => navigate('/enrollment-monitor')}>
           <ScanFace className="h-3.5 w-3.5" /> Face enrollment status
         </Button>
+
+        {activeClass && (
+          <TeacherClassWhatsAppNotifier
+            isOpen={isWhatsAppNotifierOpen}
+            onClose={() => setIsWhatsAppNotifierOpen(false)}
+            activeClass={activeClass}
+            students={students}
+            teacherName={teacherProfile?.name || 'Class Teacher'}
+            teacherEmail={teacherProfile?.email}
+          />
+        )}
 
         {selectedFaceStudent && (
           <CaptureFaceDialog
@@ -1458,6 +1548,14 @@ export const TeacherAdminWorkspace: React.FC<TeacherAdminWorkspaceProps> = ({ in
         onRefresh={loadClassStudents}
         isRefreshing={isRefreshing}
         totalStudents={students.length}
+        classTeacherName={assignedClassTeacher?.name}
+        canManageClassTeacher={isAdminOrPrincipal || role === 'admin' || role === 'principal' || role === 'teacher'}
+        onAssignClassTeacher={async () => {
+          const list = await fetchAllTeachersUnified();
+          setUnifiedTeachersList(list);
+          setSelectedNewTeacherId(assignedClassTeacher?.id || '');
+          setIsAssignClassTeacherDialogOpen(true);
+        }}
       />
 
       {activeClass && (
@@ -1598,6 +1696,7 @@ export const TeacherAdminWorkspace: React.FC<TeacherAdminWorkspaceProps> = ({ in
                 onAutoMarkAbsent={handleAutoMarkAbsent}
                 onMarkAllPresent={handleMarkAllUnmarkedPresent}
                 onOpenExportModal={() => setIsExportModalOpen(true)}
+                onOpenWhatsAppNotifier={() => setIsWhatsAppNotifierOpen(true)}
                 isMarkingAttendance={isMarkingAttendance}
               />
             </TabsContent>
@@ -1688,6 +1787,14 @@ export const TeacherAdminWorkspace: React.FC<TeacherAdminWorkspaceProps> = ({ in
                           </Button>
                         </>
                       )}
+                      <Button
+                        size="sm"
+                        onClick={() => setIsWhatsAppNotifierOpen(true)}
+                        className="text-xs h-8 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 text-white font-bold rounded-xl gap-1.5 shadow-md shadow-emerald-600/20"
+                        title="1-Click WhatsApp Class Attendance Summary & Parent Alerts"
+                      >
+                        <MessageSquare className="h-3.5 w-3.5" /> 1-Click WhatsApp Share
+                      </Button>
                       <Button
                         size="sm"
                         onClick={() => setIsExportModalOpen(true)}
@@ -2146,6 +2253,7 @@ export const TeacherAdminWorkspace: React.FC<TeacherAdminWorkspaceProps> = ({ in
                 teacherEmail={teacherProfile.email}
                 previousDayLabel={previousDayLabel}
                 onRefresh={loadClassStudents}
+                onOpenWhatsAppNotifier={() => setIsWhatsAppNotifierOpen(true)}
               />
             </TabsContent>
 
@@ -2774,6 +2882,18 @@ export const TeacherAdminWorkspace: React.FC<TeacherAdminWorkspaceProps> = ({ in
         />
       )}
 
+      {/* 1-Click WhatsApp Class Attendance Notifier Modal */}
+      {activeClass && (
+        <TeacherClassWhatsAppNotifier
+          isOpen={isWhatsAppNotifierOpen}
+          onClose={() => setIsWhatsAppNotifierOpen(false)}
+          activeClass={activeClass}
+          students={students}
+          teacherName={teacherProfile?.name || 'Class Teacher'}
+          teacherEmail={teacherProfile?.email}
+        />
+      )}
+
       {/* 3D Face Biometric Enrollment Dialog */}
       <CaptureFaceDialog
         open={Boolean(selectedFaceStudent)}
@@ -2961,6 +3081,105 @@ export const TeacherAdminWorkspace: React.FC<TeacherAdminWorkspaceProps> = ({ in
               </div>
             </div>
           )}
+        </DialogContent>
+      </Dialog>
+
+      {/* ─── QUICK ASSIGN / CHANGE CLASS TEACHER DIALOG ───────────────── */}
+      <Dialog open={isAssignClassTeacherDialogOpen} onOpenChange={setIsAssignClassTeacherDialogOpen}>
+        <DialogContent className="max-w-md rounded-3xl">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <GraduationCap className="h-5 w-5 text-primary" />
+              <span>Assign Class Teacher</span>
+            </DialogTitle>
+            <DialogDescription>
+              Assign or change the faculty teacher in-charge for Class {activeClass?.category}.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-4 py-2">
+            <div className="p-3 rounded-2xl bg-muted/40 border border-border/50 text-xs space-y-1.5">
+              <div className="flex justify-between items-center">
+                <span className="text-muted-foreground">Target Class:</span>
+                <span className="font-bold text-foreground">Class {activeClass?.category}</span>
+              </div>
+              <div className="flex justify-between items-center">
+                <span className="text-muted-foreground">Current In-Charge:</span>
+                <span className="font-semibold text-primary">
+                  {assignedClassTeacher ? assignedClassTeacher.name : '⚠️ None (Vacant)'}
+                </span>
+              </div>
+            </div>
+
+            <div className="space-y-2">
+              <Label className="text-xs font-semibold">Select Faculty Teacher</Label>
+              <Select value={selectedNewTeacherId} onValueChange={setSelectedNewTeacherId}>
+                <SelectTrigger className="h-11 rounded-xl">
+                  <SelectValue placeholder="Choose teacher from school roster..." />
+                </SelectTrigger>
+                <SelectContent className="max-h-64">
+                  {unifiedTeachersList.map(t => (
+                    <SelectItem key={t.id} value={t.id}>
+                      <div className="flex items-center justify-between w-full gap-2">
+                        <span className="font-medium">{t.name}</span>
+                        <span className="text-[10px] text-muted-foreground">
+                          {t.employee_id !== 'N/A' ? `Emp ID: ${t.employee_id}` : t.email ? t.email.split('@')[0] : ''}
+                        </span>
+                      </div>
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+
+          <DialogFooter className="gap-2 sm:gap-0">
+            <Button
+              variant="outline"
+              onClick={() => setIsAssignClassTeacherDialogOpen(false)}
+              className="rounded-xl"
+            >
+              Cancel
+            </Button>
+            <Button
+              disabled={!selectedNewTeacherId || isAssigningTeacher}
+              onClick={async () => {
+                if (!activeClass || !selectedNewTeacherId) return;
+                setIsAssigningTeacher(true);
+                try {
+                  const teacher = unifiedTeachersList.find(t => t.id === selectedNewTeacherId);
+                  const teacherName = teacher?.name || 'Class Teacher';
+                  const success = await assignClassTeacher(activeClass.category, selectedNewTeacherId, teacherName);
+                  if (success) {
+                    setAssignedClassTeacher({
+                      id: selectedNewTeacherId,
+                      name: teacherName,
+                      employeeId: teacher?.employee_id,
+                      email: teacher?.email || undefined,
+                    });
+                    toast({
+                      title: 'Class Teacher Assigned',
+                      description: `${teacherName} is now assigned as in-charge of Class ${activeClass.category}.`,
+                    });
+                    setIsAssignClassTeacherDialogOpen(false);
+                    loadClassStudents();
+                  } else {
+                    toast({
+                      title: 'Failed to assign',
+                      description: 'Could not save class teacher assignment.',
+                      variant: 'destructive',
+                    });
+                  }
+                } finally {
+                  setIsAssigningTeacher(false);
+                }
+              }}
+              className="rounded-xl font-bold bg-primary text-white"
+            >
+              {isAssigningTeacher ? <Loader2 className="h-4 w-4 animate-spin mr-1" /> : <Check className="h-4 w-4 mr-1" />}
+              Confirm Assignment
+            </Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
 

@@ -240,7 +240,7 @@ export function createEnrollmentService({ db, databaseId = 'presences_db', sms, 
         });
       }
       if (action === 'staff.delete' || action === 'staff.deleteStudent') {
-        const admission = cleanStudent(body).admission_number || String(body.admission || body.student_id || body.employee_id || body.id || '').trim();
+        const admission = String(body.admission || body.admission_number || body.student_id || body.employee_id || body.id || '').trim();
         if (!admission) reject(400, 'Student identifier is required.');
         return lock('student:' + admission, async () => {
           const student = await studentFor(admission);
@@ -260,10 +260,35 @@ export function createEnrollmentService({ db, databaseId = 'presences_db', sms, 
             await db.deleteDocument(databaseId, STATE, studentState.lastCapture).catch(() => {});
           }
 
-          // 2. Delete student state documents
+          // 2. Delete ALL student state documents from student_enrollment
           await db.deleteDocument(databaseId, STATE, hash('student:' + admissionKey)).catch(() => {});
           await db.deleteDocument(databaseId, STATE, hash('session:' + admissionKey)).catch(() => {});
           await db.deleteDocument(databaseId, STATE, hash('correction:' + admissionKey)).catch(() => {});
+          await db.deleteDocument(databaseId, STATE, hash('capture:' + admissionKey)).catch(() => {});
+
+          // Invalidate and delete any active sessions, captures, or audits referencing this student in student_enrollment
+          try {
+            let cursor;
+            while (true) {
+              const page = await db.listDocuments(databaseId, STATE, [
+                Query.limit(100),
+                ...(cursor ? [Query.cursorAfter(cursor)] : [])
+              ]);
+              for (const doc of page.documents) {
+                if (doc.$id.includes(admissionKey) || doc.payload.includes(`"${admissionKey}"`)) {
+                  try {
+                    const parsed = JSON.parse(doc.payload);
+                    for (const s of parsed.samples || []) {
+                      if (s.fileId) await files.remove(s.fileId).catch(() => {});
+                    }
+                  } catch (_) {}
+                  await db.deleteDocument(databaseId, STATE, doc.$id).catch(() => {});
+                }
+              }
+              if (page.documents.length < 100) break;
+              cursor = page.documents[page.documents.length - 1].$id;
+            }
+          } catch (_) {}
 
           // 3. Delete descriptors from face_descriptors
           const descriptorId = hash('enrollment-descriptor:' + admissionKey);
