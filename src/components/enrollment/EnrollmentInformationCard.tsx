@@ -1,22 +1,18 @@
 import React from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
 import {
   User,
-  GraduationCap,
   Building2,
   Phone,
   Calendar,
   MapPin,
-  Edit3,
-  Check,
   Shield,
   Sparkles,
   Users,
   AlertCircle,
-  Mail
+  Mail,
+  Edit3
 } from 'lucide-react';
 import { Input } from '@/components/ui/input';
-import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import DobDatePicker, { calculateAge } from '@/components/enrollment/DobDatePicker';
 import type { StudentDetails, StudentField } from '@/services/enrollment/types';
@@ -25,16 +21,14 @@ import { cn } from '@/lib/utils';
 
 interface EnrollmentInformationCardProps {
   details: StudentDetails;
-  editing: boolean;
-  onToggleEditing: () => void;
+  editing?: boolean;
+  onToggleEditing?: () => void;
   onChangeField: (field: StudentField, value: string) => void;
   disabled?: boolean;
 }
 
 export default function EnrollmentInformationCard({
   details,
-  editing,
-  onToggleEditing,
   onChangeField,
   disabled = false,
 }: EnrollmentInformationCardProps) {
@@ -82,33 +76,16 @@ export default function EnrollmentInformationCard({
               )}
             </div>
             <p className="text-xs text-slate-400 mt-0.5">
-              Review details below before saving
+              Review and edit any detail directly below before saving
             </p>
           </div>
         </div>
 
-        <Button
-          type="button"
-          variant="outline"
-          size="sm"
-          disabled={disabled}
-          onClick={onToggleEditing}
-          className={`h-9 px-3.5 rounded-xl text-xs font-bold gap-1.5 transition-all self-start sm:self-auto ${
-            editing
-              ? 'bg-emerald-500 text-slate-950 border-emerald-400 hover:bg-emerald-400'
-              : 'border-white/15 bg-white/5 hover:bg-white/10 text-slate-200'
-          }`}
-        >
-          {editing ? (
-            <>
-              <Check className="w-3.5 h-3.5 stroke-[3]" /> Done
-            </>
-          ) : (
-            <>
-              <Edit3 className="w-3.5 h-3.5 text-emerald-400" /> Edit Details
-            </>
-          )}
-        </Button>
+        {/* Modern Live-Editable Chip */}
+        <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-emerald-500/10 border border-emerald-500/25 text-emerald-300 text-xs font-semibold self-start sm:self-auto shadow-sm">
+          <Edit3 className="w-3.5 h-3.5 text-emerald-400" />
+          <span>Click any field to edit</span>
+        </div>
       </div>
 
       {/* Action Required Alert if Email is Missing */}
@@ -131,81 +108,80 @@ export default function EnrollmentInformationCard({
         </div>
       )}
 
-      {/* Information Grid Sections */}
+      {/* Information Grid Sections - Directly Editable */}
       <div className="space-y-4 pt-4">
         {/* Section 1: Core Identity */}
         <div>
           <span className="text-[10px] font-extrabold uppercase tracking-wider text-emerald-400/90 block mb-2">
-            Student Information
+            1. Student Information
           </span>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             {/* Full Name */}
-            <div className="p-3 rounded-2xl bg-white/[0.03] border border-white/10 hover:border-white/20 transition-all">
-              <div className="flex items-center gap-1.5 text-[11px] font-semibold text-slate-400 mb-1">
+            <div className="p-3 rounded-2xl bg-white/[0.03] border border-white/10 hover:border-emerald-500/30 transition-all">
+              <div className="flex items-center gap-1.5 text-[11px] font-semibold text-slate-400 mb-1.5">
                 <User className="w-3.5 h-3.5 text-emerald-400" />
                 <span>{isTeacher ? 'Faculty / Staff Name' : 'Student Full Name'}</span>
               </div>
-              {editing ? (
-                <Input
-                  value={details.name}
-                  onChange={(e) => onChangeField('name', e.target.value)}
-                  className="h-9 bg-slate-950/80 border-white/20 text-white text-xs font-semibold rounded-xl focus:ring-emerald-400"
-                />
-              ) : (
-                <p className="text-sm font-bold text-white truncate">
-                  {details.name || '—'}
-                </p>
-              )}
+              <Input
+                value={details.name || ''}
+                onChange={(e) => onChangeField('name', e.target.value)}
+                placeholder="Full name"
+                disabled={disabled}
+                className="h-9 bg-slate-950/80 border-white/20 text-white text-xs font-semibold rounded-xl focus:border-emerald-400 focus:ring-1 focus:ring-emerald-400"
+              />
             </div>
 
-            {/* Admission / Employee ID */}
-            <div className="p-3 rounded-2xl bg-white/[0.03] border border-white/10 hover:border-white/20 transition-all">
-              <div className="flex items-center gap-1.5 text-[11px] font-semibold text-slate-400 mb-1">
-                <Shield className="w-3.5 h-3.5 text-cyan-400" />
-                <span>{identity.admissionOrEmpLabel}</span>
+            {/* Admission / Employee ID (Immutable verified identity) */}
+            <div className="p-3 rounded-2xl bg-white/[0.03] border border-white/10 transition-all">
+              <div className="flex items-center justify-between text-[11px] font-semibold text-slate-400 mb-1.5">
+                <div className="flex items-center gap-1.5">
+                  <Shield className="w-3.5 h-3.5 text-cyan-400" />
+                  <span>{identity.admissionOrEmpLabel}</span>
+                </div>
+                <Badge variant="outline" className="text-[9px] px-1.5 py-0 bg-cyan-500/10 border-cyan-500/30 text-cyan-300">
+                  Permanent ID
+                </Badge>
               </div>
-              <p className="text-sm font-mono font-bold text-emerald-300">
+              <p className="text-sm font-mono font-bold text-emerald-300 py-1">
                 {details.admission_number || '—'}
               </p>
             </div>
 
             {/* Class / Department */}
-            <div className="p-3 rounded-2xl bg-white/[0.03] border border-white/10 hover:border-white/20 transition-all">
-              <div className="flex items-center gap-1.5 text-[11px] font-semibold text-slate-400 mb-1">
+            <div className="p-3 rounded-2xl bg-white/[0.03] border border-white/10 hover:border-emerald-500/30 transition-all">
+              <div className="flex items-center gap-1.5 text-[11px] font-semibold text-slate-400 mb-1.5">
                 <Building2 className="w-3.5 h-3.5 text-purple-400" />
                 <span>{isTeacher ? 'Designation / Department' : 'Class & Grade'}</span>
               </div>
-              {editing && !isTeacher ? (
-                <Input
-                  value={details.class}
-                  onChange={(e) => onChangeField('class', e.target.value)}
-                  className="h-9 bg-slate-950/80 border-white/20 text-white text-xs font-semibold rounded-xl focus:ring-emerald-400"
-                />
-              ) : (
-                <p className="text-sm font-bold text-white">
-                  {isTeacher ? identity.roleLabel : details.class ? `Class ${details.class}` : '—'}
+              {isTeacher ? (
+                <p className="text-sm font-bold text-white py-1">
+                  {identity.roleLabel}
                 </p>
+              ) : (
+                <Input
+                  value={details.class || ''}
+                  onChange={(e) => onChangeField('class', e.target.value)}
+                  placeholder="e.g. 10 or 8"
+                  disabled={disabled}
+                  className="h-9 bg-slate-950/80 border-white/20 text-white text-xs font-semibold rounded-xl focus:border-emerald-400 focus:ring-1 focus:ring-emerald-400"
+                />
               )}
             </div>
 
             {/* Section (Only relevant for students) */}
             {!isTeacher && (
-              <div className="p-3 rounded-2xl bg-white/[0.03] border border-white/10 hover:border-white/20 transition-all">
-                <div className="flex items-center gap-1.5 text-[11px] font-semibold text-slate-400 mb-1">
+              <div className="p-3 rounded-2xl bg-white/[0.03] border border-white/10 hover:border-emerald-500/30 transition-all">
+                <div className="flex items-center gap-1.5 text-[11px] font-semibold text-slate-400 mb-1.5">
                   <Users className="w-3.5 h-3.5 text-blue-400" />
                   <span>Section</span>
                 </div>
-                {editing ? (
-                  <Input
-                    value={details.section}
-                    onChange={(e) => onChangeField('section', e.target.value)}
-                    className="h-9 bg-slate-950/80 border-white/20 text-white text-xs font-semibold rounded-xl focus:ring-emerald-400"
-                  />
-                ) : (
-                  <p className="text-sm font-bold text-white">
-                    {details.section ? `Section ${details.section}` : '—'}
-                  </p>
-                )}
+                <Input
+                  value={details.section || ''}
+                  onChange={(e) => onChangeField('section', e.target.value)}
+                  placeholder="e.g. A or B"
+                  disabled={disabled}
+                  className="h-9 bg-slate-950/80 border-white/20 text-white text-xs font-semibold rounded-xl focus:border-emerald-400 focus:ring-1 focus:ring-emerald-400"
+                />
               </div>
             )}
           </div>
@@ -218,22 +194,18 @@ export default function EnrollmentInformationCard({
           </span>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             {/* Phone Number */}
-            <div className="p-3 rounded-2xl bg-white/[0.03] border border-white/10 hover:border-white/20 transition-all">
-              <div className="flex items-center gap-1.5 text-[11px] font-semibold text-slate-400 mb-1">
+            <div className="p-3 rounded-2xl bg-white/[0.03] border border-white/10 hover:border-emerald-500/30 transition-all">
+              <div className="flex items-center gap-1.5 text-[11px] font-semibold text-slate-400 mb-1.5">
                 <Phone className="w-3.5 h-3.5 text-emerald-400" />
                 <span>{isTeacher ? 'Registered Mobile Number' : 'Registered Parent Phone'}</span>
               </div>
-              {editing ? (
-                <Input
-                  value={details.parent_phone}
-                  onChange={(e) => onChangeField('parent_phone', e.target.value)}
-                  className="h-9 bg-slate-950/80 border-white/20 text-white text-xs font-semibold rounded-xl focus:ring-emerald-400"
-                />
-              ) : (
-                <p className="text-sm font-mono font-bold text-white">
-                  {details.parent_phone || '— Not provided'}
-                </p>
-              )}
+              <Input
+                value={details.parent_phone || ''}
+                onChange={(e) => onChangeField('parent_phone', e.target.value)}
+                placeholder="e.g. +91 9876543210"
+                disabled={disabled}
+                className="h-9 bg-slate-950/80 border-white/20 text-white text-xs font-semibold rounded-xl focus:border-emerald-400 focus:ring-1 focus:ring-emerald-400"
+              />
             </div>
 
             {/* Email Address (MANDATORY & REQUIRED) */}
@@ -242,10 +214,10 @@ export default function EnrollmentInformationCard({
                 "p-3 rounded-2xl transition-all relative overflow-hidden",
                 !hasEmailFilled
                   ? "bg-amber-500/10 border-2 border-amber-400/80 shadow-lg shadow-amber-500/10 ring-2 ring-amber-400/30"
-                  : "bg-white/[0.03] border border-white/10 hover:border-white/20"
+                  : "bg-white/[0.03] border border-white/10 hover:border-emerald-500/30"
               )}
             >
-              <div className="flex items-center justify-between text-[11px] font-semibold text-slate-400 mb-1">
+              <div className="flex items-center justify-between text-[11px] font-semibold text-slate-400 mb-1.5">
                 <div className="flex items-center gap-1.5">
                   <Mail className={cn("w-3.5 h-3.5", !hasEmailFilled ? "text-amber-400 animate-pulse" : "text-sky-400")} />
                   <span className={cn(!hasEmailFilled && "text-amber-200 font-bold")}>
@@ -265,103 +237,83 @@ export default function EnrollmentInformationCard({
                 </Badge>
               </div>
 
-              {editing || !hasEmailFilled ? (
-                <div className="space-y-1.5">
-                  <Input
-                    type="email"
-                    value={details.email || ''}
-                    onChange={(e) => onChangeField('email', e.target.value)}
-                    placeholder="e.g. student@school.edu or parent@email.com"
-                    disabled={disabled}
-                    className={cn(
-                      "h-9 bg-slate-950/80 text-white text-xs font-semibold rounded-xl focus:ring-emerald-400",
-                      !hasEmailFilled
-                        ? "border-amber-400 text-amber-100 placeholder:text-amber-300/40 focus:border-amber-400 focus:ring-amber-400"
-                        : "border-white/20"
-                    )}
-                    required
-                  />
-                  {!hasEmailFilled && (
-                    <p className="text-[10px] text-amber-300 font-medium flex items-center gap-1">
-                      <AlertCircle className="w-3 h-3 shrink-0" />
-                      Please enter an email before saving.
-                    </p>
+              <div className="space-y-1.5">
+                <Input
+                  type="email"
+                  value={details.email || ''}
+                  onChange={(e) => onChangeField('email', e.target.value)}
+                  placeholder="e.g. student@school.edu or parent@email.com"
+                  disabled={disabled}
+                  className={cn(
+                    "h-9 bg-slate-950/80 text-white text-xs font-semibold rounded-xl focus:ring-emerald-400",
+                    !hasEmailFilled
+                      ? "border-amber-400 text-amber-100 placeholder:text-amber-300/40 focus:border-amber-400 focus:ring-amber-400"
+                      : "border-white/20"
                   )}
-                </div>
-              ) : (
-                <p className="text-sm font-bold text-white truncate font-mono">
-                  {details.email}
-                </p>
-              )}
+                  required
+                />
+                {!hasEmailFilled && (
+                  <p className="text-[10px] text-amber-300 font-medium flex items-center gap-1">
+                    <AlertCircle className="w-3 h-3 shrink-0" />
+                    Please enter an email before saving.
+                  </p>
+                )}
+              </div>
             </div>
 
             {/* Date of Birth */}
-            <div className="p-3 rounded-2xl bg-white/[0.03] border border-white/10 hover:border-white/20 transition-all">
+            <div className="p-3 rounded-2xl bg-white/[0.03] border border-white/10 hover:border-emerald-500/30 transition-all">
               <div className="flex items-center justify-between text-[11px] font-semibold text-slate-400 mb-1.5">
                 <div className="flex items-center gap-1.5">
                   <Calendar className="w-3.5 h-3.5 text-amber-400" />
                   <span>Date of Birth</span>
                 </div>
-                {!editing && details.date_of_birth && calculateAge(details.date_of_birth) !== null && (
+                {details.date_of_birth && calculateAge(details.date_of_birth) !== null && (
                   <span className="text-[10px] font-mono font-semibold px-2 py-0.5 rounded-full bg-emerald-500/15 border border-emerald-500/30 text-emerald-300">
                     {calculateAge(details.date_of_birth)} yrs old
                   </span>
                 )}
               </div>
-              {editing ? (
-                <DobDatePicker
-                  value={details.date_of_birth || ''}
-                  onChange={(val) => onChangeField('date_of_birth', val)}
-                  compact
-                  showHelper={false}
-                  disabled={disabled}
-                />
-              ) : (
-                <p className="text-sm font-bold text-white font-mono">
-                  {details.date_of_birth || <span className="text-slate-500 font-sans italic font-normal text-xs">— Not provided</span>}
-                </p>
-              )}
+              <DobDatePicker
+                value={details.date_of_birth || ''}
+                onChange={(val) => onChangeField('date_of_birth', val)}
+                compact
+                showHelper={false}
+                disabled={disabled}
+              />
             </div>
 
             {/* Father's Name (shown for students or if filled) */}
             {(!isTeacher || details.father_name) && (
-              <div className="p-3 rounded-2xl bg-white/[0.03] border border-white/10 hover:border-white/20 transition-all">
-                <div className="flex items-center gap-1.5 text-[11px] font-semibold text-slate-400 mb-1">
+              <div className="p-3 rounded-2xl bg-white/[0.03] border border-white/10 hover:border-emerald-500/30 transition-all">
+                <div className="flex items-center gap-1.5 text-[11px] font-semibold text-slate-400 mb-1.5">
                   <User className="w-3.5 h-3.5 text-slate-400" />
                   <span>Father’s Name</span>
                 </div>
-                {editing ? (
-                  <Input
-                    value={details.father_name}
-                    onChange={(e) => onChangeField('father_name', e.target.value)}
-                    className="h-9 bg-slate-950/80 border-white/20 text-white text-xs font-semibold rounded-xl focus:ring-emerald-400"
-                  />
-                ) : (
-                  <p className="text-sm font-semibold text-slate-200">
-                    {details.father_name || '— Not provided'}
-                  </p>
-                )}
+                <Input
+                  value={details.father_name || ''}
+                  onChange={(e) => onChangeField('father_name', e.target.value)}
+                  placeholder="Father's full name"
+                  disabled={disabled}
+                  className="h-9 bg-slate-950/80 border-white/20 text-white text-xs font-semibold rounded-xl focus:border-emerald-400 focus:ring-1 focus:ring-emerald-400"
+                />
               </div>
             )}
 
             {/* Mother's Name (shown for students or if filled) */}
             {(!isTeacher || details.mother_name) && (
-              <div className="p-3 rounded-2xl bg-white/[0.03] border border-white/10 hover:border-white/20 transition-all">
-                <div className="flex items-center gap-1.5 text-[11px] font-semibold text-slate-400 mb-1">
+              <div className="p-3 rounded-2xl bg-white/[0.03] border border-white/10 hover:border-emerald-500/30 transition-all">
+                <div className="flex items-center gap-1.5 text-[11px] font-semibold text-slate-400 mb-1.5">
                   <User className="w-3.5 h-3.5 text-slate-400" />
                   <span>Mother’s Name</span>
                 </div>
-                {editing ? (
-                  <Input
-                    value={details.mother_name}
-                    onChange={(e) => onChangeField('mother_name', e.target.value)}
-                    className="h-9 bg-slate-950/80 border-white/20 text-white text-xs font-semibold rounded-xl focus:ring-emerald-400"
-                  />
-                ) : (
-                  <p className="text-sm font-semibold text-slate-200">
-                    {details.mother_name || '— Not provided'}
-                  </p>
-                )}
+                <Input
+                  value={details.mother_name || ''}
+                  onChange={(e) => onChangeField('mother_name', e.target.value)}
+                  placeholder="Mother's full name"
+                  disabled={disabled}
+                  className="h-9 bg-slate-950/80 border-white/20 text-white text-xs font-semibold rounded-xl focus:border-emerald-400 focus:ring-1 focus:ring-emerald-400"
+                />
               </div>
             )}
           </div>
@@ -372,23 +324,19 @@ export default function EnrollmentInformationCard({
           <span className="text-[10px] font-extrabold uppercase tracking-wider text-emerald-400/90 block mb-2">
             3. Residential Address
           </span>
-          <div className="p-3.5 rounded-2xl bg-white/[0.03] border border-white/10 hover:border-white/20 transition-all">
-            <div className="flex items-center gap-1.5 text-[11px] font-semibold text-slate-400 mb-1">
+          <div className="p-3.5 rounded-2xl bg-white/[0.03] border border-white/10 hover:border-emerald-500/30 transition-all">
+            <div className="flex items-center gap-1.5 text-[11px] font-semibold text-slate-400 mb-1.5">
               <MapPin className="w-3.5 h-3.5 text-rose-400" />
               <span>Full Address</span>
             </div>
-            {editing ? (
-              <textarea
-                value={details.address}
-                onChange={(e) => onChangeField('address', e.target.value)}
-                rows={2}
-                className="w-full rounded-xl bg-slate-950/80 border border-white/20 p-2.5 text-xs text-white focus:outline-none focus:ring-2 focus:ring-emerald-400 font-medium"
-              />
-            ) : (
-              <p className="text-xs sm:text-sm font-medium text-slate-200 leading-relaxed break-words">
-                {details.address || '— Not provided'}
-              </p>
-            )}
+            <textarea
+              value={details.address || ''}
+              onChange={(e) => onChangeField('address', e.target.value)}
+              rows={2}
+              placeholder="Residential address details"
+              disabled={disabled}
+              className="w-full rounded-xl bg-slate-950/80 border border-white/20 p-2.5 text-xs text-white focus:outline-none focus:border-emerald-400 focus:ring-1 focus:ring-emerald-400 font-medium placeholder:text-slate-500"
+            />
           </div>
         </div>
       </div>

@@ -583,80 +583,117 @@ export async function fetchClassTeacherForCategory(category: string): Promise<Cl
  * Atomically updates class_teachers, teacher_permissions, user_roles, and profiles.
  */
 export async function assignClassTeacher(
-  classNum: string,
-  section: string,
-  teacherId: string,
-  teacherName: string,
-  teacherEmail?: string,
-  role: 'class_teacher' | 'co_teacher' = 'class_teacher'
-): Promise<void> {
+  classOrCategory: string,
+  sectionOrTeacherId: string,
+  teacherIdOrName: string,
+  teacherNameOrEmail?: string,
+  teacherEmailOrRole?: string,
+  maybeRole?: 'class_teacher' | 'co_teacher'
+): Promise<boolean> {
   const db = supabase as any;
-  const category = `${classNum}-${section.toUpperCase()}`;
+  let classNum: string;
+  let section: string;
+  let teacherId: string;
+  let teacherName: string;
+  let teacherEmail: string | undefined;
+  let role: 'class_teacher' | 'co_teacher' = 'class_teacher';
 
-  // 1. If primary class teacher, remove any existing primary class teacher for this class
-  if (role === 'class_teacher') {
-    await db.from('class_teachers').delete().or(`category.eq.${category},and(class.eq.${classNum},section.eq.${section.toUpperCase()})`).eq('role', 'class_teacher');
+  const parsed = parseClassSection(classOrCategory);
+  if (parsed && sectionOrTeacherId && (sectionOrTeacherId.length > 2 || sectionOrTeacherId.includes('-') || !/^[a-zA-Z]$/.test(sectionOrTeacherId))) {
+    // Called with (category, teacherId, teacherName, teacherEmail?, role?)
+    classNum = parsed.className;
+    section = parsed.section;
+    teacherId = sectionOrTeacherId;
+    teacherName = teacherIdOrName || 'Teacher';
+    teacherEmail = teacherNameOrEmail;
+    if (teacherEmailOrRole === 'co_teacher' || teacherEmailOrRole === 'class_teacher') {
+      role = teacherEmailOrRole;
+    }
+  } else {
+    // Called with (classNum, section, teacherId, teacherName, teacherEmail?, role?)
+    classNum = classOrCategory;
+    section = sectionOrTeacherId;
+    teacherId = teacherIdOrName;
+    teacherName = teacherNameOrEmail || 'Teacher';
+    teacherEmail = teacherEmailOrRole;
+    if (maybeRole) {
+      role = maybeRole;
+    }
   }
 
-  // 2. Insert into class_teachers with robust fallbacks
-  const payload: Record<string, any> = {
-    class: classNum,
-    section: section.toUpperCase(),
-    category,
-    teacher_id: teacherId,
-    teacher_name: teacherName || 'Teacher',
-    role,
-  };
-  if (teacherEmail) payload.teacher_email = teacherEmail;
+  const category = `${classNum}-${section.toUpperCase()}`;
 
-  const { error } = await db.from('class_teachers').insert(payload);
-  if (error) {
-    await db.from('class_teachers').insert({
+  try {
+    // 1. If primary class teacher, remove any existing primary class teacher for this class
+    if (role === 'class_teacher') {
+      await db.from('class_teachers').delete().or(`category.eq.${category},and(class.eq.${classNum},section.eq.${section.toUpperCase()})`).eq('role', 'class_teacher');
+    }
+
+    // 2. Insert into class_teachers with robust fallbacks
+    const payload: Record<string, any> = {
       class: classNum,
       section: section.toUpperCase(),
       category,
       teacher_id: teacherId,
-      teacher_name: teacherName,
-    });
-  }
+      teacher_name: teacherName || 'Teacher',
+      role,
+    };
+    if (teacherEmail) payload.teacher_email = teacherEmail;
 
-  // 3. Ensure teacher_permissions has this category entry
-  try {
-    await db.from('teacher_permissions').delete().eq('user_id', teacherId).eq('category', category);
-  } catch {}
-
-  await db.from('teacher_permissions').insert({
-    teacher_id: teacherId,
-    user_id: teacherId,
-    class: classNum,
-    section: section.toUpperCase(),
-    category,
-    can_take_attendance: true,
-    can_edit_timetable: true,
-    can_export_reports: true,
-  });
-
-  // 4. Ensure user role is elevated to 'teacher' if currently 'user'
-  const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(teacherId);
-  if (isUuid) {
-    try {
-      const { data: currentRole } = await db.from('user_roles').select('role').eq('user_id', teacherId).maybeSingle();
-      if (!currentRole || currentRole.role === 'user') {
-        await db.from('user_roles').upsert({ user_id: teacherId, role: 'teacher' });
-      }
-      await db.from('profiles').update({ role: 'teacher', department: category }).eq('user_id', teacherId);
-    } catch (roleErr) {
-      console.warn('Could not update user_roles/profile during teacher assignment:', roleErr);
+    const { error } = await db.from('class_teachers').insert(payload);
+    if (error) {
+      await db.from('class_teachers').insert({
+        class: classNum,
+        section: section.toUpperCase(),
+        category,
+        teacher_id: teacherId,
+        teacher_name: teacherName,
+      });
     }
-  }
 
-  // 5. Broadcast change event for real-time local sync across tabs & widgets
-  if (typeof window !== 'undefined') {
-    window.dispatchEvent(
-      new CustomEvent('presences:class-teacher-changed', {
-        detail: { category, teacherId, teacherName, action: 'assign' },
-      })
-    );
+    // 3. Ensure teacher_permissions has this category entry
+    try {
+      await db.from('teacher_permissions').delete().eq('user_id', teacherId).eq('category', category);
+    } catch {}
+
+    await db.from('teacher_permissions').insert({
+      teacher_id: teacherId,
+      user_id: teacherId,
+      class: classNum,
+      section: section.toUpperCase(),
+      category,
+      can_take_attendance: true,
+      can_edit_timetable: true,
+      can_export_reports: true,
+    });
+
+    // 4. Ensure user role is elevated to 'teacher' if currently 'user'
+    const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(teacherId);
+    if (isUuid) {
+      try {
+        const { data: currentRole } = await db.from('user_roles').select('role').eq('user_id', teacherId).maybeSingle();
+        if (!currentRole || currentRole.role === 'user') {
+          await db.from('user_roles').upsert({ user_id: teacherId, role: 'teacher' });
+        }
+        await db.from('profiles').update({ role: 'teacher', department: category }).eq('user_id', teacherId);
+      } catch (roleErr) {
+        console.warn('Could not update user_roles/profile during teacher assignment:', roleErr);
+      }
+    }
+
+    // 5. Broadcast change event for real-time local sync across tabs & widgets
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(
+        new CustomEvent('presences:class-teacher-changed', {
+          detail: { category, teacherId, teacherName, action: 'assign' },
+        })
+      );
+    }
+
+    return true;
+  } catch (err) {
+    console.error('Failed to assign class teacher:', err);
+    return false;
   }
 }
 

@@ -117,6 +117,8 @@ export function clearMonitorCache() {
   } catch {}
 }
 
+let backendUnavailableCooldownUntil = 0;
+
 export const fetchMonitor = async (): Promise<MonitorOverview> => {
   const fetchProfiles = async () => {
     try {
@@ -143,10 +145,14 @@ export const fetchMonitor = async (): Promise<MonitorOverview> => {
   };
 
   const fetchBackend = async () => {
+    if (typeof navigator !== 'undefined' && !navigator.onLine) return null;
+    if (Date.now() < backendUnavailableCooldownUntil) return null;
+
     try {
       const timeout = new Promise<null>((resolve) => setTimeout(() => resolve(null), 2500));
-      const req = enrollmentApi<MonitorOverview>('staff.monitor').catch((err) => {
-        console.warn('[EnrollmentMonitor] Backend monitor API note:', err?.message || err);
+      const req = enrollmentApi<MonitorOverview>('staff.monitor').catch(() => {
+        // Cooldown backend function calls for 5 minutes if service is not deployed
+        backendUnavailableCooldownUntil = Date.now() + 5 * 60 * 1000;
         return null;
       });
       return await Promise.race([req, timeout]);

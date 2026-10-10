@@ -977,7 +977,9 @@ export default function EnrollmentMonitor() {
 
   useEffect(() => {
     const id = window.setInterval(() => {
-      if (document.visibilityState === 'visible') void load(true);
+      if (document.visibilityState === 'visible' && (typeof navigator === 'undefined' || navigator.onLine)) {
+        void load(true);
+      }
     }, 45000);
     return () => window.clearInterval(id);
   }, [load]);

@@ -148,6 +148,13 @@ export default defineConfig(({ mode }) => {
                 cacheableResponse: {
                   statuses: [0, 200],
                 },
+                plugins: [
+                  {
+                    handlerDidError: async () => {
+                      return new Response(null, { status: 404, statusText: "Not Found" });
+                    },
+                  },
+                ],
               },
             },
           ],

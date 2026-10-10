@@ -59,6 +59,13 @@ import {
   DialogDescription,
   DialogFooter,
 } from '@/components/ui/dialog';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
 import { useToast } from '@/hooks/use-toast';
 import { supabase } from '@/integrations/supabase/client';
 import { useUserRole } from '@/hooks/useUserRole';
@@ -357,13 +364,33 @@ export const TeacherAdminWorkspace: React.FC<TeacherAdminWorkspaceProps> = ({ in
   // Sync assigned class teacher for currently active class
   useEffect(() => {
     if (!activeClass) return;
-    fetchClassTeacherForCategory(activeClass.category).then(setAssignedClassTeacher);
+    fetchClassTeacherForCategory(activeClass.category).then((ct) => {
+      if (ct) {
+        setAssignedClassTeacher({
+          id: ct.teacher_id,
+          name: ct.teacher_name,
+          email: ct.teacher_email,
+        });
+      } else {
+        setAssignedClassTeacher(null);
+      }
+    });
   }, [activeClass]);
 
   useEffect(() => {
     const handleClassTeacherChange = () => {
       if (activeClass) {
-        fetchClassTeacherForCategory(activeClass.category).then(setAssignedClassTeacher);
+        fetchClassTeacherForCategory(activeClass.category).then((ct) => {
+          if (ct) {
+            setAssignedClassTeacher({
+              id: ct.teacher_id,
+              name: ct.teacher_name,
+              email: ct.teacher_email,
+            });
+          } else {
+            setAssignedClassTeacher(null);
+          }
+        });
       }
     };
     window.addEventListener('presences:class-teacher-changed', handleClassTeacherChange);

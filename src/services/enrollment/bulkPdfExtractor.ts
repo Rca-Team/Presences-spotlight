@@ -45,6 +45,11 @@ export async function extractBulkPdf(file: File, options: BulkPdfOptions) {
   const totalPages = pdf.getPageCount();
   if (totalPages > 30) throw new Error('Use a PDF with at most 30 pages.');
   let count = 0;
+  let useCloudExtractor = Boolean(
+    String(import.meta.env.VITE_SUPABASE_URL || '').trim() &&
+    String(import.meta.env.VITE_SUPABASE_ANON_KEY || import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY || '').trim()
+  );
+
   for (let page = 1; page <= totalPages; page++) {
     if (options.signal.aborted) throw new DOMException('Request cancelled.', 'AbortError');
     const single = await PDFDocument.create();
@@ -52,21 +57,30 @@ export async function extractBulkPdf(file: File, options: BulkPdfOptions) {
     single.addPage(copied);
     const bytes = await single.save();
     if (bytes.length > 12 * 1024 * 1024) throw new Error(`Page ${page} exceeds 12 MB. Compress this page and retry.`);
-    const fileData = await new Promise<string>((resolve, reject) => {
-      const reader = new FileReader(); reader.onerror = () => reject(new Error('Could not read PDF page.'));
-      reader.onload = () => resolve(String(reader.result).split(',')[1]);
-      reader.readAsDataURL(new Blob([new Uint8Array(bytes)], { type: 'application/pdf' }));
-    });
+
     let rawCards: Record<string, string>[] = [];
-    try {
-      options.progress(`Extracting page ${page}…`, (page - 1) / totalPages * 100);
-      const result: { cards: Record<string, string>[] } = await idCardFunction({ action: 'idcards.extract', fileData, page: 1 }, options.signal);
-      if (result && Array.isArray(result.cards)) {
-        rawCards = result.cards;
+    let handledLocally = false;
+
+    if (useCloudExtractor) {
+      try {
+        const fileData = await new Promise<string>((resolve, reject) => {
+          const reader = new FileReader(); reader.onerror = () => reject(new Error('Could not read PDF page.'));
+          reader.onload = () => resolve(String(reader.result).split(',')[1]);
+          reader.readAsDataURL(new Blob([new Uint8Array(bytes)], { type: 'application/pdf' }));
+        });
+        options.progress(`Extracting page ${page}…`, (page - 1) / totalPages * 100);
+        const result: { cards: Record<string, string>[] } = await idCardFunction({ action: 'idcards.extract', fileData, page: 1 }, options.signal);
+        if (result && Array.isArray(result.cards)) {
+          rawCards = result.cards;
+        }
+      } catch (edgeErr: any) {
+        if (options.signal.aborted) throw edgeErr;
+        useCloudExtractor = false;
+        console.info('[BulkPdfExtractor] Using high-performance on-device extractor.');
       }
-    } catch (edgeErr: any) {
-      if (options.signal.aborted) throw edgeErr;
-      console.warn(`[BulkPdfExtractor] Cloud extractor notice on page ${page}, falling back to on-device extractor:`, edgeErr?.message);
+    }
+
+    if (!useCloudExtractor || rawCards.length === 0) {
       options.progress(`Scanning page ${page} on device…`, (page - 1) / totalPages * 100);
       try {
         const { extractCards } = await import('./pdfImport');
@@ -78,12 +92,17 @@ export async function extractBulkPdf(file: File, options: BulkPdfOptions) {
           options.onCard(lc);
           count++;
         }
-        continue;
+        handledLocally = true;
       } catch (localErr: any) {
         if (options.signal.aborted) throw localErr;
-        console.warn(`[BulkPdfExtractor] On-device extractor also failed for page ${page}:`, localErr?.message);
-        throw edgeErr;
+        console.warn(`[BulkPdfExtractor] On-device extractor failed for page ${page}:`, localErr?.message);
+        throw localErr;
       }
+    }
+
+    if (handledLocally) {
+      options.progress(`${count} cards scanned · page ${page}/${totalPages}`, page / totalPages * 100);
+      continue;
     }
 
     for (const raw of rawCards) {

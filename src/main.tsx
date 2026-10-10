@@ -105,6 +105,17 @@ window.addEventListener('error', (event) => {
       return;
     }
   }
+
+  // Suppress benign transient WebSocket connection race conditions and network suspended events
+  if (
+    errorMsg.includes("Failed to execute 'send' on 'WebSocket'") ||
+    errorMsg.includes('Still in CONNECTING state') ||
+    errorMsg.includes('ERR_NETWORK_IO_SUSPENDED')
+  ) {
+    event.preventDefault();
+    return;
+  }
+
   console.error('Global error caught:', event.error || event.message);
 });
 
@@ -122,6 +133,18 @@ window.addEventListener('unhandledrejection', (event) => {
       return;
     }
   }
+
+  // Suppress benign ServiceWorker offline cache miss and suspended I/O rejections
+  if (
+    reason.includes('no-response') ||
+    reason.includes("Failed to execute 'send' on 'WebSocket'") ||
+    reason.includes('Still in CONNECTING state') ||
+    reason.includes('ERR_NETWORK_IO_SUSPENDED')
+  ) {
+    event.preventDefault();
+    return;
+  }
+
   console.error('Unhandled promise rejection:', event.reason);
 });
 
