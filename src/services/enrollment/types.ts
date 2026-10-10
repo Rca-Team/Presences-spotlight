@@ -10,6 +10,10 @@ export type StudentDetails = Record<StudentField, string> & {
   student_email?: string;
   parent_email?: string;
   pen_number?: string;
+  phone_locked?: boolean;
+  imported_from_pdf?: boolean;
+  source?: string;
+  verified_parent_phone?: string;
 };
 export interface ImportCard { id: string; student: StudentDetails; preview: string; portrait?: string; page: number; text: string; }
 

@@ -39,6 +39,7 @@ export function createEnrollmentService({ db, databaseId = 'presences_db', sms, 
     try { if (p.metadata) meta = typeof p.metadata === 'string' ? JSON.parse(p.metadata) : p.metadata; } catch (_) {}
     const rawPhone = p.parent_phone || p.phone || meta.parent_phone || meta.phone || '';
     const rawDob = p.date_of_birth || meta.date_of_birth || meta.dob || '';
+    const isPhoneLocked = Boolean(meta.phone_locked || meta.imported_from_pdf || meta.source === 'pdf_upload');
     return {
       name: p.full_name || p.display_name || meta.name || '',
       admission_number: p.admission_number || p.employee_id || meta.admission_number || meta.employee_id || '',
@@ -48,7 +49,11 @@ export function createEnrollmentService({ db, databaseId = 'presences_db', sms, 
       mother_name: p.mother_name || meta.mother_name || '',
       parent_phone: phoneNumber(rawPhone),
       date_of_birth: rawDob ? normalizeDob(rawDob) : '',
-      address: p.address || meta.address || ''
+      address: p.address || meta.address || '',
+      phone_locked: isPhoneLocked,
+      imported_from_pdf: Boolean(meta.imported_from_pdf || meta.source === 'pdf_upload'),
+      source: meta.source || '',
+      verified_parent_phone: meta.verified_parent_phone || phoneNumber(rawPhone) || ''
     };
   };
   async function profilesFor(admission) {
@@ -74,7 +79,18 @@ export function createEnrollmentService({ db, databaseId = 'presences_db', sms, 
     const session = { student: student.admission_number, method, expires: now() + 45 * 60000, samples: [], completed: false, challenge: Math.random() < 0.5 ? 'left' : 'right' };
     await save(hash('session:' + secret), 'session', session, session.expires);
     await audit('verified', student.admission_number, method);
-    return { session: secret, student: Object.fromEntries(fields.map(k => [k, student[k] || ''])), challenge: session.challenge, expires: session.expires };
+    return {
+      session: secret,
+      student: {
+        ...Object.fromEntries(fields.map(k => [k, student[k] || ''])),
+        phone_locked: Boolean(student.phone_locked),
+        imported_from_pdf: Boolean(student.imported_from_pdf),
+        source: student.source || '',
+        verified_parent_phone: student.verified_parent_phone || student.parent_phone || ''
+      },
+      challenge: session.challenge,
+      expires: session.expires
+    };
   });
   // A durable commit intent allows cleanup to finish an interrupted submission.
   // Once publishing begins, its photos must never be treated as abandoned uploads.
@@ -483,6 +499,10 @@ export function createEnrollmentService({ db, databaseId = 'presences_db', sms, 
         const descriptor = validateCapture(current.samples, Boolean(body.wearsGlasses));
         const student = await studentFor(session.student);
         if (!student) reject(404, 'Student record is unavailable.');
+        // Security rule: If phone is locked from PDF import and this is a self-enrollment session, preserve verified parent phone
+        if (student.phone_locked && session.method !== 'staff' && body.changes && body.changes.parent_phone) {
+          delete body.changes.parent_phone;
+        }
         const changes = Object.fromEntries(fields.filter(k => k !== 'admission_number' && body.changes && Object.hasOwn(body.changes, k) && String(body.changes[k]).trim() !== student[k]).map(k => [k, String(body.changes[k]).trim()]));
         if (Object.keys(changes).length) cleanStudent({ ...student, ...changes });
         const primary = current.samples.find(s => s.pose === 'front' && s.glasses === (body.wearsGlasses ? 'with' : 'without'));

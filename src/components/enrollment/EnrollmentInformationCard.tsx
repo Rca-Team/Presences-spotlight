@@ -10,7 +10,9 @@ import {
   Users,
   AlertCircle,
   Mail,
-  Edit3
+  Edit3,
+  Lock,
+  ShieldCheck
 } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
@@ -25,12 +27,16 @@ interface EnrollmentInformationCardProps {
   onToggleEditing?: () => void;
   onChangeField: (field: StudentField, value: string) => void;
   disabled?: boolean;
+  isPhoneLocked?: boolean;
+  canEditPhone?: boolean;
 }
 
 export default function EnrollmentInformationCard({
   details,
   onChangeField,
   disabled = false,
+  isPhoneLocked = false,
+  canEditPhone = false,
 }: EnrollmentInformationCardProps) {
   const identity = resolveIdentityDisplay({
     student_name: details.name,
@@ -194,19 +200,62 @@ export default function EnrollmentInformationCard({
           </span>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             {/* Phone Number */}
-            <div className="p-3 rounded-2xl bg-white/[0.03] border border-white/10 hover:border-emerald-500/30 transition-all">
-              <div className="flex items-center gap-1.5 text-[11px] font-semibold text-slate-400 mb-1.5">
-                <Phone className="w-3.5 h-3.5 text-emerald-400" />
-                <span>{isTeacher ? 'Registered Mobile Number' : 'Registered Parent Phone'}</span>
-              </div>
-              <Input
-                value={details.parent_phone || ''}
-                onChange={(e) => onChangeField('parent_phone', e.target.value)}
-                placeholder="e.g. +91 9876543210"
-                disabled={disabled}
-                className="h-9 bg-slate-950/80 border-white/20 text-white text-xs font-semibold rounded-xl focus:border-emerald-400 focus:ring-1 focus:ring-emerald-400"
-              />
-            </div>
+            {(() => {
+              const isLockedForCurrentUser = Boolean(isPhoneLocked && !canEditPhone);
+              return (
+                <div
+                  className={cn(
+                    "p-3 rounded-2xl transition-all relative",
+                    isLockedForCurrentUser
+                      ? "bg-amber-500/5 border border-amber-500/30 ring-1 ring-amber-500/10"
+                      : "bg-white/[0.03] border border-white/10 hover:border-emerald-500/30"
+                  )}
+                >
+                  <div className="flex items-center justify-between text-[11px] font-semibold text-slate-400 mb-1.5">
+                    <div className="flex items-center gap-1.5">
+                      <Phone className={cn("w-3.5 h-3.5", isLockedForCurrentUser ? "text-amber-400" : "text-emerald-400")} />
+                      <span>{isTeacher ? 'Registered Mobile Number' : 'Registered Parent Phone'}</span>
+                    </div>
+                    {isLockedForCurrentUser ? (
+                      <Badge
+                        variant="outline"
+                        className="text-[9px] font-bold px-1.5 py-0 bg-amber-500/15 border-amber-500/40 text-amber-300 gap-1 flex items-center shadow-sm"
+                      >
+                        <Lock className="w-2.5 h-2.5 text-amber-400" />
+                        Locked · Verified
+                      </Badge>
+                    ) : isPhoneLocked && canEditPhone ? (
+                      <Badge
+                        variant="outline"
+                        className="text-[9px] font-bold px-1.5 py-0 bg-emerald-500/15 border-emerald-500/40 text-emerald-300 gap-1 flex items-center shadow-sm"
+                      >
+                        <ShieldCheck className="w-2.5 h-2.5 text-emerald-400" />
+                        Staff Unlocked
+                      </Badge>
+                    ) : null}
+                  </div>
+                  <Input
+                    value={details.parent_phone || ''}
+                    onChange={(e) => onChangeField('parent_phone', e.target.value)}
+                    placeholder="e.g. +91 9876543210"
+                    disabled={disabled || isLockedForCurrentUser}
+                    readOnly={isLockedForCurrentUser}
+                    className={cn(
+                      "h-9 text-xs font-semibold rounded-xl",
+                      isLockedForCurrentUser
+                        ? "bg-slate-950/60 border-amber-500/30 text-slate-300 cursor-not-allowed select-none opacity-90 font-mono"
+                        : "bg-slate-950/80 border-white/20 text-white focus:border-emerald-400 focus:ring-1 focus:ring-emerald-400"
+                    )}
+                  />
+                  {isLockedForCurrentUser && (
+                    <p className="text-[10px] text-amber-300/80 mt-1.5 flex items-center gap-1 leading-tight">
+                      <Lock className="w-2.5 h-2.5 shrink-0 text-amber-400" />
+                      <span>Verified school record. Only Admin, Principal, or Teacher can edit phone.</span>
+                    </p>
+                  )}
+                </div>
+              );
+            })()}
 
             {/* Email Address (MANDATORY & REQUIRED) */}
             <div

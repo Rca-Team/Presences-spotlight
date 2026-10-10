@@ -193,7 +193,7 @@ export function parseCardText(text: string): ParsedCard {
           else if (!result.mother_name) result.mother_name = cleanSalutations(seg.value);
           previous = 'father_name';
         } else {
-          result[seg.key as keyof ParsedCard] = seg.value;
+          (result as any)[seg.key] = seg.value;
           previous = seg.key as keyof ParsedCard;
         }
       }
@@ -202,8 +202,8 @@ export function parseCardText(text: string): ParsedCard {
 
     if (previous) {
       const unusable = digitOnlyLine.test(line) || continuationStop.test(line);
-      if (!result[previous] && !unusable) {
-        result[previous] = line;
+      if (!(result as any)[previous] && !unusable) {
+        (result as any)[previous] = line;
         continue;
       }
       if (previous === 'address' && !unusable) {

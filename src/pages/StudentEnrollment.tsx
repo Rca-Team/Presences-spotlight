@@ -24,6 +24,7 @@ import { prepareAppwriteBackendSamples, type CaptureResult, type EnrollmentSessi
 import DobDatePicker from '@/components/enrollment/DobDatePicker';
 import { cn } from '@/lib/utils';
 import { supabase } from '@/integrations/supabase/client';
+import { useUserRole } from '@/hooks/useUserRole';
 import '@/components/enrollment/enrollment.css';
 
 export default function StudentEnrollment() {
@@ -43,6 +44,22 @@ export default function StudentEnrollment() {
   const [expired, setExpired] = useState(false);
   const [replaceExisting, setReplaceExisting] = useState(true);
   const [isStaffBypass, setIsStaffBypass] = useState(false);
+  const [isPhoneLocked, setIsPhoneLocked] = useState(false);
+  const [originalVerifiedPhone, setOriginalVerifiedPhone] = useState('');
+  const { isAdminOrPrincipal, isTeacher, isEnroller, role } = useUserRole();
+
+  const canEditPhone = Boolean(
+    isAdminOrPrincipal ||
+    isTeacher ||
+    isEnroller ||
+    role === 'admin' ||
+    role === 'principal' ||
+    role === 'teacher' ||
+    role === 'enroller' ||
+    role === 'student_coordinator' ||
+    isStaffBypass
+  );
+
   const navigate = useNavigate();
   const reduced = useReducedMotion();
   const staffStarted = useRef(false);
@@ -179,21 +196,57 @@ export default function StudentEnrollment() {
       studentDetails.category = `${studentDetails.class}-${studentDetails.section.toUpperCase()}`;
     }
 
-    // Preload email from profiles if not in enrollment session
-    if (!studentDetails.email && value.student?.admission_number) {
+    // Preload email and check phone-lock status from school database profiles
+    const studentAdm = value.student?.admission_number || admission;
+    if (studentAdm) {
       try {
         const { data: p } = await supabase
           .from('profiles')
-          .select('email, parent_email')
-          .or(`admission_number.ilike.${value.student.admission_number},employee_id.ilike.${value.student.admission_number}`)
+          .select('email, parent_email, parent_phone, phone, metadata')
+          .or(`admission_number.ilike.${studentAdm},employee_id.ilike.${studentAdm}`)
           .limit(1)
           .maybeSingle();
 
         if (p?.email || p?.parent_email) {
           studentDetails = {
             ...studentDetails,
-            email: p.email || p.parent_email || '',
+            email: studentDetails.email || p.email || p.parent_email || '',
           };
+        }
+
+        let meta: Record<string, any> = {};
+        try {
+          meta = typeof p?.metadata === 'string' ? JSON.parse(p.metadata) : (p?.metadata || {});
+        } catch {
+          meta = {};
+        }
+
+        const isPdfLocked = Boolean(
+          meta.phone_locked ||
+          meta.imported_from_pdf ||
+          meta.source === 'pdf_upload' ||
+          (value.student as any)?.phone_locked ||
+          (value.student as any)?.imported_from_pdf ||
+          (value.student as any)?.source === 'pdf_upload'
+        );
+
+        if (isPdfLocked) {
+          setIsPhoneLocked(true);
+          const verifiedPhone = (
+            meta.verified_parent_phone ||
+            p?.parent_phone ||
+            p?.phone ||
+            (value.student as any)?.verified_parent_phone ||
+            value.student?.parent_phone ||
+            ''
+          ).trim();
+          setOriginalVerifiedPhone(verifiedPhone);
+          if (verifiedPhone) {
+            studentDetails = {
+              ...studentDetails,
+              parent_phone: verifiedPhone,
+            };
+          }
         }
       } catch {
         // Non-blocking fallback
@@ -358,10 +411,21 @@ export default function StudentEnrollment() {
         (s) => s.pose === 'front' && s.glasses === (result.wearsGlasses ? 'with' : 'without')
       )?.image || result.samples[0]?.image || '';
 
+    // Enforce locked phone security for PDF-imported records:
+    // If the phone is locked and user is self-enrolling (not staff/teacher/principal/admin), restore the original verified phone
+    const enforcedPhone = (isPhoneLocked && !canEditPhone && originalVerifiedPhone)
+      ? originalVerifiedPhone
+      : (details.parent_phone?.trim() || undefined);
+
+    const secureDetails: StudentDetails = {
+      ...details,
+      parent_phone: enforcedPhone || '',
+    };
+
     // 1. Sync face descriptors, 3D structure and details directly to Supabase (primary system of record)
     const supabaseSyncPromise = syncEnrolledFaceDataToSupabase({
       admission: details.admission_number || admission,
-      details,
+      details: secureDetails,
       samples: result.samples,
       wearsGlasses: result.wearsGlasses,
       primaryPhotoUrl: primaryPhoto,
@@ -384,7 +448,7 @@ export default function StudentEnrollment() {
         wearsGlasses: result.wearsGlasses,
         challenge: result.challenge,
         blinked: result.blinked,
-        changes: details,
+        changes: secureDetails,
       });
     } catch (err: unknown) {
       console.warn('Appwrite session submission fallback:', err);
@@ -414,8 +478,8 @@ export default function StudentEnrollment() {
           .update({
             email: emailVal,
             parent_email: emailVal,
-            parent_phone: details.parent_phone?.trim() || undefined,
-            phone: details.parent_phone?.trim() || undefined,
+            parent_phone: enforcedPhone,
+            phone: enforcedPhone,
             full_name: details.name?.trim() || undefined,
             display_name: details.name?.trim() || undefined,
             class: details.class?.trim() || undefined,
@@ -680,6 +744,8 @@ export default function StudentEnrollment() {
                         setDetails((prev) => (prev ? { ...prev, [field]: val } : prev))
                       }
                       disabled={busy}
+                      isPhoneLocked={isPhoneLocked}
+                      canEditPhone={canEditPhone}
                     />
                   </div>
                   <Button

@@ -22,8 +22,8 @@ export function cardToRegistrationStudent(card: ImportCard, targetCategory?: str
   for (const [key, val] of Object.entries(stored)) {
     const k = key as keyof ParsedCard;
     const str = String(val ?? '').trim();
-    if (str && (!parsed[k] || str.length > String(parsed[k] || '').length)) {
-      parsed[k] = str;
+    if (str && (!(parsed as any)[k] || str.length > String((parsed as any)[k] || '').length)) {
+      (parsed as any)[k] = str;
     }
   }
 

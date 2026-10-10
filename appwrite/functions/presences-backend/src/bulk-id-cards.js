@@ -72,7 +72,16 @@ export async function bulkIdCards(body, user, db, databaseId, fetcher = fetch) {
       let metadata = {};
       try { metadata = JSON.parse(previous?.metadata || '{}'); } catch { /* preserve available profile fields */ }
       const extra = Object.fromEntries(fields.filter(field => !Object.hasOwn(row, field) && typeof raw[field] === 'string' && raw[field].trim()).map(field => [field, raw[field].trim().slice(0, 120)]));
-      const data = { full_name: row.name, display_name: row.name, employee_id: row.admission_number, admission_number: row.admission_number, class: row.class, section: row.section, category: [row.class, row.section].filter(Boolean).join('-'), father_name: row.father_name, mother_name: row.mother_name, parent_phone: row.parent_phone, date_of_birth: row.date_of_birth, address: row.address, role: 'student', metadata: JSON.stringify({ ...metadata, ...extra }), updated_at: new Date().toISOString() };
+      const cleanPhone = (row.parent_phone || raw.phone || metadata.verified_parent_phone || '').trim();
+      const pdfMetadata = {
+        ...metadata,
+        ...extra,
+        phone_locked: true,
+        source: 'pdf_upload',
+        imported_from_pdf: true,
+        verified_parent_phone: cleanPhone,
+      };
+      const data = { full_name: row.name, display_name: row.name, employee_id: row.admission_number, admission_number: row.admission_number, class: row.class, section: row.section, category: [row.class, row.section].filter(Boolean).join('-'), father_name: row.father_name, mother_name: row.mother_name, parent_phone: row.parent_phone, date_of_birth: row.date_of_birth, address: row.address, role: 'student', metadata: JSON.stringify(pdfMetadata), updated_at: new Date().toISOString() };
       if (previous) {
         // Missing OCR fields must never erase existing verified student details.
         for (const field of Object.keys(data)) if (data[field] === '') delete data[field];

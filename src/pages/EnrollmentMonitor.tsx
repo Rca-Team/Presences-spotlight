@@ -997,7 +997,18 @@ export default function EnrollmentMonitor() {
       for (let offset = 0; offset < cards.length; offset += 3) {
         const batch = await idCardFunction<typeof result>({
           action: 'idcards.save', approveUpdates: true,
-          students: cards.slice(offset, offset + 3).map(card => ({ ...card, admission_number: card.employee_id, email: card.student_email || '' })),
+          students: cards.slice(offset, offset + 3).map(card => {
+            const cleanPhone = (card.parent_phone || card.phone || '').trim();
+            return {
+              ...card,
+              admission_number: card.employee_id,
+              email: card.student_email || '',
+              phone_locked: true,
+              source: 'pdf_upload',
+              imported_from_pdf: true,
+              verified_parent_phone: cleanPhone,
+            };
+          }),
         });
         result.saved.push(...batch.saved); result.failed.push(...batch.failed);
       }
@@ -1015,6 +1026,7 @@ export default function EnrollmentMonitor() {
         const { supabase } = await import('@/integrations/supabase/client');
         const rows = cards.map(c => {
           const adm = (c.employee_id || c.student_id_kv || '').trim();
+          const cleanPhone = (c.parent_phone || c.phone || '').trim();
           return {
             full_name: c.name.trim(),
             display_name: c.name.trim(),
@@ -1024,8 +1036,8 @@ export default function EnrollmentMonitor() {
             class: c.class?.trim() || null,
             section: c.section?.trim() || null,
             category: [c.class?.trim(), c.section?.trim()].filter(Boolean).join('-') || null,
-            parent_phone: c.parent_phone?.trim() || null,
-            phone: c.parent_phone?.trim() || c.phone?.trim() || null,
+            parent_phone: cleanPhone || null,
+            phone: cleanPhone || null,
             parent_name: c.parent_name || c.father_name || c.mother_name || null,
             father_name: c.father_name?.trim() || null,
             date_of_birth: c.date_of_birth?.trim() || null,
@@ -1038,6 +1050,10 @@ export default function EnrollmentMonitor() {
               student_id_kv: c.student_id_kv || '',
               mother_name: c.mother_name || '',
               address: c.address || '',
+              phone_locked: true,
+              source: 'pdf_upload',
+              imported_from_pdf: true,
+              verified_parent_phone: cleanPhone,
             }),
             updated_at: new Date().toISOString(),
           };
