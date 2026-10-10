@@ -11,7 +11,7 @@ echo.
 cd /d "%~dp0"
 
 echo [1/3] Verifying PyInstaller and Dependencies...
-python -m pip install pyinstaller mediapipe appwrite flask opencv-python numpy requests python-dotenv
+python -m pip install pyinstaller mediapipe appwrite PyQt6 opencv-python numpy requests python-dotenv
 
 echo.
 echo [2/3] Compiling Single-File Standalone Executable (.exe)...
@@ -27,7 +27,10 @@ pyinstaller --noconfirm --clean --onefile ^
     --hidden-import=appwrite.services.databases ^
     --hidden-import=appwrite.services.storage ^
     --hidden-import=google.genai ^
-    --hidden-import=flask ^
+    --hidden-import=PyQt6 ^
+    --hidden-import=PyQt6.QtCore ^
+    --hidden-import=PyQt6.QtGui ^
+    --hidden-import=PyQt6.QtWidgets ^
     --hidden-import=numpy ^
     --hidden-import=cv2 ^
     --hidden-import=face_recognition ^

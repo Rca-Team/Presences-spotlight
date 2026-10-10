@@ -358,7 +358,7 @@ export default function StudentEnrollment() {
         (s) => s.pose === 'front' && s.glasses === (result.wearsGlasses ? 'with' : 'without')
       )?.image || result.samples[0]?.image || '';
 
-    // 1. Sync face descriptors and details directly to Supabase (primary system of record)
+    // 1. Sync face descriptors, 3D structure and details directly to Supabase (primary system of record)
     const supabaseSyncPromise = syncEnrolledFaceDataToSupabase({
       admission: details.admission_number || admission,
       details,
@@ -366,6 +366,8 @@ export default function StudentEnrollment() {
       wearsGlasses: result.wearsGlasses,
       primaryPhotoUrl: primaryPhoto,
       replaceExisting,
+      face3DStructure: result.face3DStructure,
+      masterDescriptor: result.masterDescriptor,
     }).catch((syncErr) => {
       console.warn('Supabase descriptor sync notice:', syncErr);
       return { success: false, descriptorsCount: 0, photoUrl: undefined };

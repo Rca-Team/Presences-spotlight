@@ -10,3 +10,4 @@ dlib-bin
 face_recognition>=1.3.0
 torch>=2.0.0
 facenet-pytorch>=2.5.0
+PyQt6>=6.5.0

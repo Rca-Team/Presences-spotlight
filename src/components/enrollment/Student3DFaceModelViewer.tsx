@@ -24,6 +24,9 @@ export interface Student3DFaceModelProps {
   studentName?: string;
   admissionNumber?: string;
   className?: string;
+  face3DStructure?: any;
+  canonicalLandmarks?: Array<{ x: number; y: number; z: number; name?: string; region?: string }>;
+  pointCloud3D?: Array<{ id: number; x: number; y: number; z: number }>;
 }
 
 type ViewMode = 'full' | 'wireframe' | 'points';
@@ -36,6 +39,9 @@ export default function Student3DFaceModelViewer({
   studentName,
   admissionNumber,
   className = '',
+  face3DStructure,
+  canonicalLandmarks,
+  pointCloud3D,
 }: Student3DFaceModelProps) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const rendererRef = useRef<THREE.WebGLRenderer | null>(null);
@@ -267,15 +273,43 @@ export default function Student3DFaceModelViewer({
     wireMeshRef.current = wireMesh;
     scene.add(wireMesh);
 
-    // Layer C: Glowing Biometric Landmark Points
+    // Layer C: Glowing Biometric Landmark Points (Synthesized or True 68 Canonical Landmarks)
+    const trueLm = canonicalLandmarks || face3DStructure?.canonical_landmarks_3d;
+    let finalLandmarkPositions = landmarkPositions;
+    let finalColors: number[] | null = null;
+
+    if (trueLm && trueLm.length >= 68) {
+      finalLandmarkPositions = [];
+      finalColors = [];
+      trueLm.forEach((pt: any) => {
+        finalLandmarkPositions.push(pt.x * 1.5, pt.y * 1.5, (pt.z + 0.35) * 1.5);
+        const region = pt.region || (pt.index <= 16 ? 'jaw' : pt.index <= 26 ? 'eyebrows' : pt.index <= 35 ? 'nose' : pt.index <= 47 ? 'eyes' : 'mouth');
+        if (region === 'nose') {
+          finalColors!.push(0.06, 0.72, 0.5); // Emerald
+        } else if (region === 'eyes') {
+          finalColors!.push(0.22, 0.74, 0.97); // Cyan
+        } else if (region === 'mouth') {
+          finalColors!.push(0.96, 0.62, 0.04); // Amber
+        } else if (region === 'eyebrows') {
+          finalColors!.push(0.5, 0.55, 0.97); // Indigo
+        } else {
+          finalColors!.push(0.02, 0.52, 0.78); // Sky blue
+        }
+      });
+    }
+
     const landmarksGeometry = new THREE.BufferGeometry();
-    landmarksGeometry.setAttribute('position', new THREE.Float32BufferAttribute(landmarkPositions, 3));
+    landmarksGeometry.setAttribute('position', new THREE.Float32BufferAttribute(finalLandmarkPositions, 3));
+    if (finalColors) {
+      landmarksGeometry.setAttribute('color', new THREE.Float32BufferAttribute(finalColors, 3));
+    }
     const landmarksMaterial = new THREE.PointsMaterial({
-      color: 0x34d399, // Emerald highlight
-      size: 0.045,
+      color: finalColors ? 0xffffff : 0x34d399,
+      vertexColors: Boolean(finalColors),
+      size: finalColors ? 0.055 : 0.045,
       sizeAttenuation: true,
       transparent: true,
-      opacity: 0.9,
+      opacity: 0.95,
     });
     const landmarkPoints = new THREE.Points(landmarksGeometry, landmarksMaterial);
     landmarkPointsRef.current = landmarkPoints;

@@ -124,6 +124,8 @@ export interface FaceSample {
   glasses: 'with' | 'without'; 
   image: string; 
   descriptor: number[]; 
+  landmarks?: { x: number; y: number }[];
+  landmarks3d?: { index: number; name: string; region: string; x: number; y: number; z: number }[];
   quality: { 
     brightness: number; 
     sharpness: number; 
@@ -142,6 +144,8 @@ export interface CaptureResult {
   challenge: 'left' | 'right'; 
   qualityFlags?: string[];
   overallClarityScore?: number;
+  face3DStructure?: any;
+  masterDescriptor?: number[];
 }
 
 export interface EnrollmentSession { 

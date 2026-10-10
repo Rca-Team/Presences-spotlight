@@ -3,6 +3,11 @@ import { syncFromSupabase as syncDescriptorCache } from '@/services/face-recogni
 import { uploadImage } from '@/services/face-recognition/StorageService';
 import type { FaceSample, StudentDetails } from './types';
 import { v4 as uuidv4 } from 'uuid';
+import { 
+  buildCanonical3DFaceStructure, 
+  synthesizeMasterFaceDescriptor,
+  type Face3DStructure 
+} from './face3DReconstruction';
 
 export interface SyncFaceDataOptions {
   admission: string;
@@ -11,6 +16,8 @@ export interface SyncFaceDataOptions {
   wearsGlasses?: boolean;
   primaryPhotoUrl?: string;
   replaceExisting?: boolean;
+  face3DStructure?: Face3DStructure;
+  masterDescriptor?: number[];
 }
 
 /**
@@ -123,6 +130,8 @@ export async function syncEnrolledFaceDataToSupabase({
   wearsGlasses = false,
   primaryPhotoUrl,
   replaceExisting = true,
+  face3DStructure,
+  masterDescriptor,
 }: SyncFaceDataOptions): Promise<{ success: boolean; descriptorsCount: number; photoUrl?: string }> {
   const cleanAdmission = String(admission || '').trim();
   if (!cleanAdmission || !samples || samples.length === 0) {
@@ -251,13 +260,47 @@ export async function syncEnrolledFaceDataToSupabase({
       }
     }
 
-    // 4. Batch insert fresh multi-angle descriptors into face_descriptors table
-    const descriptorsToInsert: any[] = [];
+    // 4. Synthesize Master Centroid Biometric Descriptor & 3D Structure
     const validSamples = samples.filter((s) => s.descriptor && s.descriptor.length >= 64);
+    const masterPkg = synthesizeMasterFaceDescriptor(validSamples);
+    const effectiveMasterDescriptor = masterDescriptor || masterPkg.masterDescriptor;
+    const canonicalFace3D = face3DStructure || buildCanonical3DFaceStructure(validSamples);
 
+    // 5. Batch insert descriptors into face_descriptors table
+    // Prepend Master Centroid Descriptor as primary row for fastest & most robust recognition match
+    const descriptorsToInsert: any[] = [];
+
+    if (effectiveMasterDescriptor && effectiveMasterDescriptor.length >= 64) {
+      descriptorsToInsert.push({
+        user_id: stableStudentUserId,
+        student_id: cleanAdmission,
+        student_name: studentName,
+        label: studentName,
+        descriptor: JSON.stringify(effectiveMasterDescriptor),
+        image_url: primaryPublicUrl,
+        class: parsedClass,
+        section: parsedSection,
+        category: normalizedCategory,
+        metadata: {
+          pose: 'master_centroid',
+          is_primary: true,
+          quality: { sharpness: 95, brightness: 128, clarityScore: masterPkg.qualityScore },
+          wearsGlasses,
+          sample_count: validSamples.length,
+          intra_cluster_coherence: masterPkg.intraClusterCoherence,
+          face_3d_structure_version: canonicalFace3D.version,
+          facial_metrics: canonicalFace3D.facial_metrics,
+          storage_path: `students/${cleanAdmission}/faces/front.jpg`,
+          storage_bucket: 'student-registration-faces',
+          enrollment_version: '3d_master_centroid_v3',
+          captured_at: new Date().toISOString(),
+        },
+      });
+    }
+
+    // Follow with each individual multi-angle pose descriptor
     for (let i = 0; i < validSamples.length; i++) {
       const s = validSamples[i];
-      const isPrimary = s === primarySample || (s.pose === 'front' && i === 0);
       const descStr = typeof s.descriptor === 'string' ? s.descriptor : JSON.stringify(Array.from(s.descriptor));
       const sampleImageUrl = poseToUrl.get(s.pose) || primaryPublicUrl || undefined;
       const sampleStoragePath = poseToPath.get(s.pose) || `students/${cleanAdmission}/faces/${s.pose}.jpg`;
@@ -279,9 +322,10 @@ export async function syncEnrolledFaceDataToSupabase({
           wearsGlasses,
           storage_path: sampleStoragePath,
           storage_bucket: 'student-registration-faces',
-          enrollment_version: '3d_guided_v2',
+          enrollment_version: '3d_guided_v3',
           captured_at: new Date().toISOString(),
-          is_primary: isPrimary,
+          is_primary: false,
+          landmarks_3d_count: s.landmarks3d?.length || (s.landmarks?.length ? 68 : 0),
         },
       });
     }
@@ -294,29 +338,13 @@ export async function syncEnrolledFaceDataToSupabase({
       if (insertErr) {
         console.warn('[SyncFaceData] face_descriptors insert error:', insertErr.message);
       } else {
-        console.log(`[SyncFaceData] Inserted ${descriptorsToInsert.length} multi-angle descriptors for ${studentName} (${cleanAdmission})`);
+        console.log(`[SyncFaceData] Inserted ${descriptorsToInsert.length} biometric descriptors (including Master Centroid) for ${studentName} (${cleanAdmission})`);
       }
     }
 
-    // 5. Build and upload complete 3D facial model JSON artifact
-    const descriptorVectors = validSamples.map((s) => Array.from(s.descriptor).map(Number));
-    const dim = descriptorVectors[0]?.length || 128;
-    const averagedDescriptor = new Array(dim).fill(0);
-    for (const vec of descriptorVectors) {
-      for (let j = 0; j < dim; j++) {
-        averagedDescriptor[j] += (vec[j] || 0) / descriptorVectors.length;
-      }
-    }
-
-    const pointCloud3D = descriptorVectors.map((vec, idx) => ({
-      id: idx + 1,
-      x: Number((vec[0] || 0).toFixed(6)),
-      y: Number((vec[1] || 0).toFixed(6)),
-      z: Number((vec[2] || 0).toFixed(6)),
-    }));
-
+    // 6. Build and upload complete 3D facial model JSON artifact
     const modelArtifact = {
-      version: 'face-model-v2',
+      version: 'face-model-v3',
       created_at: new Date().toISOString(),
       student_id: cleanAdmission,
       employee_id: cleanAdmission,
@@ -324,12 +352,18 @@ export async function syncEnrolledFaceDataToSupabase({
       class: parsedClass,
       section: parsedSection,
       category: normalizedCategory,
-      capture_mode: 'guided-3d-true-depth',
+      capture_mode: 'guided-3d-true-depth-v3',
       sample_count: validSamples.length,
-      descriptor_dimensions: dim,
-      averaged_descriptor: averagedDescriptor,
-      descriptor_cloud: descriptorVectors,
-      point_cloud_3d_equivalent: pointCloud3D,
+      descriptor_dimensions: masterPkg.dimensions,
+      averaged_descriptor: effectiveMasterDescriptor,
+      descriptor_cloud: masterPkg.descriptorCloud,
+      face_3d_structure: canonicalFace3D,
+      canonical_landmarks_3d: canonicalFace3D.canonical_landmarks_3d,
+      point_cloud_3d: canonicalFace3D.point_cloud_3d,
+      point_cloud_3d_equivalent: canonicalFace3D.point_cloud_3d,
+      triangulated_mesh: canonicalFace3D.triangulated_mesh,
+      facial_metrics: canonicalFace3D.facial_metrics,
+      intra_cluster_coherence: masterPkg.intraClusterCoherence,
       sample_poses: validSamples.map((s) => s.pose),
       sample_images: allSampleUrls,
       sample_storage_paths: allSamplePaths,

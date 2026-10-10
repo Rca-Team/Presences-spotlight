@@ -119,13 +119,25 @@ export async function extractCards(file: File, columns = 0, rows = 0, progress: 
             const faceapi = await import('face-api.js');
             if (!faceapi.nets.tinyFaceDetector.isLoaded) await wait(faceapi.nets.tinyFaceDetector.loadFromUri('/models'));
             check();
-            const faces = await wait(faceapi.detectAllFaces(crop, new faceapi.TinyFaceDetectorOptions({ inputSize: 416, scoreThreshold: 0.45 })).run());
-            if (faces.length === 1) {
-              const b = faces[0].box, pad = b.width * 0.2;
-              const sx = Math.max(0, b.x - pad), sy = Math.max(0, b.y - pad);
-              const pic = document.createElement('canvas'); pic.width = 256; pic.height = 320;
-              pic.getContext('2d')!.drawImage(crop, sx, sy, Math.min(crop.width - sx, b.width + 2 * pad), Math.min(crop.height - sy, b.height + 2 * pad), 0, 0, 256, 320);
-              portrait = pic.toDataURL('image/jpeg', 0.85); pic.width = pic.height = 0;
+            const faces = await wait(faceapi.detectAllFaces(crop, new faceapi.TinyFaceDetectorOptions({ inputSize: 416, scoreThreshold: 0.40 })).run());
+            let detected = faces.slice().sort((a, b) => (b.box.width * b.box.height) - (a.box.width * a.box.height));
+            if (detected.length === 0) {
+              const retryFaces = await wait(faceapi.detectAllFaces(crop, new faceapi.TinyFaceDetectorOptions({ inputSize: 512, scoreThreshold: 0.22 })).run());
+              detected = retryFaces.slice().sort((a, b) => (b.box.width * b.box.height) - (a.box.width * a.box.height));
+            }
+            if (detected.length > 0) {
+              const b = detected[0].box;
+              if (b.width >= 16 && b.height >= 16) {
+                const padX = b.width * 0.25;
+                const padY = b.height * 0.35;
+                const sx = Math.max(0, b.x - padX);
+                const sy = Math.max(0, b.y - padY * 0.85);
+                const sw = Math.min(crop.width - sx, b.width + 2 * padX);
+                const sh = Math.min(crop.height - sy, b.height + 1.85 * padY);
+                const pic = document.createElement('canvas'); pic.width = 256; pic.height = 320;
+                pic.getContext('2d')!.drawImage(crop, sx, sy, sw, sh, 0, 0, 256, 320);
+                portrait = pic.toDataURL('image/jpeg', 0.88); pic.width = pic.height = 0;
+              }
             }
           } catch { check(); /* Portrait extraction is optional; never fabricate a portrait. */ }
         }

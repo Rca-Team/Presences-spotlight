@@ -202,7 +202,53 @@ class LocalDatabase:
                     marked_at TEXT
                 )
             """)
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS daily_attendance_logs (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    student_key TEXT,
+                    student_name TEXT,
+                    class_name TEXT,
+                    section TEXT,
+                    status TEXT,
+                    confidence REAL,
+                    marked_time TEXT,
+                    session_date TEXT
+                )
+            """)
             conn.commit()
+
+    def log_attendance(self, student_key: str, student_name: str, class_name: str, section: str, status: str, confidence: float, marked_time: str, session_date: str):
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("""
+                INSERT INTO daily_attendance_logs 
+                (student_key, student_name, class_name, section, status, confidence, marked_time, session_date)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            """, (str(student_key), str(student_name), str(class_name or ""), str(section or ""), str(status), float(confidence), str(marked_time), str(session_date)))
+            conn.commit()
+
+    def get_today_logs(self, session_date: str) -> List[Dict]:
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("""
+                SELECT student_key, student_name, class_name, section, status, confidence, marked_time
+                FROM daily_attendance_logs
+                WHERE session_date = ?
+                ORDER BY id DESC
+            """, (str(session_date),))
+            rows = cursor.fetchall()
+            logs = []
+            for r in rows:
+                logs.append({
+                    "student_key": r[0],
+                    "student_name": r[1],
+                    "class_name": r[2],
+                    "section": r[3],
+                    "status": r[4],
+                    "confidence": r[5],
+                    "marked_time": r[6],
+                })
+            return logs
 
     def is_already_marked_today(self, student_key: str, date_str: str) -> bool:
         with self._get_connection() as conn:
@@ -706,15 +752,28 @@ class SpotlightEngine:
         self.google_pipeline = GoogleFacePipeline()
         self.gemini_auditor = GoogleGeminiAuditor()
 
-        # Fallback OpenCV Haar Cascade
-        xml_path = getattr(cv2.data, 'haarcascades', '') + 'haarcascade_frontalface_default.xml'
-        self.face_cascade = cv2.CascadeClassifier(xml_path)
-
         # Initialize audio chime
         generate_chime(config.CHIME_PATH)
 
+        self.attendance_callback = None
+
+        # Restore today's attendance session state from local database
+        today_str = datetime.now().strftime("%Y-%m-%d")
+        existing_logs = self.db.get_today_logs(today_str)
+        self.counter_total_present = len(existing_logs)
+        self.counter_on_time = sum(1 for log in existing_logs if log.get("status") == "present")
+        self.counter_late = sum(1 for log in existing_logs if log.get("status") == "late")
+
         # Initial student sync from Appwrite
         self.sync_students()
+
+    def start_worker(self):
+        """Starts the background AI inference thread if not already running."""
+        if not self.running:
+            self.running = True
+            t = threading.Thread(target=self._inference_worker, daemon=True)
+            t.start()
+            return t
 
     def sync_students(self):
         """Loads student face descriptors into contiguous NumPy matrix for C-speed Euclidean search."""
@@ -879,6 +938,34 @@ class SpotlightEngine:
 
         threading.Thread(target=_async_push, daemon=True).start()
         threading.Thread(target=lambda: self.cloud.send_parent_notification_with_rate_limit(student, status), daemon=True).start()
+
+        self.db.log_attendance(
+            student_key=student_key,
+            student_name=student_name,
+            class_name=student.get('class_name', ''),
+            section=student.get('section', ''),
+            status=status,
+            confidence=confidence_score,
+            marked_time=time_formatted,
+            session_date=today_str
+        )
+
+        record_data = {
+            "student_key": student_key,
+            "student_name": student_name,
+            "class_name": student.get('class_name', ''),
+            "section": student.get('section', ''),
+            "status": status,
+            "confidence": confidence_score,
+            "time": time_formatted,
+            "iso_timestamp": iso_timestamp,
+            "synced": True
+        }
+        if callable(self.attendance_callback):
+            try:
+                self.attendance_callback(record_data)
+            except Exception as cb_err:
+                print(f"[Spotlight Callback Note] {cb_err}")
 
     def _inference_worker(self):
         """Asynchronous AI worker thread processing face embeddings without stalling the video feed."""

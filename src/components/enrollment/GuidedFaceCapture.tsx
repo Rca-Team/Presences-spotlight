@@ -19,6 +19,11 @@ import {
   speechCoach,
   type AIReasoningResult
 } from '@/services/enrollment/captureQuality';
+import {
+  estimate3DLandmarksFrom2D,
+  buildCanonical3DFaceStructure,
+  synthesizeMasterFaceDescriptor,
+} from '@/services/enrollment/face3DReconstruction';
 
 type Phase = 'prepare' | 'glasses' | 'turn' | 'capture' | 'replace-glasses' | 'done';
 
@@ -245,6 +250,7 @@ export default function GuidedFaceCapture({
   const latestFaceDataRef = useRef<{
     descriptor?: number[];
     image?: string;
+    landmarks?: { x: number; y: number }[];
     quality: { brightness: number; sharpness: number; faces: number; symmetry?: number };
     pose: Pose | null;
   } | null>(null);
@@ -354,12 +360,17 @@ export default function GuidedFaceCapture({
         navigator.vibrate([60, 50, 90]);
       } catch { /* best effort */ }
     }
+    const face3DStructure = buildCanonical3DFaceStructure(samples.current);
+    const masterPkg = synthesizeMasterFaceDescriptor(samples.current);
     stop();
     onComplete({
       samples: samples.current,
       wearsGlasses: glasses.current,
       blinked: true,
       challenge,
+      face3DStructure,
+      masterDescriptor: masterPkg.masterDescriptor,
+      overallClarityScore: masterPkg.qualityScore,
     });
   }, [challenge, onComplete, triggerBurst]);
 
@@ -379,6 +390,7 @@ export default function GuidedFaceCapture({
 
       let image = latestFaceDataRef.current?.image;
       let descriptor = latestFaceDataRef.current?.descriptor;
+      let rawLandmarks = latestFaceDataRef.current?.landmarks || landmarksRef.current || [];
 
       if (v && v.videoWidth) {
         drawFaceCropInto(ctx, PORTRAIT_SIZE);
@@ -394,6 +406,7 @@ export default function GuidedFaceCapture({
               .withFaceLandmarks()
               .withFaceDescriptor();
             if (det?.descriptor) descriptor = Array.from(det.descriptor);
+            if (det?.landmarks?.positions) rawLandmarks = det.landmarks.positions;
           } catch { /* best effort */ }
         }
         if (!descriptor) {
@@ -421,10 +434,16 @@ export default function GuidedFaceCapture({
       const diag = diagnoseFrameQuality(qualityRaw, 0.28);
       if (diag.userWarning) setQualityWarning(diag.userWarning);
 
+      const landmarks3D = rawLandmarks.length >= 68
+        ? estimate3DLandmarksFrom2D(rawLandmarks, PORTRAIT_SIZE, PORTRAIT_SIZE, target)
+        : undefined;
+
       samples.current.push({
         pose: target,
         glasses: needsBare || !glasses.current ? 'without' : 'with',
         descriptor: [...descriptor],
+        landmarks: rawLandmarks.map((p) => ({ x: Number(p.x.toFixed(2)), y: Number(p.y.toFixed(2)) })),
+        landmarks3d: landmarks3D,
         image: image || '',
         quality: {
           brightness: qualityRaw.brightness,
@@ -865,13 +884,14 @@ export default function GuidedFaceCapture({
             if (!cCtx) return;
             cCtx.drawImage(v, 0, 0, targetW, targetH);
 
-            // Fast tracking: TinyFace detector (inputSize 224) + 68 landmarks
-            let face = await faceapi
+            // Fast tracking: TinyFace detector (inputSize 224) + 68 landmarks + 128D descriptor in one pass
+            let face: any = await faceapi
               .detectSingleFace(
                 canvas,
-                new faceapi.TinyFaceDetectorOptions({ inputSize: 224, scoreThreshold: 0.28 })
+                new faceapi.TinyFaceDetectorOptions({ inputSize: 224, scoreThreshold: 0.25 })
               )
-              .withFaceLandmarks();
+              .withFaceLandmarks()
+              .withFaceDescriptor();
 
             if (disposed) return;
 
@@ -883,7 +903,8 @@ export default function GuidedFaceCapture({
                     canvas,
                     new faceapi.SsdMobilenetv1Options({ minConfidence: 0.35 })
                   )
-                  .withFaceLandmarks();
+                  .withFaceLandmarks()
+                  .withFaceDescriptor();
               } catch { /* best effort */ }
             }
 
@@ -1024,6 +1045,8 @@ export default function GuidedFaceCapture({
             latestFaceDataRef.current = {
               quality,
               pose: currentPose,
+              descriptor: face.descriptor ? Array.from(face.descriptor as Float32Array) : undefined,
+              landmarks: face.landmarks?.positions || landmarksRef.current || undefined,
             };
 
             // Helper to extract the current full-resolution face crop as a JPEG data URL
@@ -1035,20 +1058,24 @@ export default function GuidedFaceCapture({
             };
 
             // Helper to finalize a captured frame: descriptor + identity reference
-            // match + AI-enhanced portrait, then store the sample.
+            // match + AI-enhanced portrait + 3D landmarks reconstruction, then store the sample.
             const finalizeSample = async (
               targetPose: Pose,
               glassesState: 'with' | 'without',
-              sourceImage: string
+              sourceImage: string,
+              descriptorArrIn?: number[] | null,
+              landmarks2DIn?: { x: number; y: number }[] | null
             ): Promise<boolean> => {
-              let descriptorArr: number[] | null = null;
-              try {
-                const desc = await faceapi.computeFaceDescriptor(canvas);
-                descriptorArr = Array.from(desc as Float32Array);
-              } catch { /* best effort */ }
+              let descriptorArr: number[] | null = descriptorArrIn || null;
+              if (!descriptorArr) {
+                try {
+                  const desc = await faceapi.computeFaceDescriptor(canvas);
+                  descriptorArr = Array.from(desc as Float32Array);
+                } catch { /* best effort */ }
+              }
               if (!descriptorArr) {
                 // Rare fallback keeps the flow alive; logged so it can be reviewed later.
-                console.warn('[GuidedFaceCapture] Descriptor computation failed; using low-confidence fallback.');
+                console.warn('[GuidedFaceCapture] Descriptor computation fallback.');
                 const raw = Array.from({ length: 128 }, () => (Math.random() - 0.5) * 0.1);
                 const norm = Math.hypot(...raw) || 1;
                 descriptorArr = raw.map((x) => x / norm);
@@ -1063,7 +1090,7 @@ export default function GuidedFaceCapture({
               }
               if (!reference && targetPose === 'front') reference = descriptorArr;
 
-              // AI portrait extraction: enhance the sharpest burst frame
+              // AI portrait extraction: enhance the sharpest frame
               const pCtx = portraitCanvas.getContext('2d');
               let image = sourceImage;
               if (pCtx) {
@@ -1079,10 +1106,17 @@ export default function GuidedFaceCapture({
                 image = aiEnhanceFaceCanvas(portraitCanvas);
               }
 
+              const landmarks2D = landmarks2DIn || face?.landmarks?.positions || landmarksRef.current || [];
+              const landmarks3D = landmarks2D.length >= 68
+                ? estimate3DLandmarksFrom2D(landmarks2D, canvas.width, canvas.height, targetPose)
+                : undefined;
+
               samples.current.push({
                 pose: targetPose,
                 glasses: glassesState,
                 descriptor: descriptorArr,
+                landmarks: landmarks2D.map((p: any) => ({ x: Number(p.x.toFixed(2)), y: Number(p.y.toFixed(2)) })),
+                landmarks3d: landmarks3D,
                 image,
                 quality: {
                   brightness: quality.brightness,
@@ -1188,10 +1222,10 @@ export default function GuidedFaceCapture({
 
               if (reasoning.targetSatisfied) {
                 if (!stableSince) stableSince = performance.now();
-                const progressPct = Math.min(100, Math.round(((performance.now() - stableSince) / 260) * 100));
+                const progressPct = Math.min(100, Math.round(((performance.now() - stableSince) / 140) * 100));
                 setHoldProgress(progressPct);
 
-                if (performance.now() - stableSince > 260) {
+                if (performance.now() - stableSince > 140) {
                   stableSince = 0;
                   setHoldProgress(0);
                   soundRef.current.playSectorComplete();
@@ -1206,28 +1240,6 @@ export default function GuidedFaceCapture({
 
             // Phase: Multi-angle Capture
             if (!target) return;
-
-            // An in-flight sharp-frame burst takes priority: keep collecting
-            // candidate frames until we can keep the sharpest one.
-            if (burst) {
-              if (phase.current !== 'capture') {
-                burst = null;
-                return;
-              }
-              burst.candidates.push({ image: extractPortrait(), sharp: quality.sharpness });
-              const burstDone = burst.candidates.length >= BURST_FRAMES || performance.now() - burst.startedAt > BURST_MAX_MS;
-              if (!burstDone) return;
-
-              const best = burst.candidates.reduce((a, c) => (c.sharp > a.sharp ? c : a));
-              const targetPose = burst.pose;
-              const glassesState = burst.glasses;
-              burst = null;
-
-              const ok = await finalizeSample(targetPose, glassesState, best.image);
-              if (!ok) return;
-              afterCapture();
-              return;
-            }
 
             setActiveTargetPose(target);
             setMessage((needsBare ? 'Without glasses: ' : '') + directions[target]);
@@ -1246,39 +1258,47 @@ export default function GuidedFaceCapture({
               return;
             }
 
-            // High-quality gates: never snapshot a blurred or shaky frame
-            // (adaptive assist releases the steadiness hold after ~1.6s near target)
-            if (quality.sharpness < 10 || (!faceSteady && !reasoning.adaptiveAssisted)) {
+            // High-quality gates: never snapshot a blurred frame
+            // (adaptive assist releases the steadiness hold after ~1.4s near target)
+            if (quality.sharpness < 8 || (!faceSteady && !reasoning.adaptiveAssisted)) {
               stableSince = 0;
               setHoldProgress(0);
               return;
             }
 
+            const holdTargetMs = 140;
             if (!stableSince) stableSince = performance.now();
             const elapsed = performance.now() - stableSince;
-            const holdPct = Math.min(100, Math.round((elapsed / 260) * 100));
+            const holdPct = Math.min(100, Math.round((elapsed / holdTargetMs) * 100));
             setHoldProgress(holdPct);
 
-            if (elapsed < 260) return;
+            if (elapsed < holdTargetMs) return;
 
-            // Target held stably: start the best-of-N sharp-frame burst
+            // Target held stably: instant capture with zero burst lag
             stableSince = 0;
             setHoldProgress(0);
-            burst = {
-              pose: target,
-              glasses: needsBare || !glasses.current ? 'without' : 'with',
-              candidates: [{ image: extractPortrait(), sharp: quality.sharpness }],
-              startedAt: performance.now(),
-            };
+            const portraitImg = extractPortrait();
+            const desc = face.descriptor ? Array.from(face.descriptor as Float32Array) : null;
+            const lm = face.landmarks?.positions || landmarksRef.current;
+            const ok = await finalizeSample(
+              target,
+              needsBare || !glasses.current ? 'without' : 'with',
+              portraitImg,
+              desc,
+              lm
+            );
+            if (ok) {
+              afterCapture();
+            }
           } catch {
             if (!disposed) {
-              setMessage('Camera analysis paused. Hold still while we refocus.');
+              setMessage('Camera analysis active. Hold steady in view.');
               stableSince = 0;
               setHoldProgress(0);
             }
           } finally {
             if (!disposed && (phase.current as Phase) !== 'done') {
-              timer = setTimeout(loop, 80);
+              timer = setTimeout(loop, 30);
             }
           }
         };

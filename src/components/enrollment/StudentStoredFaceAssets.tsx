@@ -14,6 +14,9 @@ type Artifact = {
   descriptor_dimensions?: number;
   sample_images?: string[];
   point_cloud_3d_equivalent?: { id: number; x: number; y: number; z: number }[];
+  point_cloud_3d?: { id: number; x: number; y: number; z: number }[];
+  canonical_landmarks_3d?: any[];
+  face_3d_structure?: any;
   averaged_descriptor?: number[];
   descriptor_cloud?: number[][];
   sample_poses?: string[];
@@ -243,6 +246,9 @@ export default function StudentStoredFaceAssets({ student }: { student: MonitorS
                 samplePoses={artifact?.sample_poses || ['front', 'left', 'right', 'up', 'down']}
                 studentName={student.name}
                 admissionNumber={student.admission_number}
+                face3DStructure={artifact?.face_3d_structure}
+                canonicalLandmarks={artifact?.canonical_landmarks_3d || artifact?.face_3d_structure?.canonical_landmarks_3d}
+                pointCloud3D={artifact?.point_cloud_3d || artifact?.face_3d_structure?.point_cloud_3d}
               />
             </Suspense>
           </div>

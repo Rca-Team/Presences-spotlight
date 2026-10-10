@@ -4,7 +4,7 @@ cls
 echo Creating desktop shortcut for Presences Spotlight AI...
 
 set SCRIPT_DIR=%~dp0
-set TARGET_BAT=%SCRIPT_DIR%START_SPOTLIGHT.bat
+set TARGET_BAT=%SCRIPT_DIR%START_DESKTOP_APP.bat
 set SHORTCUT_NAME=Presences Spotlight Gate.lnk
 set DESKTOP_DIR=%USERPROFILE%\Desktop
 
