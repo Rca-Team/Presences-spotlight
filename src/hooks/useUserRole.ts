@@ -38,20 +38,36 @@ export const useUserRole = (): UseUserRoleReturn => {
 
       setUserId(user.id);
 
-      if (roleCache.has(user.id)) {
-        setRole(roleCache.get(user.id)!);
-        setIsLoading(false);
-      }
-
-      // Fast check user_metadata for admin or enroller
-      const metaRole = user.user_metadata?.role || user.app_metadata?.role;
-      if (metaRole === 'admin') {
+      // 0. Superadmin bypass for atl@gmail.com
+      if (user.email?.toLowerCase().trim() === 'atl@gmail.com') {
         roleCache.set(user.id, 'admin');
         setRole('admin');
         setIsLoading(false);
         return;
       }
-      if (metaRole === 'enroller' || metaRole === 'student_coordinator') {
+
+      if (roleCache.has(user.id)) {
+        setRole(roleCache.get(user.id)!);
+        setIsLoading(false);
+      }
+
+      // Fast check user_metadata / labels for admin or enroller
+      const metaRole = String(user.user_metadata?.role || user.app_metadata?.role || '').toLowerCase();
+      const labels: string[] = (user.app_metadata?.labels || user.user_metadata?.labels || []).map((l: any) => String(l).toLowerCase());
+
+      if (metaRole === 'admin' || labels.includes('admin') || labels.includes('superadmin')) {
+        roleCache.set(user.id, 'admin');
+        setRole('admin');
+        setIsLoading(false);
+        return;
+      }
+      if (metaRole === 'principal' || labels.includes('principal')) {
+        roleCache.set(user.id, 'principal');
+        setRole('principal');
+        setIsLoading(false);
+        return;
+      }
+      if (metaRole === 'enroller' || metaRole === 'student_coordinator' || labels.includes('enroller') || labels.includes('student_coordinator')) {
         roleCache.set(user.id, 'enroller');
         setRole('enroller');
         setIsLoading(false);
@@ -88,8 +104,12 @@ export const useUserRole = (): UseUserRoleReturn => {
       roleCache.set(user.id, resolved);
       setRole(resolved);
     } catch (error) {
-      console.error('Error fetching user role:', error);
-      setRole('user');
+      console.warn('Error fetching user role from database, falling back safely:', error);
+      if (userId && roleCache.has(userId)) {
+        setRole(roleCache.get(userId)!);
+      } else {
+        setRole('user');
+      }
     } finally {
       setIsLoading(false);
     }

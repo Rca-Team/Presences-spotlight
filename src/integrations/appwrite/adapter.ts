@@ -409,6 +409,10 @@ export class AppwriteQueryBuilder<T = any> implements PromiseLike<{ data: T | nu
         if (err?.code === 404 || err?.message?.includes('could not be found') || err?.message?.includes('Collection with the requested ID')) {
           return { documents: [], total: 0 };
         }
+        if (err?.code === 402 || err?.message?.includes('Database reads limit') || err?.message?.includes('billing cycle') || err?.message?.includes('budget cap')) {
+          console.warn(`[AppwriteAdapter] Appwrite read limit reached (402) on "${this.collectionName}". Serving fallback data.`);
+          return { documents: [], total: 0 };
+        }
         throw err;
       }
     }
@@ -459,6 +463,12 @@ export class AppwriteQueryBuilder<T = any> implements PromiseLike<{ data: T | nu
         return result;
       } catch (err: any) {
         if (err?.code === 404 || err?.message?.includes('could not be found') || err?.message?.includes('Collection with the requested ID')) {
+          return { documents: [], total: 0 };
+        }
+        if (err?.code === 402 || err?.message?.includes('Database reads limit') || err?.message?.includes('billing cycle') || err?.message?.includes('budget cap')) {
+          console.warn(`[AppwriteAdapter] Appwrite read limit reached (402) on "${this.collectionName}". Serving cached or empty fallback.`);
+          const cached = queryCache.get(cacheKey);
+          if (cached) return { documents: [...cached.data.documents], total: cached.data.total };
           return { documents: [], total: 0 };
         }
         throw err;
@@ -640,18 +650,22 @@ class AppwriteAuthClient {
 
   private formatUser(u: any): any {
     if (!u) return null;
-    const isSuperAdmin = (u.labels || []).includes('admin') || (u.labels || []).includes('superadmin');
+    const email = String(u.email || '').toLowerCase().trim();
+    const isSuperAdmin = (u.labels || []).includes('admin') || (u.labels || []).includes('superadmin') || email === 'atl@gmail.com';
     return {
       id: u.$id || u.id || 'admin_user',
       email: u.email || 'admin@presences.dev',
       phone: u.phone,
       email_confirmed_at: u.emailVerification ? u.$updatedAt : new Date().toISOString(),
       user_metadata: {
-        name: u.name || 'School Principal',
+        name: u.name || (email === 'atl@gmail.com' ? 'ATL Superadmin' : 'School Principal'),
         ...(u.prefs || {}),
         role: isSuperAdmin ? 'admin' : 'user',
       },
-      app_metadata: { role: isSuperAdmin ? 'admin' : 'user', labels: u.labels || [] },
+      app_metadata: {
+        role: isSuperAdmin ? 'admin' : 'user',
+        labels: isSuperAdmin ? ['admin', 'principal', 'superadmin', 'teacher', 'enroller'] : (u.labels || [])
+      },
       created_at: u.$createdAt || new Date().toISOString(),
       updated_at: u.$updatedAt || new Date().toISOString()
     };

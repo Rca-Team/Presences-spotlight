@@ -18,6 +18,12 @@ import { hasTeacherAccess } from '@/utils/teacherAccess';
 
 const resolvePostLoginRoute = async (userId: string, defaultTarget: string) => {
   try {
+    const { data: { user } } = await (supabase as any).auth.getUser();
+    if (user?.email?.toLowerCase().trim() === 'atl@gmail.com') {
+      if (defaultTarget && defaultTarget !== '/') return defaultTarget;
+      return '/admin';
+    }
+
     const [userRolesRes, profileRes, hasAccess] = await Promise.all([
       (supabase as any).from('user_roles').select('role').eq('user_id', userId),
       (supabase as any).from('profiles').select('role').eq('user_id', userId).maybeSingle(),
