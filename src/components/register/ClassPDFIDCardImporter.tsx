@@ -65,9 +65,9 @@ function getFileTypeLabel(f: File): 'PDF' | 'EXCEL' | 'MHT' | 'IMAGE' {
 
 export function ClassPDFIDCardImporter({ isOpen, onClose, onImportDrafts, initialClass, saveLabel = 'Import Enrolled Students' }: ClassPDFIDCardImporterProps) {
   const { toast } = useToast();
-  const { isAdmin, isPrincipal, isTeacher, userId } = useUserRole();
+  const { isAdmin, isPrincipal, isTeacher, isEnroller, userId } = useUserRole();
   const isAdminOrPrincipal = isAdmin || isPrincipal;
-  const isAuthorized = isAdminOrPrincipal;
+  const isAuthorized = isAdminOrPrincipal || isTeacher || isEnroller;
   const [teacherClasses, setTeacherClasses] = useState<string[]>([]);
   const [selectedClass, setSelectedClass] = useState(initialClass || 'auto');
   const [files, setFiles] = useState<File[]>([]);

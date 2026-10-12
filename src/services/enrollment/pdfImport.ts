@@ -1,4 +1,5 @@
 import { detectCanvasCardGrid, detectCardGrid, layoutCardSheet, parseCardText, splitMultiCardText, textInRegion, type PositionedText } from './pdfParser';
+import { extractPageWithGemini, hasGeminiApiKey } from './geminiCardExtractor';
 import type { ImportCard } from './types';
 import ocrWorkerUrl from 'tesseract.js/dist/worker.min.js?url';
 import ocrCoreUrl from 'tesseract.js-core/tesseract-core-lstm.wasm.js?url';
@@ -9,6 +10,7 @@ export interface ExtractionOptions {
   onProgress?: (completed: number, total: number) => void;
   onCard?: (card: ImportCard) => void;
   startPage?: number;
+  targetCategory?: string;
 }
 export const MAX_DOCUMENT_BYTES = 50 * 1024 * 1024;
 export const MAX_PAGES_PER_FILE = 100;
@@ -33,7 +35,20 @@ function createPreviewDataUrl(source: HTMLCanvasElement): string {
   }
 }
 
-/** Documents and photos are processed locally with digital text, layout grid, OCR, and face crop. */
+function inferGridForCardCount(count: number, canvasWidth: number, canvasHeight: number, hintCols?: number, hintRows?: number): { columns: number; rows: number } {
+  if (hintCols && hintRows && hintCols >= 1 && hintCols <= 4 && hintRows >= 1 && hintRows <= 6 && hintCols * hintRows >= count) {
+    return { columns: hintCols, rows: hintRows };
+  }
+  if (count <= 1) return { columns: 1, rows: 1 };
+  if (count === 2) return canvasWidth >= canvasHeight ? { columns: 2, rows: 1 } : { columns: 1, rows: 2 };
+  if (count <= 4) return { columns: 2, rows: 2 };
+  if (count <= 6) return { columns: 2, rows: 3 };
+  if (count <= 8) return { columns: 2, rows: 4 };
+  if (count <= 10) return { columns: 2, rows: 5 };
+  return { columns: 2, rows: Math.min(6, Math.ceil(count / 2)) };
+}
+
+/** Documents and photos are processed with Google Gemini AI + layout grid + local OCR fallback + face crop. */
 export async function extractCards(
   file: File,
   columns = 0,
@@ -108,15 +123,15 @@ export async function extractCards(
       const faceapi = await import('face-api.js');
       if (!faceapi.nets.tinyFaceDetector.isLoaded) await wait(faceapi.nets.tinyFaceDetector.loadFromUri('/models'));
       check();
-      const faces = await wait(faceapi.detectAllFaces(crop, new faceapi.TinyFaceDetectorOptions({ inputSize: 416, scoreThreshold: 0.40 })).run());
+      const faces = await wait(faceapi.detectAllFaces(crop, new faceapi.TinyFaceDetectorOptions({ inputSize: 416, scoreThreshold: 0.38 })).run());
       let detected = faces.slice().sort((a, b) => (b.box.width * b.box.height) - (a.box.width * a.box.height));
       if (detected.length === 0) {
-        const retryFaces = await wait(faceapi.detectAllFaces(crop, new faceapi.TinyFaceDetectorOptions({ inputSize: 512, scoreThreshold: 0.22 })).run());
+        const retryFaces = await wait(faceapi.detectAllFaces(crop, new faceapi.TinyFaceDetectorOptions({ inputSize: 512, scoreThreshold: 0.20 })).run());
         detected = retryFaces.slice().sort((a, b) => (b.box.width * b.box.height) - (a.box.width * a.box.height));
       }
       if (detected.length > 0) {
         const b = detected[0].box;
-        if (b.width >= 16 && b.height >= 16) {
+        if (b.width >= 14 && b.height >= 14) {
           const padX = b.width * 0.25;
           const padY = b.height * 0.35;
           const sx = Math.max(0, b.x - padX);
@@ -130,11 +145,139 @@ export async function extractCards(
           return portrait;
         }
       }
+      // On dense multi-card sheets (e.g. 10 cards per page), upscale the left photo zone so small faces are detected cleanly
+      if (crop.width > crop.height * 1.1) {
+        const zoom = document.createElement('canvas');
+        zoom.width = 320;
+        zoom.height = 400;
+        try {
+          const zx = Math.round(crop.width * 0.02);
+          const zy = Math.round(crop.height * 0.20);
+          const zw = Math.round(crop.width * 0.34);
+          const zh = Math.round(crop.height * 0.58);
+          zoom.getContext('2d')!.drawImage(crop, zx, zy, zw, zh, 0, 0, zoom.width, zoom.height);
+          const zoomFaces = await wait(faceapi.detectAllFaces(zoom, new faceapi.TinyFaceDetectorOptions({ inputSize: 416, scoreThreshold: 0.20 })).run());
+          const bestZoom = zoomFaces.slice().sort((a, b) => (b.box.width * b.box.height) - (a.box.width * a.box.height))[0];
+          if (bestZoom && bestZoom.box.width >= 20 && bestZoom.box.height >= 20) {
+            const b = bestZoom.box;
+            const padX = b.width * 0.25;
+            const padY = b.height * 0.35;
+            const sx = Math.max(0, b.x - padX);
+            const sy = Math.max(0, b.y - padY * 0.85);
+            const sw = Math.min(zoom.width - sx, b.width + 2 * padX);
+            const sh = Math.min(zoom.height - sy, b.height + 1.85 * padY);
+            const pic = document.createElement('canvas'); pic.width = 256; pic.height = 320;
+            pic.getContext('2d')!.drawImage(zoom, sx, sy, sw, sh, 0, 0, 256, 320);
+            const portrait = pic.toDataURL('image/jpeg', 0.88);
+            pic.width = pic.height = 0;
+            return portrait;
+          }
+        } finally {
+          zoom.width = zoom.height = 0;
+        }
+      }
     } catch { check(); /* Portrait extraction is optional; never fabricate a portrait. */ }
     return undefined;
   }
 
   async function readPage(canvas: HTMLCanvasElement, originalItems: PositionedText[], page: number, total: number) {
+    // 1. Primary path: Google Gemini AI multi-card extraction paired with canvas grid cropping & portrait detection
+    if (hasGeminiApiKey()) {
+      try {
+        progress(`Extracting ID cards on page ${page} of ${total} with Google Gemini AI…`);
+        const pageJpegBase64 = canvas.toDataURL('image/jpeg', 0.85).split(',')[1] || '';
+        if (pageJpegBase64) {
+          const geminiRes = await wait(
+            extractPageWithGemini('image/jpeg', pageJpegBase64, {
+              pageNumber: page,
+              totalPages: total,
+              targetCategory: options.targetCategory,
+              signal,
+            })
+          );
+          check();
+          if (geminiRes.cards.length > 0) {
+            const cardCount = geminiRes.cards.length;
+            const inferredGrid =
+              columns && rows && columns * rows >= cardCount
+                ? { columns, rows }
+                : inferGridForCardCount(cardCount, canvas.width, canvas.height, geminiRes.grid_columns, geminiRes.grid_rows);
+            const layout =
+              inferredGrid.columns * inferredGrid.rows > 1
+                ? layoutCardSheet(canvas, inferredGrid.columns, inferredGrid.rows, { forceExactGrid: true })
+                : { columns: 1, rows: 1, cells: [{ x: 0, y: 0, width: canvas.width, height: canvas.height, ink: 1 }] };
+            const nonBlankCells = layout.cells.filter(c => c.ink >= 0.001);
+            const activeCells = nonBlankCells.length >= cardCount ? nonBlankCells : layout.cells;
+
+            progress(`Page ${page} of ${total} · ${cardCount} student ID card${cardCount === 1 ? '' : 's'} detected by Gemini AI`);
+
+            for (let i = 0; i < cardCount; i++) {
+              check();
+              if (cards.length >= MAX_CARDS_PER_BATCH) {
+                throw new Error(`Import at most ${MAX_CARDS_PER_BATCH} cards at once. Save these and import remaining files in the next batch.`);
+              }
+              const gStudent = { ...geminiRes.cards[i] };
+              const cell = activeCells[i] || activeCells[0] || { x: 0, y: 0, width: canvas.width, height: canvas.height, ink: 1 };
+              const crop = document.createElement('canvas');
+              crop.width = Math.max(1, Math.ceil(cell.width));
+              crop.height = Math.max(1, Math.ceil(cell.height));
+              try {
+                crop.getContext('2d')!.drawImage(canvas, cell.x, cell.y, crop.width, crop.height, 0, 0, crop.width, crop.height);
+                // Supplement any missing field from digital PDF text in the cell region without overwriting Gemini's values
+                if (originalItems.length > 0) {
+                  const regionText = textInRegion(originalItems, cell.x, cell.y, crop.width, crop.height);
+                  if (regionText) {
+                    const localParsed = parseCardText(regionText);
+                    for (const key of Object.keys(localParsed) as (keyof typeof localParsed)[]) {
+                      if (!gStudent[key] && localParsed[key]) {
+                        (gStudent as any)[key] = localParsed[key];
+                      }
+                    }
+                  }
+                }
+                if (!gStudent.admission_number && (gStudent.student_id_kv || gStudent.roll_number || gStudent.pen_number)) {
+                  gStudent.admission_number = gStudent.student_id_kv || gStudent.roll_number || gStudent.pen_number;
+                  gStudent.employee_id = gStudent.admission_number;
+                }
+                const portrait = await extractPortraitFromCrop(crop);
+                check();
+                const summaryLines = [
+                  gStudent.name ? `Student Name: ${gStudent.name}` : '',
+                  gStudent.admission_number ? `Admn No: ${gStudent.admission_number}` : '',
+                  gStudent.student_id_kv ? `Student ID: ${gStudent.student_id_kv}` : '',
+                  gStudent.class ? `Class: ${gStudent.class}${gStudent.section ? ` ${gStudent.section}` : ''}` : '',
+                  gStudent.father_name ? `Father's Name: ${gStudent.father_name}` : '',
+                  gStudent.mother_name ? `Mother's Name: ${gStudent.mother_name}` : '',
+                  gStudent.date_of_birth ? `Date of Birth: ${gStudent.date_of_birth}` : '',
+                  gStudent.parent_phone ? `Father/Mother Phone: ${gStudent.parent_phone}` : '',
+                  gStudent.pen_number ? `PEN No: ${gStudent.pen_number}` : '',
+                  gStudent.blood_group ? `Blood Group: ${gStudent.blood_group}` : '',
+                  gStudent.address ? `Address: ${gStudent.address}` : '',
+                ].filter(Boolean);
+                const cardObj: ImportCard = {
+                  id: crypto.randomUUID(),
+                  student: gStudent,
+                  page,
+                  text: summaryLines.join('\n'),
+                  preview: createPreviewDataUrl(crop),
+                  portrait,
+                };
+                cards.push(cardObj);
+                options.onCard?.(cardObj);
+              } finally {
+                crop.width = crop.height = 0;
+              }
+            }
+            options.onProgress?.(page, total);
+            return;
+          }
+        }
+      } catch (geminiErr) {
+        check();
+        console.warn(`[pdfImport] Gemini extraction note on page ${page}, falling back to local parser:`, geminiErr);
+      }
+    }
+
     let items = originalItems;
     let fullOcr = '';
     const visualGrid = columns ? { columns, rows } : detectCanvasCardGrid(canvas);

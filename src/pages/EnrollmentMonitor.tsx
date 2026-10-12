@@ -998,19 +998,37 @@ export default function EnrollmentMonitor() {
     try {
       const { idCardFunction } = await import('@/services/enrollment/bulkPdfExtractor');
       const result: { saved: string[]; failed: { admission_number: string; error: string }[] } = { saved: [], failed: [] };
-      for (let offset = 0; offset < cards.length; offset += 3) {
+      const SAVE_BATCH_SIZE = 10;
+      for (let offset = 0; offset < cards.length; offset += SAVE_BATCH_SIZE) {
         const batch = await idCardFunction<typeof result>({
           action: 'idcards.save', approveUpdates: true,
-          students: cards.slice(offset, offset + 3).map(card => {
-            const cleanPhone = (card.parent_phone || card.phone || '').trim();
+          students: cards.slice(offset, offset + SAVE_BATCH_SIZE).map(card => {
+            const rawDigits = String(card.parent_phone || card.phone || '').replace(/\D/g, '');
+            const tenDigits = rawDigits.length >= 10 ? rawDigits.slice(-10) : '';
+            const validMobile = /^[6-9]\d{9}$/.test(tenDigits) ? tenDigits : '';
+            const adm = (card.employee_id || card.student_id_kv || '').trim().replace(/\s+/g, '-');
             return {
-              ...card,
-              admission_number: card.employee_id,
-              email: card.student_email || '',
+              name: card.name.trim(),
+              admission_number: adm,
+              employee_id: adm,
+              student_id_kv: (card.student_id_kv || '').trim(),
+              class: (card.class || '').trim(),
+              section: (card.section || '').trim(),
+              father_name: (card.father_name || '').trim(),
+              mother_name: (card.mother_name || '').trim(),
+              parent_phone: validMobile,
+              date_of_birth: (card.date_of_birth || '').trim(),
+              address: (card.address || '').trim(),
+              parent_email: (card.parent_email || '').trim(),
+              email: (card.student_email || '').trim(),
+              roll_number: (card.roll_number || '').trim(),
+              blood_group: (card.blood_group || '').trim(),
+              pen_number: (card.pen_number || '').trim(),
+              barcode: (card.barcode || '').trim(),
               phone_locked: true,
               source: 'pdf_upload',
               imported_from_pdf: true,
-              verified_parent_phone: cleanPhone,
+              verified_parent_phone: validMobile,
             };
           }),
         });

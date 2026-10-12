@@ -246,8 +246,13 @@ export function parseCardText(text: string): ParsedCard {
           else if (!result.mother_name) result.mother_name = cleanSalutations(seg.value);
           previous = 'father_name';
         } else {
-          if (seg.value || !(result as any)[seg.key]) {
-            (result as any)[seg.key] = seg.value;
+          const cleanedVal = seg.value.replace(/\bidentity\s*card\b/gi, '').trim();
+          const isNumericIdField = seg.key === 'student_id_kv' || seg.key === 'pen_number' || seg.key === 'admission_number' || seg.key === 'roll_number';
+          const isValidInlineVal = cleanedVal ? (!isNumericIdField || /\d/.test(cleanedVal)) : false;
+          if (isValidInlineVal) {
+            (result as any)[seg.key] = cleanedVal;
+          } else if (!(result as any)[seg.key]) {
+            (result as any)[seg.key] = '';
           }
           previous = seg.key as keyof ParsedCard;
         }
@@ -448,7 +453,7 @@ export function textInRegion(items: PositionedText[], x: number, y: number, widt
   // Keeping the left photo column grouped before the right details table prevents the
   // student's name under the photo from being interleaved into Blood Group, PEN, or Address.
   const splitX = x + width * 0.295;
-  const headerBottomY = y + height * 0.21;
+  const headerBottomY = y + height * 0.16;
   const bodyItems = selected.filter(i => i.y >= headerBottomY);
   const leftBody = bodyItems.filter(i => i.x < splitX);
   const rightBody = bodyItems.filter(i => i.x >= splitX);
@@ -582,7 +587,7 @@ const clamp = (value: number, min: number, max: number) => Math.max(min, Math.mi
 /** Down-sample once and measure where the ink and colored card headers actually are. */
 function analyzeSheet(source: HTMLCanvasElement): SheetAnalysis | null {
   if (source.width < 8 || source.height < 8) return null;
-  const scale = Math.min(1, 300 / source.width);
+  const scale = Math.min(1, 480 / source.width);
   const w = Math.max(1, Math.round(source.width * scale));
   const h = Math.max(1, Math.round(source.height * scale));
   const sample = document.createElement('canvas');
@@ -616,11 +621,12 @@ function analyzeSheet(source: HTMLCanvasElement): SheetAnalysis | null {
       if (x < midX) lRow += dark;
       else rRow += dark;
 
-      // Detect colored or dark card header banner pixels (e.g. KVS purple/blue/maroon headers)
+      // Detect chromatic colored card header banner pixels (e.g. KVS lavender/purple/blue/maroon headers)
+      // Exclude neutral black/grey text pixels so only colored header bars form banner peaks.
       if (dark) {
         const maxC = Math.max(r, g, b);
         const minC = Math.min(r, g, b);
-        const isBannerPixel = (maxC - minC >= 28 && minC < 210) || (maxC < 105);
+        const isBannerPixel = maxC - minC >= 15 && maxC >= 70 && minC <= 235;
         if (isBannerPixel) {
           if (x < midX) lBan++;
           else rBan++;
@@ -726,7 +732,7 @@ function bands(profile: Float32Array, start: number, end: number, minGap: number
 
 function countBannerHeaders(bannerProfile: Float32Array, start: number, end: number, minSeparation: number): number {
   const runs: { a: number; b: number }[] = [];
-  const threshold = 0.22;
+  const threshold = 0.14;
   let i = start;
   while (i < end) {
     while (i < end && bannerProfile[i] < threshold) i++;
@@ -742,21 +748,21 @@ function countBannerHeaders(bannerProfile: Float32Array, start: number, end: num
 
 /**
  * Visually auto-detect multi-card grid (columns × rows) directly from a rendered page/image canvas.
- * Combines whitespace gutter analysis and colored/dark card header banner detection so scanned PDFs,
+ * Combines whitespace gutter analysis and colored card header banner detection so scanned PDFs,
  * browser-printed sheets (e.g. 2×2 = 4 cards or 2×5 = 10 cards), and images split accurately even
  * before OCR runs.
  */
 export function detectCanvasCardGrid(source: HTMLCanvasElement): { columns: number; rows: number } {
   const analysis = analyzeSheet(source);
   if (!analysis || !analysis.boundsX || !analysis.boundsY) return { columns: 1, rows: 1 };
-  const { w, h, colInk, rowInk, leftRowInk, rightRowInk, leftBannerRow, rightBannerRow, fullBannerRow, boundsX, boundsY } = analysis;
+  const { colInk, rowInk, leftRowInk, rightRowInk, leftBannerRow, rightBannerRow, fullBannerRow, boundsX, boundsY } = analysis;
   const spanX = boundsX.end - boundsX.start;
   const spanY = boundsY.end - boundsY.start;
   if (spanX < 16 || spanY < 16) return { columns: 1, rows: 1 };
 
   // 1. Detect columns (1, 2, or 3)
   let columns = 1;
-  const colBands = bands(colInk, boundsX.start, boundsX.end, Math.max(2, Math.round(spanX * 0.015)))
+  const colBands = bands(colInk, boundsX.start, boundsX.end, Math.max(1, Math.round(spanX * 0.008)))
     .filter(b => (b.b - b.a) >= spanX * 0.22);
   if (colBands.length >= 2 && colBands.length <= 3) {
     columns = colBands.length;
@@ -770,13 +776,13 @@ export function detectCanvasCardGrid(source: HTMLCanvasElement): { columns: numb
     }
     const leftQ = quantile(colInk, boundsX.start, midStart);
     const rightQ = quantile(colInk, midEnd, boundsX.end);
-    if (leftQ >= 0.03 && rightQ >= 0.03 && minMidInk <= Math.min(leftQ, rightQ) * 0.18) {
+    if (leftQ >= 0.03 && rightQ >= 0.03 && minMidInk <= Math.min(leftQ, rightQ) * 0.22) {
       columns = 2;
     }
   }
 
   // 2. Detect rows (1..6) using whitespace gutters first
-  const minRowGap = Math.max(2, Math.round(spanY * 0.008));
+  const minRowGap = Math.max(1, Math.round(spanY * 0.004));
   const minCardH = Math.max(6, Math.round(spanY * 0.09));
   const fullRowBands = bands(rowInk, boundsY.start, boundsY.end, minRowGap).filter(b => (b.b - b.a) >= minCardH);
   const leftBands = bands(leftRowInk, boundsY.start, boundsY.end, minRowGap).filter(b => (b.b - b.a) >= minCardH);
@@ -787,8 +793,8 @@ export function detectCanvasCardGrid(source: HTMLCanvasElement): { columns: numb
     rows = Math.max(rows, leftBands.length, rightBands.length);
   }
 
-  // 3. Also check colored/dark header banners (e.g. purple KVS header bars on each card)
-  const minHeaderSep = Math.max(8, Math.round(h * 0.09));
+  // 3. Also check colored header banners (e.g. purple KVS header bars on each card)
+  const minHeaderSep = Math.max(6, Math.round(spanY * 0.11));
   const leftHeaders = countBannerHeaders(leftBannerRow, boundsY.start, boundsY.end, minHeaderSep);
   const rightHeaders = countBannerHeaders(rightBannerRow, boundsY.start, boundsY.end, minHeaderSep);
   const fullHeaders = countBannerHeaders(fullBannerRow, boundsY.start, boundsY.end, minHeaderSep);
@@ -817,7 +823,7 @@ function fitAxis(profile: Float32Array, bounds: { start: number; end: number } |
   if (requested <= 1 || !bounds) return requested;
   const span = bounds.end - bounds.start;
   const cell = span / requested;
-  let found = bands(profile, bounds.start, bounds.end, Math.max(2, Math.round(cell * 0.04)))
+  let found = bands(profile, bounds.start, bounds.end, Math.max(1, Math.round(cell * 0.03)))
     .filter(b => (b.b - b.a) >= cell * 0.30);
   if (found.length === requested + 1) {
     // A printed header or footer shows up as one extra, much shorter band.
@@ -828,13 +834,13 @@ function fitAxis(profile: Float32Array, bounds: { start: number; end: number } |
   if (found.length >= requested) return requested;
   if (found.length <= 1) {
     // Only collapse to 1 if the total printed span is too small to hold more than 1 card.
-    // Never collapse a 2×2 (4 cards/page) sheet just because 2 rows occupy ~40-80% of the page!
+    // Never collapse a 2×2 (4 cards/page) or 2×5 (10 cards/page) sheet just because borders touch!
     return span / Math.max(1, pageLength) >= 0.28 ? requested : 1;
   }
-  // If found has fewer bands than requested (e.g. 2 bands when 4 were requested), check whether
+  // If found has fewer bands than requested (e.g. 2 bands when 5 were requested), check whether
   // any band is actually multiple cards touching without a visible white gutter.
   const maxBandSize = Math.max(...found.map(b => b.b - b.a));
-  if (maxBandSize >= cell * 1.55) {
+  if (maxBandSize >= cell * 1.45) {
     return requested;
   }
   return found.length;
@@ -844,7 +850,7 @@ function fitAxis(profile: Float32Array, bounds: { start: number; end: number } |
 function axisCuts(profile: Float32Array, bounds: { start: number; end: number }, count: number): number[] {
   const span = bounds.end - bounds.start;
   const cell = span / count;
-  const gutter = bands(profile, bounds.start, bounds.end, Math.max(2, Math.round(cell * 0.04)))
+  const gutter = bands(profile, bounds.start, bounds.end, Math.max(1, Math.round(cell * 0.03)))
     .filter(b => (b.b - b.a) >= cell * 0.30);
   if (gutter.length === count) {
     const cuts = [gutter[0].a];
@@ -855,7 +861,7 @@ function axisCuts(profile: Float32Array, bounds: { start: number; end: number },
     return cuts;
   }
   // Even splits, each slid onto the whitest pixel in its neighbourhood.
-  const window = Math.max(2, Math.round(cell / 3));
+  const window = Math.max(2, Math.round(cell * 0.18));
   const cuts = [bounds.start];
   for (let i = 1; i < count; i++) {
     const ideal = clamp(Math.round(bounds.start + i * cell), bounds.start, bounds.end);
@@ -863,7 +869,7 @@ function axisCuts(profile: Float32Array, bounds: { start: number; end: number },
     for (let p = clamp(ideal - window, bounds.start, bounds.end); p <= clamp(ideal + window, bounds.start, bounds.end); p++) {
       if (profile[p] < bestVal) { bestVal = profile[p]; best = p; }
     }
-    cuts.push(bestVal <= 0.03 || bestVal <= profile[ideal] * 0.4 ? best : ideal);
+    cuts.push(bestVal <= 0.04 || bestVal <= profile[ideal] * 0.55 ? best : ideal);
   }
   cuts.push(bounds.end);
   return cuts;
@@ -875,7 +881,12 @@ function axisCuts(profile: Float32Array, bounds: { start: number; end: number },
  * half. Returns the grid that was actually used — a page may hold fewer cards
  * than the maximum that was requested (e.g. 2×2 on a 2×4 sheet).
  */
-export function layoutCardSheet(source: HTMLCanvasElement, columns: number, rows: number): SheetLayout {
+export function layoutCardSheet(
+  source: HTMLCanvasElement,
+  columns: number,
+  rows: number,
+  options?: { forceExactGrid?: boolean }
+): SheetLayout {
   const equalFallback = (): SheetLayout => {
     const cells: GridCell[] = [];
     for (let r = 0; r < rows; r++) for (let c = 0; c < columns; c++) {
@@ -890,8 +901,8 @@ export function layoutCardSheet(source: HTMLCanvasElement, columns: number, rows
   const { scale, w, h, colInk, rowInk, integral, boundsX, boundsY } = analysis;
   if (!boundsX || !boundsY) return equalFallback();
 
-  const fittedColumns = fitAxis(colInk, boundsX, columns, analysis.w);
-  const fittedRows = fitAxis(rowInk, boundsY, rows, analysis.h);
+  const fittedColumns = options?.forceExactGrid ? columns : fitAxis(colInk, boundsX, columns, analysis.w);
+  const fittedRows = options?.forceExactGrid ? rows : fitAxis(rowInk, boundsY, rows, analysis.h);
   const xs = axisCuts(colInk, boundsX, fittedColumns).map(cut => Math.round(cut / scale));
   const ys = axisCuts(rowInk, boundsY, fittedRows).map(cut => Math.round(cut / scale));
 

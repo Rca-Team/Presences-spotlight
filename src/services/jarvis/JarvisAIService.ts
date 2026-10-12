@@ -31,7 +31,7 @@ export interface JarvisAnalysisResponse {
 
 export class JarvisAIService {
   private async callGemini(contents: any[], systemInstruction: string = JARVIS_SYSTEM_INSTRUCTION): Promise<string> {
-    const models = ["gemini-2.5-flash", "gemini-flash-latest", "gemini-1.5-flash"];
+    const models = ["gemini-flash-latest", "gemini-3.7-flash", "gemini-3.8-flash", "gemini-2.5-flash"];
     let lastError: any = null;
 
     for (const model of models) {

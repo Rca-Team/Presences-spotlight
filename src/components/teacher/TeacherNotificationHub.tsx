@@ -311,7 +311,7 @@ Use personalized tokens where helpful: {student_name}, {parent_name}, {class}, {
 Output strictly valid JSON with keys: "subject" and "message".
 Do not enclose in markdown blocks.`;
 
-        const models = ['gemini-2.5-flash', 'gemini-1.5-flash'];
+        const models = ['gemini-flash-latest', 'gemini-3.7-flash', 'gemini-3.8-flash', 'gemini-2.5-flash'];
         let success = false;
 
         for (const model of models) {

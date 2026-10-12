@@ -145,5 +145,81 @@ await test('splitMultiCardText splits concatenated 4-student page text into 4 se
   const parsed = chunks.map(c => parseCardText(c));
   assert.deepEqual(parsed.map(p => p.admission_number), ['3901', '3902', '3903', '3904']);
 });
+await test('Real single-page PDF with 10 KVS ID cards (2×5 grid) detects and extracts all 10 students', async () => {
+  const doc = new jsPDF({ unit: 'pt', format: [600, 840] });
+  const tenStudents = [
+    { name: 'AAIRA PRABHAKAR', kvId: '1000522540', father: 'VINOD CHAND', mother: 'ENA', dob: '10-04-2010', cls: '10 A', admn: '10600', phone: '9811701246' },
+    { name: 'YUVRAJ SAINI', kvId: '1000522559', father: 'SUSHIL KUMAR', mother: 'REKHA', dob: '01-04-2007', cls: '10 A', admn: '10609', phone: '7352331554' },
+    { name: 'ARJUN CHHIKARA', kvId: '1000522615', father: 'DEVENDER SINGH CHHIKARA', mother: 'BINDU', dob: '22-09-2011', cls: '10 A', admn: '10608', phone: '9810800310' },
+    { name: 'PANKAJ MALIK', kvId: '1000522616', father: 'VIKAS MALIK', mother: 'EKTA', dob: '01-12-2011', cls: '10 A', admn: '10629', phone: '9811551421' },
+    { name: 'AARADHYA SHARMA', kvId: '1000522617', father: 'RAHUL SHARMA', mother: 'PAYAL SHARMA', dob: '14-03-2011', cls: '10 A', admn: '10630', phone: '9718501306' },
+    { name: 'BHAVIKA', kvId: '1000522618', father: 'PRAVIR MAYANK', mother: 'PREETI', dob: '06-09-2011', cls: '10 A', admn: '10632', phone: '9818626090' },
+    { name: 'RIDDHI', kvId: '1000522669', father: 'SATENDER PRAKASH', mother: 'BABLI', dob: '20-04-2010', cls: '10 A', admn: '10640', phone: '9818504335' },
+    { name: 'ARYAN SINGH', kvId: '1000522682', father: 'DHRUV NARAIN SINGH', mother: 'KAMLESH SINGH', dob: '22-01-2011', cls: '10 A', admn: '10642', phone: '9454159071' },
+    { name: 'SUSHANT VALMIKI', kvId: '1000522698', father: 'KULDEEP', mother: 'DHANVATI', dob: '18-01-2011', cls: '10 A', admn: '10650', phone: '9311685879' },
+    { name: 'VANSHI', kvId: '1000522700', father: 'ROOPENDRA', mother: 'MEERA SINGH', dob: '04-06-2011', cls: '10 A', admn: '10675', phone: '9891808720' },
+  ];
+  for (let idx = 0; idx < 10; idx++) {
+    const col = idx % 2;
+    const row = Math.floor(idx / 2);
+    const ox = col * 300;
+    const oy = 20 + row * 160;
+    const s = tenStudents[idx];
+    doc.setFontSize(8);
+    doc.text('PM SHRI KENDRIYA VIDYALAYA NEW FRIENDS CENTRE', ox + 15, oy + 12);
+    doc.text('Student ID', ox + 12, oy + 32);
+    doc.text(s.kvId, ox + 12, oy + 42);
+    doc.text(s.name, ox + 10, oy + 96);
+    doc.text('IDENTITY CARD', ox + 105, oy + 32);
+    doc.text(`Father's Name : ${s.father}`, ox + 100, oy + 46);
+    doc.text(`Mother's Name : ${s.mother}`, ox + 100, oy + 58);
+    doc.text(`Date of Birth : ${s.dob}`, ox + 100, oy + 70);
+    doc.text(`Class : ${s.cls}`, ox + 100, oy + 82);
+    doc.text(`Admn No : ${s.admn}   PEN No :`, ox + 100, oy + 94);
+    doc.text(`Father/Mother Phone : ${s.phone}`, ox + 100, oy + 106);
+  }
+  const task = getDocument({ data: new Uint8Array(doc.output('arraybuffer')), useSystemFonts: true, isEvalSupported: false });
+  const pdf = await task.promise;
+  try {
+    const page = await pdf.getPage(1), viewport = page.getViewport({ scale: 1 });
+    const content = await page.getTextContent();
+    const items = content.items.filter(i => 'str' in i).map(i => {
+      const p = viewport.convertToViewportPoint(i.transform[4], i.transform[5]);
+      return { text: i.str, x: p[0], y: p[1], height: i.height };
+    });
+    const grid = detectCardGrid(items, 600, 840);
+    assert.deepEqual(grid, { columns: 2, rows: 5 });
+    const extracted = [];
+    for (let r = 0; r < 5; r++) {
+      for (let c = 0; c < 2; c++) {
+        extracted.push(parseCardText(textInRegion(items, c * 300, 20 + r * 160, 300, 160)));
+      }
+    }
+    assert.deepEqual(extracted.map(s => s.name), tenStudents.map(s => s.name));
+    assert.deepEqual(extracted.map(s => s.admission_number), tenStudents.map(s => s.admn));
+    assert.deepEqual(extracted.map(s => s.student_id_kv), tenStudents.map(s => s.kvId));
+  } finally {
+    await task.destroy();
+  }
+});
+await test('Gemini multi-strategy JSON parser and card normalizer handle 10-card payloads and truncated JSON', async () => {
+  const parserUrl = 'data:text/javascript;base64,' + Buffer.from(code).toString('base64');
+  let geminiSrc = fs.readFileSync('src/services/enrollment/geminiCardExtractor.ts', 'utf8');
+  geminiSrc = geminiSrc.replace("'./pdfParser'", JSON.stringify(parserUrl));
+  const geminiJs = ts.transpileModule(geminiSrc, { compilerOptions: { module: ts.ModuleKind.ESNext, target: ts.ScriptTarget.ES2022 } }).outputText;
+  const { parseGeminiResponse, normalizeGeminiCard } = await import('data:text/javascript;base64,' + Buffer.from(geminiJs).toString('base64'));
+
+  const truncated = '```json\n{"card_count":10,"grid_columns":2,"grid_rows":5,"users":[{"name":"AAIRA PRABHAKAR","admn_no":"10600","class":"10 A","blood_group":"NA"},{"name":"YUVRAJ SAINI","employee_id":"10609","class":"10-A"},';
+  const recovered = parseGeminiResponse(truncated);
+  assert.equal(recovered.users.length, 2);
+  const c0 = normalizeGeminiCard(recovered.users[0]);
+  assert.equal(c0.name, 'AAIRA PRABHAKAR');
+  assert.equal(c0.admission_number, '10600');
+  assert.equal(c0.class, '10');
+  assert.equal(c0.section, 'A');
+  assert.equal(c0.department, '10-A');
+  assert.equal(c0.blood_group, '');
+});
 console.log(`${passed} PDF import tests passed`);
+
 

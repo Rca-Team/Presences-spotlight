@@ -21,8 +21,10 @@ export function normalizeDob(value) {
   return s.toLowerCase().replace(/[\s/.-]/g, '');
 }
 export function phoneNumber(value) {
-  const number = String(value || '').replace(/[\s()-]/g, '');
+  const number = String(value || '').replace(/[\s().-]/g, '');
   if (/^[6-9]\d{9}$/.test(number)) return '+91' + number;
+  if (/^0[6-9]\d{9}$/.test(number)) return '+91' + number.slice(1);
+  if (/^91[6-9]\d{9}$/.test(number)) return '+' + number;
   return /^\+[1-9]\d{7,14}$/.test(number) ? number : '';
 }
 export const fields = ['name', 'admission_number', 'class', 'section', 'father_name', 'mother_name', 'parent_phone', 'date_of_birth', 'address'];

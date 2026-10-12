@@ -17,19 +17,27 @@ export function cardToRegistrationStudent(card: ImportCard, targetCategory?: str
     })
   ) as Partial<ParsedCard>;
 
-  // Merge preferring whichever has non-empty, clean value
+  // Merge preferring explicit structured fields in card.student, falling back to fresh parsed text
   const parsed: ParsedCard = { ...fresh };
   for (const [key, val] of Object.entries(stored)) {
     const k = key as keyof ParsedCard;
     const str = String(val ?? '').trim();
-    if (str && (!(parsed as any)[k] || str.length > String((parsed as any)[k] || '').length)) {
+    if (str) {
       (parsed as any)[k] = str;
     }
   }
 
+  let rawClass = String(parsed.class || '').trim();
+  let rawSec = String(parsed.section || '').trim().toUpperCase();
+  const combinedCls = rawClass.match(/^(\d+|[IVX]+)[\s/-]+([A-Z])$/i);
+  if (combinedCls) {
+    rawClass = combinedCls[1].toUpperCase();
+    rawSec = rawSec || combinedCls[2].toUpperCase();
+  }
+
   const target = targetCategory?.match(/^(\d+|[IVX]+)[\s-]+([A-Z])$/i);
-  const cls = target?.[1] || parsed.class;
-  const section = target?.[2]?.toUpperCase() || parsed.section;
+  const cls = target?.[1] || rawClass;
+  const section = target?.[2]?.toUpperCase() || rawSec;
   const parentPhone = normalizePhone(parsed.parent_phone) || parsed.parent_phone;
   const studentName = (parsed.name || '')
     .replace(/^name[:\s-]+/i, '')

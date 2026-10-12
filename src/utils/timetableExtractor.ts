@@ -393,20 +393,16 @@ Known teachers: ${knownTeachers.map((t) => t.name).join(', ')}.`;
       // Ignore list fetch failure, proceed with known standard models
     }
 
-    // Static fallback list
+    // Static fallback list (prioritizing active Gemini Flash models first)
     const staticEndpoints = [
-      { url: `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`, useJsonMime: true },
-      { url: `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-exp:generateContent?key=${apiKey}`, useJsonMime: true },
-      { url: `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`, useJsonMime: true },
-      { url: `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash-latest:generateContent?key=${apiKey}`, useJsonMime: true },
-      { url: `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash-8b:generateContent?key=${apiKey}`, useJsonMime: true },
+      { url: `https://generativelanguage.googleapis.com/v1beta/models/gemini-flash-latest:generateContent?key=${apiKey}`, useJsonMime: true },
+      { url: `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.7-flash:generateContent?key=${apiKey}`, useJsonMime: true },
+      { url: `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.8-flash:generateContent?key=${apiKey}`, useJsonMime: true },
+      { url: `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash:generateContent?key=${apiKey}`, useJsonMime: true },
       { url: `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`, useJsonMime: true },
-      { url: `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-pro:generateContent?key=${apiKey}`, useJsonMime: true },
-      { url: `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-pro-latest:generateContent?key=${apiKey}`, useJsonMime: true },
-      { url: `https://generativelanguage.googleapis.com/v1/models/gemini-1.5-flash:generateContent?key=${apiKey}`, useJsonMime: true },
-      { url: `https://generativelanguage.googleapis.com/v1/models/gemini-1.5-pro:generateContent?key=${apiKey}`, useJsonMime: true },
-      { url: `https://generativelanguage.googleapis.com/v1beta/models/gemini-pro-vision:generateContent?key=${apiKey}`, useJsonMime: false },
+      { url: `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`, useJsonMime: true },
     ];
+    endpointCandidates.unshift(...staticEndpoints.slice(0, 4));
 
     staticEndpoints.forEach((ep) => {
       if (!endpointCandidates.some((c) => c.url === ep.url)) {

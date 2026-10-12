@@ -7,7 +7,10 @@ import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue 
 } from '@/components/ui/select';
 import { registerFace } from '@/services/FaceRecognitionService';
-import { storeFaceSample } from '@/services/face-recognition/ProgressiveTrainingService';
+import {
+  storeRegistrationSamplesBatch,
+  filterDistinctCaptureSamples,
+} from '@/services/face-recognition/ProgressiveTrainingService';
 import { uploadRegistrationFaceModel } from '@/services/face-recognition/TrainingDataStorageService';
 import { loadRegistrationModels } from '@/services/face-recognition/OptimizedRegistrationService';
 import { uploadImage } from '@/services/face-recognition/StorageService';
@@ -319,9 +322,9 @@ const Register = () => {
       return {
         id: draftId,
         formData: studentFormData,
-        registrationStep: 2,
-        captureMode: 'auto',
-        status: 'pending_face_scan',
+        registrationStep: 2 as const,
+        captureMode: 'auto' as const,
+        status: 'pending_face_scan' as const,
         updatedAt: now,
       };
     });
@@ -334,9 +337,62 @@ const Register = () => {
       localStorage.setItem(storageKey, JSON.stringify(merged));
       setDrafts(merged);
       setIsDraftsExpanded(true);
+      if (!hasFilledStudentInfo() && newDrafts[0]) {
+        activeDraftIdRef.current = newDrafts[0].id;
+        lastPersistedFingerprintRef.current = '';
+        setFormData({ ...EMPTY_FORM_DATA, ...newDrafts[0].formData });
+        if (cards[0]?.student_photo_data_url) {
+          setExtractedIdCardPhoto(cards[0].student_photo_data_url);
+        }
+      }
+      // Also persist imported student records to the profiles database in the background
+      void (async () => {
+        try {
+          const { supabase } = await import('@/integrations/supabase/client');
+          const rows = cards
+            .filter(c => c.name?.trim() && (c.employee_id || c.student_id_kv)?.trim())
+            .map(c => {
+              const adm = (c.employee_id || c.student_id_kv || '').trim();
+              const cleanPhone = (c.parent_phone || c.phone || '').replace(/\D/g, '').slice(-10);
+              return {
+                full_name: c.name.trim(),
+                display_name: c.name.trim(),
+                admission_number: adm,
+                employee_id: adm,
+                roll_number: c.roll_number?.trim() || null,
+                class: c.class?.trim() || null,
+                section: c.section?.trim() || null,
+                category: [c.class?.trim(), c.section?.trim()].filter(Boolean).join('-') || c.department || null,
+                parent_phone: cleanPhone || null,
+                phone: cleanPhone || null,
+                parent_name: c.parent_name || c.father_name || c.mother_name || null,
+                father_name: c.father_name?.trim() || null,
+                date_of_birth: c.date_of_birth?.trim() || null,
+                role: 'student',
+                metadata: JSON.stringify({
+                  blood_group: c.blood_group || '',
+                  pen_number: c.pen_number || '',
+                  student_id_kv: c.student_id_kv || '',
+                  mother_name: c.mother_name || '',
+                  address: c.address || '',
+                  phone_locked: true,
+                  source: 'pdf_upload',
+                  imported_from_pdf: true,
+                  verified_parent_phone: cleanPhone,
+                }),
+                updated_at: now,
+              };
+            });
+          if (rows.length > 0) {
+            await supabase.from('profiles').upsert(rows, { onConflict: 'admission_number' });
+          }
+        } catch (syncErr) {
+          console.warn('Background profile sync note:', syncErr);
+        }
+      })();
       toast({
-        title: 'Drafts Ready! 📋',
-        description: `${newDrafts.length} students queued for face scan. Click "Scan Face" on any student to begin.`,
+        title: 'Students Imported & Queued! 📋',
+        description: `${newDrafts.length} students registered and queued for face scan. Click "Scan Face" on any student to begin.`,
       });
     } catch (err) {
       console.error('Failed to save imported drafts:', err);
@@ -403,12 +459,20 @@ const Register = () => {
     rawDescriptors: Float32Array[],
     rawImages?: string[]
   ) => {
-    setFaceDescriptor(averaged);
+    const filtered = filterDistinctCaptureSamples(rawDescriptors, rawImages ?? [], 6);
+    const effectiveCentroid = filtered.distinctDescriptors.length > 0 ? filtered.centroid : averaged;
+    const effectiveDescriptors = filtered.distinctDescriptors.length > 0 ? filtered.distinctDescriptors : rawDescriptors;
+    const effectiveImages = filtered.distinctImages.length > 0 ? filtered.distinctImages : (rawImages ?? []);
+
+    setFaceDescriptor(effectiveCentroid);
     setFaceImage(primaryImage);
-    setAllDescriptors(rawDescriptors);
-    setAllFaceImages(rawImages ?? []);
+    setAllDescriptors(effectiveDescriptors);
+    setAllFaceImages(effectiveImages);
     setFaceCaptured(true);
-    toast({ title: "3D Scan Complete! 🎉", description: `${rawDescriptors.length} angle samples captured for maximum accuracy.` });
+    toast({
+      title: "3D Scan Complete! 🎉",
+      description: `${effectiveDescriptors.length} distinct angle samples calibrated from ${rawDescriptors.length} captures.`,
+    });
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -432,32 +496,29 @@ const Register = () => {
     setIsSubmitting(true);
     try {
       const userId = uuidv4();
+      const safeFolderKey = (validData.employeeId || userId).replace(/[^a-zA-Z0-9_-]/g, '_');
 
+      // Only upload extractedIdCardPhoto separately if an actual ID card crop was scanned
       let idCardPhotoUrl: string | null = null;
-      const photoToUpload = extractedIdCardPhoto || (faceImage?.startsWith('data:image/') ? faceImage : null);
-      if (photoToUpload?.startsWith('data:image/')) {
+      if (extractedIdCardPhoto?.startsWith('data:image/')) {
         try {
-          const idPhotoRes = await fetch(photoToUpload);
+          const idPhotoRes = await fetch(extractedIdCardPhoto);
           const idPhotoBlob = await idPhotoRes.blob();
-          const idPhotoFile = new File(
-            [idPhotoBlob],
-            `id-card_${validData.employeeId || userId}_${Date.now()}.jpg`,
-            { type: 'image/jpeg' }
-          );
-          idCardPhotoUrl = await uploadImage(idPhotoFile, `students/${userId}/${idPhotoFile.name}`);
+          const idPhotoFile = new File([idPhotoBlob], `id_card.jpg`, { type: 'image/jpeg' });
+          idCardPhotoUrl = await uploadImage(idPhotoFile, `students/${safeFolderKey}/id_card.jpg`, 'student-registration-faces');
         } catch (uploadErr) {
           console.warn('ID card photo upload failed, continuing with existing registration flow', uploadErr);
         }
       }
 
       const faceModelPath = await uploadRegistrationFaceModel({
-        studentId: userId,
+        studentId: validData.employeeId || userId,
         employeeId: validData.employeeId,
         category: validData.department,
         captureMode: captureMode === 'auto' ? 'auto-10' : 'scan-3d',
         averagedDescriptor: faceDescriptor,
         descriptors: allDescriptors,
-        sampleImages: allFaceImages,
+        sampleImages: [], // Avoid embedding huge base64 strings inside the JSON model artifact
       });
 
       const response = await fetch(faceImage);
@@ -493,47 +554,32 @@ const Register = () => {
           registrationData.user_id ||
           userId;
 
-        // Store ALL 3D scan samples in face_descriptors for multi-angle matching
+        // Store distinct 3D scan pose samples cleanly in a single deduplicated batch
         if (allDescriptors.length > 0) {
           const rawDept = String(validData.department || '').trim();
           const deptMatch = rawDept.match(/^(\d+)\s*-\s*([A-Da-d])$/);
           const parsedClass = deptMatch ? deptMatch[1] : (rawDept || null);
           const parsedSection = deptMatch ? deptMatch[2].toUpperCase() : null;
 
-          console.log(`Storing ${allDescriptors.length} 3D scan samples for user ${descriptorOwnerUserId} in parallel chunks`);
-          const sampleTasks = allDescriptors.map((descriptor, i) => async () => {
-            const shotImage = allFaceImages[i];
-            let shotBlob: Blob | null = null;
-            if (shotImage) {
-              try {
-                const shotRes = await fetch(shotImage);
-                shotBlob = await shotRes.blob();
-              } catch (shotErr) {
-                console.warn(`Could not convert captured shot #${i + 1} to blob`, shotErr);
-              }
-            }
-            return storeFaceSample(descriptorOwnerUserId, descriptor, shotBlob, validData.name, 1.0, {
-              student_id: validData.employeeId,
-              student_name: validData.name,
-              class: parsedClass || undefined,
-              section: parsedSection || undefined,
-              category: validData.department,
-            });
+          await storeRegistrationSamplesBatch({
+            userId: descriptorOwnerUserId,
+            studentId: validData.employeeId,
+            studentName: validData.name,
+            className: parsedClass,
+            section: parsedSection,
+            category: validData.department,
+            primaryImageUrl: registrationData.primary_image_url || registrationData.image_url || null,
+            descriptors: allDescriptors,
+            sampleImages: allFaceImages,
+            replaceExisting: true,
           });
-
-          // Run in parallel batches of 4
-          const BATCH_SIZE = 4;
-          for (let b = 0; b < sampleTasks.length; b += BATCH_SIZE) {
-            await Promise.all(sampleTasks.slice(b, b + BATCH_SIZE).map((task) => task()));
-          }
-          console.log('All 3D scan samples stored successfully');
         }
         
         toast({
           title: "Registration Successful! 🎉",
           description: returnUrl 
             ? `3D face model enrolled for ${validData.name}. Returning to Class Portal...`
-            : `3D face model saved with ${allDescriptors.length} training samples for best accuracy.`,
+            : `3D face model saved with ${allDescriptors.length} distinct angle samples.`,
         });
         const completedDraftId = draftIdFromData();
         clearDraftById(completedDraftId);
