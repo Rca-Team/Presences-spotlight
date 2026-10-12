@@ -158,24 +158,40 @@ export const DEFAULT_PORTFOLIO: PortfolioData = {
       name: 'Gaurav',
       role: 'Developer & Team Leader',
       image: gauravPhoto,
-      bio: 'Creator of Presence Smart School automation. I build scalable attendance, security, and school workflow systems.',
-      details: 'Full-stack engineer focused on face-recognition workflows, database design, and production-ready education systems.',
+      bio: 'Creator of Presences Smart School automation. Designs and leads scalable attendance, security, and school workflow systems.',
+      details: 'Full-stack engineer focused on neural face-recognition pipelines, database architecture, and production-ready education systems.',
     },
     {
       id: uid(),
       name: 'Swami Anant Vyas',
-      role: 'Hardware Prototype & Software Feedback',
+      role: 'Hardware Prototype & Core Systems',
       image: swamiAnantVyasPhoto,
-      bio: 'Helped build the hardware prototype and contributed ideas for the software experience.',
-      details: 'Built and validated early hardware concepts for kiosk gate mode and camera triggers.',
+      bio: 'Helped build the hardware prototype and contributed core engineering ideas for the live software experience.',
+      details: 'Built and validated early hardware concepts for kiosk gate mode, physical enclosures, and camera triggers.',
     },
     {
       id: uid(),
       name: 'Jatin Dhama',
-      role: 'Team Member',
+      role: 'QA Engineering & Operations',
       image: jatinDhamaPhoto,
-      bio: 'Contributes to system testing, execution support, and project coordination.',
-      details: 'Supports feature QA, user feedback loops, and collaborative delivery.',
+      bio: 'Contributes to system testing, execution support, and live deployment coordination across the platform.',
+      details: 'Supports feature QA, user feedback loops, and collaborative delivery for KV NFC Vigyan Vihar.',
+    },
+    {
+      id: uid(),
+      name: 'Jatin Maurya',
+      role: 'Workflow & Interface Contributor',
+      image: '',
+      bio: 'Contributes to interface workflows, student registration experiences, and module usability refinements.',
+      details: 'Collaborates on smooth classroom flows, visual polish, and structured data management across modules.',
+    },
+    {
+      id: uid(),
+      name: 'Mayank',
+      role: 'Field Testing & Research Contributor',
+      image: '',
+      bio: 'Supports real-world campus testing, attendance verification, and operational reliability checks.',
+      details: 'Assists with batch enrollment validation, kiosk responsiveness testing, and rollout readiness.',
     },
   ],
   socials: { github: '', linkedin: '', twitter: '', instagram: '', youtube: '' },
@@ -250,13 +266,33 @@ function migrate(raw: any): PortfolioData {
     featured: Boolean(p.featured),
   }));
 
-  base.members = (Array.isArray(raw?.members) && raw.members.length > 0 ? raw.members : DEFAULT_PORTFOLIO.members).map((m: any) => {
+  const rawMembers = Array.isArray(raw?.members) && raw.members.length > 0 ? [...raw.members] : [...DEFAULT_PORTFOLIO.members];
+
+  // Ensure newly added core members (Jatin Maurya, Mayank) are present in migrated member lists
+  for (const defMember of DEFAULT_PORTFOLIO.members) {
+    const defKey = defMember.name.toLowerCase().trim();
+    const exists = rawMembers.some((m: any) => {
+      const n = String(m?.name || '').toLowerCase().trim();
+      if (defKey === 'jatin maurya') return n.includes('maurya');
+      if (defKey === 'jatin dhama') return n.includes('dhama') || n === 'jatin';
+      if (defKey === 'mayank') return n.includes('mayank');
+      if (defKey.includes('swami') || defKey.includes('anant')) return n.includes('swami') || n.includes('anant');
+      if (defKey.includes('gaurav')) return n.includes('gaurav');
+      return n === defKey;
+    });
+    if (!exists) {
+      rawMembers.push(defMember);
+    }
+  }
+
+  base.members = rawMembers.map((m: any) => {
     let img = (m.image ?? '').replace(/eiahucigcvsnuvviajqt/g, 'cvdcbcsonlianbfeessy');
-    const norm = (m.name || '').toLowerCase();
+    const norm = (m.name || '').toLowerCase().trim();
     if (!img || img.includes('.asset.json') || img.startsWith('/__l5e/')) {
       if (norm.includes('gaurav')) img = gauravPhoto;
       else if (norm.includes('swami') || norm.includes('anant')) img = swamiAnantVyasPhoto;
-      else if (norm.includes('jatin')) img = jatinDhamaPhoto;
+      else if (norm.includes('dhama') || norm === 'jatin') img = jatinDhamaPhoto;
+      else img = '';
     }
     return {
       id: m.id ?? uid(),

@@ -400,41 +400,75 @@ export function PublicPortfolioView({
           </div>
 
           <div className="grid gap-4 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3">
-            {data.members.map((m) => (
-              <motion.div
-                key={m.id}
-                whileHover={{ y: -3 }}
-                transition={{ type: 'spring', stiffness: 400, damping: 28 }}
-                onClick={() => setSelectedMember(m)}
-                className="group relative cursor-pointer rounded-3xl border border-border/60 bg-card/60 p-4 backdrop-blur shadow-sm hover:border-primary/50 hover:bg-card/85 transition-all flex flex-col justify-between"
-              >
-                <div className="flex items-center gap-3.5">
-                  <MemberAvatar
-                    name={m.name}
-                    image={m.image}
-                    className="h-14 w-14 rounded-2xl border-2 border-border/70 group-hover:border-primary shrink-0 transition-colors shadow-md"
-                    fallbackClassName="text-lg font-bold"
-                  />
-                  <div className="min-w-0">
-                    <p className="truncate text-base font-bold text-foreground group-hover:text-primary transition-colors">
-                      {m.name}
-                    </p>
-                    <p className="truncate text-xs text-muted-foreground font-medium">{m.role}</p>
+            {data.members.map((m) => {
+              const n = (m.name || '').toLowerCase();
+              const isLeader = n.includes('gaurav');
+              const accent = isLeader
+                ? { border: 'rgba(245,158,11,0.55)', bar: 'linear-gradient(90deg,#f59e0b,#fde047,#f59e0b)', dot: '#fbbf24', label: 'Team Leader · Architect', pillBg: 'rgba(245,158,11,0.14)' }
+                : n.includes('maurya')
+                  ? { border: 'rgba(148,0,211,0.48)', bar: 'linear-gradient(90deg,#9400D3,#c084fc,#9400D3)', dot: '#b829ff', label: 'UI & Workflows', pillBg: 'rgba(148,0,211,0.15)' }
+                  : n.includes('dhama') || n.trim() === 'jatin'
+                    ? { border: 'rgba(5,237,245,0.42)', bar: 'linear-gradient(90deg,#05edf5,#67e8f9,#05edf5)', dot: '#05edf5', label: 'QA & Execution', pillBg: 'rgba(5,237,245,0.12)' }
+                    : n.includes('swami') || n.includes('anant')
+                      ? { border: 'rgba(252,3,3,0.38)', bar: 'linear-gradient(90deg,#fc0303,#fb7185,#fc0303)', dot: '#fc0303', label: 'Hardware & Core', pillBg: 'rgba(252,3,3,0.12)' }
+                      : n.includes('mayank')
+                        ? { border: 'rgba(5,250,201,0.42)', bar: 'linear-gradient(90deg,#05fac9,#6ee7b7,#05fac9)', dot: '#05fac9', label: 'Field Ops & R&D', pillBg: 'rgba(5,250,201,0.12)' }
+                        : { border: 'rgba(56,189,248,0.35)', bar: 'linear-gradient(90deg,#38bdf8,#818cf8)', dot: '#38bdf8', label: 'Core Member', pillBg: 'rgba(56,189,248,0.12)' };
+
+              return (
+                <motion.div
+                  key={m.id}
+                  whileHover={{ y: -3 }}
+                  transition={{ type: 'spring', stiffness: 400, damping: 28 }}
+                  onClick={() => setSelectedMember(m)}
+                  style={{ borderColor: accent.border }}
+                  className="group relative overflow-hidden cursor-pointer rounded-3xl border bg-card/75 p-4 backdrop-blur shadow-md hover:shadow-xl transition-all flex flex-col justify-between"
+                >
+                  <div className="pointer-events-none absolute inset-x-0 top-0 h-1" style={{ background: accent.bar }} />
+
+                  <div>
+                    <div className="flex items-center gap-3.5">
+                      <div className="relative rounded-2xl p-[1.5px] shrink-0" style={{ background: accent.bar }}>
+                        <MemberAvatar
+                          name={m.name}
+                          image={m.image}
+                          className="h-14 w-14 rounded-[14px] border border-background shrink-0 transition-colors shadow-md"
+                          fallbackClassName="text-lg font-black"
+                        />
+                        <span
+                          className="absolute -bottom-0.5 -right-0.5 h-3 w-3 rounded-full border-2 border-background"
+                          style={{ backgroundColor: accent.dot }}
+                        />
+                      </div>
+                      <div className="min-w-0">
+                        <span
+                          className="inline-flex items-center gap-1 rounded-md px-2 py-0.5 text-[9px] font-black uppercase tracking-wider text-foreground mb-1"
+                          style={{ backgroundColor: accent.pillBg }}
+                        >
+                          <span className="h-1.5 w-1.5 rounded-full" style={{ backgroundColor: accent.dot }} />
+                          {accent.label}
+                        </span>
+                        <p className="truncate text-base font-extrabold text-foreground">
+                          {m.name}
+                        </p>
+                        <p className="truncate text-xs text-muted-foreground font-medium">{m.role}</p>
+                      </div>
+                    </div>
+
+                    {m.bio && (
+                      <p className="mt-3 text-xs text-muted-foreground leading-relaxed line-clamp-2">
+                        {m.bio}
+                      </p>
+                    )}
                   </div>
-                </div>
 
-                {m.bio && (
-                  <p className="mt-3 text-xs text-muted-foreground leading-relaxed line-clamp-2">
-                    {m.bio}
-                  </p>
-                )}
-
-                <div className="mt-3 pt-2.5 border-t border-border/30 flex items-center justify-between text-[11px] text-primary font-bold">
-                  <span>View Details</span>
-                  <ArrowRight className="h-3.5 w-3.5 group-hover:translate-x-1 transition-transform" />
-                </div>
-              </motion.div>
-            ))}
+                  <div className="mt-3 pt-2.5 border-t border-border/30 flex items-center justify-between text-[11px] font-bold" style={{ color: accent.dot }}>
+                    <span>View Member Profile</span>
+                    <ArrowRight className="h-3.5 w-3.5 group-hover:translate-x-1 transition-transform" />
+                  </div>
+                </motion.div>
+              );
+            })}
           </div>
         </div>
       )}

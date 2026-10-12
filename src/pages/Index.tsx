@@ -205,25 +205,13 @@ const Index = () => {
     [portfolio.members],
   );
 
-  const jatinMember = useMemo(
-    () =>
-      creatorMembers.find((m) => m.name.toLowerCase().includes('jatin')) || {
-        name: 'Jatin Dhama',
-        role: 'Team Member · QA & Execution',
-        image: jatinDhamaPhoto,
-        bio: 'Contributes to system testing, execution support, and project coordination across the Presences platform.',
-        details: 'Supports feature QA, user feedback loops, and collaborative delivery for KV NFC Vigyan Vihar.',
-      },
-    [creatorMembers],
-  );
-
   const gauravMember = useMemo(
     () =>
       creatorMembers.find((m) => m.name.toLowerCase().includes('gaurav')) || {
-        name: 'Gaurav Raj',
-        role: 'Lead Architect & Full-Stack Developer',
+        name: 'Gaurav',
+        role: 'Developer & Team Leader',
         image: gauravPhoto,
-        bio: 'Creator of Presences Smart School automation. Designs scalable attendance, security, and school workflow systems.',
+        bio: 'Creator of Presences Smart School automation. Designs and leads scalable attendance, security, and school workflow systems.',
         details: 'Full-stack engineer focused on neural face-recognition pipelines, database architecture, and production-ready education tech.',
       },
     [creatorMembers],
@@ -231,9 +219,9 @@ const Index = () => {
 
   const swamiMember = useMemo(
     () =>
-      creatorMembers.find((m) => m.name.toLowerCase().includes('swami')) || {
+      creatorMembers.find((m) => m.name.toLowerCase().includes('swami') || m.name.toLowerCase().includes('anant')) || {
         name: 'Swami Anant Vyas',
-        role: 'Hardware Prototype & Core Contributor',
+        role: 'Hardware Prototype & Core Systems',
         image: swamiAnantVyasPhoto,
         bio: 'Helped build the hardware prototype and contributed key ideas for the software experience.',
         details: 'Built and validated early hardware concepts for kiosk gate mode, physical enclosures, and camera triggers.',
@@ -241,12 +229,162 @@ const Index = () => {
     [creatorMembers],
   );
 
+  const jatinMember = useMemo(
+    () =>
+      creatorMembers.find((m) => {
+        const n = m.name.toLowerCase().trim();
+        return n.includes('dhama') || n === 'jatin';
+      }) || {
+        name: 'Jatin Dhama',
+        role: 'QA Engineering & Operations',
+        image: jatinDhamaPhoto,
+        bio: 'Contributes to system testing, execution support, and project coordination across the Presences platform.',
+        details: 'Supports feature QA, user feedback loops, and collaborative delivery for KV NFC Vigyan Vihar.',
+      },
+    [creatorMembers],
+  );
+
+  const jatinMauryaMember = useMemo(
+    () =>
+      creatorMembers.find((m) => m.name.toLowerCase().includes('maurya')) || {
+        name: 'Jatin Maurya',
+        role: 'Workflow & Interface Contributor',
+        image: '',
+        bio: 'Contributes to interface workflows, student registration experiences, and module usability refinements.',
+        details: 'Collaborates on smooth classroom flows, visual polish, and structured data management across modules.',
+      },
+    [creatorMembers],
+  );
+
+  const mayankMember = useMemo(
+    () =>
+      creatorMembers.find((m) => m.name.toLowerCase().includes('mayank')) || {
+        name: 'Mayank',
+        role: 'Field Testing & Research Contributor',
+        image: '',
+        bio: 'Supports real-world campus testing, attendance verification, and operational reliability checks.',
+        details: 'Assists with batch enrollment validation, kiosk responsiveness testing, and rollout readiness.',
+      },
+    [creatorMembers],
+  );
+
+  const getMemberTheme = (name: string) => {
+    const n = (name || '').toLowerCase();
+    if (n.includes('gaurav')) {
+      return {
+        hex: '#f59e0b',
+        badge: 'Team Leader · Architect',
+        shortLabel: 'Gaurav',
+        borderColor: 'rgba(245, 158, 11, 0.55)',
+        hoverBorderColor: 'rgba(251, 191, 36, 0.9)',
+        glowBg: 'radial-gradient(circle at 88% 12%, rgba(245, 158, 11, 0.22), transparent 65%)',
+        topBarGradient: 'linear-gradient(90deg, #f59e0b, #fde047, #f59e0b)',
+        dotColor: '#fbbf24',
+        dotShadow: '0 0 10px rgba(251, 191, 36, 0.9)',
+        pillBg: 'rgba(245, 158, 11, 0.14)',
+        pillBorder: 'rgba(245, 158, 11, 0.4)',
+        textClass: 'text-amber-600 dark:text-amber-300',
+        ringColor: 'rgba(251, 191, 36, 0.65)',
+      };
+    }
+    if (n.includes('maurya')) {
+      // #9400D3 (Jatin Maurya) — harmonized electric royal violet for dark/light glass legibility
+      return {
+        hex: '#9400D3',
+        badge: 'UI & Workflows',
+        shortLabel: 'Jatin M.',
+        borderColor: 'rgba(148, 0, 211, 0.45)',
+        hoverBorderColor: 'rgba(184, 41, 255, 0.85)',
+        glowBg: 'radial-gradient(circle at 88% 12%, rgba(148, 0, 211, 0.22), transparent 65%)',
+        topBarGradient: 'linear-gradient(90deg, #9400D3, #c084fc, #9400D3)',
+        dotColor: '#b829ff',
+        dotShadow: '0 0 10px rgba(148, 0, 211, 0.95)',
+        pillBg: 'rgba(148, 0, 211, 0.16)',
+        pillBorder: 'rgba(168, 85, 247, 0.45)',
+        textClass: 'text-purple-700 dark:text-[#d8b4fe]',
+        ringColor: 'rgba(168, 85, 247, 0.65)',
+      };
+    }
+    if (n.includes('dhama') || n.trim() === 'jatin') {
+      // #05edf5 (Jatin Dhama) — electric cyber cyan
+      return {
+        hex: '#05edf5',
+        badge: 'QA & Execution',
+        shortLabel: 'Jatin D.',
+        borderColor: 'rgba(5, 237, 245, 0.4)',
+        hoverBorderColor: 'rgba(5, 237, 245, 0.85)',
+        glowBg: 'radial-gradient(circle at 88% 12%, rgba(5, 237, 245, 0.18), transparent 65%)',
+        topBarGradient: 'linear-gradient(90deg, #05edf5, #67e8f9, #05edf5)',
+        dotColor: '#05edf5',
+        dotShadow: '0 0 10px rgba(5, 237, 245, 0.9)',
+        pillBg: 'rgba(5, 237, 245, 0.12)',
+        pillBorder: 'rgba(5, 237, 245, 0.42)',
+        textClass: 'text-cyan-700 dark:text-[#05edf5]',
+        ringColor: 'rgba(5, 237, 245, 0.6)',
+      };
+    }
+    if (n.includes('swami') || n.includes('anant')) {
+      // #fc0303 (Anant) — harmonized ruby-crimson neon glass so it looks sleek and non-destructive
+      return {
+        hex: '#fc0303',
+        badge: 'Hardware & Core',
+        shortLabel: 'Anant',
+        borderColor: 'rgba(252, 3, 3, 0.36)',
+        hoverBorderColor: 'rgba(255, 77, 77, 0.8)',
+        glowBg: 'radial-gradient(circle at 88% 12%, rgba(252, 3, 3, 0.16), transparent 65%)',
+        topBarGradient: 'linear-gradient(90deg, #fc0303, #fb7185, #fc0303)',
+        dotColor: '#fc0303',
+        dotShadow: '0 0 10px rgba(252, 3, 3, 0.85)',
+        pillBg: 'rgba(252, 3, 3, 0.12)',
+        pillBorder: 'rgba(252, 3, 3, 0.38)',
+        textClass: 'text-rose-700 dark:text-[#ff6b6b]',
+        ringColor: 'rgba(252, 3, 3, 0.55)',
+      };
+    }
+    if (n.includes('mayank')) {
+      // #05fac9 (Mayank) — neon mint aquamarine
+      return {
+        hex: '#05fac9',
+        badge: 'Field Ops & R&D',
+        shortLabel: 'Mayank',
+        borderColor: 'rgba(5, 250, 201, 0.4)',
+        hoverBorderColor: 'rgba(5, 250, 201, 0.85)',
+        glowBg: 'radial-gradient(circle at 88% 12%, rgba(5, 250, 201, 0.18), transparent 65%)',
+        topBarGradient: 'linear-gradient(90deg, #05fac9, #6ee7b7, #05fac9)',
+        dotColor: '#05fac9',
+        dotShadow: '0 0 10px rgba(5, 250, 201, 0.9)',
+        pillBg: 'rgba(5, 250, 201, 0.12)',
+        pillBorder: 'rgba(5, 250, 201, 0.42)',
+        textClass: 'text-teal-700 dark:text-[#05fac9]',
+        ringColor: 'rgba(5, 250, 201, 0.6)',
+      };
+    }
+    return {
+      hex: '#38bdf8',
+      badge: 'Core Member',
+      shortLabel: name.split(' ')[0] || 'Member',
+      borderColor: 'rgba(56, 189, 248, 0.35)',
+      hoverBorderColor: 'rgba(56, 189, 248, 0.75)',
+      glowBg: 'radial-gradient(circle at 88% 12%, rgba(56, 189, 248, 0.15), transparent 65%)',
+      topBarGradient: 'linear-gradient(90deg, #38bdf8, #818cf8)',
+      dotColor: '#38bdf8',
+      dotShadow: '0 0 8px rgba(56, 189, 248, 0.8)',
+      pillBg: 'rgba(56, 189, 248, 0.12)',
+      pillBorder: 'rgba(56, 189, 248, 0.35)',
+      textClass: 'text-sky-700 dark:text-sky-300',
+      ringColor: 'rgba(56, 189, 248, 0.5)',
+    };
+  };
+
   const [teamMembersList, setTeamMembersList] = useState<any[]>([]);
   const [isSwapped, setIsSwapped] = useState(false);
 
-  const defaultTeamMembers = useMemo(() => creatorMembers.slice(1), [creatorMembers]);
+  const defaultTeamMembers = useMemo(
+    () => [swamiMember, jatinMember, jatinMauryaMember, mayankMember],
+    [swamiMember, jatinMember, jatinMauryaMember, mayankMember],
+  );
   const displayedTeamMembers = useMemo(() => {
-    if (teamMembersList.length > 0) return teamMembersList;
+    if (teamMembersList.length >= 4) return teamMembersList;
     return defaultTeamMembers;
   }, [teamMembersList, defaultTeamMembers]);
 
@@ -255,8 +393,7 @@ const Index = () => {
     haptic('selection');
     setIsSwapped((prev) => !prev);
     setTeamMembersList((prev) => {
-      const current = prev.length > 0 ? prev : defaultTeamMembers;
-      if (current.length <= 1) return current;
+      const current = prev.length >= 4 ? prev : defaultTeamMembers;
       return [...current].reverse();
     });
   };
@@ -728,112 +865,268 @@ const Index = () => {
               </motion.div>
 
               {/* Right: Team Leadership & Members Grid */}
-              <div className="lg:col-span-6 flex flex-col justify-between gap-4 bg-white/90 dark:bg-card/75 p-6 sm:p-7 rounded-3xl border border-border/80 dark:border-white/10 shadow-xl backdrop-blur-2xl">
-                <div>
-                  <div className="flex items-center justify-between pb-3 mb-3 border-b border-border/50">
-                    <span className="text-xs font-black uppercase tracking-wider text-slate-700 dark:text-slate-300 flex items-center gap-2">
-                      <Sparkles className="h-4 w-4 text-amber-500 dark:text-amber-400" /> Creators &amp; Core Architects
-                    </span>
+              <div className="lg:col-span-6 relative overflow-hidden flex flex-col justify-between gap-4 bg-white/95 dark:bg-[#0b0e17]/90 p-5 sm:p-7 rounded-3xl border border-border/80 dark:border-white/12 shadow-2xl backdrop-blur-2xl">
+                {/* Ambient background glows */}
+                <div className="pointer-events-none absolute -top-24 -right-24 h-56 w-56 rounded-full bg-amber-500/10 blur-3xl" />
+                <div className="pointer-events-none absolute -bottom-24 -left-24 h-56 w-56 rounded-full bg-purple-600/10 blur-3xl" />
+
+                <div className="relative z-10">
+                  {/* Top Header */}
+                  <div className="flex items-center justify-between pb-3.5 mb-4 border-b border-border/60 dark:border-white/10">
+                    <div className="flex items-center gap-2.5">
+                      <span className="flex h-7 w-7 items-center justify-center rounded-xl bg-amber-500/15 border border-amber-400/35 text-amber-500 dark:text-amber-400 shadow-xs">
+                        <Sparkles className="h-3.5 w-3.5" />
+                      </span>
+                      <div>
+                        <span className="text-xs font-black uppercase tracking-[0.14em] text-slate-800 dark:text-slate-100 block leading-none">
+                          Creators &amp; Core Architects
+                        </span>
+                        <span className="text-[10px] font-semibold text-slate-500 dark:text-slate-400 mt-0.5 block">
+                          Team RCA Engineering Roster · 5 Members
+                        </span>
+                      </div>
+                    </div>
                     <Button
                       variant="ghost"
                       size="sm"
                       onClick={() => navigate('/portfolio')}
-                      className="text-xs font-bold text-amber-600 dark:text-amber-300 hover:text-amber-700 dark:hover:text-amber-200 hover:bg-amber-400/10 rounded-xl cursor-pointer"
+                      className="h-8 px-3.5 text-xs font-bold text-amber-700 dark:text-amber-300 hover:text-amber-800 dark:hover:text-amber-200 bg-amber-500/10 hover:bg-amber-500/20 border border-amber-400/35 rounded-full cursor-pointer transition-all shadow-xs"
                     >
-                      View Studio <ArrowRight className="ml-1 h-3.5 w-3.5" />
+                      View Studio <ArrowRight className="ml-1.5 h-3.5 w-3.5" />
                     </Button>
                   </div>
 
-                  {/* Lead Creator Spotlight Card */}
-                  <button
+                  {/* LEADER SPOTLIGHT CARD — GAURAV */}
+                  <motion.button
                     type="button"
+                    whileHover={{ y: -2 }}
+                    whileTap={{ scale: 0.99 }}
                     onClick={() => {
                       haptic('selection');
                       setActiveProfile(gauravMember);
                     }}
-                    className="flex w-full items-center justify-between gap-4 rounded-2xl border border-amber-300/70 dark:border-amber-400/40 bg-gradient-to-r from-amber-500/15 via-amber-500/5 to-transparent p-4 sm:p-5 text-left transition-all hover:border-amber-400 hover:shadow-lg mb-4 cursor-pointer group"
+                    className="relative w-full overflow-hidden rounded-2xl border-2 border-amber-400/70 dark:border-amber-400/55 bg-gradient-to-br from-amber-500/18 via-amber-500/8 to-slate-900/5 dark:from-amber-500/20 dark:via-[#1a1308]/90 dark:to-[#0f1320]/95 p-4 sm:p-5 text-left transition-all duration-300 hover:border-amber-400 hover:shadow-[0_0_32px_rgba(245,158,11,0.22)] mb-5 cursor-pointer group"
                   >
-                    <div className="flex items-center gap-4 min-w-0">
-                      <img
-                        src={portfolio.profileImage || gauravMember.image || gauravPhoto}
-                        alt={gauravMember.name}
-                        className="h-14 w-14 rounded-2xl border-2 border-amber-400/70 object-cover shadow-md shrink-0 group-hover:scale-105 transition-transform"
-                        loading="lazy"
-                      />
-                      <div className="min-w-0">
-                        <span className="inline-block text-[10px] font-black uppercase tracking-[0.2em] text-amber-700 dark:text-amber-300">
-                          Lead · Architect &amp; Developer
+                    {/* Top Metallic Leader Ribbon */}
+                    <div className="pointer-events-none absolute inset-x-0 top-0 h-1 bg-gradient-to-r from-amber-400 via-yellow-200 to-amber-500" />
+                    <div className="pointer-events-none absolute -right-12 -top-12 h-36 w-36 rounded-full bg-amber-400/20 blur-2xl group-hover:bg-amber-400/30 transition-colors" />
+
+                    <div className="relative z-10 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                      <div className="flex items-center gap-4 min-w-0">
+                        {/* Leader Avatar with Royal Gold Ring & Leader Badge */}
+                        <div className="relative shrink-0">
+                          <div className="rounded-2xl p-[2px] bg-gradient-to-tr from-amber-500 via-yellow-300 to-amber-400 shadow-[0_0_20px_rgba(245,158,11,0.4)] group-hover:scale-105 transition-transform duration-300">
+                            <img
+                              src={portfolio.profileImage || gauravMember.image || gauravPhoto}
+                              alt={gauravMember.name}
+                              className="h-16 w-16 sm:h-[68px] sm:w-[68px] rounded-[14px] border-2 border-background object-cover"
+                              loading="lazy"
+                            />
+                          </div>
+                          {/* Corner Leader Trophy Badge */}
+                          <span
+                            className="absolute -bottom-1.5 -right-1.5 flex h-6 w-6 items-center justify-center rounded-full bg-gradient-to-br from-amber-300 via-amber-400 to-amber-600 text-slate-950 shadow-md border-2 border-white dark:border-slate-950"
+                            title="Team Leader"
+                          >
+                            <Trophy className="h-3 w-3 stroke-[2.5]" />
+                          </span>
+                        </div>
+
+                        <div className="min-w-0 flex-1">
+                          {/* Leader Crown Pill */}
+                          <div className="flex flex-wrap items-center gap-1.5 mb-1">
+                            <span className="inline-flex items-center gap-1.5 rounded-full bg-gradient-to-r from-amber-400 via-yellow-300 to-amber-500 px-2.5 py-0.5 text-[10px] font-black uppercase tracking-[0.16em] text-slate-950 shadow-sm">
+                              <Sparkles className="h-2.5 w-2.5 fill-slate-950" />
+                              Team Leader
+                            </span>
+                            <span className="inline-flex items-center gap-1 rounded-full border border-amber-400/45 bg-amber-500/15 px-2.5 py-0.5 text-[10px] font-extrabold uppercase tracking-wider text-amber-800 dark:text-amber-200">
+                              Lead Architect
+                            </span>
+                          </div>
+
+                          <div className="flex items-center gap-2">
+                            <p
+                              className="text-xl sm:text-2xl font-black text-slate-900 dark:text-white truncate tracking-tight"
+                              style={{ fontFamily: 'Sora, sans-serif' }}
+                            >
+                              {gauravMember.name}
+                            </p>
+                            <ShieldCheck className="h-4 w-4 text-amber-500 dark:text-amber-300 shrink-0" />
+                          </div>
+
+                          <p className="text-xs font-semibold text-slate-600 dark:text-amber-100/80 line-clamp-1 mt-0.5">
+                            {gauravMember.role}
+                          </p>
+
+                          {/* Leader Specialty Chips */}
+                          <div className="mt-2.5 flex flex-wrap items-center gap-1.5">
+                            {['Full-Stack Engine', 'AI Vision', 'System Lead'].map((chip) => (
+                              <span
+                                key={chip}
+                                className="rounded-lg border border-amber-400/30 bg-amber-500/10 px-2 py-0.5 text-[10px] font-bold text-amber-800 dark:text-amber-200/90"
+                              >
+                                {chip}
+                              </span>
+                            ))}
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="flex sm:flex-col items-center sm:items-end justify-between sm:justify-center gap-2 pt-2 sm:pt-0 border-t sm:border-t-0 border-amber-400/20 shrink-0">
+                        <span className="text-[10px] font-black uppercase tracking-widest text-amber-700 dark:text-amber-300/90 sm:hidden">
+                          Inspect Leader Profile
                         </span>
-                        <p className="text-lg font-black text-slate-900 dark:text-foreground truncate">{gauravMember.name}</p>
-                        <p className="text-xs font-medium text-slate-600 dark:text-slate-300 line-clamp-1">{gauravMember.role}</p>
+                        <div className="flex h-9 w-9 items-center justify-center rounded-xl border border-amber-400/50 bg-amber-500/20 text-amber-700 dark:text-amber-200 group-hover:bg-amber-400 group-hover:text-slate-950 transition-all shadow-sm">
+                          <ArrowRight className="h-4 w-4 group-hover:translate-x-0.5 transition-transform" />
+                        </div>
                       </div>
                     </div>
-                    <ArrowRight className="h-5 w-5 text-amber-600 dark:text-amber-400 shrink-0 group-hover:translate-x-1 transition-transform" />
-                  </button>
+                  </motion.button>
 
-                  {/* Team Members List Header & Swap Button */}
-                  <div className="flex items-center justify-between mt-4 mb-2.5 px-1">
-                    <span className="text-[11px] font-bold uppercase tracking-wider text-slate-600 dark:text-slate-400">
-                      Core Team Contributors
-                    </span>
+                  {/* Core Team Contributors Header & Swap Button */}
+                  <div className="flex items-center justify-between mb-3 px-0.5">
+                    <div className="flex items-center gap-2">
+                      <span className="text-[11px] font-black uppercase tracking-[0.16em] text-slate-600 dark:text-slate-300">
+                        Core Team Contributors
+                      </span>
+                      {/* Color Spectrum Dots representing the 4 members */}
+                      <div className="hidden sm:flex items-center gap-1 ml-1">
+                        <span className="h-2 w-2 rounded-full" style={{ backgroundColor: '#fc0303', boxShadow: '0 0 6px rgba(252,3,3,0.7)' }} title="Swami Anant Vyas (#fc0303)" />
+                        <span className="h-2 w-2 rounded-full" style={{ backgroundColor: '#05edf5', boxShadow: '0 0 6px rgba(5,237,245,0.7)' }} title="Jatin Dhama (#05edf5)" />
+                        <span className="h-2 w-2 rounded-full" style={{ backgroundColor: '#9400D3', boxShadow: '0 0 6px rgba(148,0,211,0.8)' }} title="Jatin Maurya (#9400D3)" />
+                        <span className="h-2 w-2 rounded-full" style={{ backgroundColor: '#05fac9', boxShadow: '0 0 6px rgba(5,250,201,0.7)' }} title="Mayank (#05fac9)" />
+                      </div>
+                    </div>
+
                     {displayedTeamMembers.length > 1 && (
                       <Button
                         variant="ghost"
                         size="sm"
                         onClick={handleSwapTeamMembers}
-                        className="h-6 px-2.5 text-[11px] font-bold text-emerald-700 dark:text-emerald-400 hover:text-emerald-800 dark:hover:text-emerald-300 hover:bg-emerald-500/15 rounded-lg gap-1.5 transition-all active:scale-95 border border-emerald-500/30 bg-emerald-500/10 shadow-xs cursor-pointer"
-                        title="Click to swap members"
+                        className="h-7 px-2.5 text-[11px] font-bold text-emerald-700 dark:text-emerald-300 hover:text-emerald-800 dark:hover:text-emerald-200 hover:bg-emerald-500/20 rounded-xl gap-1.5 transition-all active:scale-95 border border-emerald-500/35 bg-emerald-500/10 shadow-xs cursor-pointer"
+                        title="Click to swap contributor order"
                       >
                         <motion.div
                           animate={{ rotate: isSwapped ? 180 : 0 }}
                           transition={{ type: 'spring' as const, stiffness: 400, damping: 25 }}
                         >
-                          <ArrowLeftRight className="h-3 w-3 text-emerald-700 dark:text-emerald-400" />
+                          <ArrowLeftRight className="h-3 w-3 text-emerald-700 dark:text-emerald-300" />
                         </motion.div>
                         <span>Click to Swap</span>
                       </Button>
                     )}
                   </div>
 
-                  {/* Team Members List */}
+                  {/* 4 Core Contributors 2x2 Color-Themed Bento Grid */}
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 relative">
-                    {displayedTeamMembers.map((member) => (
-                      <motion.button
-                        layout
-                        key={member.name}
-                        type="button"
-                        onClick={() => {
-                          haptic('selection');
-                          setActiveProfile(member);
-                        }}
-                        transition={{ type: 'spring' as const, stiffness: 450, damping: 30, mass: 0.6 }}
-                        className="flex items-center justify-between gap-3 rounded-2xl border border-border/80 bg-white/90 dark:bg-card/60 p-3.5 text-left transition-all hover:border-amber-400/60 hover:bg-amber-50/40 dark:hover:bg-accent/40 group shadow-xs cursor-pointer"
-                        aria-label={`Open ${member.name} profile`}
-                      >
-                        <div className="flex items-center gap-3 min-w-0">
-                          <MemberAvatar
-                            name={member.name}
-                            image={member.image}
-                            className="h-10 w-10 rounded-xl border border-border/70 shrink-0 group-hover:scale-105 transition-transform"
-                            fallbackClassName="text-xs font-bold"
+                    {displayedTeamMembers.map((member) => {
+                      const theme = getMemberTheme(member.name);
+                      return (
+                        <motion.button
+                          layout
+                          key={member.name}
+                          type="button"
+                          whileHover={{ y: -2 }}
+                          whileTap={{ scale: 0.98 }}
+                          onClick={() => {
+                            haptic('selection');
+                            setActiveProfile(member);
+                          }}
+                          transition={{ type: 'spring' as const, stiffness: 450, damping: 30, mass: 0.6 }}
+                          style={{
+                            borderColor: theme.borderColor,
+                            backgroundImage: theme.glowBg,
+                          }}
+                          className="group relative overflow-hidden flex items-center justify-between gap-3 rounded-2xl border bg-white/95 dark:bg-[#111624]/90 p-3.5 text-left transition-all duration-300 hover:shadow-lg cursor-pointer"
+                          aria-label={`Open ${member.name} profile`}
+                        >
+                          {/* Top Signature Color Accent Line */}
+                          <div
+                            className="pointer-events-none absolute inset-x-0 top-0 h-[2.5px] opacity-85 group-hover:opacity-100 transition-opacity"
+                            style={{ background: theme.topBarGradient }}
                           />
-                          <div className="min-w-0">
-                            <p className="text-[9px] font-bold uppercase tracking-wider text-amber-600 dark:text-amber-400">Team Member</p>
-                            <p className="text-xs sm:text-sm font-bold text-slate-900 dark:text-foreground truncate">{member.name}</p>
+
+                          <div className="flex items-center gap-3 min-w-0">
+                            {/* Avatar with Signature Color Ring & Glowing Node */}
+                            <div className="relative shrink-0">
+                              <div
+                                className="rounded-xl p-[1.5px] transition-transform duration-300 group-hover:scale-105"
+                                style={{
+                                  background: theme.topBarGradient,
+                                  boxShadow: `0 0 14px -3px ${theme.ringColor}`,
+                                }}
+                              >
+                                <MemberAvatar
+                                  name={member.name}
+                                  image={member.image}
+                                  className="h-11 w-11 rounded-[10px] border border-background shrink-0"
+                                  fallbackClassName="text-xs font-black"
+                                />
+                              </div>
+                              <span
+                                className="absolute -bottom-0.5 -right-0.5 h-2.5 w-2.5 rounded-full border-2 border-white dark:border-[#111624]"
+                                style={{
+                                  backgroundColor: theme.dotColor,
+                                  boxShadow: theme.dotShadow,
+                                }}
+                              />
+                            </div>
+
+                            <div className="min-w-0">
+                              {/* Signature Color Badge Pill */}
+                              <div className="flex items-center gap-1.5">
+                                <span
+                                  className={cn(
+                                    'inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[9px] font-black uppercase tracking-wider border',
+                                    theme.textClass,
+                                  )}
+                                  style={{
+                                    backgroundColor: theme.pillBg,
+                                    borderColor: theme.pillBorder,
+                                  }}
+                                >
+                                  <span
+                                    className="h-1.5 w-1.5 rounded-full"
+                                    style={{ backgroundColor: theme.dotColor }}
+                                  />
+                                  {theme.badge}
+                                </span>
+                              </div>
+
+                              <p className="mt-1 text-sm font-extrabold text-slate-900 dark:text-white truncate">
+                                {member.name}
+                              </p>
+                              <p className="text-[11px] font-medium text-slate-500 dark:text-slate-400 truncate">
+                                {member.role}
+                              </p>
+                            </div>
                           </div>
-                        </div>
-                        <ArrowRight className="h-4 w-4 text-slate-400 shrink-0 group-hover:text-amber-600 dark:group-hover:text-amber-400 group-hover:translate-x-0.5 transition-all" />
-                      </motion.button>
-                    ))}
+
+                          <div
+                            className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg border transition-all duration-200 group-hover:translate-x-0.5"
+                            style={{
+                              backgroundColor: theme.pillBg,
+                              borderColor: theme.pillBorder,
+                              color: theme.dotColor,
+                            }}
+                          >
+                            <ArrowRight className="h-3.5 w-3.5" />
+                          </div>
+                        </motion.button>
+                      );
+                    })}
                   </div>
                 </div>
 
-                <div className="pt-3 border-t border-border/50 flex items-center justify-between text-xs font-medium text-slate-600 dark:text-slate-400">
-                  <div className="flex items-center gap-1.5">
-                    <img src="/kvs-logo.png" alt="KVS" className="h-4 w-4 object-contain rounded-full bg-white p-0.5" />
-                    <span>Presences AI Engine</span>
+                {/* Bottom Institutional Footer Strip */}
+                <div className="relative z-10 pt-3 border-t border-border/60 dark:border-white/10 flex items-center justify-between text-xs font-medium text-slate-600 dark:text-slate-400">
+                  <div className="flex items-center gap-2">
+                    <img src="/kvs-logo.png" alt="KVS" className="h-4 w-4 object-contain rounded-full bg-white p-0.5 shadow-xs" />
+                    <span className="font-semibold text-slate-700 dark:text-slate-300">Presences AI Engine</span>
                   </div>
-                  <span className="font-mono text-emerald-700 dark:text-emerald-400 font-bold">PM Shri KV NFC Vigyan Vihar</span>
+                  <span className="font-mono text-[11px] text-emerald-700 dark:text-[#05fac9] font-bold">
+                    PM Shri KV NFC Vigyan Vihar
+                  </span>
                 </div>
               </div>
 
@@ -1155,84 +1448,144 @@ const Index = () => {
 
         {/* Member Detail Dialog */}
         <Dialog open={Boolean(activeProfile)} onOpenChange={(open) => !open && setActiveProfile(null)}>
-          <DialogContent className="max-w-md rounded-3xl border border-amber-300/30 bg-card/95 p-0 backdrop-blur-2xl shadow-2xl overflow-hidden">
-            {activeProfile && (
-              <div className="p-6 space-y-4">
-                {/* Header with Quick Member Switcher */}
-                <div className="flex items-center justify-between gap-2 pb-2 border-b border-border/40">
-                  <span className="text-[10px] font-black uppercase tracking-widest text-amber-600 dark:text-amber-400">
-                    Team RCA Member Profile
-                  </span>
-                  <div className="flex gap-1">
-                    {[
-                      { label: 'Jatin', member: jatinMember },
-                      { label: 'Gaurav', member: gauravMember },
-                      { label: 'Swami', member: swamiMember },
-                    ].map((item) => {
-                      const isCurrent = activeProfile.name === item.member.name;
-                      return (
-                        <button
-                          key={item.label}
-                          onClick={() => {
-                            haptic('selection');
-                            setActiveProfile(item.member);
-                          }}
+          <DialogContent
+            className="max-w-md rounded-3xl border bg-white/95 dark:bg-[#0d111d]/95 p-0 backdrop-blur-2xl shadow-2xl overflow-hidden"
+            style={activeProfile ? { borderColor: getMemberTheme(activeProfile.name).borderColor } : undefined}
+          >
+            {activeProfile && (() => {
+              const activeTheme = getMemberTheme(activeProfile.name);
+              const isLeader = activeProfile.name.toLowerCase().includes('gaurav');
+              return (
+                <div className="relative p-6 space-y-4">
+                  {/* Top Signature Color Accent Bar */}
+                  <div
+                    className="pointer-events-none absolute inset-x-0 top-0 h-1.5"
+                    style={{ background: activeTheme.topBarGradient }}
+                  />
+                  <div
+                    className="pointer-events-none absolute -right-12 -top-12 h-36 w-36 rounded-full blur-2xl opacity-60"
+                    style={{ background: activeTheme.glowBg }}
+                  />
+
+                  {/* Header with Quick Member Switcher for all 5 members */}
+                  <div className="relative z-10 flex flex-col gap-2.5 pb-3 border-b border-border/50 dark:border-white/10">
+                    <span className={cn('text-[10px] font-black uppercase tracking-widest flex items-center gap-1.5', activeTheme.textClass)}>
+                      <span className="h-2 w-2 rounded-full" style={{ backgroundColor: activeTheme.dotColor, boxShadow: activeTheme.dotShadow }} />
+                      Team RCA Member Profile
+                    </span>
+                    <div className="flex flex-wrap gap-1.5">
+                      {[
+                        { label: '★ Gaurav', member: gauravMember },
+                        { label: 'Anant', member: swamiMember },
+                        { label: 'Jatin D.', member: jatinMember },
+                        { label: 'Jatin M.', member: jatinMauryaMember },
+                        { label: 'Mayank', member: mayankMember },
+                      ].map((item) => {
+                        const isCurrent = activeProfile.name === item.member.name;
+                        const itemTheme = getMemberTheme(item.member.name);
+                        return (
+                          <button
+                            key={item.label}
+                            type="button"
+                            onClick={() => {
+                              haptic('selection');
+                              setActiveProfile(item.member);
+                            }}
+                            style={
+                              isCurrent
+                                ? {
+                                    backgroundColor: itemTheme.pillBg,
+                                    borderColor: itemTheme.pillBorder,
+                                  }
+                                : undefined
+                            }
+                            className={cn(
+                              'px-2.5 py-1 rounded-xl text-[10px] font-extrabold transition-all cursor-pointer border flex items-center gap-1',
+                              isCurrent
+                                ? cn(itemTheme.textClass, 'shadow-xs')
+                                : 'border-transparent bg-slate-100/80 dark:bg-white/5 text-slate-500 hover:text-slate-900 dark:hover:text-slate-200',
+                            )}
+                          >
+                            <span
+                              className="h-1.5 w-1.5 rounded-full shrink-0"
+                              style={{ backgroundColor: itemTheme.dotColor }}
+                            />
+                            {item.label}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+
+                  <DialogHeader className="relative z-10 space-y-3.5 text-left">
+                    <div className="flex items-center gap-4">
+                      <div
+                        className="rounded-2xl p-[2px] shrink-0"
+                        style={{
+                          background: activeTheme.topBarGradient,
+                          boxShadow: `0 0 18px -2px ${activeTheme.ringColor}`,
+                        }}
+                      >
+                        <MemberAvatar
+                          name={activeProfile.name}
+                          image={activeProfile.image}
+                          className="h-16 w-16 rounded-[14px] border-2 border-background shadow-md object-cover"
+                          fallbackClassName="text-lg font-black"
+                        />
+                      </div>
+
+                      <div className="min-w-0">
+                        <span
                           className={cn(
-                            "px-2 py-0.5 rounded-lg text-[10px] font-bold transition-all cursor-pointer",
-                            isCurrent
-                              ? "bg-amber-500/20 text-amber-700 dark:text-amber-300 border border-amber-400/40 shadow-xs"
-                              : "text-slate-500 hover:text-slate-800 dark:hover:text-slate-200"
+                            'inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[9px] font-black uppercase tracking-wider border mb-1',
+                            activeTheme.textClass,
                           )}
+                          style={{
+                            backgroundColor: activeTheme.pillBg,
+                            borderColor: activeTheme.pillBorder,
+                          }}
                         >
-                          {item.label}
-                        </button>
-                      );
-                    })}
-                  </div>
+                          {isLeader ? '★ Team Leader' : activeTheme.badge}
+                        </span>
+                        <DialogTitle className="text-xl font-extrabold text-slate-900 dark:text-white truncate">
+                          {activeProfile.name}
+                        </DialogTitle>
+                        <p className={cn('text-xs font-bold mt-0.5', activeTheme.textClass)}>
+                          {activeProfile.role}
+                        </p>
+                      </div>
+                    </div>
+
+                    <DialogDescription className="text-sm leading-relaxed text-slate-700 dark:text-slate-300">
+                      {activeProfile.bio}
+                    </DialogDescription>
+
+                    {activeProfile.details && (
+                      <div
+                        className="rounded-2xl border p-3.5 text-xs text-slate-600 dark:text-slate-300 leading-relaxed"
+                        style={{
+                          backgroundColor: activeTheme.pillBg,
+                          borderColor: activeTheme.pillBorder,
+                        }}
+                      >
+                        {activeProfile.details}
+                      </div>
+                    )}
+
+                    <div className="pt-2 flex items-center justify-between">
+                      <Link
+                        to="/portfolio"
+                        onClick={() => setActiveProfile(null)}
+                        className={cn('inline-flex items-center gap-1.5 text-xs font-bold hover:underline transition-colors', activeTheme.textClass)}
+                      >
+                        <span>Explore Team RCA Studio</span>
+                        <ArrowRight className="h-3.5 w-3.5" />
+                      </Link>
+                    </div>
+                  </DialogHeader>
                 </div>
-
-                <DialogHeader className="space-y-3 text-left">
-                  <div className="flex items-center gap-3.5">
-                    <MemberAvatar
-                      name={activeProfile.name}
-                      image={activeProfile.image}
-                      className="h-16 w-16 rounded-2xl border-2 border-amber-400/40 shadow-md object-cover"
-                      fallbackClassName="text-lg font-bold"
-                    />
-
-                    <div>
-                      <DialogTitle className="text-xl font-extrabold text-slate-900 dark:text-white">
-                        {activeProfile.name}
-                      </DialogTitle>
-                      <p className="text-xs font-semibold text-amber-600 dark:text-amber-400 mt-0.5">
-                        {activeProfile.role}
-                      </p>
-                    </div>
-                  </div>
-
-                  <DialogDescription className="text-sm leading-relaxed text-slate-700 dark:text-slate-300">
-                    {activeProfile.bio}
-                  </DialogDescription>
-
-                  {activeProfile.details && (
-                    <div className="rounded-xl border border-border/60 bg-slate-50/60 dark:bg-slate-800/40 p-3 text-xs text-slate-600 dark:text-slate-400 leading-relaxed">
-                      {activeProfile.details}
-                    </div>
-                  )}
-
-                  <div className="pt-2 flex items-center justify-between">
-                    <Link
-                      to="/portfolio"
-                      onClick={() => setActiveProfile(null)}
-                      className="inline-flex items-center gap-1.5 text-xs font-bold text-amber-600 dark:text-amber-400 hover:text-amber-700 dark:hover:text-amber-300 transition-colors"
-                    >
-                      <span>Explore Team RCA Studio</span>
-                      <ArrowRight className="h-3.5 w-3.5" />
-                    </Link>
-                  </div>
-                </DialogHeader>
-              </div>
-            )}
+              );
+            })()}
           </DialogContent>
         </Dialog>
 

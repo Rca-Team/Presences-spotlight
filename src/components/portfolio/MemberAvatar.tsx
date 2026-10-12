@@ -27,11 +27,28 @@ function hueFrom(name: string) {
 }
 
 function getKnownPhoto(name: string): string | null {
-  const n = (name || '').toLowerCase();
+  const n = (name || '').toLowerCase().trim();
   if (n.includes('gaurav')) return gauravPhoto;
   if (n.includes('swami') || n.includes('anant')) return swamiAnantVyasPhoto;
-  if (n.includes('jatin')) return jatinDhamaPhoto;
+  if (n.includes('dhama') || n === 'jatin') return jatinDhamaPhoto;
   return null;
+}
+
+function getMemberFallbackGradient(name: string, defaultHue: number): string {
+  const n = (name || '').toLowerCase();
+  if (n.includes('maurya')) {
+    return 'linear-gradient(135deg, #9400D3 0%, #b829ff 50%, #581c87 100%)';
+  }
+  if (n.includes('mayank')) {
+    return 'linear-gradient(135deg, #05fac9 0%, #10b981 55%, #065f46 100%)';
+  }
+  if (n.includes('dhama')) {
+    return 'linear-gradient(135deg, #05edf5 0%, #0284c7 100%)';
+  }
+  if (n.includes('anant') || n.includes('swami')) {
+    return 'linear-gradient(135deg, #fc0303 0%, #be123c 100%)';
+  }
+  return `linear-gradient(135deg, hsl(${defaultHue} 70% 55%), hsl(${(defaultHue + 60) % 360} 70% 45%))`;
 }
 
 export function MemberAvatar({
@@ -65,11 +82,12 @@ export function MemberAvatar({
       ) : (
         <div
           className={cn(
-            'flex h-full w-full items-center justify-center font-bold text-white shadow-inner',
+            'flex h-full w-full items-center justify-center font-black tracking-wider text-white shadow-inner',
             fallbackClassName,
           )}
           style={{
-            background: `linear-gradient(135deg, hsl(${h} 70% 55%), hsl(${(h + 60) % 360} 70% 45%))`,
+            background: getMemberFallbackGradient(name || '', h),
+            textShadow: '0 1px 4px rgba(0,0,0,0.35)',
           }}
           aria-label={name}
         >
