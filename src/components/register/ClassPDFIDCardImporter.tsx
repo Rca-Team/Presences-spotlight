@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   FileText,
+  FileSpreadsheet,
   Image as ImageIcon,
   Globe,
   Loader2,
@@ -47,16 +48,17 @@ const editableFields: [keyof ExtractedStudentCard, string][] = [
   ['student_email', 'Student email'], ['parent_email', 'Parent email'], ['pen_number', 'PEN number'], ['address', 'Address'],
 ];
 
-const SUPPORTED_EXT_REGEX = /\.(?:pdf|mht|mhtml|html|htm|png|jpe?g|webp|bmp|gif)$/i;
-const SUPPORTED_MIME_REGEX = /^(?:application\/pdf|multipart\/related|message\/rfc822|application\/x-mimearchive|text\/html|image\/(?:png|jpe?g|webp|bmp|gif))$/i;
+const SUPPORTED_EXT_REGEX = /\.(?:pdf|xlsx|xls|csv|ods|mht|mhtml|html|htm|png|jpe?g|webp|bmp|gif)$/i;
+const SUPPORTED_MIME_REGEX = /^(?:application\/pdf|application\/vnd\.openxmlformats-officedocument\.spreadsheetml\.sheet|application\/vnd\.ms-excel|text\/csv|application\/csv|multipart\/related|message\/rfc822|application\/x-mimearchive|text\/html|image\/(?:png|jpe?g|webp|bmp|gif))$/i;
 const REVIEW_PAGE_SIZE = 40;
 
 function isSupportedFile(f: File): boolean {
   return SUPPORTED_EXT_REGEX.test(f.name) || SUPPORTED_MIME_REGEX.test(f.type);
 }
 
-function getFileTypeLabel(f: File): 'PDF' | 'MHT' | 'IMAGE' {
+function getFileTypeLabel(f: File): 'PDF' | 'EXCEL' | 'MHT' | 'IMAGE' {
   if (/\.pdf$/i.test(f.name) || f.type === 'application/pdf') return 'PDF';
+  if (/\.(?:xlsx|xls|csv|ods)$/i.test(f.name) || /spreadsheet|excel|csv/i.test(f.type)) return 'EXCEL';
   if (/\.(?:mht|mhtml|html|htm)$/i.test(f.name) || /multipart|rfc822|mimearchive|html/i.test(f.type)) return 'MHT';
   return 'IMAGE';
 }
@@ -280,7 +282,7 @@ export function ClassPDFIDCardImporter({ isOpen, onClose, onImportDrafts, initia
                 </Badge>
               </DialogTitle>
               <DialogDescription className="text-xs sm:text-sm text-slate-400 mt-0.5">
-                Upload multiple PDFs (up to 100 pages per file), MHT/MHTML web archives, or ID card images to extract student records and portraits.
+                Upload multiple Excel sheets (.xlsx/.xls/.csv), PDFs (up to 100 pages/file), .MHT web archives, or ID card images to extract & register students.
               </DialogDescription>
             </div>
           </div>
@@ -316,7 +318,7 @@ export function ClassPDFIDCardImporter({ isOpen, onClose, onImportDrafts, initia
                 <input
                   type="file"
                   multiple
-                  accept=".pdf,.mht,.mhtml,.html,.htm,.png,.jpg,.jpeg,.webp,.bmp,.gif,application/pdf,multipart/related,message/rfc822,application/x-mimearchive,text/html,image/png,image/jpeg,image/webp,image/bmp,image/gif"
+                  accept=".pdf,.xlsx,.xls,.csv,.ods,.mht,.mhtml,.html,.htm,.png,.jpg,.jpeg,.webp,.bmp,.gif,application/pdf,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel,text/csv,multipart/related,message/rfc822,application/x-mimearchive,text/html,image/png,image/jpeg,image/webp,image/bmp,image/gif"
                   disabled={busy}
                   className="absolute inset-0 opacity-0 cursor-pointer w-full h-full"
                   onChange={(e) => {
@@ -332,11 +334,11 @@ export function ClassPDFIDCardImporter({ isOpen, onClose, onImportDrafts, initia
                   <div>
                     <p className="text-sm font-semibold text-white">
                       {files.length > 0
-                        ? 'Click or drop to add more PDFs, Images, or .MHT files'
-                        : 'Click or drag & drop student card PDFs, Images, or .MHT files here'}
+                        ? 'Click or drop to add more Excel sheets, PDFs, Images, or .MHT files'
+                        : 'Click or drag & drop Excel sheets (.xlsx/.xls), PDFs, Images, or .MHT files here'}
                     </p>
                     <p className="text-xs text-slate-400 mt-0.5">
-                      Supports multiple files · PDFs up to 100 pages per file · .MHT / .MHTML · JPG, PNG, WebP, BMP (up to 50 MB/file)
+                      Supports Excel ID Card tables (.xlsx/.xls/.csv) · PDFs up to 100 pages/file · .MHT / .MHTML · JPG, PNG, WebP
                     </p>
                   </div>
                 </div>
@@ -374,7 +376,15 @@ export function ClassPDFIDCardImporter({ isOpen, onClose, onImportDrafts, initia
                         >
                           <div className="flex items-center gap-2.5 min-w-0">
                             <div className="h-8 w-8 rounded-lg bg-emerald-500/15 border border-emerald-500/30 flex items-center justify-center text-emerald-400 shrink-0">
-                              {kind === 'PDF' ? <FileText className="h-4 w-4" /> : kind === 'MHT' ? <Globe className="h-4 w-4" /> : <ImageIcon className="h-4 w-4" />}
+                              {kind === 'PDF' ? (
+                                <FileText className="h-4 w-4" />
+                              ) : kind === 'EXCEL' ? (
+                                <FileSpreadsheet className="h-4 w-4" />
+                              ) : kind === 'MHT' ? (
+                                <Globe className="h-4 w-4" />
+                              ) : (
+                                <ImageIcon className="h-4 w-4" />
+                              )}
                             </div>
                             <div className="min-w-0">
                               <p className="text-xs font-medium text-white truncate">{item.name}</p>

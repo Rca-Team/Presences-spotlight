@@ -47,6 +47,16 @@ export async function extractCards(
   if (file.size > MAX_DOCUMENT_BYTES) throw new Error('Use a document smaller than 50 MB. Split larger files into smaller batches.');
   if (![0, 1, 2].includes(columns) || ![0, 1, 2, 3, 4].includes(rows) || Boolean(columns) !== Boolean(rows)) throw new Error('Choose a valid card grid.');
 
+  const isExcel = /\.(?:xlsx|xls|csv|ods)$/i.test(file.name) || /^(?:application\/vnd\.openxmlformats-officedocument\.spreadsheetml\.sheet|application\/vnd\.ms-excel|text\/csv|application\/csv)$/i.test(file.type);
+  if (isExcel) {
+    const { extractExcelCards } = await import('./excelImport');
+    return extractExcelCards(file, {
+      signal,
+      progress: msg => progress(msg),
+      onCard: options.onCard,
+    });
+  }
+
   const isMht = /\.(?:mht|mhtml|html|htm)$/i.test(file.name) || /^(?:multipart\/related|message\/rfc822|application\/x-mimearchive|text\/html)$/i.test(file.type);
   if (isMht) {
     const { extractMhtCards } = await import('./mhtImport');
@@ -61,7 +71,7 @@ export async function extractCards(
 
   const isPdf = file.type === 'application/pdf' || /\.pdf$/i.test(file.name);
   const isImage = /^image\/(png|jpe?g|webp|bmp|gif)$/i.test(file.type) || /\.(?:png|jpe?g|webp|bmp|gif)$/i.test(file.name);
-  if (!isPdf && !isImage) throw new Error('Choose a PDF, MHT/MHTML, JPEG, PNG, WebP or BMP ID card file.');
+  if (!isPdf && !isImage) throw new Error('Choose a PDF, Excel (.xlsx/.xls/.csv), MHT/MHTML, JPEG, PNG, WebP or BMP ID card file.');
 
   let worker: Awaited<ReturnType<typeof import('tesseract.js')['createWorker']>> | undefined;
   let pdf: import('pdfjs-dist').PDFDocumentProxy | undefined;

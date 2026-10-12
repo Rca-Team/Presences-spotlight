@@ -38,11 +38,28 @@ export async function extractBulkPdf(file: File, options: BulkPdfOptions) {
   const isPdf = /\.pdf$/i.test(file.name) || file.type === 'application/pdf';
   const isMht = /\.(?:mht|mhtml|html|htm)$/i.test(file.name) || /^(?:multipart\/related|message\/rfc822|application\/x-mimearchive|text\/html)$/i.test(file.type);
   const isImage = /^image\/(png|jpe?g|webp|bmp|gif)$/i.test(file.type) || /\.(?:png|jpe?g|webp|bmp|gif)$/i.test(file.name);
+  const isExcel = /\.(?:xlsx|xls|csv|ods)$/i.test(file.name) || /^(?:application\/vnd\.openxmlformats-officedocument\.spreadsheetml\.sheet|application\/vnd\.ms-excel|text\/csv|application\/csv)$/i.test(file.type);
 
-  if (!isPdf && !isMht && !isImage) {
-    throw new Error('Choose a student ID-card PDF, MHT/MHTML, or image file.');
+  if (!isPdf && !isMht && !isImage && !isExcel) {
+    throw new Error('Choose a student ID-card PDF, Excel sheet (.xlsx/.xls/.csv), MHT/MHTML, or image file.');
   }
   if (!file.size || file.size > 50 * 1024 * 1024) throw new Error('Use a non-empty PDF up to 50 MB.');
+
+  if (isExcel) {
+    options.progress(`Extracting student records from ${file.name}…`, 5);
+    const { extractExcelCards } = await import('./excelImport');
+    let count = 0;
+    await extractExcelCards(file, {
+      signal: options.signal,
+      progress: (msg, pct) => options.progress(msg, pct),
+      onCard: card => {
+        count++;
+        options.onCard(card);
+      },
+    });
+    options.progress(`${count} students extracted from ${file.name}`, 100);
+    return;
+  }
 
   if (isMht) {
     options.progress(`Extracting cards from ${file.name}…`, 5);
