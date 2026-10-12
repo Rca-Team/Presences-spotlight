@@ -454,13 +454,13 @@ export function ClassPDFIDCardImporter({ isOpen, onClose, onImportDrafts, initia
                       const nextCols = Number(e.target.value);
                       setColumns(nextCols);
                       if (nextCols === 0) setRows(0);
-                      else if (rows === 0) setRows(nextCols === 1 ? 1 : 4);
+                      else if (rows === 0) setRows(nextCols === 1 ? 1 : 2);
                       clear();
                     }}
                     className="w-full bg-slate-900 border border-white/15 rounded-xl px-3 h-10 text-xs sm:text-sm text-white focus:outline-none focus:border-emerald-500/50"
                   >
                     <option value={0}>Auto-detect</option>
-                    {[1, 2].map(n => <option key={n} value={n}>{n} column{n > 1 ? 's' : ''}</option>)}
+                    {[1, 2, 3, 4].map(n => <option key={n} value={n}>{n} column{n > 1 ? 's' : ''}</option>)}
                   </select>
                 </div>
 
@@ -482,7 +482,7 @@ export function ClassPDFIDCardImporter({ isOpen, onClose, onImportDrafts, initia
                     className="w-full bg-slate-900 border border-white/15 rounded-xl px-3 h-10 text-xs sm:text-sm text-white focus:outline-none focus:border-emerald-500/50"
                   >
                     <option value={0}>Auto-detect</option>
-                    {[1, 2, 3, 4].map(n => <option key={n} value={n}>{n} row{n > 1 ? 's' : ''}</option>)}
+                    {[1, 2, 3, 4, 5, 6].map(n => <option key={n} value={n}>{n} row{n > 1 ? 's' : ''}</option>)}
                   </select>
                 </div>
               </div>

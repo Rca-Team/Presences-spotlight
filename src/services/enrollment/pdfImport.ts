@@ -1,4 +1,4 @@
-import { detectCardGrid, layoutCardSheet, parseCardText, textInRegion, type PositionedText } from './pdfParser';
+import { detectCanvasCardGrid, detectCardGrid, layoutCardSheet, parseCardText, splitMultiCardText, textInRegion, type PositionedText } from './pdfParser';
 import type { ImportCard } from './types';
 import ocrWorkerUrl from 'tesseract.js/dist/worker.min.js?url';
 import ocrCoreUrl from 'tesseract.js-core/tesseract-core-lstm.wasm.js?url';
@@ -45,7 +45,7 @@ export async function extractCards(
   if (signal.aborted) throw abortError();
   if (!file.size) throw new Error('The selected document is empty.');
   if (file.size > MAX_DOCUMENT_BYTES) throw new Error('Use a document smaller than 50 MB. Split larger files into smaller batches.');
-  if (![0, 1, 2].includes(columns) || ![0, 1, 2, 3, 4].includes(rows) || Boolean(columns) !== Boolean(rows)) throw new Error('Choose a valid card grid.');
+  if (![0, 1, 2, 3, 4].includes(columns) || ![0, 1, 2, 3, 4, 5, 6].includes(rows) || Boolean(columns) !== Boolean(rows)) throw new Error('Choose a valid card grid.');
 
   const isExcel = /\.(?:xlsx|xls|csv|ods)$/i.test(file.name) || /^(?:application\/vnd\.openxmlformats-officedocument\.spreadsheetml\.sheet|application\/vnd\.ms-excel|text\/csv|application\/csv)$/i.test(file.type);
   if (isExcel) {
@@ -137,14 +137,30 @@ export async function extractCards(
   async function readPage(canvas: HTMLCanvasElement, originalItems: PositionedText[], page: number, total: number) {
     let items = originalItems;
     let fullOcr = '';
+    const visualGrid = columns ? { columns, rows } : detectCanvasCardGrid(canvas);
     let grid = columns ? { columns, rows } : detectCardGrid(items, canvas.width, canvas.height);
-    if (items.map(i => i.text).join('').trim().length < 25) {
+    if (!columns && grid.columns * grid.rows <= 1 && visualGrid.columns * visualGrid.rows > 1) {
+      grid = visualGrid;
+    }
+
+    // Ignore browser print header/footer lines when checking if the page has digital card text
+    const bodyTextLen = items
+      .filter(i => i.y >= canvas.height * 0.035 && i.y <= canvas.height * 0.965)
+      .map(i => i.text)
+      .join('')
+      .trim().length;
+
+    if (bodyTextLen < 25 && grid.columns * grid.rows <= 1) {
       try {
         ocrStage = `Reading scanned page ${page} of ${total}`;
         const scanned = await recognize(canvas, true);
         fullOcr = scanned.data.text;
         items = (scanned.data.blocks || []).flatMap(b => b.paragraphs.flatMap(p => p.lines.map(l => ({ text: l.text.trim(), x: l.bbox.x0, y: l.bbox.y0, height: l.bbox.y1 - l.bbox.y0 }))));
-        if (!columns) grid = detectCardGrid(items, canvas.width, canvas.height);
+        if (!columns) {
+          const ocrGrid = detectCardGrid(items, canvas.width, canvas.height);
+          if (ocrGrid.columns * ocrGrid.rows > 1) grid = ocrGrid;
+          else if (visualGrid.columns * visualGrid.rows > 1) grid = visualGrid;
+        }
       } catch {
         check();
       }
@@ -238,6 +254,41 @@ export async function extractCards(
     }
 
     let extractedPageCards = await extractFromGrid(grid.columns, grid.rows);
+
+    // If auto-detection initially chose 1×1, check whether the page text actually contains
+    // multiple student cards (e.g. 4 IDs per page or 10 IDs per page) and re-extract with the
+    // matching multi-card grid or split the multi-card text blocks.
+    if (!columns && grid.columns * grid.rows <= 1 && extractedPageCards.length <= 1) {
+      const combinedPageText = extractedPageCards[0]?.text || textInRegion(items, 0, 0, canvas.width, canvas.height) || fullOcr;
+      const textChunks = splitMultiCardText(combinedPageText);
+      if (textChunks.length >= 2) {
+        const n = textChunks.length;
+        const inferredCols = n >= 4 ? 2 : (canvas.width >= canvas.height ? 2 : 1);
+        const inferredRows = Math.max(1, Math.min(6, Math.ceil(n / inferredCols)));
+        const resliced = await extractFromGrid(inferredCols, inferredRows);
+        if (resliced.length >= 2) {
+          extractedPageCards = resliced;
+        } else {
+          const basePreview = extractedPageCards[0]?.preview || createPreviewDataUrl(canvas);
+          const basePortrait = extractedPageCards[0]?.portrait;
+          extractedPageCards = textChunks.map((chunk, idx) => {
+            const student = parseCardText(chunk);
+            if (!student.admission_number && (student.student_id_kv || student.roll_number || student.pen_number)) {
+              student.admission_number = student.student_id_kv || student.roll_number || student.pen_number;
+              student.employee_id = student.admission_number;
+            }
+            return {
+              id: crypto.randomUUID(),
+              student,
+              page,
+              text: chunk,
+              preview: basePreview,
+              portrait: idx === 0 ? basePortrait : undefined,
+            };
+          }).filter(c => Boolean(c.student.name || c.student.admission_number));
+        }
+      }
+    }
 
     // If a multi-card grid (e.g. 2×4) sliced a single-card page into fragments
     // and found 0 cards, automatically retry with auto-detected grid and 1×1 full page.

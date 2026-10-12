@@ -108,7 +108,7 @@ export async function extractBulkPdf(file: File, options: BulkPdfOptions) {
   const totalPages = pdf.getPageCount();
   if (totalPages > 100) throw new Error('Use a PDF with at most 100 pages.');
   let count = 0;
-  let useCloudExtractor = true;
+  let useCloudExtractor = typeof document === 'undefined';
 
   for (let page = 1; page <= totalPages; page++) {
     if (options.signal.aborted) throw new DOMException('Request cancelled.', 'AbortError');

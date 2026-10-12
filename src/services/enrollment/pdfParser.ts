@@ -44,7 +44,7 @@ const LABEL_DEFS: LabelDef[] = [
 
 const continuationStop = /^(?:principal|signature|valid(?:\s*upto| until)?|session|school|www\.|https?:|barcode|qrcode|office|page|student\s*id|identity)/i;
 const digitOnlyLine = /^[\d\s\-–/().]{6,}$/;
-const nameStop = /\b(?:welcome|identity|card|student|pupil|identification|signature|session|class|section|date|birth|d\.?o\.?b\.?|father|mother|parent|guardian|address|blood|group|pen|roll|admn?|admission|scholar|school|vidyalaya|sangathan|region|house|team|barcode|principal|kendriya|pm\s*shri|shri|nfc|opposite|shift|phone|mobile|contact|office|government|govt|academic|board|examination|nameplate|classroom|beside|valid|upto|india|ministry|education|autonomous|body|under)\b/i;
+const nameStop = /\b(?:welcome|identity|card|student|pupil|identification|signature|session|class|section|date|birth|d\.?o\.?b\.?|father|mother|parent|guardian|address|blood|group|pen|roll|admn?|admission|scholar|school|vidyalaya|sangathan|region|house|team|barcode|principal|kendriya|pm\s*shri|shri|nfc|opposite|shift|phone|mobile|contact|office|government|govt|academic|board|examination|nameplate|classroom|beside|valid|upto|india|ministry|education|autonomous|body|under|centre|center|vihar|nagar|colony|sector|phase|block|road|marg|station|police|delhi|new\s*delhi)\b/i;
 
 const CLASS_PATTERN = '(?:1[0-2]|[1-9]|VIII|VII|XII|XI|VI|IV|IX|III|II|I|X|NURSERY|KG|LKG|UKG)';
 
@@ -66,13 +66,52 @@ function cleanAdmissionNumber(val: string): string {
 
 function cleanBloodGroup(val: string): string {
   if (!val) return '';
-  const m = val.match(/\b(A|B|AB|O)\s*([+-]|(?:\+|-)?\s*ve)\b/i);
+  const m = val.match(/\b(A1B|A2B|A1|A2|AB|A|B|O)\s*([+-]|(?:\+|-)?\s*ve)\b/i);
   if (m) {
     const type = m[1].toUpperCase();
     const sign = m[2].toLowerCase().includes('-') ? '-' : '+';
     return `${type}${sign}`;
   }
-  return val.replace(/^[:=–#\s.-]+/, '').toUpperCase().replace(/\s+/g, '');
+  const stripped = val.replace(/^[:=–#\s.-]+/, '').toUpperCase().replace(/\s+/g, '');
+  if (/^(?:NA|N\/A|NIL|NONE|NOTAVAILABLE|-+)$/i.test(stripped)) return '';
+  return stripped;
+}
+
+function isValidContinuation(field: keyof ParsedCard, candidate: string): boolean {
+  const text = candidate.trim();
+  if (!text || continuationStop.test(text)) return false;
+  switch (field) {
+    case 'pen_number':
+    case 'student_id_kv':
+      return /^\d[\d\s-]{6,15}\d$/.test(text);
+    case 'admission_number':
+    case 'roll_number':
+      return text.length <= 20 && /\d/.test(text) && /^[A-Za-z0-9\s/._-]+$/.test(text);
+    case 'date_of_birth':
+      return /\b\d{1,2}[\/.-](?:\d{1,2}|[A-Za-z]{3,9})[\/.-]\d{2,4}\b/.test(text);
+    case 'blood_group':
+      return /^(?:A1B|A2B|A1|A2|AB|A|B|O)\s*(?:[+-]|(?:\+|-)?\s*ve)$/i.test(text);
+    case 'parent_phone':
+    case 'phone':
+      return text.replace(/\D/g, '').length >= 8;
+    case 'email':
+    case 'parent_email':
+    case 'student_email':
+      return /\S+@\S+\.\S+/.test(text);
+    case 'class':
+      return new RegExp(`^(?:class\\s*)?(${CLASS_PATTERN})(?:st|nd|rd|th)?(?:[\\s\\/-]+[A-Z])?$`, 'i').test(text);
+    case 'section':
+      return /^[A-Za-z]$/.test(text);
+    case 'name':
+    case 'father_name':
+    case 'mother_name':
+    case 'parent_name':
+      return !digitOnlyLine.test(text) && !/\d/.test(text) && /\p{L}/u.test(text);
+    case 'address':
+      return !digitOnlyLine.test(text);
+    default:
+      return !digitOnlyLine.test(text);
+  }
 }
 
 function cleanSection(val: string): string {
@@ -189,9 +228,9 @@ export function parseCardText(text: string): ParsedCard {
     const { prefix, segments } = splitLineByLabels(line);
     if (prefix) {
       prefixes.push(prefix);
-      if (previous && !(result as any)[previous] && !digitOnlyLine.test(prefix) && !continuationStop.test(prefix)) {
+      if (previous && !(result as any)[previous] && isValidContinuation(previous, prefix)) {
         (result as any)[previous] = prefix;
-      } else if (previous === 'address' && !digitOnlyLine.test(prefix) && !continuationStop.test(prefix)) {
+      } else if (previous === 'address' && isValidContinuation('address', prefix)) {
         result.address += ' ' + prefix;
       }
     }
@@ -217,12 +256,11 @@ export function parseCardText(text: string): ParsedCard {
     }
 
     if (previous) {
-      const unusable = digitOnlyLine.test(line) || continuationStop.test(line);
-      if (!(result as any)[previous] && !unusable) {
+      if (!(result as any)[previous] && isValidContinuation(previous, line)) {
         (result as any)[previous] = line;
         continue;
       }
-      if (previous === 'address' && !unusable) {
+      if (previous === 'address' && isValidContinuation('address', line)) {
         result.address += ' ' + line;
         continue;
       }
@@ -374,7 +412,8 @@ function inferStudentName(text: string, parsed: ParsedCard): string {
     if (words.length >= 2 && words.length <= 3) score += 3;
     else if (words.length === 1) score += 1;
     if (index < 8) score += 2;
-    if (index > 0 && /identity\s*card|student\s*id/i.test(lines[index - 1])) score += 3;
+    if (index > 0 && /identity\s*card|student\s*id/i.test(lines[index - 1])) score += 4;
+    else if (index > 1 && /^\d{8,14}$/.test(lines[index - 1]) && /student\s*id|identity\s*card/i.test(lines[index - 2])) score += 4;
     if (index + 1 < lines.length && /student\s*id|identity\s*card/i.test(lines[index + 1])) score += 3;
     if (words.length > 1 && index + 2 < lines.length && /student\s*id|identity\s*card/i.test(lines[index + 2])) score += 3;
 
@@ -387,36 +426,141 @@ function inferStudentName(text: string, parsed: ParsedCard): string {
 }
 
 export interface PositionedText { text: string; x: number; y: number; height?: number }
-export function textInRegion(items: PositionedText[], x: number, y: number, width: number, height: number): string {
-  const selected = items.filter(item => item.x >= x && item.x < x + width && item.y >= y && item.y < y + height).sort((a, b) => a.y - b.y || a.x - b.x);
+
+function groupItemsIntoLines(items: PositionedText[]): string[] {
+  const sorted = items.slice().sort((a, b) => a.y - b.y || a.x - b.x);
   const lines: { y: number; tolerance: number; items: PositionedText[] }[] = [];
-  for (const item of selected) {
+  for (const item of sorted) {
     const last = lines.at(-1);
     if (last && Math.abs(item.y - last.y) <= last.tolerance) last.items.push(item);
     else lines.push({ y: item.y, tolerance: Math.max(3, (item.height || 10) * 0.4), items: [item] });
   }
-  return lines.map(line => line.items.sort((a, b) => a.x - b.x).map(item => item.text).join(' ')).join('\n');
+  return lines.map(line => line.items.sort((a, b) => a.x - b.x).map(item => item.text).join(' '));
 }
 
-/** Detect regularly arranged card sheets; manual grid selection remains available. */
+export function textInRegion(items: PositionedText[], x: number, y: number, width: number, height: number): string {
+  const selected = items.filter(item => item.x >= x && item.x < x + width && item.y >= y && item.y < y + height);
+  if (!selected.length) return '';
+
+  // Detect horizontal two-zone ID cards (e.g., KVS Samagam layout where the left ~29%
+  // holds Student ID, 10-digit ID, Portrait Photo, and Student Name caption below photo,
+  // while the right ~71% holds the Father/Mother/DOB/Class/Admn/Blood/Phone/Address table).
+  // Keeping the left photo column grouped before the right details table prevents the
+  // student's name under the photo from being interleaved into Blood Group, PEN, or Address.
+  const splitX = x + width * 0.295;
+  const headerBottomY = y + height * 0.21;
+  const bodyItems = selected.filter(i => i.y >= headerBottomY);
+  const leftBody = bodyItems.filter(i => i.x < splitX);
+  const rightBody = bodyItems.filter(i => i.x >= splitX);
+  const rightHasDetailTable = rightBody.some(i => /\b(?:father|mother|birth|d\.?o\.?b|admn|admission|blood|address)\b/i.test(i.text));
+  const leftHasDetailTable = leftBody.some(i => /\b(?:father|mother|birth|d\.?o\.?b|blood|address)\b/i.test(i.text));
+
+  if (rightHasDetailTable && !leftHasDetailTable && leftBody.length > 0 && width > height * 0.9) {
+    const headerItems = selected.filter(i => i.y < headerBottomY);
+    return [
+      ...groupItemsIntoLines(headerItems),
+      ...groupItemsIntoLines(leftBody),
+      ...groupItemsIntoLines(rightBody),
+    ].filter(Boolean).join('\n');
+  }
+
+  return groupItemsIntoLines(selected).join('\n');
+}
+
+/** Build local phrase tokens from PositionedText items so split words ("Admn" + "No", "Father's" + "Name") match. */
+function buildAnchorCandidates(items: PositionedText[], width: number, height: number): PositionedText[] {
+  const filtered = items.filter(i => {
+    const t = i.text.trim();
+    if (!t) return false;
+    // Ignore browser print header/footer margins (e.g. timestamp, URL, page 1/4)
+    if ((i.y < height * 0.032 || i.y > height * 0.968) && (/https?:\/\/|^\d+\/\d+$|\b\d{1,2}\/\d{1,2}\/\d{2,4}/i.test(t))) {
+      return false;
+    }
+    return true;
+  });
+
+  const sorted = filtered.slice().sort((a, b) => a.y - b.y || a.x - b.x);
+  const rows: { y: number; tolerance: number; items: PositionedText[] }[] = [];
+  for (const item of sorted) {
+    const last = rows.at(-1);
+    if (last && Math.abs(item.y - last.y) <= last.tolerance) last.items.push(item);
+    else rows.push({ y: item.y, tolerance: Math.max(3, (item.height || 10) * 0.45), items: [item] });
+  }
+
+  const phrases: PositionedText[] = [];
+  const maxGap = Math.max(12, width * 0.075);
+  for (const row of rows) {
+    const lineItems = row.items.slice().sort((a, b) => a.x - b.x);
+    let current: PositionedText | null = null;
+    let lastRight = 0;
+    for (const item of lineItems) {
+      const estCharW = Math.max(4, (item.height || 10) * 0.55);
+      const itemWidth = item.text.length * estCharW;
+      if (current && item.x - lastRight <= maxGap) {
+        current.text += ' ' + item.text.trim();
+        lastRight = Math.max(lastRight, item.x + itemWidth);
+      } else {
+        if (current) phrases.push(current);
+        current = { text: item.text.trim(), x: item.x, y: item.y, height: item.height };
+        lastRight = item.x + itemWidth;
+      }
+    }
+    if (current) phrases.push(current);
+  }
+
+  return [...filtered, ...phrases];
+}
+
+function dedupeCardAnchors(matches: PositionedText[], width: number, height: number): PositionedText[] {
+  const deduped: PositionedText[] = [];
+  const tolX = Math.max(15, width * 0.16);
+  const tolY = Math.max(12, height * 0.052);
+  for (const m of matches.slice().sort((a, b) => a.y - b.y || a.x - b.x)) {
+    if (!deduped.some(existing => Math.abs(existing.x - m.x) < tolX && Math.abs(existing.y - m.y) < tolY)) {
+      deduped.push(m);
+    }
+  }
+  return deduped;
+}
+
+/** Detect regularly arranged card sheets (1..4 columns × 1..6 rows); manual grid selection remains available. */
 export function detectCardGrid(items: PositionedText[], width: number, height: number) {
-  const groups = [
-    items.filter(i => /^(?:admission|adm[n.]?|scholar)\s*(?:no|number|#)/i.test(i.text.trim())),
-    items.filter(i => /^(?:student(?:['’]s)?\s*name|name)\s*[:=]/i.test(i.text.trim())),
-    items.filter(i => /^father(?:\s*\/\s*mother)?\s*name/i.test(i.text.trim())),
-    items.filter(i => /^(?:date\s*of\s*birth|d\.?o\.?b\.?|mother\s*name|pen\s*(?:no|number)|blood\s*group)\s*[:=]/i.test(i.text.trim())),
-  ].filter(group => group.length >= 2).sort((a, b) => b.length - a.length);
+  if (!items.length || width <= 0 || height <= 0) return { columns: 1, rows: 1 };
+  const candidates = buildAnchorCandidates(items, width, height);
+
+  const patterns: RegExp[] = [
+    /\b(?:admission|adm[n.]?|scholar|s\.?r\.?|reg(?:n|istration)?)\s*(?:no\.?|number|#)/i,
+    /\bidentity\s*card\b/i,
+    /\b(?:student|pupil|kv|ubi)\s*id\b/i,
+    /\bfather(?:['’`]?s)?(?:\s*\/\s*mother(?:['’`]?s)?)?\s*name\b/i,
+    /\bmother(?:['’`]?s)?\s*name\b/i,
+    /\b(?:date\s*of\s*birth|d\.?\s*o\.?\s*b\.?)\b/i,
+    /\bblood\s*(?:group|grp)\b/i,
+    /\bfather\s*\/\s*mother\s*(?:phone|mobile|contact)\b/i,
+    /^(?:student(?:['’`]?s)?\s*name|name)\s*[:=]/i,
+    /\bpen\s*(?:no\.?|number|#)\b/i,
+    /^100\d{7}$/,
+  ];
+
+  const groups = patterns
+    .map(rx => dedupeCardAnchors(candidates.filter(i => rx.test(i.text.trim())), width, height))
+    .filter(group => group.length >= 2)
+    .sort((a, b) => b.length - a.length);
+
   const cluster = (values: number[], tolerance: number) => {
     const centers: number[] = [];
-    for (const value of values.sort((a, b) => a - b)) if (!centers.some(c => Math.abs(c - value) < tolerance)) centers.push(value);
+    for (const value of values.slice().sort((a, b) => a - b)) {
+      if (!centers.some(c => Math.abs(c - value) < tolerance)) centers.push(value);
+    }
     return centers;
   };
-  // Try anchors from the most reliable label downwards: a sheet whose OCR only
-  // recovered "Father Name" rows still detects instead of falling back to 1×1.
+
   for (const anchors of groups) {
-    const columns = cluster(anchors.map(a => a.x), width * 0.12).length;
-    const rows = cluster(anchors.map(a => a.y), height * 0.055).length;
-    if (columns >= 1 && rows >= 1 && columns <= 2 && rows <= 4 && columns * rows <= anchors.length + 2) return { columns, rows };
+    const columns = cluster(anchors.map(a => a.x), width * 0.14).length;
+    const rows = cluster(anchors.map(a => a.y), height * 0.052).length;
+    if (columns >= 1 && rows >= 1 && columns <= 4 && rows <= 6 && columns * rows >= 2 && columns * rows <= anchors.length + 2) {
+      return { columns, rows };
+    }
   }
   return { columns: 1, rows: 1 };
 }
@@ -427,16 +571,18 @@ export interface SheetLayout { columns: number; rows: number; cells: GridCell[] 
 interface SheetAnalysis {
   scale: number; w: number; h: number;
   colInk: Float32Array; rowInk: Float32Array; integral: Float32Array;
+  leftRowInk: Float32Array; rightRowInk: Float32Array;
+  leftBannerRow: Float32Array; rightBannerRow: Float32Array; fullBannerRow: Float32Array;
   boundsX: { start: number; end: number } | null;
   boundsY: { start: number; end: number } | null;
 }
 
 const clamp = (value: number, min: number, max: number) => Math.max(min, Math.min(max, value));
 
-/** Down-sample once and measure where the ink actually is (content box + profiles). */
+/** Down-sample once and measure where the ink and colored card headers actually are. */
 function analyzeSheet(source: HTMLCanvasElement): SheetAnalysis | null {
   if (source.width < 8 || source.height < 8) return null;
-  const scale = Math.min(1, 260 / source.width);
+  const scale = Math.min(1, 300 / source.width);
   const w = Math.max(1, Math.round(source.width * scale));
   const h = Math.max(1, Math.round(source.height * scale));
   const sample = document.createElement('canvas');
@@ -451,18 +597,86 @@ function analyzeSheet(source: HTMLCanvasElement): SheetAnalysis | null {
   if (!pixels) return null;
 
   const ink = new Uint8Array(w * h);
-  const colInk = new Float32Array(w);
   const rowInk = new Float32Array(h);
+  const leftRowInk = new Float32Array(h);
+  const rightRowInk = new Float32Array(h);
+  const leftBannerRow = new Float32Array(h);
+  const rightBannerRow = new Float32Array(h);
+  const fullBannerRow = new Float32Array(h);
+  const midX = Math.max(1, Math.floor(w / 2));
+
   for (let y = 0; y < h; y++) {
-    let row = 0;
+    let row = 0, lRow = 0, rRow = 0, lBan = 0, rBan = 0;
     for (let x = 0; x < w; x++) {
       const i = (y * w + x) * 4;
-      const dark = pixels[i + 3] > 8 && (pixels[i] < 242 || pixels[i + 1] < 242 || pixels[i + 2] < 242) ? 1 : 0;
-      ink[y * w + x] = dark; row += dark; colInk[x] += dark;
+      const r = pixels[i], g = pixels[i + 1], b = pixels[i + 2], a = pixels[i + 3];
+      const dark = a > 8 && (r < 242 || g < 242 || b < 242) ? 1 : 0;
+      ink[y * w + x] = dark;
+      row += dark;
+      if (x < midX) lRow += dark;
+      else rRow += dark;
+
+      // Detect colored or dark card header banner pixels (e.g. KVS purple/blue/maroon headers)
+      if (dark) {
+        const maxC = Math.max(r, g, b);
+        const minC = Math.min(r, g, b);
+        const isBannerPixel = (maxC - minC >= 28 && minC < 210) || (maxC < 105);
+        if (isBannerPixel) {
+          if (x < midX) lBan++;
+          else rBan++;
+        }
+      }
     }
     rowInk[y] = row / w;
+    leftRowInk[y] = lRow / midX;
+    rightRowInk[y] = rRow / Math.max(1, w - midX);
+    leftBannerRow[y] = lBan / midX;
+    rightBannerRow[y] = rBan / Math.max(1, w - midX);
+    fullBannerRow[y] = (lBan + rBan) / w;
   }
-  for (let x = 0; x < w; x++) colInk[x] /= h;
+
+  // Strip thin browser print headers/footers (e.g. Chrome date/URL at top < 5.5% and page 1/4 at bottom > 94.5%)
+  // so they never stretch boundsY across empty half-pages or pollute colInk across vertical gutters.
+  let activeY0 = 0;
+  let activeY1 = h;
+  const rawRowBands: { a: number; b: number }[] = [];
+  {
+    let y = 0;
+    while (y < h) {
+      while (y < h && rowInk[y] <= 0.003) y++;
+      const a = y;
+      while (y < h && rowInk[y] > 0.003) y++;
+      if (y > a) rawRowBands.push({ a, b: y });
+    }
+    if (rawRowBands.length >= 2) {
+      const first = rawRowBands[0];
+      const second = rawRowBands[1];
+      if (first.a < h * 0.06 && (first.b - first.a) < h * 0.032 && (second.a - first.b) >= Math.max(2, h * 0.008)) {
+        activeY0 = second.a;
+        for (let y = 0; y < activeY0; y++) {
+          rowInk[y] = 0; leftRowInk[y] = 0; rightRowInk[y] = 0;
+          leftBannerRow[y] = 0; rightBannerRow[y] = 0; fullBannerRow[y] = 0;
+        }
+      }
+      const last = rawRowBands.at(-1)!;
+      const prev = rawRowBands.at(-2)!;
+      if (last.b > h * 0.94 && (last.b - last.a) < h * 0.032 && (last.a - prev.b) >= Math.max(2, h * 0.008) && prev.b > activeY0) {
+        activeY1 = prev.b;
+        for (let y = activeY1; y < h; y++) {
+          rowInk[y] = 0; leftRowInk[y] = 0; rightRowInk[y] = 0;
+          leftBannerRow[y] = 0; rightBannerRow[y] = 0; fullBannerRow[y] = 0;
+        }
+      }
+    }
+  }
+
+  const colInk = new Float32Array(w);
+  const activeHeight = Math.max(1, activeY1 - activeY0);
+  for (let x = 0; x < w; x++) {
+    let col = 0;
+    for (let y = activeY0; y < activeY1; y++) col += ink[y * w + x];
+    colInk[x] = col / activeHeight;
+  }
 
   // Summed-area table so each cell's coverage costs one lookup.
   const integral = new Float32Array((w + 1) * (h + 1));
@@ -478,7 +692,11 @@ function analyzeSheet(source: HTMLCanvasElement): SheetAnalysis | null {
     for (let i = 0; i < profile.length; i++) if (profile[i] > 0.004) { if (start < 0) start = i; end = i + 1; }
     return start >= 0 && end - start >= 8 ? { start, end } : null;
   };
-  return { scale, w, h, colInk, rowInk, integral, boundsX: bounds(colInk), boundsY: bounds(rowInk) };
+  return {
+    scale, w, h, colInk, rowInk, integral,
+    leftRowInk, rightRowInk, leftBannerRow, rightBannerRow, fullBannerRow,
+    boundsX: bounds(colInk), boundsY: bounds(rowInk),
+  };
 }
 
 function quantile(profile: Float32Array, start: number, end: number) {
@@ -506,6 +724,90 @@ function bands(profile: Float32Array, start: number, end: number, minGap: number
   return out;
 }
 
+function countBannerHeaders(bannerProfile: Float32Array, start: number, end: number, minSeparation: number): number {
+  const runs: { a: number; b: number }[] = [];
+  const threshold = 0.22;
+  let i = start;
+  while (i < end) {
+    while (i < end && bannerProfile[i] < threshold) i++;
+    const a = i;
+    while (i < end && bannerProfile[i] >= threshold) i++;
+    if (i <= a) continue;
+    const prev = runs.at(-1);
+    if (prev && a - prev.b < minSeparation) prev.b = i;
+    else runs.push({ a, b: i });
+  }
+  return runs.filter(r => r.b - r.a >= 2).length;
+}
+
+/**
+ * Visually auto-detect multi-card grid (columns × rows) directly from a rendered page/image canvas.
+ * Combines whitespace gutter analysis and colored/dark card header banner detection so scanned PDFs,
+ * browser-printed sheets (e.g. 2×2 = 4 cards or 2×5 = 10 cards), and images split accurately even
+ * before OCR runs.
+ */
+export function detectCanvasCardGrid(source: HTMLCanvasElement): { columns: number; rows: number } {
+  const analysis = analyzeSheet(source);
+  if (!analysis || !analysis.boundsX || !analysis.boundsY) return { columns: 1, rows: 1 };
+  const { w, h, colInk, rowInk, leftRowInk, rightRowInk, leftBannerRow, rightBannerRow, fullBannerRow, boundsX, boundsY } = analysis;
+  const spanX = boundsX.end - boundsX.start;
+  const spanY = boundsY.end - boundsY.start;
+  if (spanX < 16 || spanY < 16) return { columns: 1, rows: 1 };
+
+  // 1. Detect columns (1, 2, or 3)
+  let columns = 1;
+  const colBands = bands(colInk, boundsX.start, boundsX.end, Math.max(2, Math.round(spanX * 0.015)))
+    .filter(b => (b.b - b.a) >= spanX * 0.22);
+  if (colBands.length >= 2 && colBands.length <= 3) {
+    columns = colBands.length;
+  } else {
+    // Check if there is a vertical low-ink gutter near the horizontal midpoint of boundsX
+    const midStart = Math.round(boundsX.start + spanX * 0.43);
+    const midEnd = Math.round(boundsX.start + spanX * 0.57);
+    let minMidInk = Infinity;
+    for (let x = midStart; x <= midEnd; x++) {
+      if (colInk[x] < minMidInk) minMidInk = colInk[x];
+    }
+    const leftQ = quantile(colInk, boundsX.start, midStart);
+    const rightQ = quantile(colInk, midEnd, boundsX.end);
+    if (leftQ >= 0.03 && rightQ >= 0.03 && minMidInk <= Math.min(leftQ, rightQ) * 0.18) {
+      columns = 2;
+    }
+  }
+
+  // 2. Detect rows (1..6) using whitespace gutters first
+  const minRowGap = Math.max(2, Math.round(spanY * 0.008));
+  const minCardH = Math.max(6, Math.round(spanY * 0.09));
+  const fullRowBands = bands(rowInk, boundsY.start, boundsY.end, minRowGap).filter(b => (b.b - b.a) >= minCardH);
+  const leftBands = bands(leftRowInk, boundsY.start, boundsY.end, minRowGap).filter(b => (b.b - b.a) >= minCardH);
+  const rightBands = bands(rightRowInk, boundsY.start, boundsY.end, minRowGap).filter(b => (b.b - b.a) >= minCardH);
+
+  let rows = fullRowBands.length;
+  if (columns === 2 && leftBands.length >= 2 && leftBands.length <= 6 && Math.abs(leftBands.length - rightBands.length) <= 1) {
+    rows = Math.max(rows, leftBands.length, rightBands.length);
+  }
+
+  // 3. Also check colored/dark header banners (e.g. purple KVS header bars on each card)
+  const minHeaderSep = Math.max(8, Math.round(h * 0.09));
+  const leftHeaders = countBannerHeaders(leftBannerRow, boundsY.start, boundsY.end, minHeaderSep);
+  const rightHeaders = countBannerHeaders(rightBannerRow, boundsY.start, boundsY.end, minHeaderSep);
+  const fullHeaders = countBannerHeaders(fullBannerRow, boundsY.start, boundsY.end, minHeaderSep);
+
+  if (leftHeaders >= 2 && rightHeaders >= 2 && Math.abs(leftHeaders - rightHeaders) <= 1) {
+    columns = Math.max(columns, 2);
+    const bannerRows = Math.max(leftHeaders, rightHeaders);
+    if (bannerRows <= 6 && (rows <= 1 || Math.abs(rows - bannerRows) <= 1)) {
+      rows = Math.max(rows, bannerRows);
+    }
+  } else if (columns === 1 && fullHeaders >= 2 && fullHeaders <= 6 && rows <= 1) {
+    rows = fullHeaders;
+  }
+
+  columns = clamp(columns, 1, 4);
+  rows = clamp(rows, 1, 6);
+  return { columns, rows };
+}
+
 /**
  * A page holds AT MOST the requested grid. Shrink an axis when the printed
  * gutters reveal fewer card bands than asked for (a half-filled sheet), and
@@ -513,8 +815,10 @@ function bands(profile: Float32Array, start: number, end: number, minGap: number
  */
 function fitAxis(profile: Float32Array, bounds: { start: number; end: number } | null, requested: number, pageLength: number): number {
   if (requested <= 1 || !bounds) return requested;
-  const cell = (bounds.end - bounds.start) / requested;
-  let found = bands(profile, bounds.start, bounds.end, Math.max(2, Math.round(cell * 0.05)));
+  const span = bounds.end - bounds.start;
+  const cell = span / requested;
+  let found = bands(profile, bounds.start, bounds.end, Math.max(2, Math.round(cell * 0.04)))
+    .filter(b => (b.b - b.a) >= cell * 0.30);
   if (found.length === requested + 1) {
     // A printed header or footer shows up as one extra, much shorter band.
     const sizes = found.map(b => b.b - b.a);
@@ -523,18 +827,33 @@ function fitAxis(profile: Float32Array, bounds: { start: number; end: number } |
   }
   if (found.length >= requested) return requested;
   if (found.length <= 1) {
-    // Content covering (nearly) the whole page is a sheet whose gutters are not
-    // visible; a small centred box is a single card printed on the page.
-    return (bounds.end - bounds.start) / Math.max(1, pageLength) >= 0.85 ? requested : 1;
+    // Only collapse to 1 if the total printed span is too small to hold more than 1 card.
+    // Never collapse a 2×2 (4 cards/page) sheet just because 2 rows occupy ~40-80% of the page!
+    return span / Math.max(1, pageLength) >= 0.28 ? requested : 1;
+  }
+  // If found has fewer bands than requested (e.g. 2 bands when 4 were requested), check whether
+  // any band is actually multiple cards touching without a visible white gutter.
+  const maxBandSize = Math.max(...found.map(b => b.b - b.a));
+  if (maxBandSize >= cell * 1.55) {
+    return requested;
   }
   return found.length;
 }
 
 /** Cut positions for one axis: [start, …, end] in sampled pixels. */
 function axisCuts(profile: Float32Array, bounds: { start: number; end: number }, count: number): number[] {
-  const cell = (bounds.end - bounds.start) / count;
-  const gutter = bands(profile, bounds.start, bounds.end, Math.max(2, Math.round(cell * 0.05)));
-  if (gutter.length === count) return [...gutter.map(b => b.a), bounds.end];
+  const span = bounds.end - bounds.start;
+  const cell = span / count;
+  const gutter = bands(profile, bounds.start, bounds.end, Math.max(2, Math.round(cell * 0.04)))
+    .filter(b => (b.b - b.a) >= cell * 0.30);
+  if (gutter.length === count) {
+    const cuts = [gutter[0].a];
+    for (let i = 1; i < count; i++) {
+      cuts.push(Math.round((gutter[i - 1].b + gutter[i].a) / 2));
+    }
+    cuts.push(gutter[count - 1].b);
+    return cuts;
+  }
   // Even splits, each slid onto the whitest pixel in its neighbourhood.
   const window = Math.max(2, Math.round(cell / 3));
   const cuts = [bounds.start];
@@ -588,3 +907,60 @@ export function layoutCardSheet(source: HTMLCanvasElement, columns: number, rows
   }
   return { columns: fittedColumns, rows: fittedRows, cells };
 }
+
+/**
+ * Split a concatenated multi-card text block into individual card text blocks
+ * whenever multiple student records appear in a single region/page.
+ */
+export function splitMultiCardText(text: string): string[] {
+  const lines = text.normalize('NFKC').replace(/\r/g, '').split('\n').map(l => l.trim()).filter(Boolean);
+  if (lines.length < 4) return [text];
+
+  const chunks: string[][] = [];
+  let current: string[] = [];
+  let seenKeys = new Set<string>();
+
+  const flush = () => {
+    if (current.length > 0) {
+      chunks.push(current);
+      current = [];
+      seenKeys = new Set<string>();
+    }
+  };
+
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    const isSchoolHeader = /\b(?:pm\s*shri|kendriya\s*vidyalaya)\b/i.test(line) && !/oppos|station|road|marg/i.test(line);
+    const isStudentIdHeader = /^student\s*id\b/i.test(line);
+    const { segments } = splitLineByLabels(line);
+    const primaryKeys = segments.map(s => s.key).filter(k =>
+      ['admission_number', 'student_id_kv', 'father_name', 'mother_name', 'name'].includes(String(k))
+    );
+
+    const hasCompleteCardSoFar =
+      seenKeys.has('admission_number') ||
+      seenKeys.has('student_id_kv') ||
+      (seenKeys.has('father_name') && seenKeys.has('date_of_birth')) ||
+      (seenKeys.has('name') && seenKeys.has('father_name'));
+
+    if (hasCompleteCardSoFar && (isSchoolHeader || isStudentIdHeader || primaryKeys.some(k => seenKeys.has(String(k))))) {
+      flush();
+    }
+
+    current.push(line);
+    for (const seg of segments) {
+      seenKeys.add(String(seg.key));
+    }
+  }
+  flush();
+
+  const validChunks = chunks
+    .map(c => c.join('\n'))
+    .filter(chunk => {
+      const parsed = parseCardText(chunk);
+      return Boolean(parsed.name || parsed.admission_number || parsed.student_id_kv);
+    });
+
+  return validChunks.length >= 2 ? validChunks : [text];
+}
+
