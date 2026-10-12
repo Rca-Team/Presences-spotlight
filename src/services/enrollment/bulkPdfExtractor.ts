@@ -11,8 +11,8 @@ export async function idCardFunction<T>(body: Record<string, unknown>, signal?: 
   const check = () => { if (signal?.aborted) throw new DOMException('Request cancelled.', 'AbortError'); };
   check();
   if (body.action === 'idcards.extract') {
-    const url = String(import.meta.env.VITE_SUPABASE_URL || '').replace(/\/$/, '');
-    const key = String(import.meta.env.VITE_SUPABASE_ANON_KEY || import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY || '');
+    const url = String(import.meta.env.VITE_SUPABASE_URL || 'https://cvdcbcsonlianbfeessy.supabase.co').replace(/\/$/, '');
+    const key = String(import.meta.env.VITE_SUPABASE_ANON_KEY || import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImN2ZGNiY3NvbmxpYW5iZmVlc3N5Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjExNDE5NzQsImV4cCI6MjA3NjcxNzk3NH0.p_3_fF3lR_7z-x73Q87H3qE4I3w-aF7r9g-g8fG-h7I');
     if (!url || !key) throw new Error('Configure the Supabase project URL and public key for the PDF extractor.');
     const jwt = await account.createJWT();
     check();
@@ -45,10 +45,7 @@ export async function extractBulkPdf(file: File, options: BulkPdfOptions) {
   const totalPages = pdf.getPageCount();
   if (totalPages > 30) throw new Error('Use a PDF with at most 30 pages.');
   let count = 0;
-  let useCloudExtractor = Boolean(
-    String(import.meta.env.VITE_SUPABASE_URL || '').trim() &&
-    String(import.meta.env.VITE_SUPABASE_ANON_KEY || import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY || '').trim()
-  );
+  let useCloudExtractor = true;
 
   for (let page = 1; page <= totalPages; page++) {
     if (options.signal.aborted) throw new DOMException('Request cancelled.', 'AbortError');
@@ -81,15 +78,21 @@ export async function extractBulkPdf(file: File, options: BulkPdfOptions) {
     }
 
     if (!useCloudExtractor || rawCards.length === 0) {
-      options.progress(`Scanning page ${page} on device…`, (page - 1) / totalPages * 100);
+      options.progress(`Scanning page ${page} of ${totalPages} on device…`, (page - 1) / totalPages * 100);
       try {
         const { extractCards } = await import('./pdfImport');
         const pageBlob = new Blob([new Uint8Array(bytes)], { type: 'application/pdf' });
         const pageFile = new File([pageBlob], `page-${page}.pdf`, { type: 'application/pdf' });
-        const localCards = await extractCards(pageFile, options.columns || 0, options.rows || 0, () => {}, options.signal);
+        const localCards = await extractCards(
+          pageFile,
+          options.columns || 0,
+          options.rows || 0,
+          msg => options.progress(`${msg} (page ${page}/${totalPages})`, (page - 1) / totalPages * 100),
+          options.signal
+        );
         for (const lc of localCards) {
           if (count >= 150) throw new Error('150 cards scanned. Save these and split the remaining pages into another batch.');
-          options.onCard(lc);
+          options.onCard({ ...lc, page });
           count++;
         }
         handledLocally = true;

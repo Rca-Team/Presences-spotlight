@@ -55,8 +55,8 @@ export function ClassPDFIDCardImporter({ isOpen, onClose, onImportDrafts, initia
   const [file, setFile] = useState<File>();
   const [isDragging, setIsDragging] = useState(false);
 
-  const [columns, setColumns] = useState(2);
-  const [rows, setRows] = useState(4);
+  const [columns, setColumns] = useState(0);
+  const [rows, setRows] = useState(0);
 
   const [cards, setCards] = useState<ReviewCard[]>([]);
   const [selected, setSelected] = useState<Set<string>>(new Set());
@@ -300,9 +300,16 @@ export function ClassPDFIDCardImporter({ isOpen, onClose, onImportDrafts, initia
                     aria-label="Cards across"
                     disabled={busy}
                     value={columns}
-                    onChange={e => { setColumns(Number(e.target.value)); clear(); }}
+                    onChange={e => {
+                      const nextCols = Number(e.target.value);
+                      setColumns(nextCols);
+                      if (nextCols === 0) setRows(0);
+                      else if (rows === 0) setRows(nextCols === 1 ? 1 : 4);
+                      clear();
+                    }}
                     className="w-full bg-slate-900 border border-white/15 rounded-xl px-3 h-10 text-xs sm:text-sm text-white focus:outline-none focus:border-emerald-500/50"
                   >
+                    <option value={0}>Auto-detect</option>
                     {[1, 2].map(n => <option key={n} value={n}>{n} column{n > 1 ? 's' : ''}</option>)}
                   </select>
                 </div>
@@ -315,9 +322,16 @@ export function ClassPDFIDCardImporter({ isOpen, onClose, onImportDrafts, initia
                     aria-label="Cards down"
                     disabled={busy}
                     value={rows}
-                    onChange={e => { setRows(Number(e.target.value)); clear(); }}
+                    onChange={e => {
+                      const nextRows = Number(e.target.value);
+                      setRows(nextRows);
+                      if (nextRows === 0) setColumns(0);
+                      else if (columns === 0) setColumns(nextRows === 1 ? 1 : 2);
+                      clear();
+                    }}
                     className="w-full bg-slate-900 border border-white/15 rounded-xl px-3 h-10 text-xs sm:text-sm text-white focus:outline-none focus:border-emerald-500/50"
                   >
+                    <option value={0}>Auto-detect</option>
                     {[1, 2, 3, 4].map(n => <option key={n} value={n}>{n} row{n > 1 ? 's' : ''}</option>)}
                   </select>
                 </div>

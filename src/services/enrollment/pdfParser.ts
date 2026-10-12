@@ -22,29 +22,29 @@ const LABEL_DEFS: LabelDef[] = [
   { key: 'guardian_name', pattern: /\b(?:father\s*[\/&]\s*mother\s*name|parent(?:['’]s)?\s*name|guardian(?:['’]s)?\s*name)\b/i, priority: 95 },
 
   // Specific single fields
-  { key: 'parent_phone', pattern: /\b(?:(?:parent|father|mother|guardian)(?:['’]s)?\s*(?:phone|mob(?:ile)?|contact|tel|whatsapp)(?:\s*(?:no\.?|num(?:ber)?|#))?|father['’]s\s*mob\.?|mother['’]s\s*mob\.?|mob(?:ile)?\s*(?:no\.?|num(?:ber)?|#)|contact\s*(?:no\.?|num(?:ber)?|#)|phone\s*(?:no\.?|num(?:ber)?|#)|tel\s*(?:no\.?|num(?:ber)?|#)|whatsapp\s*(?:no\.?|num(?:ber)?|#)|मोबाइल\s*(?:नंबर|नम्बर|नं\.?))\b/i, priority: 90 },
-  { key: 'father_name', pattern: /\b(?:father(?:['’]s)?\s*name|f\.?\s*name|पिता(?: का)?\s*नाम)\b/i, priority: 85 },
-  { key: 'mother_name', pattern: /\b(?:mother(?:['’]s)?\s*name|m\.?\s*name|माता(?: का)?\s*नाम)\b/i, priority: 85 },
+  { key: 'parent_phone', pattern: /(?:\b(?:(?:parent|father|mother|guardian)(?:['’]s)?\s*(?:phone|mob(?:ile)?|contact|tel|whatsapp)(?:\s*(?:no\.?|num(?:ber)?|#))?|father['’]s\s*mob\.?|mother['’]s\s*mob\.?|mob(?:ile)?\s*(?:no\.?|num(?:ber)?|#)|contact\s*(?:no\.?|num(?:ber)?|#)|phone\s*(?:no\.?|num(?:ber)?|#)|tel\s*(?:no\.?|num(?:ber)?|#)|whatsapp\s*(?:no\.?|num(?:ber)?|#))\b|मोबाइल\s*(?:नंबर|नम्बर|नं\.?))/i, priority: 90 },
+  { key: 'father_name', pattern: /(?:\b(?:father(?:['’]s)?\s*name|f\.?\s*name)\b|पिता(?:\s*का)?\s*नाम)/i, priority: 85 },
+  { key: 'mother_name', pattern: /(?:\b(?:mother(?:['’]s)?\s*name|m\.?\s*name)\b|माता(?:\s*का)?\s*नाम)/i, priority: 85 },
   { key: 'student_id_kv', pattern: /\b(?:(?:student|pupil|kv|ubi)\s*(?:identification\s*)?id(?:\s*(?:no\.?|num(?:ber)?|#))?|ubi\s*id(?:\s*(?:no\.?|num(?:ber)?|#))?|kv\s*id(?:\s*(?:no\.?|num(?:ber)?|#))?|student\s*unique\s*id|identity\s*no\.?)\b/i, priority: 80 },
-  { key: 'admission_number', pattern: /\b(?:admission\s*(?:no\.?|num(?:ber)?|#)|admn?\.?\s*(?:no\.?|num(?:ber)?|#)|adm\b|scholar\s*(?:no\.?|num(?:ber)?|#)|s\.?r\.?\s*(?:no\.?|num(?:ber)?|#)|reg(?:n|istration)?\.?\s*(?:no\.?|num(?:ber)?|#)|प्रवेश\s*(?:संख्या|क्रमांक))\b/i, priority: 75 },
-  { key: 'name', pattern: /\b(?:(?:student|pupil|candidate)(?:['’]s)?\s*name|name\s*of\s*(?:the\s*)?(?:student|pupil|candidate)|name\b|विद्यार्थी\s*का\s*नाम|छात्र(?: का)?\s*नाम)\b/i, priority: 70 },
-  { key: 'roll_number', pattern: /\b(?:roll(?:\s*(?:no\.?|num(?:ber)?|#))?|r\.?\s*no\.?|क्रमांक|रोल\s*(?:नंबर|नं)?)\b/i, priority: 65 },
-  { key: 'blood_group', pattern: /\b(?:blood\s*(?:group|grp\.?|type)|b\.?\s*g\.?|b\.?\s*grp\.?|रक्त\s*समूह)\b/i, priority: 65 },
-  { key: 'date_of_birth', pattern: /\b(?:date\s*of\s*birth|d\.?o\.?b\.?|birth\s*date|जन्म\s*तिथि)\b/i, priority: 65 },
+  { key: 'admission_number', pattern: /(?:\b(?:admission\s*(?:no\.?|num(?:ber)?|#)|admn?\.?\s*(?:no\.?|num(?:ber)?|#)|adm\b|scholar\s*(?:no\.?|num(?:ber)?|#)|s\.?r\.?\s*(?:no\.?|num(?:ber)?|#)|reg(?:n|istration)?\.?\s*(?:no\.?|num(?:ber)?|#))\b|प्रवेश\s*(?:संख्या|क्रमांक))/i, priority: 75 },
+  { key: 'name', pattern: /(?:\b(?:(?:student|pupil|candidate)(?:['’]s)?\s*name|name\s*of\s*(?:the\s*)?(?:student|pupil|candidate)|name)\b|विद्यार्थी\s*का\s*नाम|छात्र(?:\s*का)?\s*नाम)/i, priority: 70 },
+  { key: 'roll_number', pattern: /(?:\b(?:roll(?:\s*(?:no\.?|num(?:ber)?|#))?|r\.?\s*no\.?)\b|क्रमांक|रोल\s*(?:नंबर|नं\.?)?)/i, priority: 65 },
+  { key: 'blood_group', pattern: /(?:\b(?:blood\s*(?:group|grp\.?|type)|b\.?\s*g\.?|b\.?\s*grp\.?)\b|रक्त\s*समूह)/i, priority: 65 },
+  { key: 'date_of_birth', pattern: /(?:\b(?:date\s*of\s*birth|d\.?o\.?b\.?|birth\s*date)\b|जन्म\s*तिथि)/i, priority: 65 },
   { key: 'pen_number', pattern: /\b(?:pen(?:\s*(?:no\.?|num(?:ber)?|#))?|p\.?e\.?n\.?(?:\s*(?:no\.?|num(?:ber)?|#))?|permanent\s*edu(?:cation)?\s*(?:no\.?|number))\b/i, priority: 65 },
-  { key: 'class', pattern: /\b(?:class\b|grade\b|std\.?\b|standard\b|कक्षा)\b/i, priority: 60 },
-  { key: 'section', pattern: /\b(?:sec(?:tion)?\.?\b|वर्ग|अनुभाग)\b/i, priority: 60 },
+  { key: 'class', pattern: /(?:\b(?:class|grade|std\.?|standard)\b|कक्षा)/i, priority: 60 },
+  { key: 'section', pattern: /(?:\bsec(?:tion)?\.?\b|वर्ग|अनुभाग)/i, priority: 60 },
   { key: 'parent_email', pattern: /\b(?:parent\s*e-?mail(?:\s*(?:id|address))?)\b/i, priority: 50 },
   { key: 'email', pattern: /\b(?:(?:student\s*)?e-?mail(?:\s*(?:id|address))?)\b/i, priority: 45 },
 
   // Generic fallbacks
   { key: 'parent_phone', pattern: /\b(?:mob(?:ile)?|phone|contact|tel)\b/i, priority: 30 },
-  { key: 'address', pattern: /\b(?:(?:residential|present|perm(?:anent)?|home|postal|res\.?)\s*address|address\b|पता)\b/i, priority: 25 },
+  { key: 'address', pattern: /(?:\b(?:(?:residential|present|perm(?:anent)?|home|postal|res\.?)\s*address|address)\b|पता)/i, priority: 25 },
 ];
 
 const continuationStop = /^(?:principal|signature|valid(?:\s*upto| until)?|session|school|www\.|https?:|barcode|qrcode|office|page|student\s*id|identity)/i;
 const digitOnlyLine = /^[\d\s\-–/().]{6,}$/;
-const nameStop = /^(?:identity|student\s*id|student\s*identification|signature|session|class|section|date\s*of\s*birth|d\.?o\.?b\.?|father|mother|parent|guardian|address|blood\s*group|pen\s*(?:no|number)?|roll\s*(?:no|number)|admn?|admission|scholar|school|house|team|barcode|principal|kendriya|pm\s*shri|shri|nfc|opposite|shift|phone|mobile|contact|office|government|govt|academic|board|examination|ph|res\.)/i;
+const nameStop = /\b(?:welcome|identity|card|student|pupil|identification|signature|session|class|section|date|birth|d\.?o\.?b\.?|father|mother|parent|guardian|address|blood|group|pen|roll|admn?|admission|scholar|school|vidyalaya|sangathan|region|house|team|barcode|principal|kendriya|pm\s*shri|shri|nfc|opposite|shift|phone|mobile|contact|office|government|govt|academic|board|examination|nameplate|classroom|beside|valid|upto|india|ministry|education|autonomous|body|under)\b/i;
 
 const CLASS_PATTERN = '(?:1[0-2]|[1-9]|VIII|VII|XII|XI|VI|IV|IX|III|II|I|X|NURSERY|KG|LKG|UKG)';
 
@@ -90,27 +90,31 @@ function cleanClass(val: string): string {
 
 function cleanPhone(val: string): string {
   if (!val) return '';
-  const digits = val.replace(/\D/g, '');
+  const trimmed = val.replace(/^[:=–#\s.-]+/, '').replace(/\s+/g, ' ').trim();
+  if (/^\+?\d[\d\s()-]{8,16}\d$/.test(trimmed)) return trimmed;
+  const digits = trimmed.replace(/\D/g, '');
   if (digits.length >= 10) return digits.slice(-10);
   return digits;
 }
 
 function cleanDateOfBirth(val: string): string {
   if (!val) return '';
-  const m = val.match(/\b([0-3]?\d)[\/.-]([0-1]?\d|(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*)[\/.-]((?:19|20)\d{2})\b/i);
+  const cleaned = val.replace(/^[:=–#\s.-]+/, '').trim();
+  const m = cleaned.match(/\b([0-3]?\d)([\/.-])([0-1]?\d|(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*)[\/.-]((?:19|20)\d{2})\b/i);
   if (m) {
     const day = m[1].padStart(2, '0');
-    let month = m[2];
-    const year = m[3];
+    const sep = m[2] === '-' ? '-' : '/';
+    let month = m[3];
+    const year = m[4];
     const monthNames: Record<string, string> = { jan: '01', feb: '02', mar: '03', apr: '04', may: '05', jun: '06', jul: '07', aug: '08', sep: '09', oct: '10', nov: '11', dec: '12' };
     if (isNaN(Number(month))) {
       month = monthNames[month.slice(0, 3).toLowerCase()] || '01';
     } else {
       month = month.padStart(2, '0');
     }
-    return `${day}/${month}/${year}`;
+    return `${day}${sep}${month}${sep}${year}`;
   }
-  return val.trim();
+  return cleaned;
 }
 
 function parseClassAndSec(val: string): { class: string; section: string } {
@@ -122,7 +126,7 @@ function parseClassAndSec(val: string): { class: string; section: string } {
   return { class: val.trim(), section: '' };
 }
 
-function splitLineByLabels(line: string): { key: LabelDef['key']; value: string }[] {
+function splitLineByLabels(line: string): { prefix: string; segments: { key: LabelDef['key']; value: string }[] } {
   const matches: { key: LabelDef['key']; start: number; end: number; priority: number; text: string }[] = [];
   for (const def of LABEL_DEFS) {
     const rx = new RegExp(def.pattern.source, 'gi');
@@ -149,8 +153,9 @@ function splitLineByLabels(line: string): { key: LabelDef['key']; value: string 
   }
 
   filtered.sort((a, b) => a.start - b.start);
-  if (!filtered.length) return [];
+  if (!filtered.length) return { prefix: '', segments: [] };
 
+  const prefix = filtered[0].start > 0 ? line.substring(0, filtered[0].start).trim() : '';
   const segments: { key: LabelDef['key']; value: string }[] = [];
   for (let i = 0; i < filtered.length; i++) {
     const curr = filtered[i];
@@ -160,7 +165,7 @@ function splitLineByLabels(line: string): { key: LabelDef['key']; value: string 
     value = value.replace(/^[:=–#\s.-]+/, '').trim();
     segments.push({ key: curr.key, value });
   }
-  return segments;
+  return { prefix, segments };
 }
 
 /** Robust parsing: separates adjacent fields on the same line, recovers missing entities, cleans values. */
@@ -175,12 +180,21 @@ export function parseCardText(text: string): ParsedCard {
 
   const lines = text.normalize('NFKC').replace(/\r/g, '').replace(/\t/g, ' ').split('\n');
   let previous: keyof ParsedCard | null = null;
+  const prefixes: string[] = [];
 
   for (const rawLine of lines) {
     const line = rawLine.trim();
     if (!line) continue;
 
-    const segments = splitLineByLabels(line);
+    const { prefix, segments } = splitLineByLabels(line);
+    if (prefix) {
+      prefixes.push(prefix);
+      if (previous && !(result as any)[previous] && !digitOnlyLine.test(prefix) && !continuationStop.test(prefix)) {
+        (result as any)[previous] = prefix;
+      } else if (previous === 'address' && !digitOnlyLine.test(prefix) && !continuationStop.test(prefix)) {
+        result.address += ' ' + prefix;
+      }
+    }
     if (segments.length > 0) {
       for (const seg of segments) {
         if (seg.key === 'class_and_sec') {
@@ -193,7 +207,9 @@ export function parseCardText(text: string): ParsedCard {
           else if (!result.mother_name) result.mother_name = cleanSalutations(seg.value);
           previous = 'father_name';
         } else {
-          (result as any)[seg.key] = seg.value;
+          if (seg.value || !(result as any)[seg.key]) {
+            (result as any)[seg.key] = seg.value;
+          }
           previous = seg.key as keyof ParsedCard;
         }
       }
@@ -224,16 +240,17 @@ export function parseCardText(text: string): ParsedCard {
   }
 
   // Syntactic Entity Recovery Pass (fill any gaps from unlabelled or smudged text)
-  recoverMissingEntities(text, result);
+  const enrichedText = prefixes.length ? `${prefixes.join('\n')}\n${text}` : text;
+  recoverMissingEntities(enrichedText, result);
 
   // Field normalization and cleaning
   result.name = cleanSalutations(result.name);
-  if (!result.name) result.name = inferStudentName(text, result);
+  if (!result.name) result.name = inferStudentName(enrichedText, result);
   result.father_name = cleanSalutations(result.father_name);
   result.mother_name = cleanSalutations(result.mother_name);
   result.parent_name = result.father_name || result.mother_name || result.parent_name;
   result.admission_number = cleanAdmissionNumber(result.admission_number);
-  result.employee_id = result.admission_number;
+  result.employee_id = result.admission_number || result.student_id_kv;
   result.class = cleanClass(result.class);
   result.section = cleanSection(result.section);
   result.parent_phone = cleanPhone(result.parent_phone);
@@ -254,8 +271,8 @@ function recoverMissingEntities(text: string, result: ParsedCard): void {
     }
   }
 
-  // 2. Date of birth
-  if (!result.date_of_birth) {
+  // 2. Date of birth (only recover unlabelled DOB if explicit DOB label wasn't intentionally blank)
+  if (!result.date_of_birth && !/\b(?:date\s*of\s*birth|d\.?o\.?b\.?|birth\s*date)\s*[:=]\s*(?:\n|$)/i.test(text)) {
     const m = text.match(/\b([0-3]?\d)[\/.-]([0-1]?\d|(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*)[\/.-]((?:19|20)\d{2})\b/i);
     if (m) {
       result.date_of_birth = cleanDateOfBirth(m[0]);
@@ -301,7 +318,7 @@ function recoverMissingEntities(text: string, result: ParsedCard): void {
   // 7. Admission Number
   if (!result.admission_number) {
     const m = text.match(/(?:admn?\.?|adm|scholar|admission)[\s.:#-]*([A-Z0-9/-]{3,12})\b/i);
-    if (m) {
+    if (m && !/^(?:no|number|card|form|date)$/i.test(m[1])) {
       result.admission_number = m[1];
     }
   }
@@ -312,6 +329,18 @@ function recoverMissingEntities(text: string, result: ParsedCard): void {
  * handles single names, dotted initials, and multi-word names while rejecting headings.
  */
 function inferStudentName(text: string, parsed: ParsedCard): string {
+  // If an explicit Name: label was present and blank, do not invent a name from other lines.
+  if (/(?:^|\n)\s*(?:(?:student|pupil|candidate)(?:['’]s)?\s*name|name)\s*[:=]\s*(?:\n|$)/i.test(text)) {
+    return '';
+  }
+  const hasCardContext = Boolean(
+    parsed.admission_number || parsed.student_id_kv || parsed.father_name ||
+    parsed.mother_name || parsed.date_of_birth || parsed.parent_phone ||
+    parsed.pen_number || parsed.blood_group || parsed.roll_number ||
+    /\b(?:identity\s*card|student\s*id|admn?\s*no|admission\s*no|father(?:['’]s)?\s*name|mother(?:['’]s)?\s*name|blood\s*group|pen\s*no)\b/i.test(text)
+  );
+  if (!hasCardContext) return '';
+
   const lines = text.normalize('NFKC').replace(/\r/g, '').replace(/\t/g, ' ')
     .split('\n').map(l => l.trim()).filter(Boolean);
   if (!lines.length) return '';
@@ -342,10 +371,12 @@ function inferStudentName(text: string, parsed: ParsedCard): string {
     let score = 0;
     if (candidate === candidate.toUpperCase()) score += 4;
     else if (/^\p{Lu}[\p{L}'’.-]*(?:\s+\p{Lu}[\p{L}'’.-]*)*$/u.test(candidate)) score += 3;
-    if (words.length >= 1 && words.length <= 3) score += 2;
+    if (words.length >= 2 && words.length <= 3) score += 3;
+    else if (words.length === 1) score += 1;
     if (index < 8) score += 2;
-    if (index > 0 && /identity\s*card/i.test(lines[index - 1])) score += 3;
-    if (index + 1 < lines.length && /student\s*id/i.test(lines[index + 1])) score += 3;
+    if (index > 0 && /identity\s*card|student\s*id/i.test(lines[index - 1])) score += 3;
+    if (index + 1 < lines.length && /student\s*id|identity\s*card/i.test(lines[index + 1])) score += 3;
+    if (words.length > 1 && index + 2 < lines.length && /student\s*id|identity\s*card/i.test(lines[index + 2])) score += 3;
 
     if (score > bestScore) {
       best = candidate;

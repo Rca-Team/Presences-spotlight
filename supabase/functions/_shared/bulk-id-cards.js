@@ -31,7 +31,7 @@ export async function bulkIdCards(body, user, db, databaseId, fetcher = fetch) {
     if (pages > 30 || !Number.isInteger(page) || page < 1 || page > pages) reject(400, 'Use a PDF with at most 30 pages and a valid page number.');
     const single = await PDFDocument.create();
     single.addPage((await single.copyPages(pdf, [page - 1]))[0]);
-    const response = await requestGemini(fetcher, `https://generativelanguage.googleapis.com/v1beta/models/${process.env.GEMINI_ID_CARD_MODEL || 'gemini-3.1-flash-lite'}:generateContent`, {
+    const response = await requestGemini(fetcher, `https://generativelanguage.googleapis.com/v1beta/models/${process.env.GEMINI_ID_CARD_MODEL || 'gemini-2.5-flash'}:generateContent`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'x-goog-api-key': key },
       body: JSON.stringify({ contents: [{ parts: [
