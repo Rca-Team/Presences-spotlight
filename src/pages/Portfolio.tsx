@@ -372,15 +372,15 @@ export function PublicPortfolioView({
       {data.members.length > 0 && (
         <div className="space-y-5">
           {/* Team Header Banner */}
-          <div className="relative overflow-hidden rounded-3xl border border-amber-300/30 bg-card/60 shadow-xl backdrop-blur-xl">
-            <div className="relative h-48 sm:h-64 md:h-80 w-full overflow-hidden">
+          <div className="relative overflow-hidden rounded-3xl border border-amber-300/30 bg-[#090503] shadow-xl backdrop-blur-xl">
+            <div className="relative h-56 sm:h-72 md:h-80 w-full overflow-hidden">
               <img
                 src={teamRcaPhoto}
                 alt="Team RCA Creators"
-                className="h-full w-full object-cover object-center"
+                className="h-[124%] w-full object-cover object-top"
                 loading="lazy"
               />
-              <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-black via-black/40 to-transparent" />
+              <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-black via-black/45 to-transparent" />
               <div className="absolute left-4 bottom-4 sm:left-6 sm:bottom-6">
                 <span className="inline-flex items-center gap-1.5 rounded-full border border-amber-300/40 bg-black/60 px-3 py-1 text-xs font-black uppercase tracking-widest text-amber-300 backdrop-blur-md">
                   <Sparkles className="h-3 w-3" /> Team RCA Core

@@ -562,23 +562,24 @@ const Index = () => {
               
               {/* Left: Team RCA Cinematic Photo Card */}
               <motion.div
-                className="lg:col-span-6 group relative overflow-hidden rounded-3xl border border-amber-300/30 bg-card/60 shadow-2xl backdrop-blur-2xl flex flex-col justify-between"
+                className="lg:col-span-6 group relative overflow-hidden rounded-3xl border border-amber-400/35 bg-[#090503] shadow-2xl flex flex-col justify-between"
                 {...cardTilt}
               >
-                <div className="relative min-h-[500px] sm:min-h-[560px] md:min-h-[600px] h-full w-full overflow-hidden flex flex-col justify-between">
-                  {/* Photo adjusted lower so heads sit centered in the aura */}
+                {/* Top Photo Stage: Full-bleed framing of the 3 members without text over faces */}
+                <div className="relative w-full aspect-[16/10] sm:aspect-[16/9.5] overflow-hidden bg-[#0c0704] shrink-0">
                   <img
                     src={(teamRcaPhoto as any)?.url || (typeof teamRcaPhoto === 'string' ? teamRcaPhoto : '/team-rca.jpg')}
                     alt="Team RCA — Jatin Dhama, Gaurav Raj, Swami Anant Vyas"
-                    className="absolute inset-x-0 -bottom-6 top-10 sm:top-14 h-[105%] w-full object-cover object-top transition-transform duration-700 ease-out group-hover:scale-[1.03]"
+                    className="absolute inset-x-0 top-0 h-[126%] w-full object-cover object-top transition-transform duration-700 ease-out group-hover:scale-[1.03]"
                     loading="lazy"
                   />
-                  <div className="pointer-events-none absolute -inset-8 bg-[radial-gradient(circle_at_top,rgba(251,191,36,0.35),transparent_65%)]" />
-                  <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-black via-black/50 via-50% to-transparent" />
+                  {/* Subtle top ambient aura & bottom feathering into card deck */}
+                  <div className="pointer-events-none absolute inset-x-0 top-0 h-20 bg-gradient-to-b from-black/55 via-black/20 to-transparent" />
+                  <div className="pointer-events-none absolute inset-x-0 bottom-0 h-20 bg-gradient-to-t from-[#090503] via-[#090503]/75 to-transparent" />
 
                   {/* Top Bar with Team RCA Badge & Studio Navigation */}
-                  <div className="relative z-20 p-5 sm:p-6 flex items-center justify-between pointer-events-auto">
-                    <div className="flex items-center gap-2 rounded-full border border-amber-300/40 bg-black/70 px-3.5 py-1.5 backdrop-blur-md shadow-md">
+                  <div className="relative z-20 p-4 sm:p-5 flex items-center justify-between pointer-events-auto">
+                    <div className="flex items-center gap-2 rounded-full border border-amber-300/45 bg-black/70 px-3.5 py-1.5 backdrop-blur-md shadow-md">
                       <span className="h-2 w-2 rounded-full bg-amber-300 shadow-[0_0_8px_rgba(251,191,36,0.9)] animate-pulse" />
                       <span className="text-xs font-black uppercase tracking-[0.22em] text-amber-200">Team RCA</span>
                     </div>
@@ -587,15 +588,15 @@ const Index = () => {
                       variant="ghost"
                       size="sm"
                       onClick={() => navigate('/portfolio')}
-                      className="text-xs font-bold text-amber-200 bg-black/60 hover:bg-black/90 hover:text-amber-100 border border-amber-300/30 rounded-full px-3 py-1 backdrop-blur-md transition-all shadow-sm cursor-pointer"
+                      className="h-8 text-xs font-bold text-amber-200 bg-black/65 hover:bg-black/90 hover:text-amber-100 border border-amber-300/35 rounded-full px-3.5 backdrop-blur-md transition-all shadow-sm cursor-pointer"
                     >
                       <span>Studio</span>
                       <ArrowRight className="ml-1 h-3.5 w-3.5" />
                     </Button>
                   </div>
 
-                  {/* Interactive Hotspot Zones Across Photo */}
-                  <div className="absolute inset-0 z-10 grid grid-cols-3 pt-20 pb-52 pointer-events-auto">
+                  {/* Interactive Hotspot Zones Across the 3 Members in the Photo */}
+                  <div className="absolute inset-x-0 top-14 bottom-4 z-10 grid grid-cols-3 pointer-events-auto">
                     <button
                       type="button"
                       onClick={() => {
@@ -604,6 +605,7 @@ const Index = () => {
                       }}
                       className="group/zone h-full w-full focus:outline-none cursor-pointer"
                       aria-label="Open Jatin Dhama profile"
+                      title="View Jatin Dhama's Profile"
                     />
                     <button
                       type="button"
@@ -613,6 +615,7 @@ const Index = () => {
                       }}
                       className="group/zone h-full w-full focus:outline-none cursor-pointer"
                       aria-label="Open Gaurav Raj profile"
+                      title="View Gaurav Raj's Profile"
                     />
                     <button
                       type="button"
@@ -622,28 +625,31 @@ const Index = () => {
                       }}
                       className="group/zone h-full w-full focus:outline-none cursor-pointer"
                       aria-label="Open Swami Anant Vyas profile"
+                      title="View Swami Anant Vyas's Profile"
                     />
                   </div>
+                </div>
 
-                  {/* Bottom Title Lockup, Member Hotspots & Go to RCA Projects Button */}
-                  <div className="relative z-20 p-5 sm:p-7 space-y-3.5 pointer-events-auto bg-gradient-to-t from-black via-black/80 to-transparent">
-                    <div>
-                      <p className="text-[11px] font-black uppercase tracking-[0.28em] text-amber-300/90">
-                        Presences · AI Architecture
-                      </p>
-                      <h2
-                        className="mt-1 bg-gradient-to-r from-amber-200 via-yellow-300 to-amber-400 bg-clip-text text-2xl sm:text-3xl md:text-4xl font-black leading-tight text-transparent tracking-tight"
-                        style={{ fontFamily: 'Sora, sans-serif' }}
-                      >
-                        Built by Team RCA
-                      </h2>
-                      <p className="mt-1 text-[11px] sm:text-xs font-semibold uppercase tracking-[0.18em] text-white/80">
-                        Together in mind · United in purpose
-                      </p>
-                    </div>
+                {/* Bottom Title Lockup, Member Hotspots & Go to RCA Projects Button */}
+                <div className="relative z-20 flex-1 flex flex-col justify-between px-5 pb-5 pt-1 sm:px-6 sm:pb-6 sm:pt-2 space-y-3.5 bg-gradient-to-b from-[#090503] via-[#0d0804] to-[#070402]">
+                  <div>
+                    <p className="text-[10px] sm:text-[11px] font-black uppercase tracking-[0.28em] text-amber-400/90">
+                      Presences · AI Architecture
+                    </p>
+                    <h2
+                      className="mt-0.5 bg-gradient-to-r from-amber-200 via-yellow-300 to-amber-400 bg-clip-text text-2xl sm:text-3xl font-black leading-snug pb-0.5 text-transparent tracking-tight"
+                      style={{ fontFamily: 'Sora, sans-serif' }}
+                    >
+                      Built by Team RCA
+                    </h2>
+                    <p className="text-[11px] sm:text-xs font-semibold uppercase tracking-[0.18em] text-white/80">
+                      Together in mind · United in purpose
+                    </p>
+                  </div>
 
+                  <div className="space-y-2.5">
                     {/* 3 Interactive Member Hotspot Buttons */}
-                    <div className="grid grid-cols-3 gap-2 sm:gap-2.5 pt-1">
+                    <div className="grid grid-cols-3 gap-2 sm:gap-2.5">
                       {/* JATIN (LEFT) */}
                       <button
                         type="button"
@@ -652,7 +658,7 @@ const Index = () => {
                           haptic('selection');
                           setActiveProfile(jatinMember);
                         }}
-                        className="group/btn relative flex flex-col items-center justify-center rounded-2xl border border-white/15 bg-black/75 hover:bg-black/95 hover:border-amber-400/80 py-2 sm:py-2.5 px-1 backdrop-blur-xl transition-all duration-200 shadow-md active:scale-95 cursor-pointer text-center"
+                        className="group/btn relative flex flex-col items-center justify-center rounded-2xl border border-white/15 bg-white/[0.04] hover:bg-amber-500/15 hover:border-amber-400/70 py-2 sm:py-2.5 px-1 backdrop-blur-xl transition-all duration-200 shadow-md active:scale-95 cursor-pointer text-center"
                       >
                         <span className="text-[11px] sm:text-xs font-black uppercase tracking-wider text-amber-100 group-hover/btn:text-amber-300 transition-colors">
                           JATIN
@@ -670,7 +676,7 @@ const Index = () => {
                           haptic('selection');
                           setActiveProfile(gauravMember);
                         }}
-                        className="group/btn relative flex flex-col items-center justify-center rounded-2xl border border-amber-400/50 bg-amber-500/25 hover:bg-amber-500/35 hover:border-amber-300 py-2 sm:py-2.5 px-1 backdrop-blur-xl transition-all duration-200 shadow-md active:scale-95 cursor-pointer text-center"
+                        className="group/btn relative flex flex-col items-center justify-center rounded-2xl border border-amber-400/55 bg-amber-500/20 hover:bg-amber-500/30 hover:border-amber-300 py-2 sm:py-2.5 px-1 backdrop-blur-xl transition-all duration-200 shadow-md active:scale-95 cursor-pointer text-center"
                       >
                         <span className="text-[11px] sm:text-xs font-black uppercase tracking-wider text-amber-200 group-hover/btn:text-amber-100 transition-colors">
                           GAURAV
@@ -688,7 +694,7 @@ const Index = () => {
                           haptic('selection');
                           setActiveProfile(swamiMember);
                         }}
-                        className="group/btn relative flex flex-col items-center justify-center rounded-2xl border border-white/15 bg-black/75 hover:bg-black/95 hover:border-amber-400/80 py-2 sm:py-2.5 px-1 backdrop-blur-xl transition-all duration-200 shadow-md active:scale-95 cursor-pointer text-center"
+                        className="group/btn relative flex flex-col items-center justify-center rounded-2xl border border-white/15 bg-white/[0.04] hover:bg-amber-500/15 hover:border-amber-400/70 py-2 sm:py-2.5 px-1 backdrop-blur-xl transition-all duration-200 shadow-md active:scale-95 cursor-pointer text-center"
                       >
                         <span className="text-[11px] sm:text-xs font-black uppercase tracking-wider text-amber-100 group-hover/btn:text-amber-300 transition-colors">
                           SWAMI
@@ -700,25 +706,23 @@ const Index = () => {
                     </div>
 
                     {/* Dedicated Button: Go to RCA Projects */}
-                    <div className="pt-1">
-                      <Button
-                        type="button"
-                        onClick={() => {
-                          haptic('selection');
-                          const projEl = document.getElementById('rca-projects');
-                          if (projEl) {
-                            projEl.scrollIntoView({ behavior: 'smooth' });
-                          } else {
-                            navigate('/portfolio');
-                          }
-                        }}
-                        className="w-full h-11 sm:h-12 rounded-2xl bg-gradient-to-r from-amber-500 via-yellow-500 to-amber-600 hover:from-amber-600 hover:to-yellow-600 text-slate-950 font-black text-xs sm:text-sm uppercase tracking-wider shadow-lg shadow-amber-500/25 border border-amber-300/60 btn-spring flex items-center justify-center gap-2 cursor-pointer active:scale-98"
-                      >
-                        <Briefcase className="w-4 h-4 text-slate-950" />
-                        <span>Go to RCA Projects</span>
-                        <ArrowRight className="w-4 h-4 text-slate-950" />
-                      </Button>
-                    </div>
+                    <Button
+                      type="button"
+                      onClick={() => {
+                        haptic('selection');
+                        const projEl = document.getElementById('rca-projects');
+                        if (projEl) {
+                          projEl.scrollIntoView({ behavior: 'smooth' });
+                        } else {
+                          navigate('/portfolio');
+                        }
+                      }}
+                      className="w-full h-11 sm:h-12 rounded-2xl bg-gradient-to-r from-amber-500 via-yellow-500 to-amber-600 hover:from-amber-600 hover:to-yellow-600 text-slate-950 font-black text-xs sm:text-sm uppercase tracking-wider shadow-lg shadow-amber-500/25 border border-amber-300/60 btn-spring flex items-center justify-center gap-2 cursor-pointer active:scale-98"
+                    >
+                      <Briefcase className="w-4 h-4 text-slate-950" />
+                      <span>Go to RCA Projects</span>
+                      <ArrowRight className="w-4 h-4 text-slate-950" />
+                    </Button>
                   </div>
                 </div>
               </motion.div>
