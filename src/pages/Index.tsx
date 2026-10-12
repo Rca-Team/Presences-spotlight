@@ -27,6 +27,7 @@ import { hasTeacherAccess } from '@/utils/teacherAccess';
 import {
   ArrowRight,
   ArrowLeftRight,
+  RefreshCw,
   Scan,
   BookOpen,
   Briefcase,
@@ -377,7 +378,7 @@ const Index = () => {
   };
 
   const [teamMembersList, setTeamMembersList] = useState<any[]>([]);
-  const [isSwapped, setIsSwapped] = useState(false);
+  const [rotationCount, setRotationCount] = useState(0);
 
   const defaultTeamMembers = useMemo(
     () => [swamiMember, jatinMember, jatinMauryaMember, mayankMember],
@@ -388,13 +389,22 @@ const Index = () => {
     return defaultTeamMembers;
   }, [teamMembersList, defaultTeamMembers]);
 
-  const handleSwapTeamMembers = (e?: React.MouseEvent) => {
+  const handleRotateTeamMembers = (e?: React.MouseEvent) => {
     e?.stopPropagation();
     haptic('selection');
-    setIsSwapped((prev) => !prev);
+    setRotationCount((prev) => prev + 1);
     setTeamMembersList((prev) => {
       const current = prev.length >= 4 ? prev : defaultTeamMembers;
-      return [...current].reverse();
+      if (current.length === 4) {
+        // Clockwise 2x2 orbital rotation:
+        // Top-Left (0) -> Top-Right (1), Top-Right (1) -> Bottom-Right (3),
+        // Bottom-Right (3) -> Bottom-Left (2), Bottom-Left (2) -> Top-Left (0)
+        return [current[2], current[0], current[3], current[1]];
+      }
+      if (current.length > 1) {
+        return [current[current.length - 1], ...current.slice(0, -1)];
+      }
+      return current;
     });
   };
 
@@ -983,61 +993,103 @@ const Index = () => {
                     </div>
                   </motion.button>
 
-                  {/* Core Team Contributors Header & Swap Button */}
+                  {/* Core Team Contributors Header & Interactive Rotate Control */}
                   <div className="flex items-center justify-between mb-3 px-0.5">
                     <div className="flex items-center gap-2">
                       <span className="text-[11px] font-black uppercase tracking-[0.16em] text-slate-600 dark:text-slate-300">
                         Core Team Contributors
                       </span>
-                      {/* Color Spectrum Dots representing the 4 members */}
-                      <div className="hidden sm:flex items-center gap-1 ml-1">
-                        <span className="h-2 w-2 rounded-full" style={{ backgroundColor: '#fc0303', boxShadow: '0 0 6px rgba(252,3,3,0.7)' }} title="Swami Anant Vyas (#fc0303)" />
-                        <span className="h-2 w-2 rounded-full" style={{ backgroundColor: '#05edf5', boxShadow: '0 0 6px rgba(5,237,245,0.7)' }} title="Jatin Dhama (#05edf5)" />
-                        <span className="h-2 w-2 rounded-full" style={{ backgroundColor: '#9400D3', boxShadow: '0 0 6px rgba(148,0,211,0.8)' }} title="Jatin Maurya (#9400D3)" />
-                        <span className="h-2 w-2 rounded-full" style={{ backgroundColor: '#05fac9', boxShadow: '0 0 6px rgba(5,250,201,0.7)' }} title="Mayank (#05fac9)" />
+                      {/* Live 4-Member Orbital Color Spectrum Indicators */}
+                      <div className="hidden sm:flex items-center gap-1.5 ml-1 rounded-full bg-slate-100 dark:bg-white/[0.04] px-2 py-1 border border-border/50 dark:border-white/10">
+                        {displayedTeamMembers.map((m, idx) => {
+                          const dotTheme = getMemberTheme(m.name);
+                          const isFirst = idx === 0;
+                          return (
+                            <span
+                              key={m.name}
+                              className={cn(
+                                'rounded-full transition-all duration-300',
+                                isFirst ? 'h-2.5 w-2.5 scale-110' : 'h-1.5 w-1.5 opacity-70',
+                              )}
+                              style={{
+                                backgroundColor: dotTheme.dotColor,
+                                boxShadow: isFirst ? dotTheme.dotShadow : 'none',
+                              }}
+                              title={`${idx + 1}. ${m.name}`}
+                            />
+                          );
+                        })}
                       </div>
                     </div>
 
                     {displayedTeamMembers.length > 1 && (
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={handleSwapTeamMembers}
-                        className="h-7 px-2.5 text-[11px] font-bold text-emerald-700 dark:text-emerald-300 hover:text-emerald-800 dark:hover:text-emerald-200 hover:bg-emerald-500/20 rounded-xl gap-1.5 transition-all active:scale-95 border border-emerald-500/35 bg-emerald-500/10 shadow-xs cursor-pointer"
-                        title="Click to swap contributor order"
+                      <button
+                        type="button"
+                        onClick={handleRotateTeamMembers}
+                        className="group/rot relative inline-flex items-center gap-2 rounded-full p-[1px] transition-transform duration-200 active:scale-95 cursor-pointer focus:outline-none shadow-sm hover:shadow-md"
+                        style={{
+                          background: 'linear-gradient(90deg, #fc0303, #05edf5, #9400D3, #05fac9)',
+                        }}
+                        title="Rotate all 4 team members clockwise"
                       >
-                        <motion.div
-                          animate={{ rotate: isSwapped ? 180 : 0 }}
-                          transition={{ type: 'spring' as const, stiffness: 400, damping: 25 }}
-                        >
-                          <ArrowLeftRight className="h-3 w-3 text-emerald-700 dark:text-emerald-300" />
-                        </motion.div>
-                        <span>Click to Swap</span>
-                      </Button>
+                        <span className="inline-flex items-center gap-1.5 rounded-full bg-white/95 dark:bg-[#0e1320]/95 px-3 py-1 text-[11px] font-extrabold text-slate-800 dark:text-slate-100 group-hover/rot:bg-white/85 dark:group-hover/rot:bg-[#131a2c] transition-colors">
+                          <span
+                            className="inline-flex items-center justify-center h-4 w-4 rounded-full bg-gradient-to-tr from-[#9400D3]/20 via-[#05edf5]/20 to-[#05fac9]/20 text-[#05edf5] transform-gpu transition-transform duration-500 ease-out"
+                            style={{ transform: `rotate(${rotationCount * 90}deg)` }}
+                          >
+                            <RefreshCw className="h-3 w-3 text-cyan-600 dark:text-[#05edf5]" />
+                          </span>
+                          <span className="bg-gradient-to-r from-cyan-600 via-purple-600 to-emerald-600 dark:from-[#05edf5] dark:via-[#d8b4fe] dark:to-[#05fac9] bg-clip-text text-transparent">
+                            Rotate Team
+                          </span>
+                          <span className="text-[9px] font-mono font-bold text-slate-400 dark:text-slate-400">
+                            {(rotationCount % 4) + 1}/4
+                          </span>
+                        </span>
+                      </button>
                     )}
                   </div>
 
-                  {/* 4 Core Contributors 2x2 Color-Themed Bento Grid */}
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 relative">
+                  {/* 4 Core Contributors 2x2 Color-Themed Bento Grid with Center Orbital Hub */}
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5 relative">
+                    {/* Centerpiece Interactive Orbital Rotate Button (Desktop/Tablet 2x2 Intersection) */}
+                    {displayedTeamMembers.length === 4 && (
+                      <button
+                        type="button"
+                        onClick={handleRotateTeamMembers}
+                        aria-label="Rotate team members clockwise"
+                        title="Click to rotate team members clockwise"
+                        className="hidden sm:flex absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 z-20 h-9 w-9 items-center justify-center rounded-full p-[1.5px] shadow-[0_0_20px_rgba(5,237,245,0.3)] hover:shadow-[0_0_26px_rgba(148,0,211,0.55)] hover:scale-110 active:scale-95 transition-all duration-200 cursor-pointer group/hub focus:outline-none"
+                        style={{
+                          background: 'conic-gradient(from 0deg, #fc0303, #05edf5, #9400D3, #05fac9, #fc0303)',
+                        }}
+                      >
+                        <span className="flex h-full w-full items-center justify-center rounded-full bg-white dark:bg-[#0b0e17] text-slate-800 dark:text-white">
+                          <RefreshCw
+                            className="h-3.5 w-3.5 text-cyan-600 dark:text-[#05edf5] group-hover/hub:text-purple-500 dark:group-hover/hub:text-[#05fac9] transform-gpu transition-transform duration-500 ease-out"
+                            style={{ transform: `rotate(${rotationCount * 90}deg)` }}
+                          />
+                        </span>
+                      </button>
+                    )}
+
                     {displayedTeamMembers.map((member) => {
                       const theme = getMemberTheme(member.name);
                       return (
                         <motion.button
-                          layout
+                          layout="position"
                           key={member.name}
                           type="button"
-                          whileHover={{ y: -2 }}
-                          whileTap={{ scale: 0.98 }}
                           onClick={() => {
                             haptic('selection');
                             setActiveProfile(member);
                           }}
-                          transition={{ type: 'spring' as const, stiffness: 450, damping: 30, mass: 0.6 }}
+                          transition={{ type: 'spring' as const, stiffness: 320, damping: 28, mass: 0.55 }}
                           style={{
                             borderColor: theme.borderColor,
                             backgroundImage: theme.glowBg,
                           }}
-                          className="group relative overflow-hidden flex items-center justify-between gap-3 rounded-2xl border bg-white/95 dark:bg-[#111624]/90 p-3.5 text-left transition-all duration-300 hover:shadow-lg cursor-pointer"
+                          className="group relative overflow-hidden flex items-center justify-between gap-3 rounded-2xl border bg-white/95 dark:bg-[#111624]/95 p-3.5 text-left transform-gpu will-change-transform transition-shadow duration-200 hover:shadow-lg active:scale-[0.98] cursor-pointer"
                           aria-label={`Open ${member.name} profile`}
                         >
                           {/* Top Signature Color Accent Line */}
@@ -1103,7 +1155,7 @@ const Index = () => {
                           </div>
 
                           <div
-                            className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg border transition-all duration-200 group-hover:translate-x-0.5"
+                            className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg border transition-transform duration-200 group-hover:translate-x-0.5"
                             style={{
                               backgroundColor: theme.pillBg,
                               borderColor: theme.pillBorder,
