@@ -247,7 +247,7 @@ async function renderPdfPages(file: File, signal?: AbortSignal) {
   pdfjs.GlobalWorkerOptions.workerSrc = pdfWorkerUrl;
   const loading = pdfjs.getDocument({ data: await file.arrayBuffer(), isEvalSupported: false });
   const pdf = await loading.promise;
-  if (pdf.numPages > 30) { await loading.destroy(); throw new Error('Import at most 30 pages per batch. Split the PDF and retry.'); }
+  if (pdf.numPages > 100) { await loading.destroy(); throw new Error('Import at most 100 pages per file. Split the PDF and retry.'); }
   const pages: { mimeType: 'image/jpeg'; data: string }[] = [];
   try {
     for (let pageNumber = 1; pageNumber <= pdf.numPages; pageNumber++) {

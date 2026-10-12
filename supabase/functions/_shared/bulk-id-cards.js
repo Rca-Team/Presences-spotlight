@@ -28,7 +28,7 @@ export async function bulkIdCards(body, user, db, databaseId, fetcher = fetch) {
     try { pdf = await PDFDocument.load(bytes); } catch { reject(400, 'PDF is damaged or password protected. Export an unlocked PDF.'); }
     const pages = pdf.getPageCount();
     const page = Number(body.page || 1);
-    if (pages > 30 || !Number.isInteger(page) || page < 1 || page > pages) reject(400, 'Use a PDF with at most 30 pages and a valid page number.');
+    if (pages > 100 || !Number.isInteger(page) || page < 1 || page > pages) reject(400, 'Use a PDF with at most 100 pages and a valid page number.');
     const single = await PDFDocument.create();
     single.addPage((await single.copyPages(pdf, [page - 1]))[0]);
     const response = await requestGemini(fetcher, `https://generativelanguage.googleapis.com/v1beta/models/${process.env.GEMINI_ID_CARD_MODEL || 'gemini-2.5-flash'}:generateContent`, {
@@ -54,7 +54,7 @@ export async function bulkIdCards(body, user, db, databaseId, fetcher = fetch) {
     return { cards, page, pages, nextPage: page < pages ? page + 1 : null };
   }
   if (body.action !== 'idcards.save') reject(404, 'Unknown ID-card action.');
-  if (!Array.isArray(body.students) || !body.students.length || body.students.length > 150) reject(400, 'Save between 1 and 150 reviewed students.');
+  if (!Array.isArray(body.students) || !body.students.length || body.students.length > 1000) reject(400, 'Save between 1 and 1000 reviewed students.');
   const seen = new Set();
   // Validate the entire batch before beginning any writes.
   const rows = body.students.map(raw => {

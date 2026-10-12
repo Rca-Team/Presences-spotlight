@@ -75,6 +75,7 @@ import { useUserRole } from '@/hooks/useUserRole';
 import { cn } from '@/lib/utils';
 import { fieldLabels, type StudentDetails, type EnrollmentSession } from '@/services/enrollment/types';
 import {
+  clearMonitorCache,
   fetchMonitor,
   fetchMonitorPhoto,
   getCachedMonitorOverview,
@@ -1021,49 +1022,71 @@ export default function EnrollmentMonitor() {
         description: `Successfully added ${cards.length} students to Biometric Enrollment Hub.`,
       });
 
+      clearMonitorCache();
       await load(true);
       setUploadOpen(false);
     } catch (err: any) {
       console.warn('Backend save function note, falling back to direct database sync:', err?.message);
       try {
         const { supabase } = await import('@/integrations/supabase/client');
-        const rows = cards.map(c => {
-          const adm = (c.employee_id || c.student_id_kv || '').trim();
-          const cleanPhone = (c.parent_phone || c.phone || '').trim();
-          return {
-            full_name: c.name.trim(),
-            display_name: c.name.trim(),
-            admission_number: adm,
-            employee_id: adm,
-            roll_number: c.roll_number?.trim() || null,
-            class: c.class?.trim() || null,
-            section: c.section?.trim() || null,
-            category: [c.class?.trim(), c.section?.trim()].filter(Boolean).join('-') || null,
-            parent_phone: cleanPhone || null,
-            phone: cleanPhone || null,
-            parent_name: c.parent_name || c.father_name || c.mother_name || null,
-            father_name: c.father_name?.trim() || null,
-            date_of_birth: c.date_of_birth?.trim() || null,
-            avatar_url: c.student_photo_data_url || null,
-            photo_url: c.student_photo_data_url || null,
-            role: 'student',
-            metadata: JSON.stringify({
-              blood_group: c.blood_group || '',
-              pen_number: c.pen_number || '',
-              student_id_kv: c.student_id_kv || '',
-              mother_name: c.mother_name || '',
-              address: c.address || '',
-              phone_locked: true,
-              source: 'pdf_upload',
-              imported_from_pdf: true,
-              verified_parent_phone: cleanPhone,
-            }),
-            updated_at: new Date().toISOString(),
-          };
-        });
-        const { error: upsertErr } = await supabase.from('profiles').upsert(rows, { onConflict: 'admission_number' });
-        if (upsertErr) throw upsertErr;
+        const BATCH_SIZE = 20;
+        for (let i = 0; i < cards.length; i += BATCH_SIZE) {
+          const chunk = cards.slice(i, i + BATCH_SIZE);
+          const rows = await Promise.all(chunk.map(async c => {
+            const adm = (c.employee_id || c.student_id_kv || '').trim();
+            const cleanPhone = (c.parent_phone || c.phone || '').trim();
+            let photoUrl: string | null = c.student_photo_data_url || null;
+            if (photoUrl && photoUrl.startsWith('data:') && adm) {
+              try {
+                const res = await fetch(photoUrl);
+                const blob = await res.blob();
+                const safeAdm = adm.replace(/[^a-zA-Z0-9_-]/g, '_');
+                const path = `students/${safeAdm}/faces/id_portrait.jpg`;
+                const { error: upErr } = await supabase.storage
+                  .from('student-registration-faces')
+                  .upload(path, blob, { contentType: 'image/jpeg', upsert: true });
+                if (!upErr) {
+                  const { data: pub } = supabase.storage.from('student-registration-faces').getPublicUrl(path);
+                  if (pub?.publicUrl) photoUrl = pub.publicUrl;
+                }
+              } catch {}
+            }
+            return {
+              full_name: c.name.trim(),
+              display_name: c.name.trim(),
+              admission_number: adm,
+              employee_id: adm,
+              roll_number: c.roll_number?.trim() || null,
+              class: c.class?.trim() || null,
+              section: c.section?.trim() || null,
+              category: [c.class?.trim(), c.section?.trim()].filter(Boolean).join('-') || null,
+              parent_phone: cleanPhone || null,
+              phone: cleanPhone || null,
+              parent_name: c.parent_name || c.father_name || c.mother_name || null,
+              father_name: c.father_name?.trim() || null,
+              date_of_birth: c.date_of_birth?.trim() || null,
+              avatar_url: photoUrl,
+              photo_url: photoUrl,
+              role: 'student',
+              metadata: JSON.stringify({
+                blood_group: c.blood_group || '',
+                pen_number: c.pen_number || '',
+                student_id_kv: c.student_id_kv || '',
+                mother_name: c.mother_name || '',
+                address: c.address || '',
+                phone_locked: true,
+                source: 'pdf_upload',
+                imported_from_pdf: true,
+                verified_parent_phone: cleanPhone,
+              }),
+              updated_at: new Date().toISOString(),
+            };
+          }));
+          const { error: upsertErr } = await supabase.from('profiles').upsert(rows, { onConflict: 'admission_number' });
+          if (upsertErr) throw upsertErr;
+        }
 
+        clearMonitorCache();
         toast({
           title: 'Class ID Cards Imported! 🚀',
           description: `Successfully saved ${cards.length} students directly to Biometric Enrollment database.`,

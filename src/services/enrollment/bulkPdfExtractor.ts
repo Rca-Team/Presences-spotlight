@@ -35,15 +35,61 @@ export async function idCardFunction<T>(body: Record<string, unknown>, signal?: 
   return data as T;
 }
 export async function extractBulkPdf(file: File, options: BulkPdfOptions) {
-  if (!/\.pdf$/i.test(file.name) && file.type !== 'application/pdf') throw new Error('Choose a student ID-card PDF.');
+  const isPdf = /\.pdf$/i.test(file.name) || file.type === 'application/pdf';
+  const isMht = /\.(?:mht|mhtml|html|htm)$/i.test(file.name) || /^(?:multipart\/related|message\/rfc822|application\/x-mimearchive|text\/html)$/i.test(file.type);
+  const isImage = /^image\/(png|jpe?g|webp|bmp|gif)$/i.test(file.type) || /\.(?:png|jpe?g|webp|bmp|gif)$/i.test(file.name);
+
+  if (!isPdf && !isMht && !isImage) {
+    throw new Error('Choose a student ID-card PDF, MHT/MHTML, or image file.');
+  }
   if (!file.size || file.size > 50 * 1024 * 1024) throw new Error('Use a non-empty PDF up to 50 MB.');
+
+  if (isMht) {
+    options.progress(`Extracting cards from ${file.name}…`, 5);
+    const { extractMhtCards } = await import('./mhtImport');
+    let count = 0;
+    await extractMhtCards(file, {
+      columns: options.columns || 0,
+      rows: options.rows || 0,
+      signal: options.signal,
+      progress: (msg, pct) => options.progress(msg, pct),
+      onCard: card => {
+        count++;
+        options.onCard(card);
+      },
+    });
+    options.progress(`${count} cards scanned from ${file.name}`, 100);
+    return;
+  }
+
+  if (isImage) {
+    options.progress(`Scanning image ${file.name}…`, 10);
+    const { extractCards } = await import('./pdfImport');
+    let count = 0;
+    await extractCards(
+      file,
+      options.columns || 0,
+      options.rows || 0,
+      msg => options.progress(msg, 50),
+      options.signal,
+      {
+        onCard: card => {
+          count++;
+          options.onCard(card);
+        },
+      }
+    );
+    options.progress(`${count} cards scanned from ${file.name}`, 100);
+    return;
+  }
+
   options.progress('Preparing PDF pages…', 0);
   const { PDFDocument } = await import('pdf-lib');
   let pdf;
   try { pdf = await PDFDocument.load(await file.arrayBuffer()); }
   catch { throw new Error('PDF is damaged or password protected. Export an unlocked PDF.'); }
   const totalPages = pdf.getPageCount();
-  if (totalPages > 30) throw new Error('Use a PDF with at most 30 pages.');
+  if (totalPages > 100) throw new Error('Use a PDF with at most 100 pages.');
   let count = 0;
   let useCloudExtractor = true;
 
@@ -56,7 +102,6 @@ export async function extractBulkPdf(file: File, options: BulkPdfOptions) {
     if (bytes.length > 12 * 1024 * 1024) throw new Error(`Page ${page} exceeds 12 MB. Compress this page and retry.`);
 
     let rawCards: Record<string, string>[] = [];
-    let handledLocally = false;
 
     if (useCloudExtractor) {
       try {
@@ -65,7 +110,7 @@ export async function extractBulkPdf(file: File, options: BulkPdfOptions) {
           reader.onload = () => resolve(String(reader.result).split(',')[1]);
           reader.readAsDataURL(new Blob([new Uint8Array(bytes)], { type: 'application/pdf' }));
         });
-        options.progress(`Extracting page ${page}…`, (page - 1) / totalPages * 100);
+        options.progress(`Extracting page ${page} of ${totalPages}…`, (page - 1) / totalPages * 100);
         const result: { cards: Record<string, string>[] } = await idCardFunction({ action: 'idcards.extract', fileData, page: 1 }, options.signal);
         if (result && Array.isArray(result.cards)) {
           rawCards = result.cards;
@@ -78,38 +123,31 @@ export async function extractBulkPdf(file: File, options: BulkPdfOptions) {
     }
 
     if (!useCloudExtractor || rawCards.length === 0) {
-      options.progress(`Scanning page ${page} of ${totalPages} on device…`, (page - 1) / totalPages * 100);
-      try {
-        const { extractCards } = await import('./pdfImport');
-        const pageBlob = new Blob([new Uint8Array(bytes)], { type: 'application/pdf' });
-        const pageFile = new File([pageBlob], `page-${page}.pdf`, { type: 'application/pdf' });
-        const localCards = await extractCards(
-          pageFile,
-          options.columns || 0,
-          options.rows || 0,
-          msg => options.progress(`${msg} (page ${page}/${totalPages})`, (page - 1) / totalPages * 100),
-          options.signal
-        );
-        for (const lc of localCards) {
-          if (count >= 150) throw new Error('150 cards scanned. Save these and split the remaining pages into another batch.');
-          options.onCard({ ...lc, page });
-          count++;
+      // Process remaining pages (page..totalPages) in a single shared pdfjs + OCR pass for smooth 100-page extraction
+      const { extractCards } = await import('./pdfImport');
+      await extractCards(
+        file,
+        options.columns || 0,
+        options.rows || 0,
+        msg => options.progress(msg, (page - 1) / totalPages * 100),
+        options.signal,
+        {
+          startPage: page,
+          onCard: lc => {
+            if (count >= 1000) throw new Error('1000 cards scanned. Save these and split the remaining pages into another batch.');
+            options.onCard(lc);
+            count++;
+          },
+          onProgress: (completedPage, total) => {
+            options.progress(`${count} cards scanned · page ${completedPage}/${total}`, (completedPage / total) * 100);
+          },
         }
-        handledLocally = true;
-      } catch (localErr: any) {
-        if (options.signal.aborted) throw localErr;
-        console.warn(`[BulkPdfExtractor] On-device extractor failed for page ${page}:`, localErr?.message);
-        throw localErr;
-      }
-    }
-
-    if (handledLocally) {
-      options.progress(`${count} cards scanned · page ${page}/${totalPages}`, page / totalPages * 100);
-      continue;
+      );
+      break;
     }
 
     for (const raw of rawCards) {
-      if (count >= 150) throw new Error('150 cards scanned. Save these and split the remaining pages into another batch.');
+      if (count >= 1000) throw new Error('1000 cards scanned. Save these and split the remaining pages into another batch.');
       const student = { ...parseCardText(''), ...raw };
       options.onCard({ id: crypto.randomUUID(), student, page, preview: '', text: Object.entries(raw).map(([key, value]) => `${key}: ${value}`).join('\n') });
       count++;
