@@ -172,7 +172,7 @@ export const DEFAULT_PORTFOLIO: PortfolioData = {
     {
       id: uid(),
       name: 'Jatin Dhama',
-      role: 'QA Engineering & Operations',
+      role: 'Team Member · Gaming Wale',
       image: jatinDhamaPhoto,
       bio: 'Contributes to system testing, execution support, and live deployment coordination across the platform.',
       details: 'Supports feature QA, user feedback loops, and collaborative delivery for KV NFC Vigyan Vihar.',
@@ -180,15 +180,15 @@ export const DEFAULT_PORTFOLIO: PortfolioData = {
     {
       id: uid(),
       name: 'Jatin Maurya',
-      role: 'Workflow & Interface Contributor',
+      role: 'Team Member · Bio Wale',
       image: '',
       bio: 'Contributes to interface workflows, student registration experiences, and module usability refinements.',
       details: 'Collaborates on smooth classroom flows, visual polish, and structured data management across modules.',
     },
     {
       id: uid(),
-      name: 'Mayank',
-      role: 'Field Testing & Research Contributor',
+      name: 'Mayank Ranjan',
+      role: 'Team Member · Bio Wale',
       image: '',
       bio: 'Supports real-world campus testing, attendance verification, and operational reliability checks.',
       details: 'Assists with batch enrollment validation, kiosk responsiveness testing, and rollout readiness.',
@@ -268,14 +268,14 @@ function migrate(raw: any): PortfolioData {
 
   const rawMembers = Array.isArray(raw?.members) && raw.members.length > 0 ? [...raw.members] : [...DEFAULT_PORTFOLIO.members];
 
-  // Ensure newly added core members (Jatin Maurya, Mayank) are present in migrated member lists
+  // Ensure newly added core members (Jatin Maurya, Mayank Ranjan) are present in migrated member lists
   for (const defMember of DEFAULT_PORTFOLIO.members) {
     const defKey = defMember.name.toLowerCase().trim();
     const exists = rawMembers.some((m: any) => {
       const n = String(m?.name || '').toLowerCase().trim();
       if (defKey === 'jatin maurya') return n.includes('maurya');
       if (defKey === 'jatin dhama') return n.includes('dhama') || n === 'jatin';
-      if (defKey === 'mayank') return n.includes('mayank');
+      if (defKey.includes('mayank')) return n.includes('mayank');
       if (defKey.includes('swami') || defKey.includes('anant')) return n.includes('swami') || n.includes('anant');
       if (defKey.includes('gaurav')) return n.includes('gaurav');
       return n === defKey;
@@ -294,9 +294,10 @@ function migrate(raw: any): PortfolioData {
       else if (norm.includes('dhama') || norm === 'jatin') img = jatinDhamaPhoto;
       else img = '';
     }
+    const resolvedName = norm === 'mayank' ? 'Mayank Ranjan' : (m.name ?? '');
     return {
       id: m.id ?? uid(),
-      name: m.name ?? '',
+      name: resolvedName,
       role: m.role ?? '',
       image: img,
       bio: m.bio ?? '',

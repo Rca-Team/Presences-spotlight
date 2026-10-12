@@ -231,47 +231,54 @@ const Index = () => {
   );
 
   const jatinMember = useMemo(
-    () =>
-      creatorMembers.find((m) => {
+    () => {
+      const found = creatorMembers.find((m) => {
         const n = m.name.toLowerCase().trim();
         return n.includes('dhama') || n === 'jatin';
-      }) || {
-        name: 'Jatin Dhama',
-        role: 'QA Engineering & Operations',
-        image: jatinDhamaPhoto,
-        bio: 'Contributes to system testing, execution support, and project coordination across the Presences platform.',
-        details: 'Supports feature QA, user feedback loops, and collaborative delivery for KV NFC Vigyan Vihar.',
-      },
+      });
+      return {
+        name: found?.name || 'Jatin Dhama',
+        role: 'Team Member · Gaming Wale',
+        image: found?.image || jatinDhamaPhoto,
+        bio: found?.bio || 'Contributes to system testing, execution support, and project coordination across the Presences platform.',
+        details: found?.details || 'Supports feature QA, user feedback loops, and collaborative delivery for KV NFC Vigyan Vihar.',
+      };
+    },
     [creatorMembers],
   );
 
   const jatinMauryaMember = useMemo(
-    () =>
-      creatorMembers.find((m) => m.name.toLowerCase().includes('maurya')) || {
-        name: 'Jatin Maurya',
-        role: 'Workflow & Interface Contributor',
-        image: '',
-        bio: 'Contributes to interface workflows, student registration experiences, and module usability refinements.',
-        details: 'Collaborates on smooth classroom flows, visual polish, and structured data management across modules.',
-      },
+    () => {
+      const found = creatorMembers.find((m) => m.name.toLowerCase().includes('maurya'));
+      return {
+        name: found?.name || 'Jatin Maurya',
+        role: 'Team Member · Bio Wale',
+        image: found?.image || '',
+        bio: found?.bio || 'Contributes to interface workflows, student registration experiences, and module usability refinements.',
+        details: found?.details || 'Collaborates on smooth classroom flows, visual polish, and structured data management across modules.',
+      };
+    },
     [creatorMembers],
   );
 
   const mayankMember = useMemo(
-    () =>
-      creatorMembers.find((m) => m.name.toLowerCase().includes('mayank')) || {
-        name: 'Mayank',
-        role: 'Field Testing & Research Contributor',
-        image: '',
-        bio: 'Supports real-world campus testing, attendance verification, and operational reliability checks.',
-        details: 'Assists with batch enrollment validation, kiosk responsiveness testing, and rollout readiness.',
-      },
+    () => {
+      const found = creatorMembers.find((m) => m.name.toLowerCase().includes('mayank'));
+      return {
+        name: 'Mayank Ranjan',
+        role: 'Team Member · Bio Wale',
+        image: found?.image || '',
+        bio: found?.bio || 'Supports real-world campus testing, attendance verification, and operational reliability checks.',
+        details: found?.details || 'Assists with batch enrollment validation, kiosk responsiveness testing, and rollout readiness.',
+      };
+    },
     [creatorMembers],
   );
 
   const getMemberTheme = (name: string) => {
     const n = (name || '').toLowerCase();
     if (n.includes('gaurav')) {
+      // ONLY Leader Gaurav gets the shiny metallic gold theme
       return {
         hex: '#f59e0b',
         badge: 'Team Leader · Architect',
@@ -289,91 +296,91 @@ const Index = () => {
       };
     }
     if (n.includes('maurya')) {
-      // #9400D3 (Jatin Maurya) — harmonized electric royal violet for dark/light glass legibility
+      // Jatin Maurya — normal matte purple (#9400D3 family, non-shiny) + "Bio Wale" tag
       return {
         hex: '#9400D3',
-        badge: 'UI & Workflows',
+        badge: 'Bio Wale',
         shortLabel: 'Jatin M.',
-        borderColor: 'rgba(148, 0, 211, 0.45)',
-        hoverBorderColor: 'rgba(184, 41, 255, 0.85)',
-        glowBg: 'radial-gradient(circle at 88% 12%, rgba(148, 0, 211, 0.22), transparent 65%)',
-        topBarGradient: 'linear-gradient(90deg, #9400D3, #c084fc, #9400D3)',
-        dotColor: '#b829ff',
-        dotShadow: '0 0 10px rgba(148, 0, 211, 0.95)',
-        pillBg: 'rgba(148, 0, 211, 0.16)',
-        pillBorder: 'rgba(168, 85, 247, 0.45)',
-        textClass: 'text-purple-700 dark:text-[#d8b4fe]',
-        ringColor: 'rgba(168, 85, 247, 0.65)',
+        borderColor: 'rgba(148, 0, 211, 0.28)',
+        hoverBorderColor: 'rgba(148, 0, 211, 0.5)',
+        glowBg: 'none',
+        topBarGradient: '#9400D3',
+        dotColor: '#9400D3',
+        dotShadow: 'none',
+        pillBg: 'rgba(148, 0, 211, 0.10)',
+        pillBorder: 'rgba(148, 0, 211, 0.28)',
+        textClass: 'text-purple-700 dark:text-purple-300',
+        ringColor: 'transparent',
       };
     }
     if (n.includes('dhama') || n.trim() === 'jatin') {
-      // #05edf5 (Jatin Dhama) — electric cyber cyan
+      // Jatin Dhama — normal matte cyan (#05edf5 family, non-shiny) + "Gaming Wale" tag
       return {
         hex: '#05edf5',
-        badge: 'QA & Execution',
+        badge: 'Gaming Wale',
         shortLabel: 'Jatin D.',
-        borderColor: 'rgba(5, 237, 245, 0.4)',
-        hoverBorderColor: 'rgba(5, 237, 245, 0.85)',
-        glowBg: 'radial-gradient(circle at 88% 12%, rgba(5, 237, 245, 0.18), transparent 65%)',
-        topBarGradient: 'linear-gradient(90deg, #05edf5, #67e8f9, #05edf5)',
-        dotColor: '#05edf5',
-        dotShadow: '0 0 10px rgba(5, 237, 245, 0.9)',
-        pillBg: 'rgba(5, 237, 245, 0.12)',
-        pillBorder: 'rgba(5, 237, 245, 0.42)',
-        textClass: 'text-cyan-700 dark:text-[#05edf5]',
-        ringColor: 'rgba(5, 237, 245, 0.6)',
+        borderColor: 'rgba(6, 182, 212, 0.28)',
+        hoverBorderColor: 'rgba(6, 182, 212, 0.5)',
+        glowBg: 'none',
+        topBarGradient: '#0891b2',
+        dotColor: '#06b6d4',
+        dotShadow: 'none',
+        pillBg: 'rgba(6, 182, 212, 0.10)',
+        pillBorder: 'rgba(6, 182, 212, 0.28)',
+        textClass: 'text-cyan-700 dark:text-cyan-300',
+        ringColor: 'transparent',
       };
     }
     if (n.includes('swami') || n.includes('anant')) {
-      // #fc0303 (Anant) — harmonized ruby-crimson neon glass so it looks sleek and non-destructive
+      // Swami Anant Vyas — normal matte crimson (#fc0303 family, non-shiny)
       return {
         hex: '#fc0303',
         badge: 'Hardware & Core',
         shortLabel: 'Anant',
-        borderColor: 'rgba(252, 3, 3, 0.36)',
-        hoverBorderColor: 'rgba(255, 77, 77, 0.8)',
-        glowBg: 'radial-gradient(circle at 88% 12%, rgba(252, 3, 3, 0.16), transparent 65%)',
-        topBarGradient: 'linear-gradient(90deg, #fc0303, #fb7185, #fc0303)',
-        dotColor: '#fc0303',
-        dotShadow: '0 0 10px rgba(252, 3, 3, 0.85)',
-        pillBg: 'rgba(252, 3, 3, 0.12)',
-        pillBorder: 'rgba(252, 3, 3, 0.38)',
-        textClass: 'text-rose-700 dark:text-[#ff6b6b]',
-        ringColor: 'rgba(252, 3, 3, 0.55)',
+        borderColor: 'rgba(220, 38, 38, 0.28)',
+        hoverBorderColor: 'rgba(220, 38, 38, 0.5)',
+        glowBg: 'none',
+        topBarGradient: '#dc2626',
+        dotColor: '#ef4444',
+        dotShadow: 'none',
+        pillBg: 'rgba(220, 38, 38, 0.10)',
+        pillBorder: 'rgba(220, 38, 38, 0.28)',
+        textClass: 'text-rose-700 dark:text-rose-300',
+        ringColor: 'transparent',
       };
     }
     if (n.includes('mayank')) {
-      // #05fac9 (Mayank) — neon mint aquamarine
+      // Mayank Ranjan — normal matte mint-teal (#05fac9 family, non-shiny) + "Bio Wale" tag
       return {
         hex: '#05fac9',
-        badge: 'Field Ops & R&D',
-        shortLabel: 'Mayank',
-        borderColor: 'rgba(5, 250, 201, 0.4)',
-        hoverBorderColor: 'rgba(5, 250, 201, 0.85)',
-        glowBg: 'radial-gradient(circle at 88% 12%, rgba(5, 250, 201, 0.18), transparent 65%)',
-        topBarGradient: 'linear-gradient(90deg, #05fac9, #6ee7b7, #05fac9)',
-        dotColor: '#05fac9',
-        dotShadow: '0 0 10px rgba(5, 250, 201, 0.9)',
-        pillBg: 'rgba(5, 250, 201, 0.12)',
-        pillBorder: 'rgba(5, 250, 201, 0.42)',
-        textClass: 'text-teal-700 dark:text-[#05fac9]',
-        ringColor: 'rgba(5, 250, 201, 0.6)',
+        badge: 'Bio Wale',
+        shortLabel: 'Mayank R.',
+        borderColor: 'rgba(16, 185, 129, 0.28)',
+        hoverBorderColor: 'rgba(16, 185, 129, 0.5)',
+        glowBg: 'none',
+        topBarGradient: '#0d9488',
+        dotColor: '#10b981',
+        dotShadow: 'none',
+        pillBg: 'rgba(16, 185, 129, 0.10)',
+        pillBorder: 'rgba(16, 185, 129, 0.28)',
+        textClass: 'text-teal-700 dark:text-teal-300',
+        ringColor: 'transparent',
       };
     }
     return {
-      hex: '#38bdf8',
-      badge: 'Core Member',
+      hex: '#64748b',
+      badge: 'Team Member',
       shortLabel: name.split(' ')[0] || 'Member',
-      borderColor: 'rgba(56, 189, 248, 0.35)',
-      hoverBorderColor: 'rgba(56, 189, 248, 0.75)',
-      glowBg: 'radial-gradient(circle at 88% 12%, rgba(56, 189, 248, 0.15), transparent 65%)',
-      topBarGradient: 'linear-gradient(90deg, #38bdf8, #818cf8)',
-      dotColor: '#38bdf8',
-      dotShadow: '0 0 8px rgba(56, 189, 248, 0.8)',
-      pillBg: 'rgba(56, 189, 248, 0.12)',
-      pillBorder: 'rgba(56, 189, 248, 0.35)',
-      textClass: 'text-sky-700 dark:text-sky-300',
-      ringColor: 'rgba(56, 189, 248, 0.5)',
+      borderColor: 'rgba(100, 116, 139, 0.28)',
+      hoverBorderColor: 'rgba(100, 116, 139, 0.5)',
+      glowBg: 'none',
+      topBarGradient: '#64748b',
+      dotColor: '#64748b',
+      dotShadow: 'none',
+      pillBg: 'rgba(100, 116, 139, 0.10)',
+      pillBorder: 'rgba(100, 116, 139, 0.28)',
+      textClass: 'text-slate-700 dark:text-slate-300',
+      ringColor: 'transparent',
     };
   };
 
@@ -996,10 +1003,10 @@ const Index = () => {
                   {/* Core Team Contributors Header & Interactive Rotate Control */}
                   <div className="flex items-center justify-between mb-3 px-0.5">
                     <div className="flex items-center gap-2">
-                      <span className="text-[11px] font-black uppercase tracking-[0.16em] text-slate-600 dark:text-slate-300">
+                      <span className="text-[11px] font-bold uppercase tracking-[0.14em] text-slate-600 dark:text-slate-400">
                         Core Team Contributors
                       </span>
-                      {/* Live 4-Member Orbital Color Spectrum Indicators */}
+                      {/* 4-Member Normal Color Dots */}
                       <div className="hidden sm:flex items-center gap-1.5 ml-1 rounded-full bg-slate-100 dark:bg-white/[0.04] px-2 py-1 border border-border/50 dark:border-white/10">
                         {displayedTeamMembers.map((m, idx) => {
                           const dotTheme = getMemberTheme(m.name);
@@ -1008,12 +1015,11 @@ const Index = () => {
                             <span
                               key={m.name}
                               className={cn(
-                                'rounded-full transition-all duration-300',
-                                isFirst ? 'h-2.5 w-2.5 scale-110' : 'h-1.5 w-1.5 opacity-70',
+                                'rounded-full transition-transform duration-300',
+                                isFirst ? 'h-2 w-2 scale-110' : 'h-1.5 w-1.5 opacity-60',
                               )}
                               style={{
                                 backgroundColor: dotTheme.dotColor,
-                                boxShadow: isFirst ? dotTheme.dotShadow : 'none',
                               }}
                               title={`${idx + 1}. ${m.name}`}
                             />
@@ -1026,50 +1032,36 @@ const Index = () => {
                       <button
                         type="button"
                         onClick={handleRotateTeamMembers}
-                        className="group/rot relative inline-flex items-center gap-2 rounded-full p-[1px] transition-transform duration-200 active:scale-95 cursor-pointer focus:outline-none shadow-sm hover:shadow-md"
-                        style={{
-                          background: 'linear-gradient(90deg, #fc0303, #05edf5, #9400D3, #05fac9)',
-                        }}
+                        className="group/rot inline-flex items-center gap-1.5 rounded-xl border border-slate-300 dark:border-white/15 bg-slate-100 hover:bg-slate-200/80 dark:bg-[#141926] dark:hover:bg-[#1b2234] px-3 py-1.5 text-[11px] font-bold text-slate-700 dark:text-slate-200 transition-all duration-200 active:scale-95 cursor-pointer focus:outline-none"
                         title="Rotate all 4 team members clockwise"
                       >
-                        <span className="inline-flex items-center gap-1.5 rounded-full bg-white/95 dark:bg-[#0e1320]/95 px-3 py-1 text-[11px] font-extrabold text-slate-800 dark:text-slate-100 group-hover/rot:bg-white/85 dark:group-hover/rot:bg-[#131a2c] transition-colors">
-                          <span
-                            className="inline-flex items-center justify-center h-4 w-4 rounded-full bg-gradient-to-tr from-[#9400D3]/20 via-[#05edf5]/20 to-[#05fac9]/20 text-[#05edf5] transform-gpu transition-transform duration-500 ease-out"
-                            style={{ transform: `rotate(${rotationCount * 90}deg)` }}
-                          >
-                            <RefreshCw className="h-3 w-3 text-cyan-600 dark:text-[#05edf5]" />
-                          </span>
-                          <span className="bg-gradient-to-r from-cyan-600 via-purple-600 to-emerald-600 dark:from-[#05edf5] dark:via-[#d8b4fe] dark:to-[#05fac9] bg-clip-text text-transparent">
-                            Rotate Team
-                          </span>
-                          <span className="text-[9px] font-mono font-bold text-slate-400 dark:text-slate-400">
-                            {(rotationCount % 4) + 1}/4
-                          </span>
+                        <RefreshCw
+                          className="h-3.5 w-3.5 text-slate-600 dark:text-slate-300 transform-gpu transition-transform duration-500 ease-out"
+                          style={{ transform: `rotate(${rotationCount * 90}deg)` }}
+                        />
+                        <span>Rotate Team</span>
+                        <span className="text-[10px] font-mono font-semibold text-slate-500 dark:text-slate-400">
+                          {(rotationCount % 4) + 1}/4
                         </span>
                       </button>
                     )}
                   </div>
 
-                  {/* 4 Core Contributors 2x2 Color-Themed Bento Grid with Center Orbital Hub */}
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5 relative">
-                    {/* Centerpiece Interactive Orbital Rotate Button (Desktop/Tablet 2x2 Intersection) */}
+                  {/* 4 Core Contributors 2x2 Normal-Colored Grid with Center Rotate Button */}
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 relative">
+                    {/* Centerpiece Rotate Button (Desktop/Tablet 2x2 Intersection — clean matte style) */}
                     {displayedTeamMembers.length === 4 && (
                       <button
                         type="button"
                         onClick={handleRotateTeamMembers}
                         aria-label="Rotate team members clockwise"
                         title="Click to rotate team members clockwise"
-                        className="hidden sm:flex absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 z-20 h-9 w-9 items-center justify-center rounded-full p-[1.5px] shadow-[0_0_20px_rgba(5,237,245,0.3)] hover:shadow-[0_0_26px_rgba(148,0,211,0.55)] hover:scale-110 active:scale-95 transition-all duration-200 cursor-pointer group/hub focus:outline-none"
-                        style={{
-                          background: 'conic-gradient(from 0deg, #fc0303, #05edf5, #9400D3, #05fac9, #fc0303)',
-                        }}
+                        className="hidden sm:flex absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 z-20 h-8 w-8 items-center justify-center rounded-full border border-slate-300 dark:border-white/20 bg-white dark:bg-[#151b29] text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-[#1e2638] hover:scale-105 active:scale-95 transition-all duration-200 shadow-sm cursor-pointer focus:outline-none"
                       >
-                        <span className="flex h-full w-full items-center justify-center rounded-full bg-white dark:bg-[#0b0e17] text-slate-800 dark:text-white">
-                          <RefreshCw
-                            className="h-3.5 w-3.5 text-cyan-600 dark:text-[#05edf5] group-hover/hub:text-purple-500 dark:group-hover/hub:text-[#05fac9] transform-gpu transition-transform duration-500 ease-out"
-                            style={{ transform: `rotate(${rotationCount * 90}deg)` }}
-                          />
-                        </span>
+                        <RefreshCw
+                          className="h-3.5 w-3.5 text-slate-600 dark:text-slate-300 transform-gpu transition-transform duration-500 ease-out"
+                          style={{ transform: `rotate(${rotationCount * 90}deg)` }}
+                        />
                       </button>
                     )}
 
@@ -1087,49 +1079,33 @@ const Index = () => {
                           transition={{ type: 'spring' as const, stiffness: 320, damping: 28, mass: 0.55 }}
                           style={{
                             borderColor: theme.borderColor,
-                            backgroundImage: theme.glowBg,
                           }}
-                          className="group relative overflow-hidden flex items-center justify-between gap-3 rounded-2xl border bg-white/95 dark:bg-[#111624]/95 p-3.5 text-left transform-gpu will-change-transform transition-shadow duration-200 hover:shadow-lg active:scale-[0.98] cursor-pointer"
+                          className="group relative overflow-hidden flex items-center justify-between gap-3 rounded-2xl border bg-slate-50/90 dark:bg-[#111520] hover:bg-slate-100/90 dark:hover:bg-[#151a28] p-3.5 text-left transform-gpu will-change-transform transition-colors duration-200 active:scale-[0.98] cursor-pointer"
                           aria-label={`Open ${member.name} profile`}
                         >
-                          {/* Top Signature Color Accent Line */}
-                          <div
-                            className="pointer-events-none absolute inset-x-0 top-0 h-[2.5px] opacity-85 group-hover:opacity-100 transition-opacity"
-                            style={{ background: theme.topBarGradient }}
-                          />
-
                           <div className="flex items-center gap-3 min-w-0">
-                            {/* Avatar with Signature Color Ring & Glowing Node */}
+                            {/* Clean Matte Avatar without shiny glow */}
                             <div className="relative shrink-0">
-                              <div
-                                className="rounded-xl p-[1.5px] transition-transform duration-300 group-hover:scale-105"
-                                style={{
-                                  background: theme.topBarGradient,
-                                  boxShadow: `0 0 14px -3px ${theme.ringColor}`,
-                                }}
-                              >
-                                <MemberAvatar
-                                  name={member.name}
-                                  image={member.image}
-                                  className="h-11 w-11 rounded-[10px] border border-background shrink-0"
-                                  fallbackClassName="text-xs font-black"
-                                />
-                              </div>
+                              <MemberAvatar
+                                name={member.name}
+                                image={member.image}
+                                className="h-11 w-11 rounded-xl border border-slate-300 dark:border-white/15 shrink-0"
+                                fallbackClassName="text-xs font-bold"
+                              />
                               <span
-                                className="absolute -bottom-0.5 -right-0.5 h-2.5 w-2.5 rounded-full border-2 border-white dark:border-[#111624]"
+                                className="absolute -bottom-0.5 -right-0.5 h-2.5 w-2.5 rounded-full border-2 border-white dark:border-[#111520]"
                                 style={{
                                   backgroundColor: theme.dotColor,
-                                  boxShadow: theme.dotShadow,
                                 }}
                               />
                             </div>
 
                             <div className="min-w-0">
-                              {/* Signature Color Badge Pill */}
+                              {/* Normal Matte Tag Pill (Bio Wale / Gaming Wale / Hardware & Core) */}
                               <div className="flex items-center gap-1.5">
                                 <span
                                   className={cn(
-                                    'inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[9px] font-black uppercase tracking-wider border',
+                                    'inline-flex items-center gap-1 rounded-md px-2 py-0.5 text-[9px] font-bold uppercase tracking-wider border',
                                     theme.textClass,
                                   )}
                                   style={{
@@ -1145,7 +1121,7 @@ const Index = () => {
                                 </span>
                               </div>
 
-                              <p className="mt-1 text-sm font-extrabold text-slate-900 dark:text-white truncate">
+                              <p className="mt-1 text-sm font-bold text-slate-900 dark:text-slate-100 truncate">
                                 {member.name}
                               </p>
                               <p className="text-[11px] font-medium text-slate-500 dark:text-slate-400 truncate">
@@ -1154,14 +1130,7 @@ const Index = () => {
                             </div>
                           </div>
 
-                          <div
-                            className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg border transition-transform duration-200 group-hover:translate-x-0.5"
-                            style={{
-                              backgroundColor: theme.pillBg,
-                              borderColor: theme.pillBorder,
-                              color: theme.dotColor,
-                            }}
-                          >
+                          <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg border border-slate-200 dark:border-white/10 bg-white/70 dark:bg-white/[0.03] text-slate-500 dark:text-slate-400 transition-transform duration-200 group-hover:translate-x-0.5">
                             <ArrowRight className="h-3.5 w-3.5" />
                           </div>
                         </motion.button>

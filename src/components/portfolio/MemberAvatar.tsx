@@ -34,21 +34,21 @@ function getKnownPhoto(name: string): string | null {
   return null;
 }
 
-function getMemberFallbackGradient(name: string, defaultHue: number): string {
+function getMemberFallbackBg(name: string, defaultHue: number): string {
   const n = (name || '').toLowerCase();
   if (n.includes('maurya')) {
-    return 'linear-gradient(135deg, #9400D3 0%, #b829ff 50%, #581c87 100%)';
+    return '#6b21a8'; // Clean matte purple (#9400D3 family)
   }
   if (n.includes('mayank')) {
-    return 'linear-gradient(135deg, #05fac9 0%, #10b981 55%, #065f46 100%)';
+    return '#0f766e'; // Clean matte teal-mint (#05fac9 family)
   }
   if (n.includes('dhama')) {
-    return 'linear-gradient(135deg, #05edf5 0%, #0284c7 100%)';
+    return '#0e7490'; // Clean matte cyan (#05edf5 family)
   }
   if (n.includes('anant') || n.includes('swami')) {
-    return 'linear-gradient(135deg, #fc0303 0%, #be123c 100%)';
+    return '#991b1b'; // Clean matte crimson (#fc0303 family)
   }
-  return `linear-gradient(135deg, hsl(${defaultHue} 70% 55%), hsl(${(defaultHue + 60) % 360} 70% 45%))`;
+  return `hsl(${defaultHue} 55% 42%)`;
 }
 
 export function MemberAvatar({
@@ -82,12 +82,11 @@ export function MemberAvatar({
       ) : (
         <div
           className={cn(
-            'flex h-full w-full items-center justify-center font-black tracking-wider text-white shadow-inner',
+            'flex h-full w-full items-center justify-center font-bold tracking-wider text-white',
             fallbackClassName,
           )}
           style={{
-            background: getMemberFallbackGradient(name || '', h),
-            textShadow: '0 1px 4px rgba(0,0,0,0.35)',
+            backgroundColor: getMemberFallbackBg(name || '', h),
           }}
           aria-label={name}
         >
