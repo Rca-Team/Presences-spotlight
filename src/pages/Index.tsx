@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { usePerformanceMode } from '@/hooks/usePerformanceMode';
 import LiteHome from '@/components/lite/LiteHome';
@@ -385,7 +385,15 @@ const Index = () => {
   };
 
   const [teamMembersList, setTeamMembersList] = useState<any[]>([]);
-  const [rotationCount, setRotationCount] = useState(0);
+  const [wheelDegrees, setWheelDegrees] = useState(0);
+  const [isSpinning, setIsSpinning] = useState(false);
+  const spinTimersRef = useRef<number[]>([]);
+
+  useEffect(() => {
+    return () => {
+      spinTimersRef.current.forEach((t) => window.clearTimeout(t));
+    };
+  }, []);
 
   const defaultTeamMembers = useMemo(
     () => [swamiMember, jatinMember, jatinMauryaMember, mayankMember],
@@ -396,23 +404,76 @@ const Index = () => {
     return defaultTeamMembers;
   }, [teamMembersList, defaultTeamMembers]);
 
+  // Helper: generate a guaranteed-different randomized arrangement of the 4 team members
+  const randomizeMembers = (current: any[], originalOrderKey: string) => {
+    if (current.length <= 1) return current;
+    let best = [...current];
+    for (let attempt = 0; attempt < 12; attempt++) {
+      const candidate = [...current];
+      for (let i = candidate.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [candidate[i], candidate[j]] = [candidate[j], candidate[i]];
+      }
+      const candidateKey = candidate.map((m) => m.name).join('|');
+      const currentKey = current.map((m) => m.name).join('|');
+      // Ensure it is different from both the starting order and the mid-spin order,
+      // and ideally moves every member to a new slot
+      const changedSlots = candidate.filter((m, idx) => m.name !== current[idx]?.name).length;
+      if (candidateKey !== originalOrderKey && candidateKey !== currentKey && changedSlots >= 3) {
+        return candidate;
+      }
+      if (candidateKey !== originalOrderKey && candidateKey !== currentKey) {
+        best = candidate;
+      }
+    }
+    return best;
+  };
+
   const handleRotateTeamMembers = (e?: React.MouseEvent) => {
     e?.stopPropagation();
     haptic('selection');
-    setRotationCount((prev) => prev + 1);
+
+    // Clear any in-flight spin timers if clicked rapidly
+    spinTimersRef.current.forEach((t) => window.clearTimeout(t));
+    spinTimersRef.current = [];
+
+    setIsSpinning(true);
+    // Spin wheel 2 to 3.5 full turns (720° to 1260°) with random landing angle
+    const extraSpin = 720 + Math.floor(Math.random() * 540) + 90;
+    setWheelDegrees((prev) => prev + extraSpin);
+
+    const startingList = teamMembersList.length >= 4 ? teamMembersList : defaultTeamMembers;
+    const originalOrderKey = startingList.map((m) => m.name).join('|');
+
+    // Step 1 (0ms): Immediate clockwise orbit step so motion starts with zero lag
     setTeamMembersList((prev) => {
-      const current = prev.length >= 4 ? prev : defaultTeamMembers;
-      if (current.length === 4) {
-        // Clockwise 2x2 orbital rotation:
-        // Top-Left (0) -> Top-Right (1), Top-Right (1) -> Bottom-Right (3),
-        // Bottom-Right (3) -> Bottom-Left (2), Bottom-Left (2) -> Top-Left (0)
-        return [current[2], current[0], current[3], current[1]];
-      }
-      if (current.length > 1) {
-        return [current[current.length - 1], ...current.slice(0, -1)];
-      }
-      return current;
+      const cur = prev.length >= 4 ? prev : defaultTeamMembers;
+      return cur.length === 4 ? [cur[2], cur[0], cur[3], cur[1]] : [...cur].reverse();
     });
+
+    // Step 2 (160ms): Second fast clockwise orbit step while wheel is at peak speed
+    const t1 = window.setTimeout(() => {
+      setTeamMembersList((prev) => {
+        const cur = prev.length >= 4 ? prev : defaultTeamMembers;
+        return cur.length === 4 ? [cur[2], cur[0], cur[3], cur[1]] : [...cur].reverse();
+      });
+    }, 160);
+
+    // Step 3 (340ms): Final randomized placement as the wheel decelerates & lands
+    const t2 = window.setTimeout(() => {
+      haptic('light');
+      setTeamMembersList((prev) => {
+        const cur = prev.length >= 4 ? prev : defaultTeamMembers;
+        return randomizeMembers(cur, originalOrderKey);
+      });
+    }, 340);
+
+    // Complete spin state once wheel finishes decelerating (600ms)
+    const t3 = window.setTimeout(() => {
+      setIsSpinning(false);
+    }, 600);
+
+    spinTimersRef.current = [t1, t2, t3];
   };
 
   // NEVER show the home page to teachers (placed after all hooks to follow React rules)
@@ -1032,36 +1093,57 @@ const Index = () => {
                       <button
                         type="button"
                         onClick={handleRotateTeamMembers}
-                        className="group/rot inline-flex items-center gap-1.5 rounded-xl border border-slate-300 dark:border-white/15 bg-slate-100 hover:bg-slate-200/80 dark:bg-[#141926] dark:hover:bg-[#1b2234] px-3 py-1.5 text-[11px] font-bold text-slate-700 dark:text-slate-200 transition-all duration-200 active:scale-95 cursor-pointer focus:outline-none"
-                        title="Rotate all 4 team members clockwise"
+                        className="group/rot inline-flex items-center gap-2 rounded-xl border border-slate-300 dark:border-white/15 bg-slate-100 hover:bg-slate-200/80 dark:bg-[#141926] dark:hover:bg-[#1b2234] px-3 py-1.5 text-[11px] font-bold text-slate-700 dark:text-slate-200 transition-all duration-200 active:scale-95 cursor-pointer focus:outline-none"
+                        title="Spin the wheel to rotate and randomize team member positions"
                       >
-                        <RefreshCw
-                          className="h-3.5 w-3.5 text-slate-600 dark:text-slate-300 transform-gpu transition-transform duration-500 ease-out"
-                          style={{ transform: `rotate(${rotationCount * 90}deg)` }}
-                        />
-                        <span>Rotate Team</span>
-                        <span className="text-[10px] font-mono font-semibold text-slate-500 dark:text-slate-400">
-                          {(rotationCount % 4) + 1}/4
+                        {/* Mini 4-slice Spin Wheel Icon */}
+                        <span
+                          className="relative inline-flex h-4 w-4 items-center justify-center rounded-full p-[1.5px] transform-gpu"
+                          style={{
+                            background:
+                              'conic-gradient(#ef4444 0deg 90deg, #06b6d4 90deg 180deg, #9400D3 180deg 270deg, #10b981 270deg 360deg)',
+                            transform: `rotate(${wheelDegrees}deg)`,
+                            transition: 'transform 620ms cubic-bezier(0.15, 0.85, 0.25, 1)',
+                          }}
+                        >
+                          <span className="flex h-full w-full items-center justify-center rounded-full bg-white dark:bg-[#141926]">
+                            <RefreshCw className="h-2.5 w-2.5 text-slate-700 dark:text-slate-200" />
+                          </span>
                         </span>
+                        <span>{isSpinning ? 'Spinning...' : 'Spin Wheel'}</span>
                       </button>
                     )}
                   </div>
 
-                  {/* 4 Core Contributors 2x2 Normal-Colored Grid with Center Rotate Button */}
+                  {/* 4 Core Contributors 2x2 Normal-Colored Grid with Center Spin-the-Wheel Hub */}
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 relative">
-                    {/* Centerpiece Rotate Button (Desktop/Tablet 2x2 Intersection — clean matte style) */}
+                    {/* Centerpiece Spin-the-Wheel Hub Button (Desktop/Tablet 2x2 Intersection) */}
                     {displayedTeamMembers.length === 4 && (
                       <button
                         type="button"
                         onClick={handleRotateTeamMembers}
-                        aria-label="Rotate team members clockwise"
-                        title="Click to rotate team members clockwise"
-                        className="hidden sm:flex absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 z-20 h-8 w-8 items-center justify-center rounded-full border border-slate-300 dark:border-white/20 bg-white dark:bg-[#151b29] text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-[#1e2638] hover:scale-105 active:scale-95 transition-all duration-200 shadow-sm cursor-pointer focus:outline-none"
+                        aria-label="Spin the wheel to randomize team members"
+                        title="Click to spin the wheel & randomize team members"
+                        className="hidden sm:flex absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 z-20 h-10 w-10 items-center justify-center rounded-full border-2 border-white dark:border-[#0b0e17] bg-white dark:bg-[#151b29] hover:scale-110 active:scale-95 transition-transform duration-200 shadow-md cursor-pointer focus:outline-none"
                       >
-                        <RefreshCw
-                          className="h-3.5 w-3.5 text-slate-600 dark:text-slate-300 transform-gpu transition-transform duration-500 ease-out"
-                          style={{ transform: `rotate(${rotationCount * 90}deg)` }}
+                        {/* Top Fixed Wheel Pointer Notch */}
+                        <span
+                          className="pointer-events-none absolute -top-1.5 left-1/2 -translate-x-1/2 z-30 h-0 w-0 border-l-[4px] border-r-[4px] border-t-[5px] border-l-transparent border-r-transparent border-t-slate-800 dark:border-t-white"
                         />
+                        {/* 4-Quadrant Spinning Wheel Rim */}
+                        <span
+                          className="flex h-full w-full items-center justify-center rounded-full p-[3px] transform-gpu"
+                          style={{
+                            background:
+                              'conic-gradient(#ef4444 0deg 90deg, #06b6d4 90deg 180deg, #9400D3 180deg 270deg, #10b981 270deg 360deg)',
+                            transform: `rotate(${wheelDegrees}deg)`,
+                            transition: 'transform 620ms cubic-bezier(0.15, 0.85, 0.25, 1)',
+                          }}
+                        >
+                          <span className="flex h-full w-full items-center justify-center rounded-full bg-white dark:bg-[#111520] text-slate-700 dark:text-slate-200">
+                            <RefreshCw className="h-3.5 w-3.5" />
+                          </span>
+                        </span>
                       </button>
                     )}
 
