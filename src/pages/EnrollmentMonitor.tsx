@@ -958,18 +958,21 @@ export default function EnrollmentMonitor() {
     return () => window.removeEventListener('scroll', handleScroll);
   }, []);
 
+  const hasDataRef = React.useRef(Boolean(data));
+  hasDataRef.current = Boolean(data);
+
   const load = useCallback(async (quiet = false) => {
-    if (!quiet && !data) setLoading(true);
+    if (!quiet && !hasDataRef.current) setLoading(true);
     try {
       const fresh = await fetchMonitor();
       setData(fresh);
       setError('');
     } catch (e) {
-      if (!data) setError(e instanceof Error ? e.message : 'Could not load enrollment data.');
+      if (!hasDataRef.current) setError(e instanceof Error ? e.message : 'Could not load enrollment data.');
     } finally {
       setLoading(false);
     }
-  }, [data]);
+  }, []);
 
   useEffect(() => {
     void load();
@@ -980,7 +983,7 @@ export default function EnrollmentMonitor() {
       if (document.visibilityState === 'visible' && (typeof navigator === 'undefined' || navigator.onLine)) {
         void load(true);
       }
-    }, 45000);
+    }, 120000);
     return () => window.clearInterval(id);
   }, [load]);
 

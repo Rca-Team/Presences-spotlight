@@ -118,55 +118,76 @@ export function clearMonitorCache() {
 }
 
 let backendUnavailableCooldownUntil = 0;
+let lastBackendFetchAt = 0;
+let cachedBackendOverview: MonitorOverview | null = null;
+let inFlightMonitorRequest: Promise<MonitorOverview> | null = null;
 
-export const fetchMonitor = async (): Promise<MonitorOverview> => {
-  const fetchProfiles = async () => {
-    try {
-      const { data } = await supabase
-        .from('profiles')
-        .select('id, user_id, full_name, display_name, admission_number, employee_id, roll_number, class, section, category, parent_phone, phone, parent_name, date_of_birth, father_name, avatar_url, photo_url, metadata, role, updated_at, created_at');
-      return (data || []) as any[];
-    } catch (err) {
-      console.warn('[EnrollmentMonitor] Profiles fetch fallback:', err);
-      return [] as any[];
-    }
-  };
+export const fetchMonitor = async (force = false): Promise<MonitorOverview> => {
+  if (!force && inMemoryOverviewCache && Date.now() - inMemoryOverviewCache.generatedAt < 20000) {
+    return inMemoryOverviewCache;
+  }
+  if (inFlightMonitorRequest) {
+    return inFlightMonitorRequest;
+  }
 
-  const fetchDescriptors = async () => {
-    try {
-      const { data } = await supabase
-        .from('face_descriptors')
-        .select('student_id, user_id, label, image_url, created_at');
-      return (data || []) as any[];
-    } catch (err) {
-      console.warn('[EnrollmentMonitor] Descriptors fetch fallback:', err);
-      return [] as any[];
-    }
-  };
+  const runFetch = async (): Promise<MonitorOverview> => {
+    const fetchProfiles = async () => {
+      try {
+        const { data } = await supabase
+          .from('profiles')
+          .select('id, user_id, full_name, display_name, admission_number, employee_id, roll_number, class, section, category, parent_phone, phone, parent_name, date_of_birth, father_name, avatar_url, photo_url, metadata, role, updated_at, created_at');
+        return (data || []) as any[];
+      } catch (err) {
+        console.warn('[EnrollmentMonitor] Profiles fetch fallback:', err);
+        return [] as any[];
+      }
+    };
 
-  const fetchBackend = async () => {
-    if (typeof navigator !== 'undefined' && !navigator.onLine) return null;
-    if (Date.now() < backendUnavailableCooldownUntil) return null;
+    const fetchDescriptors = async () => {
+      try {
+        const { data } = await supabase
+          .from('face_descriptors')
+          .select('student_id, user_id, label, image_url, created_at');
+        return (data || []) as any[];
+      } catch (err) {
+        console.warn('[EnrollmentMonitor] Descriptors fetch fallback:', err);
+        return [] as any[];
+      }
+    };
 
-    try {
-      const timeout = new Promise<null>((resolve) => setTimeout(() => resolve(null), 2500));
-      const req = enrollmentApi<MonitorOverview>('staff.monitor').catch(() => {
-        // Cooldown backend function calls for 5 minutes if service is not deployed
-        backendUnavailableCooldownUntil = Date.now() + 5 * 60 * 1000;
-        return null;
-      });
-      return await Promise.race([req, timeout]);
-    } catch {
-      return null;
-    }
-  };
+    const fetchBackend = async () => {
+      if (typeof navigator !== 'undefined' && !navigator.onLine) return cachedBackendOverview;
+      if (Date.now() < backendUnavailableCooldownUntil) return cachedBackendOverview;
+      // Avoid invoking expensive multi-collection cloud scan more than once every 3 minutes
+      if (!force && cachedBackendOverview && Date.now() - lastBackendFetchAt < 180000) {
+        return cachedBackendOverview;
+      }
 
-  const [backendResult, rawProfiles, rawDescriptors, registrationsResult] = await Promise.all([
-    fetchBackend(),
-    fetchProfiles(),
-    fetchDescriptors(),
-    supabase.from('attendance_records').select('student_id, user_id, device_info, image_url, created_at').eq('status', 'registered').order('created_at', { ascending: false }).limit(1000),
-  ]);
+      try {
+        const timeout = new Promise<null>((resolve) => setTimeout(() => resolve(null), 2500));
+        const req = enrollmentApi<MonitorOverview>('staff.monitor').then((res) => {
+          if (res) {
+            cachedBackendOverview = res;
+            lastBackendFetchAt = Date.now();
+          }
+          return res;
+        }).catch(() => {
+          // Cooldown backend function calls for 10 minutes if service is unavailable or over quota
+          backendUnavailableCooldownUntil = Date.now() + 10 * 60 * 1000;
+          return cachedBackendOverview;
+        });
+        return (await Promise.race([req, timeout])) || cachedBackendOverview;
+      } catch {
+        return cachedBackendOverview;
+      }
+    };
+
+    const [backendResult, rawProfiles, rawDescriptors, registrationsResult] = await Promise.all([
+      fetchBackend(),
+      fetchProfiles(),
+      fetchDescriptors(),
+      supabase.from('attendance_records').select('student_id, user_id, device_info, image_url, created_at').eq('status', 'registered').order('created_at', { ascending: false }).limit(1000),
+    ]);
 
   const descriptorKeys = new Set<string>();
   const descriptorPhotos = new Map<string, string>();
@@ -337,11 +358,22 @@ export const fetchMonitor = async (): Promise<MonitorOverview> => {
     baseOverview.scope = { all: true, classes: allDiscoveredCategories };
   }
 
-  saveCachedMonitorOverview(baseOverview);
-  return baseOverview;
+    saveCachedMonitorOverview(baseOverview);
+    return baseOverview;
+  };
+
+  inFlightMonitorRequest = runFetch().finally(() => {
+    inFlightMonitorRequest = null;
+  });
+  return inFlightMonitorRequest;
 };
-export const fetchMonitorPhoto = (admission: string, fileId: string) =>
-  enrollmentApi<{ image: string }>('staff.photo', { admission, fileId }).then(r => r.image);
+export const fetchMonitorPhoto = async (admission: string, fileId: string): Promise<string> => {
+  if (/^[a-f0-9]{32,36}$/i.test(fileId)) {
+    const { getAppwriteStorageViewUrl, APPWRITE_CONFIG } = await import('@/integrations/appwrite/client');
+    return getAppwriteStorageViewUrl(APPWRITE_CONFIG.buckets.studentRegistrationFaces, fileId);
+  }
+  return enrollmentApi<{ image: string }>('staff.photo', { admission, fileId }).then(r => r.image);
+};
 export const reviewCorrection = (id: string, approve: boolean) => enrollmentApi('staff.review', { id, approve });
 
 export const statusMeta: Record<MonitorStatus, { label: string; tone: string; dot: string }> = {

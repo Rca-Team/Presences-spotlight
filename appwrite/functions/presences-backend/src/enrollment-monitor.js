@@ -59,18 +59,31 @@ export function createEnrollmentMonitor({ db, databaseId, files, now }) {
     return { all: false, classes: [...classes].sort() };
   }
 
-  async function overview(user) {
-    const scope = await scopeFor(user);
-    const t = now();
-    const [profiles, states, captures, sessions, corrections, audits, descriptors] = await Promise.all([
+  let rawCache = null;
+  let rawCacheExpiresAt = 0;
+
+  async function loadCollectionsCached(t) {
+    if (rawCache && rawCacheExpiresAt > t) {
+      return rawCache;
+    }
+    const data = await Promise.all([
       safe(() => listAll('profiles', [Query.or([Query.equal('role', 'student'), Query.isNull('role')])], 6000)),
       kind('student'),
       kind('capture'),
       kind('session', [Query.greaterThan('expires', t)], 1000),
       kind('correction', [], 1000),
-      kind('audit', [Query.orderDesc('$createdAt')], 1500),
+      kind('audit', [Query.orderDesc('$createdAt')], 500),
       safe(() => listAll('face_descriptors', [Query.select(['student_id', 'user_id', 'created_at'])], 8000)),
     ]);
+    rawCache = data;
+    rawCacheExpiresAt = t + 30000;
+    return data;
+  }
+
+  async function overview(user) {
+    const scope = await scopeFor(user);
+    const t = now();
+    const [profiles, states, captures, sessions, corrections, audits, descriptors] = await loadCollectionsCached(t);
     const byAdmission = new Map();
     for (const p of profiles) {
       const admission = String(p.admission_number || p.employee_id || '').trim();

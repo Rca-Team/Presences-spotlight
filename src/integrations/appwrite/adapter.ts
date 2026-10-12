@@ -102,12 +102,372 @@ interface CacheEntry {
 
 const queryCache = new Map<string, CacheEntry>();
 const inFlightRequests = new Map<string, Promise<{ documents: any[]; total: number }>>();
+const supabaseFallbackCache = new Map<string, { rows: any[]; expiresAt: number }>();
+const supabaseFallbackInFlight = new Map<string, Promise<any[]>>();
+let appwriteReadQuotaCooldownUntil = 0;
+
+export function isAppwriteQuotaLimitError(err: any): boolean {
+  const msg = String(err?.message || '');
+  return (
+    err?.code === 402 ||
+    err?.type === 'limit_databases_reads_exceeded' ||
+    msg.includes('Database reads limit') ||
+    msg.includes('billing cycle') ||
+    msg.includes('budget cap')
+  );
+}
+
+function getSupabaseFallbackConfig(): { url: string; key: string } {
+  let url = 'https://cvdcbcsonlianbfeessy.supabase.co';
+  let key = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImN2ZGNiY3NvbmxpYW5iZmVlc3N5Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODc2NDQ5MDcsImV4cCI6MjEwMzIyMDkwN30.fzJfZKKTw2Y3oFgk6fxVkfhdnIXNzXDeNa0CP84RxDg';
+  try {
+    const getMetaEnv = new Function('try { return import.meta.env; } catch(e) { return null; }');
+    const env = getMetaEnv();
+    if (env?.VITE_SUPABASE_URL) url = env.VITE_SUPABASE_URL;
+    if (env?.VITE_SUPABASE_ANON_KEY) key = env.VITE_SUPABASE_ANON_KEY;
+  } catch {}
+  return { url: url.replace(/\/$/, ''), key };
+}
+
+function resolveStorageUrlOrPath(rawUrl: any, defaultBucket = 'face-images'): string | null {
+  if (!rawUrl || typeof rawUrl !== 'string') return null;
+  const trimmed = rawUrl.trim();
+  if (!trimmed) return null;
+  if (trimmed.includes('appwrite.io') || trimmed.startsWith('data:') || trimmed.startsWith('blob:')) return trimmed;
+  if (trimmed.includes('supabase.co')) {
+    return sanitizeImageUrl(trimmed);
+  }
+  if (trimmed.startsWith('faces/') || trimmed.startsWith('attendance/') || trimmed.startsWith('public/')) {
+    return getAppwriteStorageViewUrl(defaultBucket, storageFileId(trimmed));
+  }
+  return trimmed;
+}
+
+function loadLocalOverlayDocs(collectionName: string): Record<string, any> {
+  try {
+    if (typeof localStorage !== 'undefined') {
+      const raw = localStorage.getItem(`presences_fallback_docs_${collectionName}`);
+      if (raw) return JSON.parse(raw) || {};
+    }
+  } catch {}
+  return {};
+}
+
+function saveLocalOverlayDoc(collectionName: string, id: string, doc: any | null) {
+  try {
+    if (typeof localStorage !== 'undefined') {
+      const map = loadLocalOverlayDocs(collectionName);
+      if (doc === null) {
+        map[id] = { __deleted: true };
+      } else {
+        map[id] = { ...(map[id] || {}), ...doc, $id: id, id };
+      }
+      localStorage.setItem(`presences_fallback_docs_${collectionName}`, JSON.stringify(map));
+    }
+  } catch {}
+}
+
+function enrichSupabaseProfileDoc(raw: any): any {
+  const doc = normalizeDoc(raw);
+  const meta = (doc.metadata && typeof doc.metadata === 'object') ? doc.metadata : {};
+  doc.$id ??= doc.id || doc.user_id;
+  doc.id ??= doc.$id;
+  doc.full_name ??= doc.display_name || meta.name || meta.full_name || null;
+  doc.display_name ??= doc.full_name || null;
+  doc.roll_number ??= meta.roll_number || meta.position || doc.position || null;
+  doc.employee_id ??= meta.employee_id || meta.admission_number || doc.admission_number || doc.roll_number || null;
+  doc.admission_number ??= doc.employee_id || meta.admission_number || meta.employee_id || doc.roll_number || null;
+  doc.parent_phone ??= meta.parent_phone || doc.phone || meta.phone || null;
+  doc.phone ??= doc.parent_phone;
+  doc.parent_name ??= meta.parent_name || doc.father_name || meta.father_name || null;
+  doc.father_name ??= doc.parent_name;
+  doc.address ??= meta.address || null;
+  doc.email ??= meta.student_email || doc.parent_email || meta.parent_email || null;
+  if (!doc.class && meta.class_section) {
+    const parts = String(meta.class_section).split('-');
+    doc.class = parts[0] || null;
+    doc.section ??= parts[1] || null;
+  }
+  doc.category ??= meta.class_section || meta.department || (doc.class && doc.section ? `${doc.class}-${doc.section}` : doc.class || null);
+  doc.avatar_url = resolveStorageUrlOrPath(doc.avatar_url || doc.photo_url || meta.avatar_url || meta.photo_url);
+  doc.photo_url ??= doc.avatar_url;
+  return doc;
+}
+
+async function fetchSupabaseTableRaw(tableName: string, queryParams = 'select=*&limit=2000'): Promise<any[]> {
+  if (typeof fetch !== 'function') return [];
+  const { url, key } = getSupabaseFallbackConfig();
+  for (let attempt = 0; attempt < 2; attempt++) {
+    try {
+      const res = await fetch(`${url}/rest/v1/${tableName}?${queryParams}`, {
+        headers: {
+          apikey: key,
+          Authorization: `Bearer ${key}`,
+        },
+      });
+      if (!res.ok) continue;
+      const data = await res.json();
+      if (Array.isArray(data)) return data;
+    } catch {
+      // Retry once on transient network error
+    }
+  }
+  return [];
+}
+
+async function fetchSupabaseFallbackCollection(collectionName: string): Promise<any[]> {
+  const cached = supabaseFallbackCache.get(collectionName);
+  if (cached && cached.expiresAt > Date.now()) {
+    return cached.rows;
+  }
+  if (supabaseFallbackInFlight.has(collectionName)) {
+    return supabaseFallbackInFlight.get(collectionName)!;
+  }
+
+  const promise = (async () => {
+    try {
+      let rows: any[] = [];
+      if (collectionName === 'profiles') {
+        const [rawProfiles, rawAtt] = await Promise.all([
+          fetchSupabaseTableRaw('profiles', 'select=*&limit=500'),
+          fetchSupabaseTableRaw('attendance_records', 'select=*&status=eq.registered&limit=500'),
+        ]);
+        const byKey = new Map<string, any>();
+        for (const p of rawProfiles) {
+          const enriched = enrichSupabaseProfileDoc(p);
+          const key = String(enriched.admission_number || enriched.user_id || enriched.id || '').trim().toLowerCase();
+          if (key) byKey.set(key, enriched);
+          rows.push(enriched);
+        }
+        for (const r of rawAtt) {
+          if (r.status !== 'registered') continue;
+          const normR = normalizeDoc(r);
+          const meta = normR.device_info?.metadata || {};
+          const empId = String(meta.employee_id || meta.admission_number || normR.student_id || meta.roll_number || '').trim();
+          const name = String(meta.name || meta.full_name || empId || '').trim();
+          if (!empId && !name) continue;
+          const clsSec = String(meta.class_section || meta.department || normR.category || '').trim();
+          const [cls, sec] = clsSec.includes('-') ? clsSec.split('-') : [meta.class || clsSec, meta.section || ''];
+          const primaryPhoto = meta.training_registration_path
+            ? getAppwriteStorageViewUrl('student-registration-faces', storageFileId(meta.training_registration_path))
+            : resolveStorageUrlOrPath(normR.image_url || meta.firebase_image_url || meta.face_model?.id_card_photo_url);
+          const existing = (empId && byKey.get(empId.toLowerCase())) || (normR.user_id && byKey.get(String(normR.user_id).toLowerCase()));
+          if (existing) {
+            existing.full_name ??= name || null;
+            existing.display_name ??= name || null;
+            existing.admission_number ??= empId || null;
+            existing.employee_id ??= empId || null;
+            existing.roll_number ??= meta.roll_number || meta.position || empId || null;
+            existing.class ??= cls || null;
+            existing.section ??= sec || null;
+            existing.category ??= clsSec || null;
+            existing.parent_phone ??= meta.parent_phone || meta.phone || null;
+            existing.phone ??= existing.parent_phone;
+            existing.parent_name ??= meta.parent_name || null;
+            existing.father_name ??= meta.parent_name || null;
+            existing.address ??= meta.address || null;
+            existing.blood_group ??= meta.blood_group || null;
+            existing.avatar_url ??= primaryPhoto || null;
+            existing.photo_url ??= resolveStorageUrlOrPath(meta.face_model?.id_card_photo_url) || primaryPhoto || null;
+            existing.role ??= 'student';
+          } else {
+            const synthId = normR.user_id || normR.id || empId;
+            const synth = enrichSupabaseProfileDoc({
+              $id: synthId,
+              id: synthId,
+              user_id: normR.user_id || synthId,
+              full_name: name,
+              display_name: name,
+              admission_number: empId,
+              employee_id: empId,
+              roll_number: meta.roll_number || meta.position || empId,
+              class: cls || '',
+              section: sec || '',
+              category: clsSec || '',
+              parent_name: meta.parent_name || '',
+              father_name: meta.parent_name || '',
+              parent_phone: meta.parent_phone || meta.phone || '',
+              phone: meta.parent_phone || meta.phone || '',
+              parent_email: meta.parent_email || meta.student_email || '',
+              email: meta.student_email || meta.parent_email || '',
+              address: meta.address || '',
+              blood_group: meta.blood_group || '',
+              role: 'student',
+              avatar_url: primaryPhoto,
+              photo_url: resolveStorageUrlOrPath(meta.face_model?.id_card_photo_url) || primaryPhoto,
+              metadata: meta,
+              created_at: normR.created_at,
+              updated_at: normR.updated_at || normR.created_at,
+            });
+            if (empId) byKey.set(empId.toLowerCase(), synth);
+            rows.push(synth);
+          }
+        }
+      } else if (collectionName === 'face_descriptors') {
+        const [rawDesc, mergedProfiles] = await Promise.all([
+          fetchSupabaseTableRaw('face_descriptors'),
+          fetchSupabaseFallbackCollection('profiles'),
+        ]);
+        const userToStudentId = new Map<string, string>();
+        const nameToStudentId = new Map<string, string>();
+        for (const p of mergedProfiles) {
+          const adm = String(p.admission_number || p.employee_id || '').trim();
+          if (adm) {
+            if (p.user_id) userToStudentId.set(String(p.user_id).trim(), adm);
+            if (p.id) userToStudentId.set(String(p.id).trim(), adm);
+            if (p.full_name) nameToStudentId.set(String(p.full_name).trim().toLowerCase(), adm);
+          }
+        }
+        rows = rawDesc.map(d => {
+          const norm = normalizeDoc(d);
+          norm.$id ??= norm.id;
+          norm.image_url = resolveStorageUrlOrPath(norm.image_url);
+          norm.student_id ??=
+            (norm.user_id ? userToStudentId.get(String(norm.user_id).trim()) : undefined) ||
+            (norm.label ? nameToStudentId.get(String(norm.label).trim().toLowerCase()) : undefined) ||
+            null;
+          return norm;
+        });
+      } else {
+        const rawRows = await fetchSupabaseTableRaw(collectionName);
+        rows = rawRows.map(r => {
+          const norm = normalizeDoc(r);
+          norm.$id ??= norm.id;
+          if (norm.image_url) norm.image_url = resolveStorageUrlOrPath(norm.image_url);
+          if (norm.avatar_url) norm.avatar_url = resolveStorageUrlOrPath(norm.avatar_url);
+          if (norm.photo_url) norm.photo_url = resolveStorageUrlOrPath(norm.photo_url);
+          return norm;
+        });
+      }
+
+      // Apply local mutation overlay
+      const overlay = loadLocalOverlayDocs(collectionName);
+      if (Object.keys(overlay).length > 0) {
+        const map = new Map<string, any>();
+        for (const r of rows) {
+          const id = String(r.$id || r.id || '');
+          if (id) map.set(id, r);
+        }
+        for (const [id, item] of Object.entries(overlay)) {
+          if (item?.__deleted) {
+            map.delete(id);
+          } else {
+            const existing = map.get(id) || {};
+            map.set(id, normalizeDoc({ ...existing, ...item, $id: id, id }));
+          }
+        }
+        rows = Array.from(map.values());
+      }
+
+      if (rows.length > 0) {
+        supabaseFallbackCache.set(collectionName, { rows, expiresAt: Date.now() + 20000 });
+      }
+      return rows;
+    } finally {
+      supabaseFallbackInFlight.delete(collectionName);
+    }
+  })();
+
+  supabaseFallbackInFlight.set(collectionName, promise);
+  return promise;
+}
+
+function getDocFieldValue(doc: any, attr: string): any {
+  if (!doc || typeof doc !== 'object') return undefined;
+  if (attr === '$id' || attr === 'id') return doc.$id ?? doc.id;
+  if (attr === '$createdAt' || attr === 'created_at') return doc.created_at ?? doc.$createdAt;
+  if (attr === '$updatedAt' || attr === 'updated_at') return doc.updated_at ?? doc.$updatedAt;
+  return doc[attr];
+}
+
+function matchesParsedQuery(doc: any, q: any): boolean {
+  if (!q || typeof q !== 'object') return true;
+  const method = q.method;
+  const attr = q.attribute;
+  const values: any[] = Array.isArray(q.values) ? q.values : [];
+  const val = attr ? getDocFieldValue(doc, attr) : undefined;
+
+  if (method === 'equal') {
+    return values.some(v => {
+      if (val === v) return true;
+      if (val !== null && val !== undefined && v !== null && v !== undefined) {
+        return String(val).trim().toLowerCase() === String(v).trim().toLowerCase();
+      }
+      return false;
+    });
+  }
+  if (method === 'notEqual') {
+    return !values.some(v => val === v || (val != null && v != null && String(val).trim().toLowerCase() === String(v).trim().toLowerCase()));
+  }
+  if (method === 'isNull') return val === null || val === undefined || val === '';
+  if (method === 'isNotNull') return val !== null && val !== undefined && val !== '';
+  if (method === 'greaterThan') return val != null && val > values[0];
+  if (method === 'greaterThanEqual') return val != null && val >= values[0];
+  if (method === 'lessThan') return val != null && val < values[0];
+  if (method === 'lessThanEqual') return val != null && val <= values[0];
+  if (method === 'search' || method === 'contains') {
+    const hay = typeof val === 'object' ? JSON.stringify(val || '').toLowerCase() : String(val ?? '').toLowerCase();
+    return values.some(v => hay.includes(String(v ?? '').toLowerCase()));
+  }
+  if (method === 'or') {
+    return values.some(sub => {
+      const parsedSub = typeof sub === 'string' ? JSON.parse(sub) : sub;
+      return matchesParsedQuery(doc, parsedSub);
+    });
+  }
+  if (method === 'and') {
+    return values.every(sub => {
+      const parsedSub = typeof sub === 'string' ? JSON.parse(sub) : sub;
+      return matchesParsedQuery(doc, parsedSub);
+    });
+  }
+  return true;
+}
+
+async function querySupabaseFallback(collectionName: string, queries: string[], all: boolean): Promise<{ documents: any[]; total: number }> {
+  const allRows = await fetchSupabaseFallbackCollection(collectionName);
+  const parsedQueries = queries.map(q => {
+    try { return typeof q === 'string' ? JSON.parse(q) : q; } catch { return null; }
+  }).filter(Boolean);
+
+  let matched = allRows.filter(doc => parsedQueries.every(q => matchesParsedQuery(doc, q)));
+
+  const orderQueries = parsedQueries.filter(q => q.method === 'orderAsc' || q.method === 'orderDesc');
+  if (orderQueries.length > 0) {
+    matched = [...matched].sort((a, b) => {
+      for (const oq of orderQueries) {
+        const av = getDocFieldValue(a, oq.attribute) ?? '';
+        const bv = getDocFieldValue(b, oq.attribute) ?? '';
+        if (av < bv) return oq.method === 'orderAsc' ? -1 : 1;
+        if (av > bv) return oq.method === 'orderAsc' ? 1 : -1;
+      }
+      return 0;
+    });
+  }
+
+  const total = matched.length;
+  if (all) {
+    return { documents: matched, total };
+  }
+
+  const offsetQ = parsedQueries.find(q => q.method === 'offset');
+  const limitQ = parsedQueries.find(q => q.method === 'limit');
+  const offset = offsetQ?.values?.[0] || 0;
+  const limit = limitQ?.values?.[0] ?? 100;
+
+  return {
+    documents: matched.slice(offset, offset + limit),
+    total,
+  };
+}
 
 export function invalidateCollectionCache(collectionName?: string) {
   if (!collectionName) {
     queryCache.clear();
+    supabaseFallbackCache.clear();
     return;
   }
+  supabaseFallbackCache.delete(collectionName);
   for (const key of queryCache.keys()) {
     if (key.startsWith(`${collectionName}:`)) {
       queryCache.delete(key);
@@ -401,17 +761,22 @@ export class AppwriteQueryBuilder<T = any> implements PromiseLike<{ data: T | nu
   private async readDocuments(all = false): Promise<{ documents: any[]; total: number }> {
     if (this.emptyResult) return { documents: [], total: 0 };
     if (this.headOnly && !this.mutation) {
+      const headQueries = [...this.queries.filter(q => { try { return !['limit', 'offset'].includes(JSON.parse(q).method); } catch { return true; } }), Query.limit(1)];
+      if (Date.now() < appwriteReadQuotaCooldownUntil) {
+        const fb = await querySupabaseFallback(this.collectionName, headQueries, false);
+        return { documents: [], total: fb.total };
+      }
       try {
-        const response = await databases.listDocuments(DATABASE_ID, this.collectionName,
-          [...this.queries.filter(q => { try { return !['limit', 'offset'].includes(JSON.parse(q).method); } catch { return true; } }), Query.limit(1)]);
+        const response = await databases.listDocuments(DATABASE_ID, this.collectionName, headQueries);
         return { documents: [], total: response.total };
       } catch (err: any) {
         if (err?.code === 404 || err?.message?.includes('could not be found') || err?.message?.includes('Collection with the requested ID')) {
           return { documents: [], total: 0 };
         }
-        if (err?.code === 402 || err?.message?.includes('Database reads limit') || err?.message?.includes('billing cycle') || err?.message?.includes('budget cap')) {
-          console.warn(`[AppwriteAdapter] Appwrite read limit reached (402) on "${this.collectionName}". Serving fallback data.`);
-          return { documents: [], total: 0 };
+        if (isAppwriteQuotaLimitError(err)) {
+          appwriteReadQuotaCooldownUntil = Date.now() + 10 * 60 * 1000;
+          const fb = await querySupabaseFallback(this.collectionName, headQueries, false);
+          return { documents: [], total: fb.total };
         }
         throw err;
       }
@@ -443,6 +808,13 @@ export class AppwriteQueryBuilder<T = any> implements PromiseLike<{ data: T | nu
     }
 
     const fetchPromise = (async () => {
+      if (Date.now() < appwriteReadQuotaCooldownUntil) {
+        const fbResult = await querySupabaseFallback(this.collectionName, queries, all || (!hasLimit && !boundedSingleRead));
+        if (!this.mutation && !all && !boundedSingleRead) {
+          queryCache.set(cacheKey, { data: fbResult, expiresAt: Date.now() + 15000 });
+        }
+        return fbResult;
+      }
       try {
         const response = await databases.listDocuments(DATABASE_ID, this.collectionName, queries);
         const documents = [...response.documents];
@@ -457,7 +829,7 @@ export class AppwriteQueryBuilder<T = any> implements PromiseLike<{ data: T | nu
         const result = { documents, total: response.total };
         if (!this.mutation && !all && !boundedSingleRead) {
           const fastChanging = ['attendance_records', 'gate_entries', 'notifications', 'emergency_events'];
-          const ttl = fastChanging.includes(this.collectionName) ? 8000 : 30000;
+          const ttl = fastChanging.includes(this.collectionName) ? 12000 : 45000;
           queryCache.set(cacheKey, { data: result, expiresAt: Date.now() + ttl });
         }
         return result;
@@ -465,11 +837,19 @@ export class AppwriteQueryBuilder<T = any> implements PromiseLike<{ data: T | nu
         if (err?.code === 404 || err?.message?.includes('could not be found') || err?.message?.includes('Collection with the requested ID')) {
           return { documents: [], total: 0 };
         }
-        if (err?.code === 402 || err?.message?.includes('Database reads limit') || err?.message?.includes('billing cycle') || err?.message?.includes('budget cap')) {
-          console.warn(`[AppwriteAdapter] Appwrite read limit reached (402) on "${this.collectionName}". Serving cached or empty fallback.`);
+        if (isAppwriteQuotaLimitError(err)) {
+          appwriteReadQuotaCooldownUntil = Date.now() + 10 * 60 * 1000;
+          console.warn(`[AppwriteAdapter] Appwrite read limit reached (402) on "${this.collectionName}". Switching to live cloud failover.`);
+          const fbResult = await querySupabaseFallback(this.collectionName, queries, all || (!hasLimit && !boundedSingleRead));
+          if (fbResult.documents.length > 0) {
+            if (!this.mutation && !all && !boundedSingleRead) {
+              queryCache.set(cacheKey, { data: fbResult, expiresAt: Date.now() + 15000 });
+            }
+            return fbResult;
+          }
           const cached = queryCache.get(cacheKey);
           if (cached) return { documents: [...cached.data.documents], total: cached.data.total };
-          return { documents: [], total: 0 };
+          return fbResult;
         }
         throw err;
       } finally {
@@ -516,22 +896,50 @@ export class AppwriteQueryBuilder<T = any> implements PromiseLike<{ data: T | nu
             if (kind === 'upsert' && !id && options?.onConflict) {
               const fields = options.onConflict.split(',').map(f => f.trim());
               try {
-                const existing = await databases.listDocuments(DATABASE_ID, this.collectionName,
-                  [...fields.map(f => Query.equal(mapColumnName(f), item[f])), Query.limit(2)]);
-                if (existing.total > 1) throw new Error('Conflict columns match multiple records');
-                id = existing.documents[0]?.$id;
+                if (Date.now() < appwriteReadQuotaCooldownUntil) {
+                  const existing = await querySupabaseFallback(this.collectionName, [...fields.map(f => Query.equal(mapColumnName(f), item[f])), Query.limit(2)], false);
+                  id = existing.documents[0]?.$id || existing.documents[0]?.id;
+                } else {
+                  const existing = await databases.listDocuments(DATABASE_ID, this.collectionName,
+                    [...fields.map(f => Query.equal(mapColumnName(f), item[f])), Query.limit(2)]);
+                  if (existing.total > 1) throw new Error('Conflict columns match multiple records');
+                  id = existing.documents[0]?.$id;
+                }
               } catch (_) {
                 // If conflict index doesn't exist, proceed with new creation
               }
             }
             const payload = sanitizeDocForSave(item);
+            const targetId = id || ID.unique();
             if (kind === 'upsert' && id) {
               try {
-                docs.push(await databases.updateDocument(DATABASE_ID, this.collectionName, id, payload));
+                const updated = await databases.updateDocument(DATABASE_ID, this.collectionName, id, payload);
+                saveLocalOverlayDoc(this.collectionName, id, updated);
+                docs.push(updated);
                 continue;
-              } catch (error: any) { if (error.code !== 404) throw error; }
+              } catch (error: any) {
+                if (isAppwriteQuotaLimitError(error)) {
+                  const localDoc = { ...item, ...payload, $id: id, id, updated_at: new Date().toISOString() };
+                  saveLocalOverlayDoc(this.collectionName, id, localDoc);
+                  docs.push(localDoc);
+                  continue;
+                }
+                if (error.code !== 404) throw error;
+              }
             }
-            docs.push(await databases.createDocument(DATABASE_ID, this.collectionName, id || ID.unique(), payload));
+            try {
+              const created = await databases.createDocument(DATABASE_ID, this.collectionName, targetId, payload);
+              saveLocalOverlayDoc(this.collectionName, created.$id || targetId, created);
+              docs.push(created);
+            } catch (createErr: any) {
+              if (isAppwriteQuotaLimitError(createErr)) {
+                const localDoc = { ...item, ...payload, $id: targetId, id: targetId, created_at: new Date().toISOString() };
+                saveLocalOverlayDoc(this.collectionName, targetId, localDoc);
+                docs.push(localDoc);
+              } else {
+                throw createErr;
+              }
+            }
           }
         } else {
           // Critical safety check: Refuse to update or delete without any query filters!
@@ -541,8 +949,30 @@ export class AppwriteQueryBuilder<T = any> implements PromiseLike<{ data: T | nu
           }
           const matched = await this.readDocuments(true);
           for (const doc of matched.documents) {
-            if (kind === 'update') docs.push(await databases.updateDocument(DATABASE_ID, this.collectionName, doc.$id, sanitizeDocForSave(data)));
-            else { await databases.deleteDocument(DATABASE_ID, this.collectionName, doc.$id); docs.push(doc); }
+            const docId = doc.$id || doc.id;
+            if (kind === 'update') {
+              try {
+                const updated = await databases.updateDocument(DATABASE_ID, this.collectionName, docId, sanitizeDocForSave(data));
+                saveLocalOverlayDoc(this.collectionName, docId, updated);
+                docs.push(updated);
+              } catch (updErr: any) {
+                if (isAppwriteQuotaLimitError(updErr) || updErr?.code === 404) {
+                  const localDoc = { ...doc, ...data, $id: docId, id: docId, updated_at: new Date().toISOString() };
+                  saveLocalOverlayDoc(this.collectionName, docId, localDoc);
+                  docs.push(localDoc);
+                } else {
+                  throw updErr;
+                }
+              }
+            } else {
+              try {
+                await databases.deleteDocument(DATABASE_ID, this.collectionName, docId);
+              } catch (delErr: any) {
+                if (!isAppwriteQuotaLimitError(delErr) && delErr?.code !== 404) throw delErr;
+              }
+              saveLocalOverlayDoc(this.collectionName, docId, null);
+              docs.push(doc);
+            }
           }
         }
         count = docs.length;
@@ -1074,14 +1504,15 @@ class AppwriteRealtimeChannel {
 
   async track(payload: Record<string, any>): Promise<void> {
     try {
-      const user = await account.get();
-      if (!user?.$id) return;
+      const { data } = await appwriteUnifiedClient.auth.getUser();
+      const userId = data?.user?.id || data?.user?.$id;
+      if (!userId) return;
       if (!this.presenceId) this.presenceId = storageFileId(this.channelName + '/' + crypto.randomUUID());
       this.presencePayload = { ...this.presencePayload, ...payload };
       await realtime.upsertPresence({
         presenceId: this.presenceId,
         status: 'online',
-        permissions: [Permission.read(Role.user(user.$id)), Permission.read(Role.label('admin')), Permission.read(Role.label('principal'))],
+        permissions: [Permission.read(Role.user(userId)), Permission.read(Role.label('admin')), Permission.read(Role.label('principal'))],
         metadata: { channel: this.channelName, payload: this.presencePayload },
       });
     } catch {

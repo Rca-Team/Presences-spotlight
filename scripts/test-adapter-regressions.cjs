@@ -1,4 +1,6 @@
 const fs = require('fs');
+const dns = require('node:dns');
+dns.setDefaultResultOrder('ipv4first');
 const ts = require('typescript');
 const assert = require('node:assert/strict');
 const crypto = require('node:crypto');
@@ -114,6 +116,16 @@ const {AppwriteQueryBuilder, appwriteUnifiedClient} = compile('src/integrations/
    assert.equal(storageFileId(path),crypto.createHash('md5').update(normalized).digest('hex'));
   }
   assert.equal(storageFileId('photo.jpg'),'photo.jpg');
+ });
+ await test('Appwrite 402 database read limit fails over to live cloud backup',async()=>{
+  failure = Object.assign(new Error('Database reads limit for the current billing cycle has been exceeded.'), { code: 402, type: 'limit_databases_reads_exceeded' });
+  const profRes = await new AppwriteQueryBuilder('profiles').select('*');
+  assert.equal(profRes.error, null);
+  assert.ok(Array.isArray(profRes.data) && profRes.data.length > 40, 'Expected live failover profiles');
+  const descRes = await new AppwriteQueryBuilder('face_descriptors').select('*');
+  assert.equal(descRes.error, null);
+  assert.ok(Array.isArray(descRes.data) && descRes.data.length > 100, 'Expected live failover face_descriptors');
+  failure = null;
  });
  console.log(passed+' regression tests passed');
 })().catch(e=>{console.error(e);process.exitCode=1;});
