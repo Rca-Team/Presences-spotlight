@@ -64,6 +64,8 @@ if (typeof window !== 'undefined' && typeof window.fetch === 'function') {
     return null;
   };
 
+  let proxyUnavailable = false;
+
   window.fetch = async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
     const rawUrl =
       typeof input === 'string'
@@ -74,14 +76,35 @@ if (typeof window !== 'undefined' && typeof window.fetch === 'function') {
             ? input.url
             : '';
 
+    // If caller passed a /api/appwrite URL and the proxy returned 404 earlier, rewrite back to upstream
+    if (rawUrl.includes('/api/appwrite/v1') && proxyUnavailable) {
+      const directUrl = rawUrl.replace(/^https?:\/\/[^/]+\/api\/appwrite\/v1/, APPWRITE_ENDPOINT).replace(/^\/api\/appwrite\/v1/, APPWRITE_ENDPOINT);
+      return originalFetch(directUrl, init);
+    }
+
+    if (rawUrl.includes('/api/appwrite/v1')) {
+      const res = await originalFetch(input, init);
+      if (res.status === 404) {
+        proxyUnavailable = true;
+        const directUrl = rawUrl.replace(/^https?:\/\/[^/]+\/api\/appwrite\/v1/, APPWRITE_ENDPOINT).replace(/^\/api\/appwrite\/v1/, APPWRITE_ENDPOINT);
+        return originalFetch(directUrl, init);
+      }
+      return res;
+    }
+
     if (!rawUrl.includes('.cloud.appwrite.io/v1')) {
       return originalFetch(input, init);
     }
 
-    if (!isLocalOrNativeOrigin()) {
+    if (!isLocalOrNativeOrigin() && !proxyUnavailable) {
       const proxyUrl = rewriteToSameOriginProxy(rawUrl);
       if (proxyUrl) {
-        return originalFetch(proxyUrl, init);
+        const res = await originalFetch(proxyUrl, init);
+        if (res.status === 404) {
+          proxyUnavailable = true;
+          return originalFetch(input, init);
+        }
+        return res;
       }
     }
 
