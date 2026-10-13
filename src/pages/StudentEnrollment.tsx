@@ -7,18 +7,27 @@ import {
   Camera,
   Check,
   CheckCircle2,
+  ChevronDown,
+  ChevronUp,
+  Edit3,
   Fingerprint,
   Loader2,
   LockKeyhole,
+  ScanFace,
+  Search,
   ShieldCheck,
+  UserCheck,
+  X,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { Badge } from '@/components/ui/badge';
 import GuidedFaceCapture from '@/components/enrollment/GuidedFaceCapture';
 import IdCardPhotoStep from '@/components/enrollment/IdCardPhotoStep';
 import InteractiveIdCard from '@/components/enrollment/InteractiveIdCard';
 import EnrollmentInformationCard from '@/components/enrollment/EnrollmentInformationCard';
 import { enrollmentApi } from '@/services/enrollment/api';
+import { clearMonitorCache, getCachedMonitorOverview } from '@/services/enrollment/monitor';
 import { syncEnrolledFaceDataToSupabase } from '@/services/enrollment/syncEnrolledFaceData';
 import { prepareAppwriteBackendSamples, type CaptureResult, type EnrollmentSession, type StudentDetails } from '@/services/enrollment/types';
 import DobDatePicker from '@/components/enrollment/DobDatePicker';
@@ -31,6 +40,10 @@ export default function StudentEnrollment() {
   const [admission, setAdmission] = useState('');
   const [phone, setPhone] = useState('');
   const [dob, setDob] = useState('');
+  const [quickQuery, setQuickQuery] = useState('');
+  const [quickResults, setQuickResults] = useState<StudentDetails[]>([]);
+  const [quickSearching, setQuickSearching] = useState(false);
+  const [showCaptureDetails, setShowCaptureDetails] = useState(false);
   const [session, setSession] = useState<EnrollmentSession>();
   const [consent, setConsent] = useState(false);
   const [phase, setPhase] = useState<'verify' | 'consent' | 'capture' | 'idphoto' | 'review' | 'done'>('verify');
@@ -72,6 +85,10 @@ export default function StudentEnrollment() {
     samples: CaptureResult['samples'],
     onProgress?: (done: number, total: number) => void
   ) => {
+    if (!sessionToken || sessionToken.startsWith('fast_')) {
+      onProgress?.(samples.length, samples.length);
+      return;
+    }
     const total = samples.length;
     const pendingSamples = samples.filter((sample) => {
       const key = `${sample.pose}_${sample.glasses}_${sample.image.length}_${sample.image.slice(-24)}`;
@@ -138,7 +155,7 @@ export default function StudentEnrollment() {
     setResult(capture); 
     setPhase('idphoto'); 
     // Ultra-Fast: Start background parallel upload immediately so samples are already saved when user confirms
-    if (session?.session) {
+    if (session?.session && !session.session.startsWith('fast_')) {
       const backendSamples = prepareAppwriteBackendSamples(capture.samples, capture.wearsGlasses);
       activeUploadRef.current = uploadSamplesParallel(session.session, backendSamples).catch(() => {});
     }
@@ -150,7 +167,7 @@ export default function StudentEnrollment() {
       const next = { ...result, samples: updatedSamples };
       setResult(next);
       // Background upload updated front portrait while student reviews
-      if (session?.session) {
+      if (session?.session && !session.session.startsWith('fast_')) {
         const backendSamples = prepareAppwriteBackendSamples(updatedSamples, next.wearsGlasses);
         activeUploadRef.current = uploadSamplesParallel(session.session, backendSamples).catch(() => {});
       }
@@ -186,93 +203,253 @@ export default function StudentEnrollment() {
     }
   };
 
-  const acceptSession = async (value: EnrollmentSession, bypassMode = false) => {
-    let studentDetails: StudentDetails = {
+  const acceptSession = useCallback(async (value: EnrollmentSession, bypassMode = false, directToCapture = false) => {
+    const initialDetails: StudentDetails = {
       ...value.student,
       email: value.student?.email || '',
     };
 
-    if (!studentDetails.category && studentDetails.class && studentDetails.section) {
-      studentDetails.category = `${studentDetails.class}-${studentDetails.section.toUpperCase()}`;
+    if (!initialDetails.category && initialDetails.class && initialDetails.section) {
+      initialDetails.category = `${initialDetails.class}-${initialDetails.section.toUpperCase()}`;
     }
 
-    // Preload email and check phone-lock status from school database profiles
-    const studentAdm = value.student?.admission_number || admission;
-    if (studentAdm) {
-      try {
-        const { data: p } = await supabase
-          .from('profiles')
-          .select('email, parent_email, parent_phone, phone, metadata')
-          .or(`admission_number.ilike.${studentAdm},employee_id.ilike.${studentAdm}`)
-          .limit(1)
-          .maybeSingle();
-
-        if (p?.email || p?.parent_email) {
-          studentDetails = {
-            ...studentDetails,
-            email: studentDetails.email || p.email || p.parent_email || '',
-          };
-        }
-
-        let meta: Record<string, any> = {};
-        try {
-          meta = typeof p?.metadata === 'string' ? JSON.parse(p.metadata) : (p?.metadata || {});
-        } catch {
-          meta = {};
-        }
-
-        const isPdfLocked = Boolean(
-          meta.phone_locked ||
-          meta.imported_from_pdf ||
-          meta.source === 'pdf_upload' ||
-          (value.student as any)?.phone_locked ||
-          (value.student as any)?.imported_from_pdf ||
-          (value.student as any)?.source === 'pdf_upload'
-        );
-
-        if (isPdfLocked) {
-          setIsPhoneLocked(true);
-          const verifiedPhone = (
-            meta.verified_parent_phone ||
-            p?.parent_phone ||
-            p?.phone ||
-            (value.student as any)?.verified_parent_phone ||
-            value.student?.parent_phone ||
-            ''
-          ).trim();
-          setOriginalVerifiedPhone(verifiedPhone);
-          if (verifiedPhone) {
-            studentDetails = {
-              ...studentDetails,
-              parent_phone: verifiedPhone,
-            };
-          }
-        }
-      } catch {
-        // Non-blocking fallback
-      }
-    }
-
+    // 1. Transition UI immediately (0ms delay) so camera opens right away on bypass/direct capture
     setSession(value);
-    setDetails(studentDetails);
-    if (bypassMode) {
+    setDetails(initialDetails);
+    if (bypassMode || directToCapture) {
       setIsStaffBypass(true);
       setConsent(true);
+      setPhase('capture');
+    } else {
+      setPhase('consent');
     }
-    setPhase('consent');
-  };
+
+    // 2. Enrich student profile details & metadata in the background without blocking camera
+    const studentAdm = (value.student?.admission_number || admission || '').trim();
+    if (studentAdm) {
+      void (async () => {
+        try {
+          const { data: p } = await supabase
+            .from('profiles')
+            .select('full_name, display_name, class, section, category, father_name, parent_name, email, parent_email, parent_phone, phone, blood_group, address, metadata')
+            .or(`admission_number.ilike.${studentAdm},employee_id.ilike.${studentAdm}`)
+            .limit(1)
+            .maybeSingle();
+
+          if (p) {
+            let meta: Record<string, any> = {};
+            try {
+              meta = typeof p.metadata === 'string' ? JSON.parse(p.metadata) : (p.metadata || {});
+            } catch {
+              meta = {};
+            }
+
+            const isPdfLocked = Boolean(
+              meta.phone_locked ||
+              meta.imported_from_pdf ||
+              meta.source === 'pdf_upload' ||
+              (value.student as any)?.phone_locked ||
+              (value.student as any)?.imported_from_pdf ||
+              (value.student as any)?.source === 'pdf_upload'
+            );
+
+            const verifiedPhone = (
+              meta.verified_parent_phone ||
+              p.parent_phone ||
+              p.phone ||
+              (value.student as any)?.verified_parent_phone ||
+              value.student?.parent_phone ||
+              ''
+            ).trim();
+
+            if (isPdfLocked) {
+              setIsPhoneLocked(true);
+              setOriginalVerifiedPhone(verifiedPhone);
+            }
+
+            setDetails((prev) => {
+              const base = prev || initialDetails;
+              const cls = base.class || p.class || '';
+              const sec = base.section || p.section || '';
+              return {
+                ...base,
+                name: base.name || p.full_name || p.display_name || '',
+                class: cls,
+                section: sec,
+                category: base.category || p.category || (cls && sec ? `${cls}-${sec.toUpperCase()}` : cls),
+                father_name: base.father_name || p.father_name || meta.father_name || p.parent_name || '',
+                mother_name: base.mother_name || meta.mother_name || '',
+                date_of_birth: base.date_of_birth || meta.date_of_birth || '',
+                blood_group: base.blood_group || p.blood_group || meta.blood_group || '',
+                address: base.address || p.address || meta.address || '',
+                email: base.email || p.email || p.parent_email || '',
+                parent_phone: verifiedPhone || base.parent_phone || '',
+              };
+            });
+          }
+        } catch {
+          // Non-blocking background enrichment
+        }
+
+        // If initialized with a fast local session token, upgrade to a real backend session token in background
+        if (value.session.startsWith('fast_')) {
+          try {
+            const realSess = await enrollmentApi<EnrollmentSession>('staff.session', { admission: studentAdm });
+            if (realSess?.session) {
+              setSession((prev) =>
+                prev
+                  ? {
+                      ...prev,
+                      session: realSess.session,
+                      expires: realSess.expires || prev.expires,
+                      challenge: prev.challenge || realSess.challenge,
+                    }
+                  : realSess
+              );
+            }
+          } catch {
+            // Direct Supabase/Appwrite sync in completeEnrollment handles saving even if cloud session function is offline
+          }
+        }
+      })();
+    }
+  }, [admission]);
+
+  // Helper to build an instant local session from StudentDetails so camera launches in 0ms
+  const launchInstantStudentCapture = useCallback((student: StudentDetails) => {
+    const challenges: ('left' | 'right' | 'up')[] = ['left', 'right', 'up'];
+    const fastSession: EnrollmentSession = {
+      session: `fast_${student.admission_number}_${Date.now()}`,
+      expires: Date.now() + 30 * 60 * 1000,
+      challenge: challenges[Math.floor(Math.random() * challenges.length)],
+      student,
+    };
+    setAdmission(student.admission_number);
+    void acceptSession(fastSession, true, true);
+  }, [acceptSession]);
+
+  // Quick search by Student Name or Admission Number right on /enroll
+  useEffect(() => {
+    const q = quickQuery.trim().toLowerCase();
+    if (!q) {
+      setQuickResults([]);
+      setQuickSearching(false);
+      return;
+    }
+
+    // 1. Check cached monitor overview first for 0ms search results
+    const cached = getCachedMonitorOverview();
+    if (cached?.students?.length) {
+      const matches = cached.students
+        .filter(
+          (s) =>
+            s.name.toLowerCase().includes(q) ||
+            s.admission_number.toLowerCase().includes(q) ||
+            (s.student_id_kv && s.student_id_kv.toLowerCase().includes(q)) ||
+            (s.father_name && s.father_name.toLowerCase().includes(q))
+        )
+        .sort((a, b) => {
+          const aExact = a.admission_number.toLowerCase() === q ? 0 : a.admission_number.toLowerCase().startsWith(q) ? 1 : a.name.toLowerCase().startsWith(q) ? 2 : 3;
+          const bExact = b.admission_number.toLowerCase() === q ? 0 : b.admission_number.toLowerCase().startsWith(q) ? 1 : b.name.toLowerCase().startsWith(q) ? 2 : 3;
+          return aExact - bExact || a.name.localeCompare(b.name);
+        })
+        .slice(0, 8)
+        .map((s) => ({
+          admission_number: s.admission_number,
+          name: s.name,
+          class: s.class || (s.category ? s.category.split('-')[0] : ''),
+          section: s.section || (s.category && s.category.includes('-') ? s.category.split('-').slice(1).join('-') : ''),
+          category: s.category,
+          father_name: s.father_name || '',
+          mother_name: s.mother_name || '',
+          date_of_birth: s.date_of_birth || '',
+          parent_phone: s.parent_phone_full || s.parent_phone || '',
+          blood_group: s.blood_group || '',
+          address: s.address || '',
+        }));
+      setQuickResults(matches);
+      return;
+    }
+
+    // 2. Fallback to querying Appwrite profiles table
+    let cancelled = false;
+    setQuickSearching(true);
+    const timer = window.setTimeout(async () => {
+      try {
+        const { data: rows } = await supabase
+          .from('profiles')
+          .select('full_name, display_name, admission_number, employee_id, class, section, category, father_name, parent_name, parent_phone, phone, blood_group, address, email, metadata')
+          .eq('role', 'student')
+          .limit(300);
+
+        if (cancelled) return;
+        const matched = (rows || [])
+          .map((p: any) => {
+            let meta: Record<string, any> = {};
+            try {
+              meta = typeof p.metadata === 'string' ? JSON.parse(p.metadata) : p.metadata || {};
+            } catch {}
+            const adm = String(p.admission_number || p.employee_id || '').trim();
+            const name = String(p.full_name || p.display_name || '').trim();
+            const cls = String(p.class || meta.class || '').trim();
+            const sec = String(p.section || meta.section || '').trim();
+            return {
+              admission_number: adm,
+              name,
+              class: cls,
+              section: sec,
+              category: p.category || (cls && sec ? `${cls}-${sec}` : cls),
+              father_name: p.father_name || meta.father_name || p.parent_name || '',
+              mother_name: meta.mother_name || '',
+              date_of_birth: meta.date_of_birth || '',
+              parent_phone: meta.verified_parent_phone || p.parent_phone || p.phone || '',
+              blood_group: p.blood_group || meta.blood_group || '',
+              address: p.address || meta.address || '',
+              email: p.email || '',
+            } as StudentDetails;
+          })
+          .filter(
+            (s) =>
+              s.admission_number &&
+              (s.name.toLowerCase().includes(q) ||
+                s.admission_number.toLowerCase().includes(q) ||
+                (s.father_name && s.father_name.toLowerCase().includes(q)))
+          )
+          .sort((a, b) => {
+            const aRank = a.admission_number.toLowerCase() === q ? 0 : a.admission_number.toLowerCase().startsWith(q) ? 1 : a.name.toLowerCase().startsWith(q) ? 2 : 3;
+            const bRank = b.admission_number.toLowerCase() === q ? 0 : b.admission_number.toLowerCase().startsWith(q) ? 1 : b.name.toLowerCase().startsWith(q) ? 2 : 3;
+            return aRank - bRank || a.name.localeCompare(b.name);
+          })
+          .slice(0, 8);
+        setQuickResults(matched);
+      } catch {
+        if (!cancelled) setQuickResults([]);
+      } finally {
+        if (!cancelled) setQuickSearching(false);
+      }
+    }, 180);
+
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+    };
+  }, [quickQuery]);
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const staffAdmission = params.get('student');
     const tokenParam = params.get('token');
-    const isBypass = params.get('bypass') === 'true' || params.get('bypass') === '1' || Boolean(tokenParam);
+    const isBypass =
+      params.get('bypass') === 'true' ||
+      params.get('bypass') === '1' ||
+      params.get('direct') === 'capture' ||
+      Boolean(tokenParam);
 
     if (staffStarted.current) return;
     if (!staffAdmission && !tokenParam) return;
     staffStarted.current = true;
 
-    // Check sessionStorage first for instantaneous 0ms transition
+    // 1. Check sessionStorage first for instantaneous 0ms transition directly to Face Capture
     try {
       const cachedStr = sessionStorage.getItem('bypass_enrollment_session');
       if (cachedStr) {
@@ -283,7 +460,7 @@ export default function StudentEnrollment() {
           (!staffAdmission || cached.student?.admission_number === staffAdmission)
         ) {
           sessionStorage.removeItem('bypass_enrollment_session');
-          acceptSession(cached, isBypass);
+          void acceptSession(cached, isBypass, true);
           return;
         }
       }
@@ -291,6 +468,33 @@ export default function StudentEnrollment() {
       // ignore parse failure
     }
 
+    // 2. Check cached monitor overview in memory for 0ms transition if available
+    if (staffAdmission) {
+      const cachedMonitor = getCachedMonitorOverview();
+      const found = cachedMonitor?.students?.find(
+        (s) => s.admission_number.toLowerCase() === staffAdmission.trim().toLowerCase()
+      );
+      if (found) {
+        launchInstantStudentCapture({
+          admission_number: found.admission_number,
+          name: found.name,
+          class: found.class || (found.category ? found.category.split('-')[0] : ''),
+          section:
+            found.section ||
+            (found.category && found.category.includes('-') ? found.category.split('-').slice(1).join('-') : ''),
+          category: found.category,
+          father_name: found.father_name || '',
+          mother_name: found.mother_name || '',
+          date_of_birth: found.date_of_birth || '',
+          parent_phone: found.parent_phone_full || found.parent_phone || '',
+          blood_group: found.blood_group || '',
+          address: found.address || '',
+        });
+        return;
+      }
+    }
+
+    // 3. Fallback: fetch from profiles / staff.session and go directly to capture
     void run(async () => {
       let sess: EnrollmentSession | null = null;
       if (tokenParam) {
@@ -301,13 +505,50 @@ export default function StudentEnrollment() {
         }
       }
       if (!sess && staffAdmission) {
-        sess = await enrollmentApi<EnrollmentSession>('staff.session', { admission: staffAdmission });
+        try {
+          sess = await enrollmentApi<EnrollmentSession>('staff.session', { admission: staffAdmission });
+        } catch {
+          // Fallback to direct Appwrite profiles lookup if cloud function is unreachable
+          const { data: p } = await supabase
+            .from('profiles')
+            .select('full_name, display_name, admission_number, employee_id, class, section, category, father_name, parent_name, parent_phone, phone, blood_group, address, email, metadata')
+            .or(`admission_number.ilike.${staffAdmission},employee_id.ilike.${staffAdmission}`)
+            .limit(1)
+            .maybeSingle();
+          if (p) {
+            let meta: Record<string, any> = {};
+            try {
+              meta = typeof p.metadata === 'string' ? JSON.parse(p.metadata) : p.metadata || {};
+            } catch {}
+            const cls = p.class || meta.class || '';
+            const sec = p.section || meta.section || '';
+            sess = {
+              session: `fast_${staffAdmission}_${Date.now()}`,
+              expires: Date.now() + 30 * 60 * 1000,
+              challenge: 'left',
+              student: {
+                admission_number: p.admission_number || p.employee_id || staffAdmission,
+                name: p.full_name || p.display_name || staffAdmission,
+                class: cls,
+                section: sec,
+                category: p.category || (cls && sec ? `${cls}-${sec}` : cls),
+                father_name: p.father_name || meta.father_name || p.parent_name || '',
+                mother_name: meta.mother_name || '',
+                date_of_birth: meta.date_of_birth || '',
+                parent_phone: meta.verified_parent_phone || p.parent_phone || p.phone || '',
+                blood_group: p.blood_group || meta.blood_group || '',
+                address: p.address || meta.address || '',
+                email: p.email || '',
+              },
+            };
+          }
+        }
       }
       if (sess) {
-        acceptSession(sess, isBypass);
+        await acceptSession(sess, isBypass, isBypass);
       }
     });
-  }, []);
+  }, [acceptSession, launchInstantStudentCapture]);
 
   const returnTo = useMemo(() => {
     const specified = new URLSearchParams(window.location.search).get('returnTo');
@@ -386,13 +627,14 @@ export default function StudentEnrollment() {
   const completeEnrollment = useCallback(async () => {
     if (!session || !result || !details) return;
 
-    const emailVal = details.email?.trim();
-    if (!emailVal) {
+    const emailVal = details.email?.trim() || '';
+    const requireEmail = !isStaffBypass && !canEditPhone;
+    if (requireEmail && !emailVal) {
       setError('Email address is required. Please fill in your email above to complete registration.');
       setEditing(true);
       return;
     }
-    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(emailVal)) {
+    if (emailVal && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(emailVal)) {
       setError('Please enter a valid email address (e.g. name@email.com).');
       setEditing(true);
       return;
@@ -428,7 +670,7 @@ export default function StudentEnrollment() {
       parent_phone: enforcedPhone || '',
     };
 
-    // 1. Sync face descriptors, 3D structure and details directly to Supabase (primary system of record)
+    // 1. Sync face descriptors, 3D structure and details directly to Supabase/Appwrite (primary system of record)
     const supabaseSyncPromise = syncEnrolledFaceDataToSupabase({
       admission: details.admission_number || admission,
       details: secureDetails,
@@ -447,21 +689,23 @@ export default function StudentEnrollment() {
     let appwriteSaved: { completed?: boolean; correctionPending?: boolean } | null = null;
     let appwriteErrMessage = '';
 
-    try {
-      appwriteSaved = await enrollmentApi<{ completed: boolean; correctionPending: boolean }>('submit', {
-        session: session.session,
-        consent,
-        wearsGlasses: result.wearsGlasses,
-        challenge: result.challenge,
-        blinked: result.blinked,
-        changes: secureDetails,
-      });
-    } catch (err: unknown) {
-      console.warn('Appwrite session submission fallback:', err);
-      appwriteErrMessage = err instanceof Error ? err.message : String(err || '');
+    if (session.session && !session.session.startsWith('fast_')) {
+      try {
+        appwriteSaved = await enrollmentApi<{ completed: boolean; correctionPending: boolean }>('submit', {
+          session: session.session,
+          consent,
+          wearsGlasses: result.wearsGlasses,
+          challenge: result.challenge,
+          blinked: result.blinked,
+          changes: secureDetails,
+        });
+      } catch (err: unknown) {
+        console.warn('Appwrite session submission fallback:', err);
+        appwriteErrMessage = err instanceof Error ? err.message : String(err || '');
+      }
     }
 
-    // Await Supabase sync completion
+    // Await Supabase/Appwrite sync completion
     const supabaseResult = await supabaseSyncPromise;
 
     // If both failed, notify the user with an actionable message
@@ -469,7 +713,7 @@ export default function StudentEnrollment() {
       throw new Error(appwriteErrMessage || 'Enrollment could not be saved. Please try again.');
     }
 
-    // Update student profile in Supabase profiles table
+    // Update student profile & metadata in Appwrite profiles table
     if (details.admission_number || admission) {
       try {
         const adm = (details.admission_number || admission).trim();
@@ -479,17 +723,50 @@ export default function StudentEnrollment() {
             ? primaryPhoto
             : undefined;
 
+        const { data: existingProfile } = await supabase
+          .from('profiles')
+          .select('metadata')
+          .or(`admission_number.ilike.${adm},employee_id.ilike.${adm}`)
+          .limit(1)
+          .maybeSingle();
+
+        let mergedMeta: Record<string, any> = {};
+        try {
+          mergedMeta =
+            typeof existingProfile?.metadata === 'string'
+              ? JSON.parse(existingProfile.metadata)
+              : existingProfile?.metadata || {};
+        } catch {
+          mergedMeta = {};
+        }
+
+        if (details.father_name?.trim()) mergedMeta.father_name = details.father_name.trim();
+        if (details.mother_name?.trim()) mergedMeta.mother_name = details.mother_name.trim();
+        if (details.date_of_birth?.trim()) mergedMeta.date_of_birth = details.date_of_birth.trim();
+        if (details.blood_group?.trim()) mergedMeta.blood_group = details.blood_group.trim();
+        if (details.address?.trim()) mergedMeta.address = details.address.trim();
+        if (enforcedPhone) mergedMeta.verified_parent_phone = enforcedPhone;
+
+        const cls = details.class?.trim() || undefined;
+        const sec = details.section?.trim() || undefined;
+        const cat = [cls, sec].filter(Boolean).join('-') || details.category?.trim() || undefined;
+
         await supabase
           .from('profiles')
           .update({
-            email: emailVal,
-            parent_email: emailVal,
+            ...(emailVal ? { email: emailVal, parent_email: emailVal } : {}),
             parent_phone: enforcedPhone,
             phone: enforcedPhone,
             full_name: details.name?.trim() || undefined,
             display_name: details.name?.trim() || undefined,
-            class: details.class?.trim() || undefined,
-            section: details.section?.trim() || undefined,
+            class: cls,
+            section: sec,
+            category: cat,
+            father_name: details.father_name?.trim() || undefined,
+            parent_name: details.father_name?.trim() || details.mother_name?.trim() || undefined,
+            blood_group: details.blood_group?.trim() || undefined,
+            address: details.address?.trim() || undefined,
+            metadata: JSON.stringify(mergedMeta),
             ...(finalPhotoUrl ? { avatar_url: finalPhotoUrl, photo_url: finalPhotoUrl } : {}),
             updated_at: new Date().toISOString(),
           })
@@ -499,6 +776,7 @@ export default function StudentEnrollment() {
       }
     }
 
+    clearMonitorCache();
     setPendingCorrections(Boolean(appwriteSaved?.correctionPending));
     setResult(undefined);
     setDetails(undefined);
@@ -506,7 +784,7 @@ export default function StudentEnrollment() {
     uploadedKeysRef.current.clear();
     setPhase('done');
     setMessage('');
-  }, [admission, consent, details, replaceExisting, result, session, uploadSamplesParallel]);
+  }, [admission, canEditPhone, consent, details, isPhoneLocked, isStaffBypass, originalVerifiedPhone, replaceExisting, result, session, uploadSamplesParallel]);
 
   return (
     <main className="enrollment-shell">
@@ -536,7 +814,7 @@ export default function StudentEnrollment() {
             className="flex items-center gap-1.5 text-xs font-medium px-2.5 py-1 rounded-lg bg-white/5 border border-white/10 text-slate-300 hover:text-white transition-all"
           >
             <ArrowLeft size={13} />
-            <span>Back</span>
+            <span>Back to {returnLabel}</span>
           </Link>
         ) : (
           <div className="flex items-center gap-1.5 text-[11px] font-medium px-2 py-0.5 rounded-full bg-white/5 border border-white/10 text-slate-400">
@@ -574,10 +852,112 @@ export default function StudentEnrollment() {
             >
               {phase === 'verify' && (
                 <>
-                  <div className="text-center mb-6">
+                  <div className="text-center mb-5">
                     <div className="enrollment-icon mx-auto"><Fingerprint size={20} /></div>
                     <h2 className="text-xl font-bold text-white">Find Student</h2>
-                    <p className="enrollment-muted text-xs">Enter student admission number, mobile, and birth date</p>
+                    <p className="enrollment-muted text-xs">
+                      Search by Student Name or Admission Number to launch Face Capture directly
+                    </p>
+                  </div>
+
+                  {/* Quick Search by Name or Admission Number -> Direct Face Capture */}
+                  <div className="mb-6 p-3.5 rounded-2xl bg-emerald-500/[0.06] border border-emerald-500/30 text-left space-y-3">
+                    <div className="flex items-center justify-between gap-2">
+                      <label className="text-xs font-bold text-emerald-300 flex items-center gap-1.5">
+                        <Search className="h-3.5 w-3.5 text-emerald-400" />
+                        <span>Quick Search by Name or Admission No.</span>
+                      </label>
+                      <Badge variant="outline" className="text-[10px] border-emerald-500/40 bg-emerald-500/15 text-emerald-300">
+                        Direct Face Capture
+                      </Badge>
+                    </div>
+
+                    <div className="flex items-center gap-2">
+                      <div className="relative flex-1">
+                        <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-slate-400" />
+                        <Input
+                          value={quickQuery}
+                          onChange={(e) => setQuickQuery(e.target.value)}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter' && quickResults.length > 0) {
+                              e.preventDefault();
+                              launchInstantStudentCapture(quickResults[0]);
+                            }
+                          }}
+                          placeholder="Type student name or admission no (e.g. 10425)..."
+                          className="pl-9 pr-8 h-10 bg-slate-950/90 border-white/15 text-white text-xs rounded-xl focus:border-emerald-400"
+                        />
+                        {quickQuery && (
+                          <button
+                            type="button"
+                            onClick={() => setQuickQuery('')}
+                            className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-white"
+                          >
+                            <X className="h-3.5 w-3.5" />
+                          </button>
+                        )}
+                      </div>
+                      {quickResults.length > 0 && (
+                        <Button
+                          type="button"
+                          onClick={() => launchInstantStudentCapture(quickResults[0])}
+                          className="h-10 px-3.5 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold text-xs shrink-0 gap-1.5 shadow-sm"
+                        >
+                          <ScanFace className="h-4 w-4" />
+                          <span>Capture Face</span>
+                        </Button>
+                      )}
+                    </div>
+
+                    {quickSearching && (
+                      <div className="flex items-center gap-2 text-xs text-slate-400 py-1">
+                        <Loader2 className="h-3.5 w-3.5 animate-spin text-emerald-400" />
+                        <span>Searching student roster…</span>
+                      </div>
+                    )}
+
+                    {quickQuery.trim() && !quickSearching && quickResults.length === 0 && (
+                      <p className="text-xs text-slate-400 py-1">
+                        No matching student found for &ldquo;{quickQuery}&rdquo;. Try another name or admission number.
+                      </p>
+                    )}
+
+                    {quickResults.length > 0 && (
+                      <div className="max-h-60 overflow-y-auto divide-y divide-white/10 rounded-xl border border-white/10 bg-slate-950/90">
+                        {quickResults.map((st) => (
+                          <div
+                            key={st.admission_number}
+                            className="p-2.5 flex items-center justify-between gap-2 hover:bg-white/[0.04] transition-colors"
+                          >
+                            <div className="min-w-0 flex-1">
+                              <p className="text-xs font-bold text-white truncate">{st.name}</p>
+                              <p className="text-[11px] text-slate-400 font-mono truncate">
+                                Adm: <span className="text-emerald-400">{st.admission_number}</span>
+                                {st.category ? ` · Class ${st.category}` : ''}
+                                {st.father_name ? ` · F: ${st.father_name}` : ''}
+                              </p>
+                            </div>
+                            <Button
+                              type="button"
+                              size="sm"
+                              onClick={() => launchInstantStudentCapture(st)}
+                              className="h-8 px-3 rounded-lg bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold text-xs shrink-0 gap-1.5"
+                            >
+                              <ScanFace className="h-3.5 w-3.5" />
+                              <span>Capture Face</span>
+                            </Button>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="relative my-4 flex items-center justify-center">
+                    <div className="border-t border-white/10 w-full" />
+                    <span className="bg-slate-900 px-3 text-[10px] uppercase tracking-wider text-slate-500 font-semibold shrink-0">
+                      Or Verify with Parent Details
+                    </span>
+                    <div className="border-t border-white/10 w-full" />
                   </div>
 
                   <form
@@ -589,7 +969,7 @@ export default function StudentEnrollment() {
                           phone,
                           dob
                         });
-                        acceptSession(verifiedSession);
+                        await acceptSession(verifiedSession, false, true);
                       });
                     }}
                     className="space-y-4 text-left"
@@ -638,7 +1018,7 @@ export default function StudentEnrollment() {
                     </div>
 
                     <Button disabled={busy} className="w-full mt-2 font-semibold h-11 rounded-xl bg-emerald-500 hover:bg-emerald-600 text-slate-950 flex items-center justify-center gap-2 shadow-sm">
-                      {busy ? <Loader2 className="animate-spin h-4 w-4" /> : <>Find Student & Continue <ArrowRight className="h-4 w-4" /></>}
+                      {busy ? <Loader2 className="animate-spin h-4 w-4" /> : <>Find Student & Capture Face <ArrowRight className="h-4 w-4" /></>}
                     </Button>
                   </form>
                 </>
@@ -706,12 +1086,84 @@ export default function StudentEnrollment() {
               )}
 
               {phase === 'capture' && session && (
-                <GuidedFaceCapture challenge={session.challenge} onComplete={onCapture} onCancel={() => void cancelCapture()} />
+                <div className="space-y-4">
+                  {/* Live Student Identity & Details Verification Banner right on the Face Capture Step */}
+                  {details && (
+                    <div className="rounded-2xl border border-emerald-500/30 bg-slate-900/90 p-3.5 text-left shadow-lg">
+                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
+                        <div className="min-w-0">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-emerald-500/15 border border-emerald-500/30 text-emerald-300 text-[10px] font-bold">
+                              <UserCheck className="h-3 w-3" />
+                              Capturing Face
+                            </span>
+                            <h3 className="text-sm sm:text-base font-bold text-white truncate">
+                              {details.name}
+                            </h3>
+                            <span className="text-xs font-mono font-bold text-emerald-400">
+                              #{details.admission_number}
+                            </span>
+                            {(details.category || details.class) && (
+                              <Badge variant="outline" className="text-[10px] border-cyan-500/30 bg-cyan-500/10 text-cyan-300 font-mono">
+                                Class {details.category || [details.class, details.section].filter(Boolean).join('-')}
+                              </Badge>
+                            )}
+                          </div>
+                          <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-slate-300 mt-1">
+                            <span>
+                              <strong className="text-slate-400">Father:</strong> {details.father_name || '—'}
+                            </span>
+                            <span>
+                              <strong className="text-slate-400">DOB:</strong> {details.date_of_birth || '—'}
+                            </span>
+                            <span>
+                              <strong className="text-slate-400">Phone:</strong> {details.parent_phone || '—'}
+                            </span>
+                          </div>
+                        </div>
+
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="outline"
+                          onClick={() => setShowCaptureDetails((v) => !v)}
+                          className="h-8 px-3 rounded-xl border-emerald-500/40 bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-300 text-xs font-semibold gap-1.5 shrink-0 self-start sm:self-center"
+                        >
+                          <Edit3 className="h-3.5 w-3.5" />
+                          <span>{showCaptureDetails ? 'Hide Details' : 'Verify / Edit Details'}</span>
+                          {showCaptureDetails ? <ChevronUp className="h-3.5 w-3.5" /> : <ChevronDown className="h-3.5 w-3.5" />}
+                        </Button>
+                      </div>
+
+                      {showCaptureDetails && (
+                        <div className="mt-3 pt-3 border-t border-white/10">
+                          <EnrollmentInformationCard
+                            details={details}
+                            editing={true}
+                            onToggleEditing={() => {}}
+                            onChangeField={(field, val) => {
+                              if (field === 'parent_phone' && isPhoneLocked && !canEditPhone) {
+                                return;
+                              }
+                              setDetails((prev) => (prev ? { ...prev, [field]: val } : prev));
+                            }}
+                            disabled={busy}
+                            isPhoneLocked={isPhoneLocked}
+                            canEditPhone={canEditPhone}
+                            isStaffBypass={isStaffBypass || canEditPhone}
+                          />
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  <GuidedFaceCapture challenge={session.challenge} onComplete={onCapture} onCancel={() => void cancelCapture()} />
+                </div>
               )}
 
               {phase === 'idphoto' && session && result && (
                 <IdCardPhotoStep
-                  student={session.student}
+                  student={details || session.student}
                   defaultPhoto={
                     result.samples.find(
                       (s) => s.pose === 'front' && s.glasses === (result.wearsGlasses ? 'with' : 'without')
@@ -726,7 +1178,7 @@ export default function StudentEnrollment() {
                 <>
                   <div className="flex items-center gap-2 text-emerald-300 text-sm mb-4">
                     <CheckCircle2 size={18} />
-                    <span>Photo ready · Review details below</span>
+                    <span>Face Captured · Verify Student Details & Save</span>
                   </div>
 
                   {/* Student ID Card Preview */}
@@ -755,6 +1207,7 @@ export default function StudentEnrollment() {
                       disabled={busy}
                       isPhoneLocked={isPhoneLocked}
                       canEditPhone={canEditPhone}
+                      isStaffBypass={isStaffBypass || canEditPhone}
                     />
                   </div>
                   <Button
@@ -762,7 +1215,7 @@ export default function StudentEnrollment() {
                     className="enrollment-primary w-full mt-3 font-bold h-12 text-sm sm:text-base rounded-2xl"
                     onClick={() => void run(completeEnrollment)}
                   >
-                    {busy ? <><Loader2 className="animate-spin mr-2 h-4 w-4" />{message}</> : <><Check className="mr-2 h-4 w-4" />Save and Finish</>}
+                    {busy ? <><Loader2 className="animate-spin mr-2 h-4 w-4" />{message}</> : <><Check className="mr-2 h-4 w-4" />Verify & Save Enrollment</>}
                   </Button>
                   <Button disabled={busy} variant="ghost" className="w-full mt-2" onClick={() => void cancelCapture()}>
                     Start over

@@ -29,6 +29,7 @@ interface EnrollmentInformationCardProps {
   disabled?: boolean;
   isPhoneLocked?: boolean;
   canEditPhone?: boolean;
+  isStaffBypass?: boolean;
 }
 
 export default function EnrollmentInformationCard({
@@ -37,6 +38,7 @@ export default function EnrollmentInformationCard({
   disabled = false,
   isPhoneLocked = false,
   canEditPhone = false,
+  isStaffBypass = false,
 }: EnrollmentInformationCardProps) {
   const identity = resolveIdentityDisplay({
     student_name: details.name,
@@ -48,6 +50,7 @@ export default function EnrollmentInformationCard({
 
   const isTeacher = identity.isTeacher;
   const hasEmailFilled = Boolean(details.email && details.email.trim());
+  const requireEmail = !isStaffBypass && !canEditPhone;
 
   return (
     <div className="rounded-3xl border border-emerald-500/30 bg-gradient-to-b from-slate-900/90 via-slate-900/60 to-slate-950/90 p-5 sm:p-6 shadow-2xl backdrop-blur-xl relative overflow-hidden">
@@ -63,7 +66,7 @@ export default function EnrollmentInformationCard({
           <div>
             <div className="flex items-center gap-2">
               <h3 className="text-base sm:text-lg font-black text-white">
-                Student Profile Details
+                Verify Student Details
               </h3>
               <Badge variant="outline" className="text-[10px] font-bold px-2 py-0.5 bg-blue-500/20 text-blue-300 border-blue-400/40">
                 PM Shri KV
@@ -82,7 +85,7 @@ export default function EnrollmentInformationCard({
               )}
             </div>
             <p className="text-xs text-slate-400 mt-0.5">
-              Review and edit any detail directly below before saving
+              Verify and edit any student detail directly below before saving
             </p>
           </div>
         </div>
@@ -94,8 +97,8 @@ export default function EnrollmentInformationCard({
         </div>
       </div>
 
-      {/* Action Required Alert if Email is Missing */}
-      {!hasEmailFilled && (
+      {/* Action Required Alert if Email is Missing (Only required for non-staff self-enrollment) */}
+      {!hasEmailFilled && requireEmail && (
         <div className="mt-4 p-3.5 rounded-2xl bg-amber-500/15 border-2 border-amber-400/60 text-amber-200 text-xs flex items-start sm:items-center gap-3 shadow-lg shadow-amber-500/10">
           <div className="p-1.5 rounded-xl bg-amber-500/20 text-amber-300 shrink-0">
             <AlertCircle className="w-5 h-5 text-amber-400" />
@@ -257,19 +260,19 @@ export default function EnrollmentInformationCard({
               );
             })()}
 
-            {/* Email Address (MANDATORY & REQUIRED) */}
+            {/* Email Address */}
             <div
               className={cn(
                 "p-3 rounded-2xl transition-all relative overflow-hidden",
-                !hasEmailFilled
+                !hasEmailFilled && requireEmail
                   ? "bg-amber-500/10 border-2 border-amber-400/80 shadow-lg shadow-amber-500/10 ring-2 ring-amber-400/30"
                   : "bg-white/[0.03] border border-white/10 hover:border-emerald-500/30"
               )}
             >
               <div className="flex items-center justify-between text-[11px] font-semibold text-slate-400 mb-1.5">
                 <div className="flex items-center gap-1.5">
-                  <Mail className={cn("w-3.5 h-3.5", !hasEmailFilled ? "text-amber-400 animate-pulse" : "text-sky-400")} />
-                  <span className={cn(!hasEmailFilled && "text-amber-200 font-bold")}>
+                  <Mail className={cn("w-3.5 h-3.5", !hasEmailFilled && requireEmail ? "text-amber-400 animate-pulse" : "text-sky-400")} />
+                  <span className={cn(!hasEmailFilled && requireEmail && "text-amber-200 font-bold")}>
                     {isTeacher ? 'Official / Contact Email' : 'Student or Parent Email'}
                   </span>
                 </div>
@@ -277,12 +280,14 @@ export default function EnrollmentInformationCard({
                   variant="outline"
                   className={cn(
                     "text-[9px] font-extrabold px-1.5 py-0 rounded uppercase tracking-wider",
-                    !hasEmailFilled
+                    !hasEmailFilled && requireEmail
                       ? "border-amber-400 bg-amber-500/25 text-amber-300 shadow-sm"
-                      : "border-emerald-500/40 bg-emerald-500/15 text-emerald-300"
+                      : hasEmailFilled
+                        ? "border-emerald-500/40 bg-emerald-500/15 text-emerald-300"
+                        : "border-white/15 bg-white/5 text-slate-400"
                   )}
                 >
-                  {!hasEmailFilled ? 'Required *' : 'Provided'}
+                  {!hasEmailFilled ? (requireEmail ? 'Required *' : 'Optional') : 'Provided'}
                 </Badge>
               </div>
 
@@ -291,17 +296,17 @@ export default function EnrollmentInformationCard({
                   type="email"
                   value={details.email || ''}
                   onChange={(e) => onChangeField('email', e.target.value)}
-                  placeholder="e.g. student@school.edu or parent@email.com"
+                  placeholder="e.g. student@school.edu or parent@email.com (optional for staff)"
                   disabled={disabled}
                   className={cn(
                     "h-9 bg-slate-950/80 text-white text-xs font-semibold rounded-xl focus:ring-emerald-400",
-                    !hasEmailFilled
+                    !hasEmailFilled && requireEmail
                       ? "border-amber-400 text-amber-100 placeholder:text-amber-300/40 focus:border-amber-400 focus:ring-amber-400"
                       : "border-white/20"
                   )}
-                  required
+                  required={requireEmail}
                 />
-                {!hasEmailFilled && (
+                {!hasEmailFilled && requireEmail && (
                   <p className="text-[10px] text-amber-300 font-medium flex items-center gap-1">
                     <AlertCircle className="w-3 h-3 shrink-0" />
                     Please enter an email before saving.

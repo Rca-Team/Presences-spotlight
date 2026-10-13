@@ -931,34 +931,48 @@ export default function EnrollmentMonitor() {
       ? '/attendance'
       : '/admin';
 
-  const handleLaunchDirectCapture = async (student: MonitorStudent) => {
+  const handleLaunchDirectCapture = (student: MonitorStudent) => {
     try {
       setLaunchingCaptureAdm(student.admission_number);
-      toast({
-        title: 'Opening Biometric Studio',
-        description: `Preparing 3D face scan studio for ${student.name}...`,
-      });
 
-      let token = '';
+      const challenges: ('left' | 'right' | 'up')[] = ['left', 'right', 'up'];
+      const cls = student.class || (student.category ? student.category.split('-')[0] : '');
+      const sec =
+        student.section ||
+        (student.category && student.category.includes('-')
+          ? student.category.split('-').slice(1).join('-')
+          : '');
+
+      const fastSession: EnrollmentSession = {
+        session: `fast_${student.admission_number}_${Date.now()}`,
+        expires: Date.now() + 30 * 60 * 1000,
+        challenge: challenges[Math.floor(Math.random() * challenges.length)],
+        student: {
+          admission_number: student.admission_number,
+          name: student.name,
+          class: cls,
+          section: sec,
+          category: student.category,
+          father_name: student.father_name || '',
+          mother_name: student.mother_name || '',
+          date_of_birth: student.date_of_birth || '',
+          parent_phone: student.parent_phone_full || student.parent_phone || '',
+          blood_group: student.blood_group || '',
+          address: student.address || '',
+        },
+      };
+
       try {
-        const res = await enrollmentApi<EnrollmentSession>('staff.session', {
-          admission: student.admission_number,
-        });
-        if (res?.session) {
-          token = res.session;
-          sessionStorage.setItem('bypass_enrollment_session', JSON.stringify(res));
-        }
-      } catch (e) {
-        console.warn('Could not pre-fetch session; will initialize on enroll page:', e);
+        sessionStorage.setItem('bypass_enrollment_session', JSON.stringify(fastSession));
+      } catch {
+        // ignore storage quota errors
       }
 
       const params = new URLSearchParams({
         student: student.admission_number,
         bypass: 'true',
+        direct: 'capture',
       });
-      if (token) {
-        params.set('token', token);
-      }
 
       navigate(`/enroll?${params.toString()}`);
     } catch (err: any) {
@@ -1455,26 +1469,57 @@ export default function EnrollmentMonitor() {
     return [...map.entries()].sort(([a], [b]) => a.localeCompare(b, undefined, { numeric: true }));
   }, [students]);
 
+  // Helper to score search relevance by Admission Number or Student Name
+  const getSearchScore = useCallback((s: MonitorStudent, q: string): number => {
+    if (!q) return 10;
+    const adm = s.admission_number.toLowerCase();
+    const name = s.name.toLowerCase();
+    const kvId = (s.student_id_kv || '').toLowerCase();
+    const father = (s.father_name || '').toLowerCase();
+    const phone = s.parent_phone_full || s.parent_phone || '';
+
+    if (adm === q || kvId === q) return 0; // Exact admission / KV ID match
+    if (adm.startsWith(q) || kvId.startsWith(q)) return 1; // Admission prefix match
+    if (name === q) return 2; // Exact name match
+    if (name.startsWith(q)) return 3; // Name prefix match
+    if (name.split(/\s+/).some((word) => word.startsWith(q))) return 4; // Any word in name starts with query
+    if (adm.includes(q) || kvId.includes(q)) return 5; // Admission substring
+    if (name.includes(q)) return 6; // Name substring
+    if (father.includes(q) || phone.includes(q)) return 7; // Father or phone match
+    return -1;
+  }, []);
+
   // Filtered students
   const visible = useMemo(() => {
     const q = query.trim().toLowerCase();
     return students
       .filter((s) => (category === 'all' || (s.category || 'Unassigned') === category) && matchesFilter(s, filter))
-      .filter(
-        (s) =>
-          !q ||
-          s.name.toLowerCase().includes(q) ||
-          s.admission_number.toLowerCase().includes(q) ||
-          (s.father_name && s.father_name.toLowerCase().includes(q)) ||
-          (s.parent_phone_full && s.parent_phone_full.includes(q)) ||
-          (s.student_id_kv && s.student_id_kv.toLowerCase().includes(q))
-      )
-      .sort(
-        (a, b) =>
+      .filter((s) => !q || getSearchScore(s, q) >= 0)
+      .sort((a, b) => {
+        if (q) {
+          const scoreDiff = getSearchScore(a, q) - getSearchScore(b, q);
+          if (scoreDiff !== 0) return scoreDiff;
+        }
+        return (
           (a.category || '').localeCompare(b.category || '', undefined, { numeric: true }) ||
           a.name.localeCompare(b.name)
-      );
-  }, [students, query, category, filter]);
+        );
+      });
+  }, [students, query, category, filter, getSearchScore]);
+
+  // Global quick matches across ALL classes/filters when searching by Name or Admission Number
+  const quickSearchMatches = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    if (!q) return [];
+    return students
+      .filter((s) => getSearchScore(s, q) >= 0)
+      .sort((a, b) => {
+        const scoreDiff = getSearchScore(a, q) - getSearchScore(b, q);
+        if (scoreDiff !== 0) return scoreDiff;
+        return a.name.localeCompare(b.name);
+      })
+      .slice(0, 6);
+  }, [students, query, getSearchScore]);
 
   const selectedStudent = students.find((s) => s.admission_number === selectedStudentAdm) ?? null;
 
@@ -1884,18 +1929,25 @@ export default function EnrollmentMonitor() {
                       })}
                     </div>
 
-                    {/* Search Input & Desktop View Toggle */}
-                    <div className="flex items-center gap-2 w-full lg:w-auto">
-                      <div className="relative flex-1 lg:w-72">
-                        <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-slate-400" />
+                    {/* Search Input, 1-Click Direct Capture Button & Desktop View Toggle */}
+                    <div className="flex flex-wrap sm:flex-nowrap items-center gap-2 w-full lg:w-auto">
+                      <div className="relative flex-1 lg:w-80">
+                        <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-emerald-400" />
                         <Input
-                          placeholder="Search name, admission no, father, phone..."
+                          placeholder="Search student name or admission no (Press Enter to Capture)..."
                           value={query}
                           onChange={(e) => setQuery(e.target.value)}
-                          className="h-9 pl-9 pr-8 text-xs rounded-xl bg-slate-950 border-slate-800 text-white placeholder:text-slate-500 focus:border-emerald-500"
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter' && quickSearchMatches.length > 0) {
+                              e.preventDefault();
+                              handleLaunchDirectCapture(quickSearchMatches[0]);
+                            }
+                          }}
+                          className="h-9 pl-9 pr-8 text-xs rounded-xl bg-slate-950 border-slate-700 text-white placeholder:text-slate-500 focus:border-emerald-400"
                         />
                         {query && (
                           <button
+                            type="button"
                             onClick={() => setQuery('')}
                             className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-white"
                             aria-label="Clear search"
@@ -1904,6 +1956,22 @@ export default function EnrollmentMonitor() {
                           </button>
                         )}
                       </div>
+
+                      {/* 1-Click Direct Face Capture Button for Top Match */}
+                      {query.trim() && quickSearchMatches.length > 0 && (
+                        <Button
+                          type="button"
+                          size="sm"
+                          onClick={() => handleLaunchDirectCapture(quickSearchMatches[0])}
+                          className="h-9 px-3.5 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold text-xs gap-1.5 shadow-md shadow-emerald-500/20 shrink-0"
+                          title={`Directly open Face Capture & Verify Details for ${quickSearchMatches[0].name} (#${quickSearchMatches[0].admission_number})`}
+                        >
+                          <ScanFace className="h-4 w-4" />
+                          <span className="truncate max-w-[180px]">
+                            Capture: {quickSearchMatches[0].name.split(' ')[0]} (#{quickSearchMatches[0].admission_number})
+                          </span>
+                        </Button>
+                      )}
 
                       {/* Desktop Table vs Card Grid Switcher */}
                       <div className="hidden md:flex items-center rounded-xl bg-slate-950 border border-slate-800 p-0.5">
@@ -1938,6 +2006,81 @@ export default function EnrollmentMonitor() {
                       </div>
                     </div>
                   </div>
+
+                  {/* Instant Quick-Match & Direct Face Capture Bar when searching by Name or Admission Number */}
+                  {query.trim() && quickSearchMatches.length > 0 && (
+                    <div className="pt-2.5 border-t border-slate-800 space-y-2">
+                      <div className="flex items-center justify-between gap-2 text-[11px]">
+                        <span className="font-bold text-emerald-400 flex items-center gap-1.5">
+                          <ScanFace className="h-3.5 w-3.5" />
+                          Quick Match — Click &ldquo;Capture Face &amp; Verify&rdquo; to jump straight to camera scan:
+                        </span>
+                        {(category !== 'all' || filter !== 'all') && visible.length === 0 && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setCategory('all');
+                              setFilter('all');
+                            }}
+                            className="text-xs font-semibold text-amber-300 hover:text-amber-200 underline"
+                          >
+                            Show in full table (clear class/status filter)
+                          </button>
+                        )}
+                      </div>
+                      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-2">
+                        {quickSearchMatches.slice(0, 3).map((match) => {
+                          const enrolled = isStudentEnrolled(match);
+                          return (
+                            <div
+                              key={match.admission_number}
+                              className="flex items-center justify-between gap-2.5 p-2.5 rounded-xl bg-slate-950/90 border border-emerald-500/30 hover:border-emerald-400/60 transition-all"
+                            >
+                              <div className="flex items-center gap-2.5 min-w-0 flex-1">
+                                <div className="h-9 w-9 rounded-lg bg-slate-800 border border-slate-700 flex items-center justify-center font-bold text-xs text-white overflow-hidden shrink-0">
+                                  {match.avatarUrl ? (
+                                    <img
+                                      src={match.avatarUrl}
+                                      alt={match.name}
+                                      className="h-full w-full object-cover"
+                                    />
+                                  ) : (
+                                    match.name.slice(0, 2).toUpperCase()
+                                  )}
+                                </div>
+                                <div className="min-w-0 flex-1">
+                                  <div className="flex items-center gap-1.5">
+                                    <p className="text-xs font-bold text-white truncate">{match.name}</p>
+                                    <Badge
+                                      variant="outline"
+                                      className="text-[10px] px-1.5 py-0 border-cyan-500/30 bg-cyan-500/10 text-cyan-300 font-mono shrink-0"
+                                    >
+                                      {match.category || '—'}
+                                    </Badge>
+                                  </div>
+                                  <p className="text-[11px] text-slate-400 font-mono truncate">
+                                    Adm: <span className="text-emerald-400 font-semibold">{match.admission_number}</span>
+                                    {match.father_name ? ` · F: ${match.father_name}` : ''}
+                                  </p>
+                                </div>
+                              </div>
+                              <div className="flex items-center gap-1.5 shrink-0">
+                                <Button
+                                  type="button"
+                                  size="sm"
+                                  onClick={() => handleLaunchDirectCapture(match)}
+                                  className="h-8 px-3 rounded-lg bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold text-xs gap-1.5 shadow-sm"
+                                >
+                                  <Camera className="h-3.5 w-3.5" />
+                                  <span>{enrolled ? 'Re-scan & Verify' : 'Capture Face & Verify'}</span>
+                                </Button>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )}
 
                   {/* Bulk Selection Bar (Shown when students are selected or for quick selection) */}
                   {data.canManage && selectedAdmissions.size > 0 && (
