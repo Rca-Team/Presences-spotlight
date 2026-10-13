@@ -55,10 +55,12 @@ const DashboardCharts: React.FC<DashboardChartsProps> = ({
       })
       .subscribe();
 
-    // Set up interval for periodic updates
+    // Set up interval for periodic fallback updates (Realtime handles live events)
     const interval = setInterval(() => {
-      fetchAttendanceChartData();
-    }, 3000); // Update every 3 seconds
+      if (typeof document === 'undefined' || !document.hidden) {
+        fetchAttendanceChartData();
+      }
+    }, 60000); // Update every 60 seconds
     
     return () => {
       supabase.removeChannel(channel);

@@ -64,34 +64,72 @@ export const registerFace = async (
       console.warn('No face descriptor provided for registration. This may limit face recognition capabilities.');
     }
     
-    // Create a proper File object from the blob
-    const uniqueId = uuidv4();
-    const file = new File([imageBlob], `face_${uniqueId}.jpg`, { type: 'image/jpeg' });
+    // Get authenticated user if available (so we never accidentally assign a teacher's auth UUID to a student)
+    const { data: { user } } = await supabase.auth.getUser();
+    const cleanEmployeeId = employee_id?.trim() || '';
 
-    // Per-student folder so each student's photos live together in storage.
-    const folderId = (employee_id || userId || 'unassigned')
+    // 1. Resolve canonical existing student identity across profiles, attendance_records, and face_descriptors upfront
+    let existingProfile: any = null;
+    let existingRegistrationId: string | null = null;
+    let existingRegistrationUserId: string | null = null;
+    let existingFdId: string | null = null;
+    let existingFdUserId: string | null = null;
+
+    if (cleanEmployeeId) {
+      const [profRes, regRes, fdRes] = await Promise.all([
+        supabase
+          .from('profiles')
+          .select('id, user_id')
+          .or(`admission_number.eq.${cleanEmployeeId},employee_id.eq.${cleanEmployeeId}`)
+          .limit(1)
+          .maybeSingle(),
+        supabase
+          .from('attendance_records')
+          .select('id, user_id')
+          .eq('status', 'registered')
+          .eq('student_id', cleanEmployeeId)
+          .order('updated_at', { ascending: false })
+          .limit(1)
+          .maybeSingle(),
+        supabase
+          .from('face_descriptors')
+          .select('id, user_id')
+          .eq('student_id', cleanEmployeeId)
+          .order('created_at', { ascending: false })
+          .limit(1)
+          .maybeSingle(),
+      ]);
+
+      existingProfile = profRes.data ?? null;
+      existingRegistrationId = regRes.data?.id ?? null;
+      existingRegistrationUserId = regRes.data?.user_id ?? null;
+      existingFdId = fdRes.data?.id ?? null;
+      existingFdUserId = fdRes.data?.user_id ?? null;
+    }
+
+    // Single authoritative student user_id shared across profiles, attendance_records, and face_descriptors
+    const stableStudentUserId =
+      existingProfile?.user_id ||
+      existingFdUserId ||
+      existingRegistrationUserId ||
+      (userId && userId !== user?.id ? userId : uuidv4());
+    console.log('Using canonical student user ID:', stableStudentUserId);
+
+    // 2. Upload primary registration photo to deterministic student path (prevents duplicate orphan files on re-registration)
+    const folderId = (cleanEmployeeId || stableStudentUserId || 'unassigned')
       .toString()
       .replace(/[^a-zA-Z0-9_-]/g, '_');
-    const filePath = `students/${folderId}/register_${uniqueId}.jpg`;
-    console.log('Uploading with path:', filePath);
-    
-    // Always store registration images in Lovable Cloud storage
-    const imageUrl = await uploadImage(file, filePath);
-    console.log('Face image uploaded successfully:', imageUrl);
-    
-    // Also save the same face in organized registration-training storage hierarchy
-    const registrationTrainingPath = await uploadRegistrationTrainingImage({
-      imageBlob,
-      studentId: employee_id || userId || uniqueId,
-      employeeId: employee_id,
-      category,
-      label: 'registration-primary',
-    });
+    const file = new File([imageBlob], 'front.jpg', { type: 'image/jpeg' });
+    const filePath = `students/${folderId}/faces/front.jpg`;
+    console.log('Uploading primary registration photo to deterministic path:', filePath);
+
+    const imageUrl = await uploadImage(file, filePath, 'student-registration-faces');
+    const registrationTrainingPath = filePath;
 
     // Prepare metadata as a plain object that conforms to Json type
     const metadata: Record<string, any> = {
       name,
-      employee_id,
+      employee_id: cleanEmployeeId || employee_id,
       department,
       position,
       firebase_image_url: imageUrl,
@@ -100,7 +138,6 @@ export const registerFace = async (
 
     if (faceDescriptor) {
       faceDescriptorString = descriptorToString(faceDescriptor);
-      console.log('Descriptor converted to string, length:', faceDescriptorString.length);
       metadata.faceDescriptor = faceDescriptorString;
     }
 
@@ -110,47 +147,16 @@ export const registerFace = async (
         created_at: new Date().toISOString(),
       };
     }
-    
-    // Create device info as a plain object that conforms to Json type
+
     const deviceInfo: Record<string, any> = {
       type: 'webcam',
-      registration: 'true', // Must be string for RLS policy check
+      registration: 'true',
       metadata: {
         ...metadata,
-        ...parentContactInfo
+        ...parentContactInfo,
       },
-      timestamp: new Date().toISOString()
+      timestamp: new Date().toISOString(),
     };
-
-    console.log('Inserting attendance record with metadata');
-    
-    // Get authenticated user if available (fallback only)
-    const { data: { user } } = await supabase.auth.getUser();
-
-    // Avoid duplicate registration rows for the same admission number.
-    // If an existing "registered" row exists, refresh it instead of inserting a new one.
-    let existingRegistrationId: string | null = null;
-    let existingRegistrationUserId: string | null = null;
-    if (employee_id?.trim()) {
-      const { data: existingRegistration } = await supabase
-        .from('attendance_records')
-        .select('id, user_id')
-        .eq('status', 'registered')
-        .eq('student_id', employee_id.trim())
-        .order('updated_at', { ascending: false })
-        .limit(1)
-        .maybeSingle();
-
-      existingRegistrationId = existingRegistration?.id ?? null;
-      existingRegistrationUserId = existingRegistration?.user_id ?? null;
-    }
-
-    // Use a stable student identity id.
-    // Priority: existing student record -> passed student id -> fresh student UUID.
-    // Note: NEVER default to the creator/teacher's user?.id, otherwise all students
-    // registered by that teacher collapse into the same user_id and overwrite each other.
-    const stableStudentUserId = existingRegistrationUserId || (userId && userId !== user?.id ? userId : uuidv4());
-    console.log('Using stable student user ID:', stableStudentUserId);
 
     // Parse class & section from "6-A" style department string
     const rawDept = String(parentContactInfo?.class_section || department || '').trim();
@@ -158,8 +164,9 @@ export const registerFace = async (
     const parsedClass = deptMatch ? deptMatch[1] : (rawDept || null);
     const parsedSection = deptMatch ? deptMatch[2].toUpperCase() : null;
 
-    // Insert/update registration record
+    // 3. Upsert attendance_records registration row (never creates duplicate status='registered' rows)
     const insertData: Record<string, any> = {
+      user_id: stableStudentUserId,
       timestamp: new Date().toISOString(),
       status: 'registered',
       source: 'registration',
@@ -167,7 +174,7 @@ export const registerFace = async (
       class: parsedClass,
       section: parsedSection,
       student_name: name,
-      student_id: employee_id || null,
+      student_id: cleanEmployeeId || null,
       device_info: deviceInfo,
       image_url: imageUrl,
       face_descriptor: faceDescriptorString,
@@ -175,11 +182,6 @@ export const registerFace = async (
       roll_number: parentContactInfo?.roll_number || position || null,
       confidence_score: 1.0,
     };
-    
-    // Only include user_id if we have one
-    if (stableStudentUserId) {
-      insertData.user_id = stableStudentUserId;
-    }
 
     let recordData: any = null;
     let recordError: any = null;
@@ -210,137 +212,97 @@ export const registerFace = async (
       throw new Error(`Error inserting attendance record: ${recordError.message}`);
     }
 
-    // ── Write to face_descriptors so the recognition engine and admin UI see this student ──
-    // Each student must have their OWN stable user_id in face_descriptors.
-    // We CANNOT use effectiveUserId (the admin's auth UUID) because all students
-    // registered in one session would share that UUID, collapsing them into one
-    // identity inside getAllTrainedDescriptors() which groups by user_id.
-    let descriptorUserIdUsed: string | null = null;
+    // 4. Write primary descriptor to face_descriptors using the exact same stableStudentUserId
+    const descriptorUserIdUsed = stableStudentUserId;
     if (faceDescriptorString) {
-      const studentEmployeeId = employee_id?.trim() || null;
-
-      // 1. Look for an existing face_descriptors row for this student (by student_id)
-      let existingFdId: string | null = null;
-      let existingFdUserId: string | null = null;
-      if (studentEmployeeId) {
-        const { data: existingFd } = await supabase
-          .from('face_descriptors')
-          .select('id, user_id')
-          .eq('student_id', studentEmployeeId)
-          .order('created_at', { ascending: false })
-          .limit(1)
-          .maybeSingle();
-        existingFdId = existingFd?.id ?? null;
-        existingFdUserId = existingFd?.user_id ?? null;
-      }
-
-      // 2. Generate a stable per-student UUID (reuse existing, or create fresh)
-      //    Never use the admin's effectiveUserId here.
-      const studentDescriptorUserId = existingFdUserId ?? stableStudentUserId ?? uuidv4();
-      descriptorUserIdUsed = studentDescriptorUserId;
-
-      // Normalised class scope — "6-A" → class "6", section "A".
       const rawCategory = String(category || parentContactInfo?.class_section || '').trim();
       const catMatch = rawCategory.match(/^(\d+)\s*-\s*([A-Da-d])$/);
       const normalizedCategory = catMatch ? `${catMatch[1]}-${catMatch[2].toUpperCase()}` : (rawCategory || null);
 
       const fdPayload: Record<string, any> = {
-        user_id: studentDescriptorUserId,
+        user_id: stableStudentUserId,
         descriptor: faceDescriptorString,
         image_url: imageUrl,
-        label: name,                 // DescriptorCacheService primary name field
-        student_id: studentEmployeeId,
+        label: name,
+        student_id: cleanEmployeeId || null,
         student_name: name,
-        class: catMatch ? catMatch[1] : null,
-        section: catMatch ? catMatch[2].toUpperCase() : null,
+        class: catMatch ? catMatch[1] : parsedClass,
+        section: catMatch ? catMatch[2].toUpperCase() : parsedSection,
         category: normalizedCategory,
         metadata: {
           ...metadata,
           ...parentContactInfo,
+          pose: 'master_centroid',
+          is_primary: true,
           category: normalizedCategory || 'A',
         },
       };
 
-      let fdErr: any = null;
       if (existingFdId) {
-        const { error } = await supabase
-          .from('face_descriptors')
-          .update(fdPayload)
-          .eq('id', existingFdId);
-        fdErr = error;
+        await supabase.from('face_descriptors').update(fdPayload).eq('id', existingFdId);
       } else {
-        const { error } = await supabase
-          .from('face_descriptors')
-          .insert(fdPayload);
-        fdErr = error;
-      }
-
-      if (fdErr) {
-        console.warn('face_descriptors write failed (non-fatal):', fdErr.message);
-      } else {
-        console.log('face_descriptors written for', name, '(userId:', studentDescriptorUserId, ')');
+        await supabase.from('face_descriptors').insert(fdPayload);
       }
     }
 
-    // ── Write to profiles table so all profile-based components have this student's data ──
-    const targetUserId = descriptorUserIdUsed || stableStudentUserId;
-    if (targetUserId) {
-      try {
-        const profilePayload: Record<string, any> = {
-          user_id: targetUserId,
-          display_name: name,
-          full_name: name,
-          admission_number: employee_id || null,
-          employee_id: employee_id || null,
-          class: parsedClass,
-          section: parsedSection,
-          category: category || rawDept || null,
-          roll_number: parentContactInfo?.roll_number || position || null,
-          phone: parentContactInfo?.phone || null,
-          email: parentContactInfo?.student_email || null,
-          parent_name: parentContactInfo?.parent_name || null,
-          parent_phone: parentContactInfo?.parent_phone || null,
-          parent_email: parentContactInfo?.parent_email || null,
-          blood_group: parentContactInfo?.blood_group || null,
-          address: parentContactInfo?.address || null,
-          avatar_url: imageUrl,
-          photo_url: imageUrl,
-          updated_at: new Date().toISOString(),
-          metadata: {
-            ...metadata,
-            ...parentContactInfo,
-            registration_source: 'student_registration_page',
-          },
-        };
+    // 5. Upsert profiles table with the exact same stableStudentUserId and pre-computed biometric_summary
+    try {
+      const profilePayload: Record<string, any> = {
+        user_id: stableStudentUserId,
+        display_name: name,
+        full_name: name,
+        admission_number: cleanEmployeeId || null,
+        employee_id: cleanEmployeeId || null,
+        class: parsedClass,
+        section: parsedSection,
+        category: category || rawDept || null,
+        roll_number: parentContactInfo?.roll_number || position || null,
+        phone: parentContactInfo?.phone || null,
+        email: parentContactInfo?.student_email || null,
+        parent_name: parentContactInfo?.parent_name || null,
+        parent_phone: parentContactInfo?.parent_phone || null,
+        parent_email: parentContactInfo?.parent_email || null,
+        blood_group: parentContactInfo?.blood_group || null,
+        address: parentContactInfo?.address || null,
+        avatar_url: imageUrl,
+        photo_url: imageUrl,
+        updated_at: new Date().toISOString(),
+        metadata: {
+          ...metadata,
+          ...parentContactInfo,
+          registration_source: 'student_registration_page',
+          ...(faceDescriptor
+            ? {
+                biometric_summary: {
+                  version: 1,
+                  centroid_descriptor: Array.from(faceDescriptor, (v) => Number(v.toFixed(5))),
+                  exemplar_descriptors: [Array.from(faceDescriptor, (v) => Number(v.toFixed(5)))],
+                  sample_count: faceModel?.sample_count || 1,
+                  has_glasses_profile: false,
+                  updated_at: new Date().toISOString(),
+                },
+              }
+            : {}),
+        },
+      };
 
-        // Check if profile exists for this user_id or admission_number
-        const { data: existingProfile } = await supabase
-          .from('profiles')
-          .select('id')
-          .or(`user_id.eq.${targetUserId}${employee_id ? `,admission_number.eq.${employee_id}` : ''}`)
-          .limit(1)
-          .maybeSingle();
-
-        if (existingProfile?.id) {
-          await supabase
-            .from('profiles')
-            .update(profilePayload)
-            .eq('id', existingProfile.id);
-        } else {
-          await supabase
-            .from('profiles')
-            .insert(profilePayload);
-        }
-        console.log('Profile synced successfully for', name);
-      } catch (profileErr) {
-        console.warn('Profile sync failed (non-fatal):', profileErr);
+      if (existingProfile?.id) {
+        await supabase.from('profiles').update(profilePayload).eq('id', existingProfile.id);
+      } else {
+        await supabase.from('profiles').insert(profilePayload);
       }
+      const { syncUserBiometricSummaryToProfile, invalidateTrainedDescriptorsCache } = await import('./ProgressiveTrainingService');
+      await syncUserBiometricSummaryToProfile(stableStudentUserId, cleanEmployeeId || null);
+      invalidateTrainedDescriptorsCache();
+    } catch (profileErr) {
+      console.warn('Profile sync failed (non-fatal):', profileErr);
     }
 
     const enrichedRecordData = {
       ...recordData,
+      primary_image_url: imageUrl,
       registration_user_id: stableStudentUserId,
-      descriptor_user_id: descriptorUserIdUsed ?? stableStudentUserId,
+      descriptor_user_id: descriptorUserIdUsed,
     };
 
     console.log('Registration completed successfully:', enrichedRecordData);

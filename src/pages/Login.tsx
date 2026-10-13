@@ -161,19 +161,16 @@ const Login = () => {
     try {
       const normalizedEmail = email.trim().toLowerCase();
 
-      // Recover from stale/corrupt local auth tokens (e.g. bad_jwt / missing sub claim)
-      const { data: { session: existingSession } } = await supabase.auth.getSession();
-      if (existingSession?.access_token) {
-        const { error: validationError } = await supabase.auth.getUser();
-        if (validationError) {
-          await supabase.auth.signOut({ scope: 'local' });
-        }
-      }
-
-      const { error } = await supabase.auth.signInWithPassword({ email: normalizedEmail, password });
+      const { data, error } = await supabase.auth.signInWithPassword({ email: normalizedEmail, password });
       if (error) throw error;
 
       toast({ title: "Welcome back!", description: "Signed in to Presences smart automation" });
+
+      if (data?.user?.id) {
+        sessionStorage.removeItem('auth_redirect_to');
+        const target = await resolvePostLoginRoute(data.user.id, from);
+        navigate(target, { replace: true });
+      }
     } catch (error: any) {
       const details = getSignInErrorDetails(error);
       console.error('Sign-in error:', {

@@ -50,10 +50,12 @@ const RegisteredFaces: React.FC<RegisteredFacesProps> = ({
       })
       .subscribe();
 
-    // Set up interval for periodic updates
+    // Set up interval for periodic fallback updates (Realtime handles live events)
     const interval = setInterval(() => {
-      refetchFaces();
-    }, 5000); // Update every 5 seconds
+      if (typeof document === 'undefined' || !document.hidden) {
+        refetchFaces();
+      }
+    }, 60000); // Update every 60 seconds
 
     return () => {
       supabase.removeChannel(channel);

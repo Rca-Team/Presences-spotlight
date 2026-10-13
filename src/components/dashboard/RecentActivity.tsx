@@ -111,10 +111,12 @@ const RecentActivity: React.FC<RecentActivityProps> = ({ isLoading, activityData
       })
       .subscribe();
 
-    // Set up interval for frequent updates
+    // Set up interval for fallback updates (Realtime handles live events)
     const interval = setInterval(() => {
-      fetchRecentActivity();
-    }, 2000); // Update every 2 seconds for real-time activity
+      if (typeof document === 'undefined' || !document.hidden) {
+        fetchRecentActivity();
+      }
+    }, 45000); // Update every 45 seconds
 
     // Cleanup subscription on component unmount
     return () => {

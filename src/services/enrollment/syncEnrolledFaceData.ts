@@ -248,7 +248,10 @@ export async function syncEnrolledFaceDataToSupabase({
       }
     }
 
-    // 3. Purge old descriptors if replaceExisting is true, strictly isolated to cleanAdmission and student user
+    // 3. Purge old descriptors if replaceExisting is true, or load existing descriptors for deduplication in additive mode
+    const existingVectors: number[][] = [];
+    const incomingPoses = new Set(samples.map((s) => `${s.pose}:${s.glasses || 'without'}`));
+
     if (replaceExisting) {
       try {
         await supabase
@@ -258,16 +261,68 @@ export async function syncEnrolledFaceDataToSupabase({
       } catch (delErr) {
         console.warn('[SyncFaceData] Notice during prior descriptor purge:', delErr);
       }
+    } else {
+      try {
+        const { data: priorRows } = await supabase
+          .from('face_descriptors')
+          .select('id, descriptor, metadata')
+          .or(`student_id.ilike.${cleanAdmission},user_id.eq.${stableStudentUserId}`);
+
+        if (priorRows && priorRows.length > 0) {
+          for (const row of priorRows) {
+            let meta: any = row.metadata;
+            if (typeof meta === 'string') {
+              try { meta = JSON.parse(meta); } catch { meta = {}; }
+            }
+            const poseKey = `${meta?.pose || ''}:${meta?.glasses || 'without'}`;
+            // Delete old master_centroid or same pose+glasses slot so we replace it cleanly instead of duplicating!
+            if (meta?.pose === 'master_centroid' || incomingPoses.has(poseKey)) {
+              await supabase.from('face_descriptors').delete().eq('id', row.id);
+              continue;
+            }
+            try {
+              const parsed = typeof row.descriptor === 'string' ? JSON.parse(row.descriptor) : row.descriptor;
+              if (Array.isArray(parsed) && parsed.length >= 64) {
+                existingVectors.push(parsed.map(Number));
+              }
+            } catch {}
+          }
+        }
+      } catch (mergeErr) {
+        console.warn('[SyncFaceData] Notice during additive merge check:', mergeErr);
+      }
     }
 
-    // 4. Synthesize Master Centroid Biometric Descriptor & 3D Structure
-    const validSamples = samples.filter((s) => s.descriptor && s.descriptor.length >= 64);
+    const vecDist = (a: ArrayLike<number>, b: ArrayLike<number>) => {
+      if (!a || !b || a.length !== b.length) return Infinity;
+      let sum = 0;
+      for (let k = 0; k < a.length; k++) {
+        const d = Number(a[k]) - Number(b[k]);
+        sum += d * d;
+      }
+      return Math.sqrt(sum);
+    };
+
+    // 4. Filter out invalid or near-identical duplicate samples (< 0.040 distance) before inserting
+    const rawValidSamples = samples.filter((s) => s.descriptor && s.descriptor.length >= 64);
+    const validSamples: typeof rawValidSamples = [];
+    for (const s of rawValidSamples) {
+      const descArr = Array.from(s.descriptor as any, Number);
+      const isDupInBatch = validSamples.some((prev) => vecDist(prev.descriptor as any, descArr) < 0.040);
+      const isDupInExisting = existingVectors.some((prev) => vecDist(prev, descArr) < 0.040);
+      if (!isDupInBatch && !isDupInExisting) {
+        validSamples.push(s);
+      }
+    }
+    if (validSamples.length === 0 && rawValidSamples.length > 0) {
+      validSamples.push(rawValidSamples[0]);
+    }
+
     const masterPkg = synthesizeMasterFaceDescriptor(validSamples);
     const effectiveMasterDescriptor = masterDescriptor || masterPkg.masterDescriptor;
     const canonicalFace3D = face3DStructure || buildCanonical3DFaceStructure(validSamples);
 
     // 5. Batch insert descriptors into face_descriptors table
-    // Prepend Master Centroid Descriptor as primary row for fastest & most robust recognition match
     const descriptorsToInsert: any[] = [];
 
     if (effectiveMasterDescriptor && effectiveMasterDescriptor.length >= 64) {
@@ -286,7 +341,7 @@ export async function syncEnrolledFaceDataToSupabase({
           is_primary: true,
           quality: { sharpness: 95, brightness: 128, clarityScore: masterPkg.qualityScore },
           wearsGlasses,
-          sample_count: validSamples.length,
+          sample_count: validSamples.length + existingVectors.length,
           intra_cluster_coherence: masterPkg.intraClusterCoherence,
           face_3d_structure_version: canonicalFace3D.version,
           facial_metrics: canonicalFace3D.facial_metrics,
@@ -298,7 +353,7 @@ export async function syncEnrolledFaceDataToSupabase({
       });
     }
 
-    // Follow with each individual multi-angle pose descriptor
+    // Follow with each deduplicated multi-angle pose descriptor
     for (let i = 0; i < validSamples.length; i++) {
       const s = validSamples[i];
       const descStr = typeof s.descriptor === 'string' ? s.descriptor : JSON.stringify(Array.from(s.descriptor));
@@ -446,6 +501,18 @@ export async function syncEnrolledFaceDataToSupabase({
           blood_group: details?.blood_group || prevMeta.blood_group || '',
           avatar_url: primaryPublicUrl || '',
           photo_url: primaryPublicUrl || '',
+          biometric_summary: effectiveMasterDescriptor && effectiveMasterDescriptor.length >= 64
+            ? {
+                version: 1,
+                centroid_descriptor: effectiveMasterDescriptor.map((v: number) => Number(Number(v).toFixed(5))),
+                exemplar_descriptors: validSamples
+                  .slice(0, 5)
+                  .map((s) => Array.from(s.descriptor as any, (v: any) => Number(Number(v).toFixed(5)))),
+                sample_count: validSamples.length,
+                has_glasses_profile: Boolean(wearsGlasses),
+                updated_at: new Date().toISOString(),
+              }
+            : prevMeta.biometric_summary,
         },
       };
 
@@ -579,6 +646,8 @@ export async function syncEnrolledFaceDataToSupabase({
 
     // 8. Invalidate and re-sync in-memory descriptor cache immediately!
     try {
+      const { clearMonitorCache } = await import('./monitor');
+      clearMonitorCache();
       await syncDescriptorCache();
       if (typeof window !== 'undefined') {
         window.dispatchEvent(new CustomEvent('presence:descriptors-updated', { detail: { count: descriptorsToInsert.length } }));

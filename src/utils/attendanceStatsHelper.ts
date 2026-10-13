@@ -247,14 +247,11 @@ export async function fetchUnifiedAttendanceStats(forceFresh = false): Promise<U
 
   inFlightStatsPromise = (async () => {
     try {
-      const [registeredRes, descriptorsRes, profilesRes, todayRes, gateRes] = await Promise.all([
+      const [registeredRes, profilesRes, todayRes, gateRes] = await Promise.all([
         supabase
           .from('attendance_records')
           .select('id, user_id, device_info, category, student_id, student_name, image_url')
           .eq('status', 'registered'),
-        supabase
-          .from('face_descriptors')
-          .select('id, user_id, student_id, label, image_url'),
         supabase
           .from('profiles')
           .select('id, user_id, display_name, full_name, role, employee_id, admission_number, class, section, category, avatar_url'),
@@ -270,10 +267,18 @@ export async function fetchUnifiedAttendanceStats(forceFresh = false): Promise<U
           .eq('is_recognized', true),
       ]);
 
+      let fallbackDescriptors: any[] = [];
+      if (!(profilesRes.data?.length) && !(registeredRes.data?.length)) {
+        const descriptorsRes = await supabase
+          .from('face_descriptors')
+          .select('id, user_id, student_id, label, image_url');
+        fallbackDescriptors = descriptorsRes.data || [];
+      }
+
       // 1. Build strictly deduplicated roster
       const roster = buildDeduplicatedRoster(
         registeredRes.data || [],
-        descriptorsRes.data || [],
+        fallbackDescriptors,
         profilesRes.data || []
       );
 
@@ -380,14 +385,11 @@ export async function fetchUnifiedStudentSnapshot(forceFresh = false): Promise<U
 
   inFlightSnapshotPromise = (async () => {
     try {
-      const [registeredRes, descriptorsRes, profilesRes, todayRes, gateRes] = await Promise.all([
+      const [registeredRes, profilesRes, todayRes, gateRes] = await Promise.all([
         supabase
           .from('attendance_records')
           .select('id, user_id, device_info, category, student_id, student_name, image_url')
           .eq('status', 'registered'),
-        supabase
-          .from('face_descriptors')
-          .select('id, user_id, student_id, label, image_url'),
         supabase
           .from('profiles')
           .select('id, user_id, display_name, full_name, role, employee_id, admission_number, class, section, category, avatar_url'),
@@ -405,9 +407,17 @@ export async function fetchUnifiedStudentSnapshot(forceFresh = false): Promise<U
           .order('entry_time', { ascending: false }),
       ]);
 
+      let fallbackDescriptors: any[] = [];
+      if (!(profilesRes.data?.length) && !(registeredRes.data?.length)) {
+        const descriptorsRes = await supabase
+          .from('face_descriptors')
+          .select('id, user_id, student_id, label, image_url');
+        fallbackDescriptors = descriptorsRes.data || [];
+      }
+
       const roster = buildDeduplicatedRoster(
         registeredRes.data || [],
-        descriptorsRes.data || [],
+        fallbackDescriptors,
         profilesRes.data || []
       );
 

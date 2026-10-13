@@ -82,6 +82,78 @@ async function handleEnrollmentFallback<T>(action: string, body: Record<string, 
     return sessionObj as unknown as T;
   }
 
+  if (action === 'staff.preview') {
+    const s = body.student || {};
+    const admission = String(s.admission_number || '').trim();
+    if (!admission) return { existing: null } as unknown as T;
+    const { data: profiles } = await supabase.from('profiles').select('*');
+    const lowerAdm = admission.toLowerCase();
+    const matched = (profiles || []).find((p: any) =>
+      String(p.admission_number || '').trim().toLowerCase() === lowerAdm ||
+      String(p.employee_id || '').trim().toLowerCase() === lowerAdm
+    );
+    if (!matched) return { existing: null } as unknown as T;
+    const cleanPhone = (val: any) => String(val || '').replace(/\D/g, '').slice(-10);
+    return {
+      existing: {
+        name: matched.full_name || matched.display_name || '',
+        admission_number: matched.admission_number || matched.employee_id || admission,
+        class: matched.class || '',
+        section: matched.section || '',
+        father_name: matched.father_name || matched.parent_name || '',
+        mother_name: matched.mother_name || '',
+        parent_phone: cleanPhone(matched.parent_phone || matched.phone),
+        date_of_birth: matched.date_of_birth || '',
+        address: matched.address || '',
+        revision: matched.updated_at || matched.created_at || '1',
+      },
+    } as unknown as T;
+  }
+
+  if (action === 'staff.import') {
+    const s = body.student || {};
+    const admission = String(s.admission_number || '').trim();
+    if (!admission) throw new Error('Admission number is required.');
+    let portraitUrl: string | undefined;
+    if (typeof body.portrait === 'string' && body.portrait.startsWith('data:')) {
+      try {
+        const res = await fetch(body.portrait);
+        const blob = await res.blob();
+        const safeAdm = admission.replace(/[^a-zA-Z0-9_-]/g, '_');
+        const path = `students/${safeAdm}/faces/id_portrait.jpg`;
+        const { error: upErr } = await supabase.storage
+          .from('student-registration-faces')
+          .upload(path, blob, { contentType: 'image/jpeg', upsert: true });
+        if (!upErr) {
+          const { data } = supabase.storage.from('student-registration-faces').getPublicUrl(path);
+          if (data?.publicUrl) portraitUrl = data.publicUrl;
+        }
+      } catch {}
+    }
+    const cleanPhone = String(s.parent_phone || '').replace(/\D/g, '').slice(-10);
+    const category = [s.class, s.section].filter(Boolean).join('-') || null;
+    await supabase.from('profiles').upsert({
+      full_name: s.name || admission,
+      display_name: s.name || admission,
+      admission_number: admission,
+      employee_id: admission,
+      class: s.class || null,
+      section: s.section || null,
+      category,
+      father_name: s.father_name || null,
+      parent_name: s.father_name || null,
+      mother_name: s.mother_name || null,
+      parent_phone: cleanPhone || null,
+      phone: cleanPhone || null,
+      date_of_birth: s.date_of_birth || null,
+      address: s.address || null,
+      role: 'student',
+      ...(portraitUrl ? { avatar_url: portraitUrl, photo_url: portraitUrl } : {}),
+      updated_at: new Date().toISOString(),
+    }, { onConflict: 'admission_number' });
+    return { saved: true, admission_number: admission } as unknown as T;
+  }
+
   if (action === 'sample') {
     return { saved: true } as unknown as T;
   }
@@ -98,8 +170,27 @@ async function handleEnrollmentFallback<T>(action: string, body: Record<string, 
     return { corrections: [] } as unknown as T;
   }
 
+  if (action === 'staff.review') {
+    return { saved: true } as unknown as T;
+  }
+
   if (action === 'staff.revert') {
-    return { reverted: true, admission: body.admission } as unknown as T;
+    const admission = String(body.admission || '').trim();
+    if (admission) {
+      try {
+        await supabase.from('face_descriptors').delete().eq('student_id', admission);
+        await supabase.from('profiles').update({
+          avatar_url: null,
+          photo_url: null,
+          updated_at: new Date().toISOString(),
+        }).or(`admission_number.ilike.${admission},employee_id.ilike.${admission}`);
+      } catch {}
+    }
+    return { reverted: true, admission } as unknown as T;
+  }
+
+  if (action === 'staff.deleteStudent') {
+    return { deleted: true, admission: String(body.admission || '') } as unknown as T;
   }
 
   return null;
@@ -122,7 +213,6 @@ export async function enrollmentApi<T>(action: string, body: Record<string, unkn
       async: false, 
       xpath: '/', 
       method: ExecutionMethod.POST,
-      headers: jwt ? { 'x-appwrite-user-jwt': jwt } : undefined,
     });
     
     let data: T & { error?: string };
@@ -149,7 +239,8 @@ export async function enrollmentApi<T>(action: string, body: Record<string, unkn
       msg.includes('billing cycle') ||
       msg.includes('budget cap') ||
       msg.includes('Enrollment service is unavailable') ||
-      msg.includes('Enrollment request failed')
+      msg.includes('Enrollment request failed') ||
+      msg.includes('Function with the requested ID could not be found')
     ) {
       const fb = await handleEnrollmentFallback<T>(action, body);
       if (fb !== null) return fb;

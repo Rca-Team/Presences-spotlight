@@ -262,6 +262,8 @@ export function getOptimizedStudentPhotoUrl(
   if (match) {
     const bucketId = match[1];
     const fileId = match[2];
+    const projMatch = cleanUrl.match(/[?&]project=([a-zA-Z0-9]+)/);
+    const projectIdOverride = projMatch?.[1];
     return getAppwriteStoragePreviewUrl(bucketId, fileId, {
       width: options?.width || 300,
       height: options?.height || 300,
@@ -269,7 +271,7 @@ export function getOptimizedStudentPhotoUrl(
       gravity: options?.gravity || 'center',
       output: options?.output || 'webp',
       ...options,
-    });
+    }, projectIdOverride);
   }
 
   return cleanUrl;

@@ -350,60 +350,73 @@ export async function recognizeFace(faceDescriptor: Float32Array): Promise<Recog
     const confidence = clamp01(distanceToConfidence(best.distance));
     console.log(`Best match: ${best.userName}, dist=${best.distance.toFixed(4)}, confidence=${(confidence * 100).toFixed(1)}%`);
 
-    // Fetch user info — try by user_id first, then by student_id (employee_id)
-    let regData: any = null;
-    const { data: byUserId } = await supabase
-      .from('attendance_records')
-      .select('id, user_id, device_info')
-      .eq('user_id', best.userId)
-      .in('status', ['registered', 'pending_approval'])
-      .limit(1)
-      .maybeSingle();
-    regData = byUserId;
+    const matchedGalleryEntry = trainedDescriptors.get(best.userId);
+    let resolvedName = best.userName || matchedGalleryEntry?.userName || 'Unknown';
+    let resolvedEmployeeId = (best as any).studentId || matchedGalleryEntry?.studentId || '';
+    let resolvedDept = matchedGalleryEntry?.department || '';
+    let resolvedPos = matchedGalleryEntry?.position || '';
+    let avatarUrl = matchedGalleryEntry?.avatarUrl || '';
 
-    // Fallback: look up by employee_id (student_id) — covers unauthenticated registrations
-    if (!regData && (best as any).studentId) {
-      const { data: byStudentId } = await supabase
-        .from('attendance_records')
-        .select('id, user_id, device_info')
-        .eq('student_id', (best as any).studentId)
-        .in('status', ['registered', 'pending_approval'])
-        .order('timestamp', { ascending: false })
-        .limit(1)
-        .maybeSingle();
-      regData = byStudentId;
+    // Fast path: if the pre-computed profile gallery already supplied studentId, skip DB lookups completely!
+    if (!resolvedEmployeeId || resolvedName === 'Unknown') {
+      const profileData = await getCachedProfile(best.userId);
+      if (profileData) {
+        if (!avatarUrl && profileData.avatar_url) avatarUrl = profileData.avatar_url;
+        if (!resolvedEmployeeId) resolvedEmployeeId = profileData.admission_number || profileData.employee_id || '';
+        if (!resolvedDept || resolvedDept === 'Unknown') {
+          resolvedDept = profileData.category || (profileData.class && profileData.section ? `${profileData.class}-${profileData.section}` : '');
+        }
+        if (!resolvedPos || resolvedPos === 'Unknown') {
+          resolvedPos = profileData.roll_number || 'Student';
+        }
+        if (resolvedName === 'Unknown') {
+          resolvedName = profileData.full_name || profileData.display_name || 'Unknown';
+        }
+      }
     }
 
-    // Fallback: look up by name match when all id lookups fail
-    if (!regData && best.userName && best.userName !== 'Unknown') {
-      const { data: byName } = await supabase
+    if (!resolvedEmployeeId || resolvedName === 'Unknown') {
+      let regData: any = null;
+      const { data: byUserId } = await supabase
         .from('attendance_records')
         .select('id, user_id, device_info')
-        .eq('student_name', best.userName)
+        .eq('user_id', best.userId)
         .in('status', ['registered', 'pending_approval'])
-        .order('timestamp', { ascending: false })
         .limit(1)
         .maybeSingle();
-      regData = byName;
+      regData = byUserId;
+
+      if (!regData && (best as any).studentId) {
+        const { data: byStudentId } = await supabase
+          .from('attendance_records')
+          .select('id, user_id, device_info')
+          .eq('student_id', (best as any).studentId)
+          .in('status', ['registered', 'pending_approval'])
+          .order('timestamp', { ascending: false })
+          .limit(1)
+          .maybeSingle();
+        regData = byStudentId;
+      }
+
+      const employeeData = (regData?.device_info as DeviceInfo | null)?.metadata ?? null;
+      if (employeeData) {
+        if (resolvedName === 'Unknown' && employeeData.name) resolvedName = employeeData.name;
+        if (!resolvedEmployeeId && employeeData.employee_id) resolvedEmployeeId = employeeData.employee_id;
+        if ((!resolvedDept || resolvedDept === 'Unknown') && employeeData.department) resolvedDept = employeeData.department;
+        if ((!resolvedPos || resolvedPos === 'Unknown') && employeeData.position) resolvedPos = employeeData.position;
+        if (!avatarUrl && employeeData.firebase_image_url) avatarUrl = employeeData.firebase_image_url;
+      }
     }
-
-    let avatarUrl = '';
-    const employeeData = (regData?.device_info as DeviceInfo | null)?.metadata ?? null;
-    const profileData  = await getCachedProfile(best.userId);
-    if (profileData?.avatar_url) avatarUrl = profileData.avatar_url;
-
-    // Resolve the best available name: registration metadata → face_descriptor name → 'Unknown'
-    const resolvedName = employeeData?.name || best.userName || 'Unknown';
 
     return {
       recognized: true,
       employee: {
         id:                best.userId,
         name:              resolvedName,
-        employee_id:       employeeData?.employee_id || (best as any).studentId || 'Unknown',
-        department:        employeeData?.department  || 'Unknown',
-        position:          employeeData?.position    || 'Unknown',
-        firebase_image_url: employeeData?.firebase_image_url || '',
+        employee_id:       resolvedEmployeeId || 'Unknown',
+        department:        resolvedDept || 'Unknown',
+        position:          resolvedPos || 'Student',
+        firebase_image_url: avatarUrl,
         avatar_url:        avatarUrl,
         trainingSamples:   best.sampleCount,
       },

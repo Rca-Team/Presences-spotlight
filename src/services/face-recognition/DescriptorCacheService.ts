@@ -44,13 +44,63 @@ export async function initializeDescriptorCache(): Promise<void> {
   await syncFromSupabase();
 }
 
+import { getAllTrainedDescriptors, invalidateTrainedDescriptorsCache } from './ProgressiveTrainingService';
+
 /**
  * Sync descriptors from Lovable Cloud into the in-memory index.
  */
 export async function syncFromSupabase(): Promise<number> {
-  console.log('Loading descriptors from Lovable Cloud...');
+  console.log('Loading descriptors from pre-computed gallery cache...');
   
   try {
+    invalidateTrainedDescriptorsCache();
+    const gallery = await getAllTrainedDescriptors(true);
+
+    descriptorMap.clear();
+    kdTree = null;
+
+    if (gallery.size > 0) {
+      const now = Date.now();
+      for (const [userId, entry] of gallery.entries()) {
+        // Index the robust centroid descriptor
+        const centroidId = `${userId}:centroid`;
+        descriptorMap.set(centroidId, {
+          id: centroidId,
+          userId,
+          name: entry.userName || 'Unknown',
+          descriptor: Array.from(entry.averagedDescriptor),
+          imageUrl: entry.avatarUrl,
+          category: entry.department,
+          createdAt: now,
+          lastUsed: now,
+        });
+
+        // Also index diverse pose exemplars
+        entry.descriptors.forEach((vec, idx) => {
+          const exId = `${userId}:ex:${idx}`;
+          descriptorMap.set(exId, {
+            id: exId,
+            userId,
+            name: entry.userName || 'Unknown',
+            descriptor: Array.from(vec),
+            imageUrl: entry.avatarUrl,
+            category: entry.department,
+            createdAt: now,
+            lastUsed: now,
+          });
+        });
+      }
+
+      const allDescriptors = Array.from(descriptorMap.values());
+      if (allDescriptors.length > 0) {
+        kdTree = buildKDTree(allDescriptors);
+      }
+
+      console.log(`Loaded ${allDescriptors.length} compact descriptors (${gallery.size} students) into recognition cache`);
+      return allDescriptors.length;
+    }
+
+    // Fallback to raw face_descriptors if gallery was empty
     const { data, error } = await supabase
       .from('face_descriptors')
       .select('*')
@@ -60,9 +110,6 @@ export async function syncFromSupabase(): Promise<number> {
       console.error('Error fetching descriptors:', error);
       throw error;
     }
-
-    descriptorMap.clear();
-    kdTree = null;
 
     if (data && data.length > 0) {
       for (const record of data) {
@@ -87,48 +134,6 @@ export async function syncFromSupabase(): Promise<number> {
         };
         descriptorMap.set(descriptor.id, descriptor);
       }
-    }
-
-    // Resilient fallback: ensure registered students from attendance_records are also indexed
-    try {
-      const { data: regRecords } = await supabase
-        .from('attendance_records')
-        .select('id, user_id, student_id, student_name, face_descriptor, image_url, created_at, timestamp')
-        .eq('status', 'registered');
-
-      if (regRecords && regRecords.length > 0) {
-        for (const reg of regRecords) {
-          const studentKey = reg.student_id || reg.user_id || reg.id;
-          const alreadyIndexed = Array.from(descriptorMap.values()).some(
-            d => d.userId === studentKey || d.userId === reg.id || (reg.student_name && d.name === reg.student_name)
-          );
-
-          if (!alreadyIndexed && reg.face_descriptor) {
-            let parsed = reg.face_descriptor;
-            if (typeof parsed === 'string') {
-              try {
-                parsed = JSON.parse(parsed);
-              } catch {
-                parsed = null;
-              }
-            }
-            if (Array.isArray(parsed) && parsed.length > 0) {
-              const descriptor: CachedDescriptor = {
-                id: reg.id,
-                userId: studentKey,
-                name: reg.student_name || 'Unknown',
-                descriptor: parsed as number[],
-                imageUrl: reg.image_url,
-                createdAt: new Date(reg.created_at || reg.timestamp || Date.now()).getTime(),
-                lastUsed: Date.now()
-              };
-              descriptorMap.set(descriptor.id, descriptor);
-            }
-          }
-        }
-      }
-    } catch (fallbackErr) {
-      console.warn('Fallback attendance_records descriptor sync notice:', fallbackErr);
     }
 
     const allDescriptors = Array.from(descriptorMap.values());

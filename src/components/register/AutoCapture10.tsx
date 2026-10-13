@@ -126,9 +126,19 @@ const AutoCapture10: React.FC<AutoCapture10Props> = ({
     const interval = Math.floor(durationMs / totalShots);
     const collected: { image: string; descriptor: Float32Array }[] = [];
 
-    for (let i = 0; i < totalShots * 3 && collected.length < totalShots; i++) {
+    const euclideanDist = (a: Float32Array, b: Float32Array) => {
+      if (a.length !== b.length) return Infinity;
+      let sum = 0;
+      for (let k = 0; k < a.length; k++) {
+        const d = a[k] - b[k];
+        sum += d * d;
+      }
+      return Math.sqrt(sum);
+    };
+
+    const maxAttempts = totalShots * 3;
+    for (let i = 0; i < maxAttempts && collected.length < totalShots; i++) {
       if (!runningRef.current) break;
-      // Update guidance hint progressively
       const hintIdx = Math.min(
         HINTS.length - 1,
         Math.floor((collected.length / totalShots) * HINTS.length)
@@ -137,10 +147,15 @@ const AutoCapture10: React.FC<AutoCapture10Props> = ({
 
       const shot = await captureOne(collected.length === 0);
       if (shot) {
-        collected.push(shot);
-        setShots([...collected]);
+        // Skip near-identical burst frame if we still have plenty of attempts left
+        const isTooSimilar =
+          i < maxAttempts - totalShots &&
+          collected.some((prev) => euclideanDist(prev.descriptor, shot.descriptor) < 0.032);
+        if (!isTooSimilar) {
+          collected.push(shot);
+          setShots([...collected]);
+        }
       }
-      // Small wait between attempts
       await new Promise((r) => setTimeout(r, interval));
     }
 
@@ -152,21 +167,23 @@ const AutoCapture10: React.FC<AutoCapture10Props> = ({
       return;
     }
 
-    // Average all descriptors
-    const averaged = new Float32Array(collected[0].descriptor.length);
-    for (let i = 0; i < averaged.length; i++) {
-      let s = 0;
-      for (const c of collected) s += c.descriptor[i];
-      averaged[i] = s / collected.length;
-    }
+    // Compute outlier-rejected centroid and distinct pose samples
+    const { filterDistinctCaptureSamples } = await import(
+      '@/services/face-recognition/ProgressiveTrainingService'
+    );
+    const filtered = filterDistinctCaptureSamples(
+      collected.map((c) => c.descriptor),
+      collected.map((c) => c.image),
+      6
+    );
 
     setDone(true);
-    setHint(`Captured ${collected.length} samples!`);
+    setHint(`Captured ${filtered.distinctDescriptors.length} distinct angle samples!`);
     onComplete(
-      averaged,
+      filtered.centroid,
       collected[0].image,
-      collected.map((c) => c.descriptor),
-      collected.map((c) => c.image)
+      filtered.distinctDescriptors,
+      filtered.distinctImages
     );
   }, [captureOne, cameraReady, done, durationMs, isModelLoading, isRunning, onComplete, totalShots]);
 

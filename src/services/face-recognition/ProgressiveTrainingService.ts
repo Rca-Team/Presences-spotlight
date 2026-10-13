@@ -52,6 +52,107 @@ interface TrainingSample {
  * Only high-confidence captures are accepted so that mis-recognitions don't
  * corrupt the gallery.
  */
+const MIN_DISTINCT_VECTOR_DIST = 0.042;
+const MAX_REGISTRATION_POSE_EXEMPLARS = 6;
+
+/**
+ * Filter a list of captured descriptors + images to remove outlier frames and
+ * near-identical burst duplicates (< 0.042 Euclidean distance).
+ */
+export function filterDistinctCaptureSamples(
+  descriptors: Float32Array[],
+  images: string[] = [],
+  maxCount = MAX_REGISTRATION_POSE_EXEMPLARS
+): {
+  centroid: Float32Array;
+  distinctDescriptors: Float32Array[];
+  distinctImages: string[];
+} {
+  const validPairs: { desc: Float32Array; img: string }[] = [];
+  for (let i = 0; i < descriptors.length; i++) {
+    const d = descriptors[i];
+    if (d && d.length >= 64) {
+      validPairs.push({ desc: d, img: images[i] || images[0] || '' });
+    }
+  }
+  if (validPairs.length === 0) {
+    return { centroid: new Float32Array(128), distinctDescriptors: [], distinctImages: [] };
+  }
+
+  const centroid = robustAverage(validPairs.map((p) => p.desc));
+
+  // Filter out motion-blur / extreme outliers relative to centroid
+  const distsToCentroid = validPairs.map((p) => euclideanDistance(p.desc, centroid));
+  const sortedDists = [...distsToCentroid].sort((a, b) => a - b);
+  const medianDist = sortedDists[Math.floor(sortedDists.length / 2)] || 0.12;
+  const outlierCutoff = Math.max(medianDist * 2.5, 0.22);
+
+  const inlierPairs = validPairs.filter((_, idx) => distsToCentroid[idx] <= outlierCutoff);
+  const pool = inlierPairs.length > 0 ? inlierPairs : validPairs;
+
+  // Deduplicate near-identical consecutive/burst captures (< MIN_DISTINCT_VECTOR_DIST)
+  const deduped: { desc: Float32Array; img: string }[] = [];
+  for (const candidate of pool) {
+    const isDuplicate = deduped.some(
+      (existing) => euclideanDistance(existing.desc, candidate.desc) < MIN_DISTINCT_VECTOR_DIST
+    );
+    if (!isDuplicate) {
+      deduped.push(candidate);
+    }
+  }
+
+  // Ensure at least the closest-to-centroid sample is included
+  if (deduped.length === 0) {
+    deduped.push(pool[0]);
+  }
+
+  // If more than maxCount remain, select the most diverse pose exemplars via farthest-point sampling
+  let selected = deduped;
+  if (deduped.length > maxCount) {
+    selected = [];
+    let bestIdx = 0;
+    let bestDist = Infinity;
+    for (let i = 0; i < deduped.length; i++) {
+      const d = euclideanDistance(deduped[i].desc, centroid);
+      if (d < bestDist) {
+        bestDist = d;
+        bestIdx = i;
+      }
+    }
+    const chosen = new Set<number>([bestIdx]);
+    selected.push(deduped[bestIdx]);
+
+    while (selected.length < maxCount && chosen.size < deduped.length) {
+      let farthestIdx = -1;
+      let maxMinDist = -1;
+      for (let i = 0; i < deduped.length; i++) {
+        if (chosen.has(i)) continue;
+        let minDist = Infinity;
+        for (const s of selected) {
+          const d = euclideanDistance(deduped[i].desc, s.desc);
+          if (d < minDist) minDist = d;
+        }
+        if (minDist > maxMinDist) {
+          maxMinDist = minDist;
+          farthestIdx = i;
+        }
+      }
+      if (farthestIdx === -1) break;
+      chosen.add(farthestIdx);
+      selected.push(deduped[farthestIdx]);
+    }
+  }
+
+  return {
+    centroid,
+    distinctDescriptors: selected.map((s) => s.desc),
+    distinctImages: selected.map((s) => s.img),
+  };
+}
+
+/**
+ * Persist a new face sample for a student with automatic duplicate & outlier protection.
+ */
 export async function storeFaceSample(
   userId:         string,
   faceDescriptor: Float32Array,
@@ -72,95 +173,88 @@ export async function storeFaceSample(
       return false;
     }
 
-    // 2. Anti-Contamination Gate: Verify distance against the user's existing enrolled descriptors
-    const { data: existingSamples } = await supabase
+    // 1. Single query to fetch existing samples for this user (replaces 3 separate queries!)
+    const { data: existingSamples, error: fetchErr } = await supabase
       .from('face_descriptors')
-      .select('descriptor')
+      .select('id, descriptor, student_id, student_name, class, section, category, image_url, created_at')
       .eq('user_id', userId)
-      .limit(5);
+      .order('created_at', { ascending: false });
 
-    if (existingSamples && existingSamples.length > 0) {
-      let minDistanceToBaseline = Infinity;
-      for (const sample of existingSamples) {
-        if (!sample.descriptor) continue;
-        const enrolledVec = stringToDescriptor(sample.descriptor);
-        if (enrolledVec.length === faceDescriptor.length) {
-          let sum = 0;
-          for (let i = 0; i < enrolledVec.length; i++) {
-            const diff = enrolledVec[i] - faceDescriptor[i];
-            sum += diff * diff;
-          }
-          const dist = Math.sqrt(sum);
-          if (dist < minDistanceToBaseline) minDistanceToBaseline = dist;
-        }
-      }
-
-      // If the new capture is further than 0.38 from verified baseline, reject to prevent gallery contamination!
-      if (minDistanceToBaseline > 0.38 && confidence !== 1.0) {
-        console.warn(
-          `Rejecting training sample: distance ${minDistanceToBaseline.toFixed(3)} > 0.38 from baseline`
-        );
-        return false;
-      }
-    }
-
-    // Enforce per-user sample cap (FIFO eviction of oldest)
-    const { count, error: countErr } = await supabase
-      .from('face_descriptors')
-      .select('*', { count: 'exact', head: true })
-      .eq('user_id', userId);
-
-    if (countErr) {
-      console.error('Error counting samples:', countErr);
+    if (fetchErr) {
+      console.error('Error fetching existing samples:', fetchErr);
       return false;
     }
 
-    if ((count || 0) >= MAX_SAMPLES_PER_USER) {
-      const { data: oldest, error: fetchErr } = await supabase
-        .from('face_descriptors')
-        .select('id')
-        .eq('user_id', userId)
-        .order('created_at', { ascending: true })
-        .limit(1)
-        .single();
+    const existingList = existingSamples || [];
+    let minDistanceToExisting = Infinity;
 
-      if (!fetchErr && oldest) {
-        await supabase.from('face_descriptors').delete().eq('id', oldest.id);
+    for (const sample of existingList) {
+      if (!sample.descriptor) continue;
+      const enrolledVec = parseStoredDescriptor(sample.descriptor);
+      if (enrolledVec && enrolledVec.length === faceDescriptor.length) {
+        const dist = euclideanDistance(enrolledVec, faceDescriptor);
+        if (dist < minDistanceToExisting) minDistanceToExisting = dist;
       }
     }
 
-    // Upload image if provided
+    // 2. Duplicate Vector Gate: Skip if an identical or near-identical vector is already stored!
+    if (minDistanceToExisting < MIN_DISTINCT_VECTOR_DIST) {
+      console.log(
+        `[ProgressiveTraining] Skipping redundant duplicate sample for ${userId} (dist=${minDistanceToExisting.toFixed(4)} < ${MIN_DISTINCT_VECTOR_DIST})`
+      );
+      return true;
+    }
+
+    // 3. Anti-Contamination Gate: Reject if too far from verified baseline
+    if (existingList.length >= 2 && Number.isFinite(minDistanceToExisting) && minDistanceToExisting > 0.44) {
+      console.warn(
+        `[ProgressiveTraining] Rejecting outlier sample for ${userId}: distance ${minDistanceToExisting.toFixed(3)} > 0.44 from baseline`
+      );
+      return false;
+    }
+
+    // 4. Enforce per-user sample cap (FIFO eviction of oldest beyond MAX_SAMPLES_PER_USER)
+    if (existingList.length >= MAX_SAMPLES_PER_USER) {
+      const toDelete = existingList.slice(MAX_SAMPLES_PER_USER - 1);
+      for (const oldRow of toDelete) {
+        await supabase.from('face_descriptors').delete().eq('id', oldRow.id);
+      }
+    }
+
+    const existingScopeRow: any = existingList[0] || null;
+    const resolvedStudentName = studentContext?.student_name || existingScopeRow?.student_name || userName;
+    const resolvedStudentId = studentContext?.student_id ?? existingScopeRow?.student_id ?? null;
+    const resolvedClass = studentContext?.class ?? existingScopeRow?.class ?? null;
+    const resolvedSection = studentContext?.section ?? existingScopeRow?.section ?? null;
+    const resolvedCategory = studentContext?.category ?? existingScopeRow?.category ?? null;
+
+    // 5. Upload image only once (never duplicate into attendance-training-faces during registration!)
     let imageUrl: string | null = null;
     if (imageBlob) {
       try {
-        const fileName = `training_${userId}_${Date.now()}.jpg`;
-        const file     = new File([imageBlob], fileName, { type: 'image/jpeg' });
-        imageUrl = await uploadImage(file, `training/${userId}/${fileName}`);
+        const safeKey = String(resolvedStudentId || userId).replace(/[^a-zA-Z0-9_-]/g, '_');
+        const slotIdx = (existingList.length % MAX_REGISTRATION_POSE_EXEMPLARS) + 1;
+        const fileName = `pose_${slotIdx}.jpg`;
+        const file = new File([imageBlob], fileName, { type: 'image/jpeg' });
+        imageUrl = await uploadImage(file, `students/${safeKey}/faces/${fileName}`, 'student-registration-faces');
 
-        await uploadAttendanceTrainingImage({
-          imageBlob,
-          studentId: userId,
-          status:    'present',
-          mode:      'ai-scan',
-          confidence,
-        });
+        if (confidence < 1.0) {
+          await uploadAttendanceTrainingImage({
+            imageBlob,
+            studentId: userId,
+            status: 'present',
+            mode: 'ai-scan',
+            confidence,
+          });
+        }
       } catch (uploadErr) {
         console.error('Training image upload error:', uploadErr);
       }
     }
 
-    // Inherit the student's class scope and photo from an existing sample or profile
-    const { data: existingScopeRow } = await supabase
-      .from('face_descriptors')
-      .select('student_id, student_name, class, section, category, image_url')
-      .eq('user_id', userId)
-      .order('created_at', { ascending: false })
-      .limit(1)
-      .maybeSingle();
-
     if (!imageUrl) {
-      if ((existingScopeRow as any)?.image_url) {
-        imageUrl = (existingScopeRow as any).image_url;
+      if (existingScopeRow?.image_url) {
+        imageUrl = existingScopeRow.image_url;
       } else {
         const { data: profile } = await supabase
           .from('profiles')
@@ -173,23 +267,17 @@ export async function storeFaceSample(
       }
     }
 
-    const resolvedStudentName = studentContext?.student_name || (existingScopeRow as any)?.student_name || userName;
-    const resolvedStudentId = studentContext?.student_id ?? (existingScopeRow as any)?.student_id ?? null;
-    const resolvedClass = studentContext?.class ?? (existingScopeRow as any)?.class ?? null;
-    const resolvedSection = studentContext?.section ?? (existingScopeRow as any)?.section ?? null;
-    const resolvedCategory = studentContext?.category ?? (existingScopeRow as any)?.category ?? null;
-
     const { error: insertErr } = await supabase.from('face_descriptors').insert({
-      user_id:   userId,
-      descriptor: descriptorToString(faceDescriptor),
-      image_url:  imageUrl,
-      label:      userName,
+      user_id:      userId,
+      descriptor:   descriptorToString(faceDescriptor),
+      image_url:    imageUrl,
+      label:        resolvedStudentName,
       student_name: resolvedStudentName,
-      student_id: resolvedStudentId,
-      class:      resolvedClass,
-      section:    resolvedSection,
-      category:   resolvedCategory,
-      metadata:   confidence === 1.0 ? { registration: 'true' } : {},
+      student_id:   resolvedStudentId,
+      class:        resolvedClass,
+      section:      resolvedSection,
+      category:     resolvedCategory,
+      metadata:     confidence === 1.0 ? { registration: 'true' } : {},
     });
 
     if (insertErr) {
@@ -197,7 +285,8 @@ export async function storeFaceSample(
       return false;
     }
 
-    console.log(`Training sample stored for ${userId} (confidence ${confidence.toFixed(2)})`);
+    await syncUserBiometricSummaryToProfile(userId, resolvedStudentId);
+    invalidateTrainedDescriptorsCache();
     return true;
   } catch (err) {
     console.error('storeFaceSample error:', err);
@@ -206,10 +295,269 @@ export async function storeFaceSample(
 }
 
 /**
+ * Deduplicate and batch-store multi-angle registration descriptors for a student in one clean pass.
+ * Prevents duplicate rows, prevents stacking old + new registrations, and avoids redundant image uploads.
+ */
+export async function storeRegistrationSamplesBatch(params: {
+  userId: string;
+  studentId?: string | null;
+  studentName: string;
+  className?: string | null;
+  section?: string | null;
+  category?: string | null;
+  primaryImageUrl?: string | null;
+  descriptors: Float32Array[];
+  sampleImages?: string[];
+  replaceExisting?: boolean;
+}): Promise<{ storedCount: number; centroid: Float32Array }> {
+  const {
+    userId,
+    studentId,
+    studentName,
+    className,
+    section,
+    category,
+    primaryImageUrl,
+    descriptors,
+    sampleImages = [],
+    replaceExisting = true,
+  } = params;
+
+  const { centroid, distinctDescriptors, distinctImages } = filterDistinctCaptureSamples(
+    descriptors,
+    sampleImages,
+    MAX_REGISTRATION_POSE_EXEMPLARS
+  );
+
+  if (distinctDescriptors.length === 0) {
+    return { storedCount: 0, centroid };
+  }
+
+  const cleanSid = studentId ? String(studentId).trim() : null;
+  const safeStudentKey = String(cleanSid || userId).replace(/[^a-zA-Z0-9_-]/g, '_');
+
+  // 1. If replaceExisting is true, remove old face_descriptors for this student so rows never stack up
+  if (replaceExisting) {
+    try {
+      const orFilter = cleanSid
+        ? `user_id.eq.${userId},student_id.eq.${cleanSid}`
+        : `user_id.eq.${userId}`;
+      await supabase.from('face_descriptors').delete().or(orFilter);
+    } catch (delErr) {
+      console.warn('[storeRegistrationSamplesBatch] Cleanup notice:', delErr);
+    }
+  }
+
+  // 2. Upload distinct pose images to deterministic paths (up to 4 extra pose images; reuse primaryImageUrl for slot 0)
+  const uploadedUrls: string[] = [];
+  for (let i = 0; i < distinctDescriptors.length; i++) {
+    if (i === 0 && primaryImageUrl) {
+      uploadedUrls.push(primaryImageUrl);
+      continue;
+    }
+    const rawImg = distinctImages[i];
+    if (rawImg && rawImg.startsWith('data:image/')) {
+      try {
+        const res = await fetch(rawImg);
+        const blob = await res.blob();
+        const fileName = `pose_${i + 1}.jpg`;
+        const file = new File([blob], fileName, { type: 'image/jpeg' });
+        const url = await uploadImage(
+          file,
+          `students/${safeStudentKey}/faces/${fileName}`,
+          'student-registration-faces'
+        );
+        uploadedUrls.push(url || primaryImageUrl || '');
+      } catch {
+        uploadedUrls.push(primaryImageUrl || '');
+      }
+    } else if (rawImg && /^https?:\/\//.test(rawImg)) {
+      uploadedUrls.push(rawImg);
+    } else {
+      uploadedUrls.push(primaryImageUrl || '');
+    }
+  }
+
+  // 3. Build batch rows: 1 master_centroid row + distinct pose exemplar rows
+  const rowsToInsert: Record<string, any>[] = [
+    {
+      user_id: userId,
+      student_id: cleanSid,
+      student_name: studentName,
+      label: studentName,
+      descriptor: descriptorToString(centroid),
+      image_url: primaryImageUrl || uploadedUrls[0] || null,
+      class: className || null,
+      section: section || null,
+      category: category || null,
+      metadata: {
+        registration: 'true',
+        pose: 'master_centroid',
+        is_primary: true,
+        sample_count: distinctDescriptors.length,
+        captured_at: new Date().toISOString(),
+      },
+    },
+  ];
+
+  // Add distinct pose vectors (skip if only 1 vector since centroid already equals it)
+  if (distinctDescriptors.length > 1) {
+    for (let i = 0; i < distinctDescriptors.length; i++) {
+      rowsToInsert.push({
+        user_id: userId,
+        student_id: cleanSid,
+        student_name: studentName,
+        label: studentName,
+        descriptor: descriptorToString(distinctDescriptors[i]),
+        image_url: uploadedUrls[i] || primaryImageUrl || null,
+        class: className || null,
+        section: section || null,
+        category: category || null,
+        metadata: {
+          registration: 'true',
+          pose: `angle_${i + 1}`,
+          is_primary: false,
+          captured_at: new Date().toISOString(),
+        },
+      });
+    }
+  }
+
+  const { error: batchErr } = await supabase.from('face_descriptors').insert(rowsToInsert);
+  if (batchErr) {
+    console.error('[storeRegistrationSamplesBatch] Batch insert error:', batchErr);
+  }
+
+  await syncUserBiometricSummaryToProfile(userId, cleanSid);
+  invalidateTrainedDescriptorsCache();
+
+  return { storedCount: rowsToInsert.length, centroid };
+}
+
+export interface TrainedUserEntry {
+  descriptors:        Float32Array[];
+  averagedDescriptor: Float32Array;
+  userName:           string;
+  studentId:          string | null;
+  sampleCount:        number;
+  avatarUrl?:         string;
+  department?:        string;
+  position?:          string;
+}
+
+const TRAINED_GALLERY_CACHE_TTL_MS = 5 * 60 * 1000;
+let trainedGalleryCache: {
+  expiresAt: number;
+  scopeKey: string;
+  data: Map<string, TrainedUserEntry>;
+} | null = null;
+let trainedGalleryInFlight: Promise<Map<string, TrainedUserEntry>> | null = null;
+
+export function invalidateTrainedDescriptorsCache(): void {
+  trainedGalleryCache = null;
+  trainedGalleryInFlight = null;
+}
+
+if (typeof window !== 'undefined') {
+  window.addEventListener('presence:descriptors-updated', () => {
+    invalidateTrainedDescriptorsCache();
+  });
+}
+
+/**
+ * Recompute and persist a user's compact biometric_summary (centroid + up to 5 diverse exemplars)
+ * directly onto their `profiles.metadata` row so recognition only needs to read 1 row per student.
+ */
+export async function syncUserBiometricSummaryToProfile(
+  userId: string,
+  studentId?: string | null
+): Promise<void> {
+  try {
+    const { data: fdRows } = await supabase
+      .from('face_descriptors')
+      .select('descriptor, metadata')
+      .eq('user_id', userId);
+
+    if (!fdRows || fdRows.length === 0) return;
+
+    const vectors: Float32Array[] = [];
+    const glassesSet = new Set<'with' | 'without'>();
+    for (const r of fdRows) {
+      const vec = parseStoredDescriptor(r.descriptor);
+      if (vec) vectors.push(vec);
+      const meta: any = typeof r.metadata === 'string' ? (() => { try { return JSON.parse(r.metadata); } catch { return null; } })() : r.metadata;
+      if (meta && (meta.glasses === 'with' || meta.glasses === 'without')) {
+        glassesSet.add(meta.glasses);
+      }
+    }
+    if (vectors.length === 0) return;
+
+    const centroid = robustAverage(vectors);
+    const exemplars = selectDiverseExemplars(vectors, centroid, 5);
+    const roundVec = (v: Float32Array) => Array.from(v, (n) => Number(n.toFixed(5)));
+
+    let profileRow: any = null;
+    const { data: byUid } = await supabase
+      .from('profiles')
+      .select('id, metadata')
+      .eq('user_id', userId)
+      .limit(1)
+      .maybeSingle();
+    profileRow = byUid;
+
+    if (!profileRow && studentId) {
+      const { data: bySid } = await supabase
+        .from('profiles')
+        .select('id, metadata')
+        .or(`admission_number.eq.${studentId},employee_id.eq.${studentId}`)
+        .limit(1)
+        .maybeSingle();
+      profileRow = bySid;
+    }
+
+    if (!profileRow?.id) return;
+
+    let prevMeta: Record<string, any> = {};
+    try {
+      prevMeta = typeof profileRow.metadata === 'string'
+        ? JSON.parse(profileRow.metadata)
+        : (profileRow.metadata || {});
+    } catch {
+      prevMeta = {};
+    }
+
+    const updatedMeta = {
+      ...prevMeta,
+      biometric_summary: {
+        version: 1,
+        centroid_descriptor: roundVec(centroid),
+        exemplar_descriptors: exemplars.map(roundVec),
+        sample_count: vectors.length,
+        has_glasses_profile: glassesSet.has('with') && glassesSet.has('without'),
+        updated_at: new Date().toISOString(),
+      },
+    };
+
+    await supabase
+      .from('profiles')
+      .update({ metadata: updatedMeta })
+      .eq('id', profileRow.id);
+  } catch (err) {
+    console.warn('syncUserBiometricSummaryToProfile warning:', err);
+  }
+}
+
+/**
  * Fetch all face descriptors for a single user.
  */
 export async function getUserFaceDescriptors(userId: string): Promise<Float32Array[]> {
   try {
+    // Check in-memory gallery cache first
+    if (trainedGalleryCache && trainedGalleryCache.expiresAt > Date.now()) {
+      const cached = trainedGalleryCache.data.get(userId);
+      if (cached && cached.descriptors.length > 0) return cached.descriptors;
+    }
+
     const { data, error } = await supabase
       .from('face_descriptors')
       .select('descriptor')
@@ -227,123 +575,214 @@ export async function getUserFaceDescriptors(userId: string): Promise<Float32Arr
 }
 
 /**
- * Load all students with their full descriptor galleries.
+ * Load all students with their descriptor galleries.
  *
- * Returns a Map keyed by userId where each entry contains:
- *   - descriptors       : every individual Float32Array sample
- *   - averagedDescriptor: robust mean of the gallery (with outlier rejection)
- *   - userName
- *   - sampleCount
+ * Optimization #1:
+ *   - Uses an in-memory parsed Float32Array cache (5 min TTL) so camera frames
+ *     do ZERO JSON parsing or centroid recomputation.
+ *   - Reads pre-computed `metadata.biometric_summary` (`centroid_descriptor` +
+ *     up to 5 diverse `exemplar_descriptors`) directly from `profiles` (47 rows,
+ *     1 single page read) instead of downloading 652 individual `face_descriptors` rows!
+ *   - Automatically falls back to `face_descriptors` if `profiles` has no summaries.
  */
-export async function getAllTrainedDescriptors(): Promise<Map<string, {
-  descriptors:        Float32Array[];
-  averagedDescriptor: Float32Array;
-  userName:           string;
-  sampleCount:        number;
-}>> {
+export async function getAllTrainedDescriptors(forceFresh = false): Promise<Map<string, TrainedUserEntry>> {
   try {
-    const { data, error } = await supabase
-      .from('face_descriptors')
-      .select('user_id, descriptor, label, student_name, student_id, class, section, category, metadata')
-      .order('created_at', { ascending: false });
-
-    if (error) {
-      console.error('getAllTrainedDescriptors query failed:', error);
-      return new Map();
-    }
-    if (!data?.length) return new Map();
-
-    // Class-teacher accounts only match against their own class roster.
     const scope = await getGalleryScope();
-    const rows = scope.userIds ? data.filter((r: any) => isRowInGalleryScope(scope, r)) : data;
-    if (!rows.length) return new Map();
+    const scopeKey = scope.userIds
+      ? `scoped:${Array.from(scope.userIds).sort().join(',')}:${scope.categories.join(',')}`
+      : 'unrestricted';
 
-    // Group by user with alias resolution to guarantee 1 entry per physical student
-    const aliasToCanonical = new Map<string, string>();
-    const grouped = new Map<string, { descriptors: Float32Array[]; userName: string; studentId: string | null }>();
-
-    for (const rec of rows) {
-      const desc = parseStoredDescriptor(rec.descriptor);
-      if (!desc) continue;
-
-      // Prefer student_name (set at registration), then label (set by training), then metadata.name
-      const resolvedName =
-        (rec as any).student_name ||
-        rec.label ||
-        ((rec as any).metadata as any)?.name ||
-        'Unknown';
-      const resolvedStudentId = (rec as any).student_id ? String((rec as any).student_id).trim() : null;
-      const normName = resolvedName !== 'Unknown' ? resolvedName.toLowerCase().trim() : null;
-
-      // Find canonical key by student_id, normalized name, or user_id
-      let canonicalKey = (resolvedStudentId && aliasToCanonical.get(`sid:${resolvedStudentId}`)) ||
-                         (normName && aliasToCanonical.get(`name:${normName}`)) ||
-                         aliasToCanonical.get(`uid:${rec.user_id}`);
-
-      if (!canonicalKey) {
-        canonicalKey = rec.user_id;
-        aliasToCanonical.set(`uid:${rec.user_id}`, canonicalKey);
-        if (resolvedStudentId) aliasToCanonical.set(`sid:${resolvedStudentId}`, canonicalKey);
-        if (normName) aliasToCanonical.set(`name:${normName}`, canonicalKey);
-      } else {
-        // Associate this row's identifiers to the established canonical key
-        aliasToCanonical.set(`uid:${rec.user_id}`, canonicalKey);
-        if (resolvedStudentId) aliasToCanonical.set(`sid:${resolvedStudentId}`, canonicalKey);
-        if (normName) aliasToCanonical.set(`name:${normName}`, canonicalKey);
-      }
-
-      if (!grouped.has(canonicalKey)) {
-        grouped.set(canonicalKey, { descriptors: [], userName: resolvedName, studentId: resolvedStudentId });
-      } else if (resolvedName !== 'Unknown') {
-        const g = grouped.get(canonicalKey)!;
-        if (g.userName === 'Unknown') g.userName = resolvedName;
-        if (!g.studentId && resolvedStudentId) g.studentId = resolvedStudentId;
-      }
-      grouped.get(canonicalKey)!.descriptors.push(desc);
+    if (
+      !forceFresh &&
+      trainedGalleryCache &&
+      trainedGalleryCache.expiresAt > Date.now() &&
+      trainedGalleryCache.scopeKey === scopeKey &&
+      trainedGalleryCache.data.size > 0
+    ) {
+      return trainedGalleryCache.data;
     }
 
-    // Build result with robust averaged descriptor
-    const result = new Map<string, {
-      descriptors:        Float32Array[];
-      averagedDescriptor: Float32Array;
-      userName:           string;
-      studentId:          string | null;
-      sampleCount:        number;
-    }>();
+    if (!forceFresh && trainedGalleryInFlight) {
+      return trainedGalleryInFlight;
+    }
 
-    for (const [userId, { descriptors, userName, studentId }] of grouped) {
-      // Partition by dimension — never mix 128-dim and 512-dim descriptors in the same average.
-      // Keep the largest group (most samples) and discard the minority dimension.
-      const dimGroups = new Map<number, Float32Array[]>();
-      for (const d of descriptors) {
-        const group = dimGroups.get(d.length) ?? [];
-        group.push(d);
-        dimGroups.set(d.length, group);
-      }
-      // Pick the dimension with the most samples
-      let dominantDim = 128;
-      let dominantGroup: Float32Array[] = [];
-      for (const [dim, group] of dimGroups) {
-        if (group.length > dominantGroup.length) {
-          dominantDim  = dim;
-          dominantGroup = group;
+    trainedGalleryInFlight = (async () => {
+      try {
+        const result = new Map<string, TrainedUserEntry>();
+
+        // ── FAST PATH: Read 1 row per student from `profiles` (47 rows vs 652 rows!) ──
+        const { data: profilesData, error: profilesErr } = await supabase
+          .from('profiles')
+          .select('id, user_id, full_name, display_name, admission_number, employee_id, roll_number, class, section, category, department, position, avatar_url, photo_url, metadata');
+
+        if (!profilesErr && profilesData && profilesData.length > 0) {
+          const scopedProfiles = scope.userIds
+            ? profilesData.filter((p: any) => isRowInGalleryScope(scope, p))
+            : profilesData;
+
+          for (const p of scopedProfiles) {
+            let meta: any = p.metadata;
+            if (typeof meta === 'string') {
+              try { meta = JSON.parse(meta); } catch { meta = null; }
+            }
+            const bio = meta?.biometric_summary;
+            if (!bio?.centroid_descriptor) continue;
+
+            const centroid = parseStoredDescriptor(bio.centroid_descriptor);
+            if (!centroid) continue;
+
+            const exemplars: Float32Array[] = [];
+            if (Array.isArray(bio.exemplar_descriptors)) {
+              for (const ex of bio.exemplar_descriptors) {
+                const parsedEx = parseStoredDescriptor(ex);
+                if (parsedEx && parsedEx.length === centroid.length) {
+                  exemplars.push(parsedEx);
+                }
+              }
+            }
+            if (exemplars.length === 0) {
+              exemplars.push(centroid);
+            }
+
+            const uid = String(p.user_id || p.id).trim();
+            const userName = String(p.full_name || p.display_name || meta?.name || 'Unknown').trim();
+            const studentId = String(p.admission_number || p.employee_id || meta?.student_id || '').trim() || null;
+            const dept = String(p.category || (p.class && p.section ? `${p.class}-${p.section}` : p.department || meta?.department || 'Unknown')).trim();
+            const pos = String(p.roll_number || p.position || meta?.roll_number || 'Student').trim();
+            const avatarUrl = String(p.avatar_url || p.photo_url || meta?.avatar_url || '').trim();
+
+            result.set(uid, {
+              descriptors:        exemplars,
+              averagedDescriptor: centroid,
+              userName,
+              studentId,
+              sampleCount:        Number(bio.sample_count) || exemplars.length,
+              avatarUrl,
+              department:         dept,
+              position:           pos,
+            });
+          }
         }
+
+        // If `profiles` fast-path loaded our enrolled students, cache and return immediately!
+        if (result.size > 0) {
+          trainedGalleryCache = {
+            expiresAt: Date.now() + TRAINED_GALLERY_CACHE_TTL_MS,
+            scopeKey,
+            data: result,
+          };
+          console.log(`[FastGallery] Loaded ${result.size} student centroids from profiles in 1 page read`);
+          return result;
+        }
+
+        // ── FALLBACK PATH: Full scan of `face_descriptors` if profiles had no summaries ──
+        const { data, error } = await supabase
+          .from('face_descriptors')
+          .select('user_id, descriptor, label, student_name, student_id, class, section, category, image_url, metadata')
+          .order('created_at', { ascending: false });
+
+        if (error || !data?.length) return new Map();
+
+        const rows = scope.userIds ? data.filter((r: any) => isRowInGalleryScope(scope, r)) : data;
+        if (!rows.length) return new Map();
+
+        const aliasToCanonical = new Map<string, string>();
+        const grouped = new Map<string, {
+          descriptors: Float32Array[];
+          userName: string;
+          studentId: string | null;
+          avatarUrl: string;
+          department: string;
+        }>();
+
+        for (const rec of rows) {
+          const desc = parseStoredDescriptor(rec.descriptor);
+          if (!desc) continue;
+
+          const resolvedName =
+            (rec as any).student_name ||
+            rec.label ||
+            ((rec as any).metadata as any)?.name ||
+            'Unknown';
+          const resolvedStudentId = (rec as any).student_id ? String((rec as any).student_id).trim() : null;
+          const normName = resolvedName !== 'Unknown' ? resolvedName.toLowerCase().trim() : null;
+
+          let canonicalKey = (resolvedStudentId && aliasToCanonical.get(`sid:${resolvedStudentId}`)) ||
+                             (normName && aliasToCanonical.get(`name:${normName}`)) ||
+                             aliasToCanonical.get(`uid:${rec.user_id}`);
+
+          if (!canonicalKey) {
+            canonicalKey = rec.user_id;
+            aliasToCanonical.set(`uid:${rec.user_id}`, canonicalKey);
+            if (resolvedStudentId) aliasToCanonical.set(`sid:${resolvedStudentId}`, canonicalKey);
+            if (normName) aliasToCanonical.set(`name:${normName}`, canonicalKey);
+          } else {
+            aliasToCanonical.set(`uid:${rec.user_id}`, canonicalKey);
+            if (resolvedStudentId) aliasToCanonical.set(`sid:${resolvedStudentId}`, canonicalKey);
+            if (normName) aliasToCanonical.set(`name:${normName}`, canonicalKey);
+          }
+
+          const dept = (rec as any).category || ((rec as any).class && (rec as any).section ? `${(rec as any).class}-${(rec as any).section}` : 'Unknown');
+          const img = (rec as any).image_url || '';
+
+          if (!grouped.has(canonicalKey)) {
+            grouped.set(canonicalKey, {
+              descriptors: [],
+              userName: resolvedName,
+              studentId: resolvedStudentId,
+              avatarUrl: img,
+              department: dept,
+            });
+          } else {
+            const g = grouped.get(canonicalKey)!;
+            if (g.userName === 'Unknown' && resolvedName !== 'Unknown') g.userName = resolvedName;
+            if (!g.studentId && resolvedStudentId) g.studentId = resolvedStudentId;
+            if (!g.avatarUrl && img) g.avatarUrl = img;
+          }
+          grouped.get(canonicalKey)!.descriptors.push(desc);
+        }
+
+        for (const [userId, { descriptors, userName, studentId, avatarUrl, department }] of grouped) {
+          const dimGroups = new Map<number, Float32Array[]>();
+          for (const d of descriptors) {
+            const group = dimGroups.get(d.length) ?? [];
+            group.push(d);
+            dimGroups.set(d.length, group);
+          }
+          let dominantGroup: Float32Array[] = [];
+          for (const [, group] of dimGroups) {
+            if (group.length > dominantGroup.length) {
+              dominantGroup = group;
+            }
+          }
+          if (dominantGroup.length === 0) continue;
+
+          const averaged = robustAverage(dominantGroup);
+          const exemplars = selectDiverseExemplars(dominantGroup, averaged, 5);
+          result.set(userId, {
+            descriptors:        exemplars,
+            averagedDescriptor: averaged,
+            userName,
+            studentId:          studentId ?? null,
+            sampleCount:        dominantGroup.length,
+            avatarUrl,
+            department,
+          });
+        }
+
+        trainedGalleryCache = {
+          expiresAt: Date.now() + TRAINED_GALLERY_CACHE_TTL_MS,
+          scopeKey,
+          data: result,
+        };
+        console.log(`Loaded ${result.size} users with trained descriptors (fallback path)`);
+        return result;
+      } finally {
+        trainedGalleryInFlight = null;
       }
+    })();
 
-      if (dominantGroup.length === 0) continue;
-
-      const averaged = robustAverage(dominantGroup);
-      result.set(userId, {
-        descriptors:        dominantGroup,
-        averagedDescriptor: averaged,
-        userName,
-        studentId:          studentId ?? null,
-        sampleCount: dominantGroup.length,
-      });
-    }
-
-    console.log(`Loaded ${result.size} users with trained descriptors`);
-    return result;
+    return trainedGalleryInFlight;
   } catch (err) {
     console.error('getAllTrainedDescriptors error:', err);
     return new Map();
@@ -383,6 +822,31 @@ export async function getUserTrainingStats(userId: string): Promise<{
   hasGlassesProfile: boolean;
 }> {
   try {
+    // Fast path from cached profiles biometric_summary
+    const { data: profileRow } = await supabase
+      .from('profiles')
+      .select('metadata, created_at, updated_at')
+      .eq('user_id', userId)
+      .maybeSingle();
+
+    if (profileRow?.metadata) {
+      const meta: any = typeof profileRow.metadata === 'string'
+        ? (() => { try { return JSON.parse(profileRow.metadata); } catch { return null; } })()
+        : profileRow.metadata;
+      const bio = meta?.biometric_summary;
+      if (bio && typeof bio.sample_count === 'number' && bio.sample_count > 0) {
+        const n = bio.sample_count;
+        const ts = bio.updated_at || profileRow.updated_at || profileRow.created_at || new Date().toISOString();
+        return {
+          sampleCount: n,
+          oldestSample: new Date(profileRow.created_at || ts),
+          newestSample: new Date(ts),
+          trainingLevel: n === 0 ? 'none' : n < 3 ? 'basic' : n < 5 ? 'moderate' : n < 8 ? 'good' : 'excellent',
+          hasGlassesProfile: Boolean(bio.has_glasses_profile),
+        };
+      }
+    }
+
     const { data, error } = await supabase
       .from('face_descriptors')
       .select('created_at, metadata')
@@ -394,7 +858,6 @@ export async function getUserTrainingStats(userId: string): Promise<{
     }
 
     const n = data.length;
-    // metadata is a free-form Json column; narrow it instead of assuming its shape.
     const glassesStates = new Set<'with' | 'without'>();
     for (const row of data) {
       const meta: unknown = row.metadata;
@@ -421,6 +884,20 @@ export async function getTrainingStats(): Promise<{
   averageSamplesPerUser: number;
 }> {
   try {
+    const gallery = await getAllTrainedDescriptors();
+    if (gallery.size > 0) {
+      let totalSamples = 0;
+      for (const entry of gallery.values()) {
+        totalSamples += entry.sampleCount;
+      }
+      const usersWithSamples = gallery.size;
+      return {
+        totalSamples,
+        usersWithSamples,
+        averageSamplesPerUser: totalSamples / usersWithSamples,
+      };
+    }
+
     const { data, error } = await supabase.from('face_descriptors').select('user_id');
     if (error || !data) return { totalSamples: 0, usersWithSamples: 0, averageSamplesPerUser: 0 };
 
@@ -442,6 +919,14 @@ export async function getTrainingStats(): Promise<{
 
 export async function getUsersWithTrainingSamples(): Promise<Array<{ userId: string; sampleCount: number }>> {
   try {
+    const gallery = await getAllTrainedDescriptors();
+    if (gallery.size > 0) {
+      return Array.from(gallery.entries()).map(([userId, entry]) => ({
+        userId,
+        sampleCount: entry.sampleCount,
+      }));
+    }
+
     const { data, error } = await supabase.from('face_descriptors').select('user_id');
     if (error || !data) return [];
 
@@ -510,6 +995,59 @@ function robustAverage(descriptors: Float32Array[]): Float32Array {
   for (let i = 0; i < dim; i++) robust[i] /= inliers.length;
 
   return robust;
+}
+
+function selectDiverseExemplars(
+  descriptors: Float32Array[],
+  centroid: Float32Array,
+  maxExemplars = 5
+): Float32Array[] {
+  if (descriptors.length <= maxExemplars) return descriptors;
+
+  // Filter out outliers relative to centroid
+  const dists = descriptors.map(d => euclideanDistance(d, centroid));
+  const sorted = [...dists].sort((a, b) => a - b);
+  const median = sorted[Math.floor(sorted.length / 2)] || 0.1;
+  const cutoff = Math.max(median * 2.5, 0.08);
+  const inliers = descriptors.filter((_, idx) => dists[idx] <= cutoff);
+  const pool = inliers.length > 0 ? inliers : descriptors;
+
+  if (pool.length <= maxExemplars) return pool;
+
+  const exemplars: Float32Array[] = [];
+  let bestIdx = 0;
+  let bestDist = Infinity;
+  for (let i = 0; i < pool.length; i++) {
+    const d = euclideanDistance(pool[i], centroid);
+    if (d < bestDist) {
+      bestDist = d;
+      bestIdx = i;
+    }
+  }
+  const chosen = new Set<number>([bestIdx]);
+  exemplars.push(pool[bestIdx]);
+
+  while (exemplars.length < maxExemplars && chosen.size < pool.length) {
+    let farthestIdx = -1;
+    let maxMinDist = -1;
+    for (let i = 0; i < pool.length; i++) {
+      if (chosen.has(i)) continue;
+      let minDist = Infinity;
+      for (const ex of exemplars) {
+        const d = euclideanDistance(pool[i], ex);
+        if (d < minDist) minDist = d;
+      }
+      if (minDist > maxMinDist) {
+        maxMinDist = minDist;
+        farthestIdx = i;
+      }
+    }
+    if (farthestIdx === -1 || maxMinDist < 0.025) break;
+    chosen.add(farthestIdx);
+    exemplars.push(pool[farthestIdx]);
+  }
+
+  return exemplars;
 }
 
 function parseStoredDescriptor(raw: unknown): Float32Array | null {
