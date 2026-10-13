@@ -903,6 +903,7 @@ export default function EnrollmentMonitor() {
   const [data, setData] = useState<MonitorOverview | null>(() => getCachedMonitorOverview());
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(() => !getCachedMonitorOverview());
+  const [syncing, setSyncing] = useState(false);
   const [query, setQuery] = useState('');
   const [category, setCategory] = useState('all');
   const [filter, setFilter] = useState<Filter>('all');
@@ -922,6 +923,7 @@ export default function EnrollmentMonitor() {
   const [isDeleting, setIsDeleting] = useState(false);
   const [deleteProgress, setDeleteProgress] = useState('');
   const [showScrollTop, setShowScrollTop] = useState(false);
+  const searchInputRef = React.useRef<HTMLInputElement | null>(null);
 
   const parentLink = `${window.location.origin}/enroll`;
   const backTo =
@@ -1214,11 +1216,33 @@ export default function EnrollmentMonitor() {
     return () => window.removeEventListener('scroll', handleScroll);
   }, []);
 
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      const target = e.target as HTMLElement | null;
+      const isInput =
+        target &&
+        (target.tagName === 'INPUT' ||
+          target.tagName === 'TEXTAREA' ||
+          target.isContentEditable);
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') {
+        e.preventDefault();
+        searchInputRef.current?.focus();
+        searchInputRef.current?.select();
+      } else if (!isInput && e.key === '/') {
+        e.preventDefault();
+        searchInputRef.current?.focus();
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, []);
+
   const hasDataRef = React.useRef(Boolean(data));
   hasDataRef.current = Boolean(data);
 
   const load = useCallback(async (force = false) => {
     if (!force && !hasDataRef.current) setLoading(true);
+    setSyncing(true);
     try {
       const fresh = await fetchMonitor(force);
       setData(fresh);
@@ -1229,20 +1253,28 @@ export default function EnrollmentMonitor() {
       }
     } finally {
       setLoading(false);
+      setSyncing(false);
     }
   }, []);
 
   useEffect(() => {
-    void load();
+    void load(true);
   }, [load]);
 
   useEffect(() => {
-    const id = window.setInterval(() => {
+    const onFocusOrVisible = () => {
       if (document.visibilityState === 'visible' && (typeof navigator === 'undefined' || navigator.onLine)) {
-        void load(false);
+        void load(true);
       }
-    }, 120000);
-    return () => window.clearInterval(id);
+    };
+    window.addEventListener('focus', onFocusOrVisible);
+    document.addEventListener('visibilitychange', onFocusOrVisible);
+    const id = window.setInterval(onFocusOrVisible, 90000);
+    return () => {
+      window.removeEventListener('focus', onFocusOrVisible);
+      document.removeEventListener('visibilitychange', onFocusOrVisible);
+      window.clearInterval(id);
+    };
   }, [load]);
 
   const handleImportClassCards = async (cards: ExtractedStudentCard[], _batchName: string) => {
@@ -1521,6 +1553,11 @@ export default function EnrollmentMonitor() {
       .slice(0, 6);
   }, [students, query, getSearchScore]);
 
+  const nextPendingStudent = useMemo(
+    () => visible.find((s) => !isStudentEnrolled(s)) || students.find((s) => !isStudentEnrolled(s)) || null,
+    [visible, students]
+  );
+
   const selectedStudent = students.find((s) => s.admission_number === selectedStudentAdm) ?? null;
 
   const allVisibleSelected =
@@ -1646,13 +1683,18 @@ export default function EnrollmentMonitor() {
                     variant="outline"
                     className="border-emerald-500/30 bg-emerald-500/10 text-emerald-400 text-[11px] font-medium gap-1.5"
                   >
-                    <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 animate-pulse" />
-                    Appwrite Cloud Synced
+                    <span
+                      className={cn(
+                        'h-1.5 w-1.5 rounded-full bg-emerald-400',
+                        syncing ? 'animate-ping' : 'animate-pulse'
+                      )}
+                    />
+                    {syncing ? 'Syncing Live…' : 'Appwrite Cloud Live'}
                   </Badge>
                 </div>
                 <p className="text-xs text-slate-400 mt-0.5 truncate">
                   {data
-                    ? `${stats.total} registered students across ${classes.length} class sections · Updated ${ago(data.generatedAt)}`
+                    ? `${stats.total} registered students across ${classes.length} class sections · ${stats.done} enrolled (${stats.pct}%) · Updated ${ago(data.generatedAt)}`
                     : 'Loading student roster and biometric status from Appwrite Cloud…'}
                 </p>
               </div>
@@ -1660,12 +1702,26 @@ export default function EnrollmentMonitor() {
 
             {/* Action Toolbar */}
             <div className="flex flex-wrap items-center gap-2">
+              {data?.canManage && nextPendingStudent && (
+                <Button
+                  size="sm"
+                  onClick={() => handleLaunchDirectCapture(nextPendingStudent)}
+                  className="h-9 px-3.5 rounded-xl text-xs font-bold bg-emerald-500 hover:bg-emerald-400 text-slate-950 shadow-md shadow-emerald-500/20 gap-1.5"
+                  title={`Immediately capture face & verify details for next pending student: ${nextPendingStudent.name} (#${nextPendingStudent.admission_number})`}
+                >
+                  <Camera className="h-3.5 w-3.5" />
+                  <span>
+                    Scan Next: {nextPendingStudent.name.split(' ')[0]} (#{nextPendingStudent.admission_number})
+                  </span>
+                </Button>
+              )}
+
               {data?.canManage && (
                 <>
                   <Button
                     size="sm"
                     onClick={() => setUploadOpen(true)}
-                    className="h-9 px-3.5 rounded-xl text-xs font-semibold bg-emerald-600 hover:bg-emerald-500 text-white shadow-sm gap-1.5"
+                    className="h-9 px-3.5 rounded-xl text-xs font-semibold bg-emerald-600/90 hover:bg-emerald-500 text-white shadow-sm gap-1.5"
                   >
                     <Upload className="h-3.5 w-3.5" />
                     Import ID Cards (PDF)
@@ -1710,10 +1766,10 @@ export default function EnrollmentMonitor() {
                 size="sm"
                 variant="outline"
                 onClick={() => void load(true)}
-                disabled={loading}
+                disabled={loading || syncing}
                 className="h-9 px-3 rounded-xl text-xs font-medium border-slate-700 bg-slate-800/60 hover:bg-slate-800 text-slate-200 gap-1.5"
               >
-                <RefreshCw className={cn('h-3.5 w-3.5', loading && 'animate-spin text-emerald-400')} />
+                <RefreshCw className={cn('h-3.5 w-3.5', (loading || syncing) && 'animate-spin text-emerald-400')} />
                 Refresh
               </Button>
             </div>
@@ -1934,6 +1990,7 @@ export default function EnrollmentMonitor() {
                       <div className="relative flex-1 lg:w-80">
                         <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-emerald-400" />
                         <Input
+                          ref={searchInputRef}
                           placeholder="Search student name or admission no (Press Enter to Capture)..."
                           value={query}
                           onChange={(e) => setQuery(e.target.value)}
@@ -2065,6 +2122,16 @@ export default function EnrollmentMonitor() {
                                 </div>
                               </div>
                               <div className="flex items-center gap-1.5 shrink-0">
+                                <Button
+                                  type="button"
+                                  size="sm"
+                                  variant="outline"
+                                  onClick={() => setSelectedStudentAdm(match.admission_number)}
+                                  className="h-8 px-2.5 rounded-lg border-slate-700 bg-slate-900 hover:bg-slate-800 text-slate-200 text-xs"
+                                  title="Inspect & Edit Student Details"
+                                >
+                                  <Eye className="h-3.5 w-3.5 text-cyan-400" />
+                                </Button>
                                 <Button
                                   type="button"
                                   size="sm"

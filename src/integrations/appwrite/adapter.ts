@@ -863,9 +863,13 @@ export class AppwriteQueryBuilder<T = any> implements PromiseLike<{ data: T | nu
     return this;
   }
 
+  private requestedLimit: number | null = null;
+
   limit(count: number): this {
+    const rawCount = Math.max(1, Number(count) || 25);
+    this.requestedLimit = rawCount;
     // Appwrite Cloud strictly caps single query limit to 100. Queries with limit > 100 trigger 400 Bad Request.
-    const safeCount = Math.max(1, Math.min(Number(count) || 25, 100));
+    const safeCount = Math.min(rawCount, 100);
     try {
       this.queries = this.queries.filter(q => {
         try {
@@ -955,8 +959,13 @@ export class AppwriteQueryBuilder<T = any> implements PromiseLike<{ data: T | nu
     const boundedSingleRead = !all && !this.mutation && (this.isSingle || this.isMaybeSingle);
     if (!hasLimit) queries.push(Query.limit(boundedSingleRead ? 2 : 100));
 
-    const canCache = !this.mutation && !all && (!boundedSingleRead || queries.length > 1);
-    const cacheKey = `${this.collectionName}:${JSON.stringify(queries)}:${boundedSingleRead ? 'single' : 'list'}`;
+    const shouldPaginate =
+      !boundedSingleRead &&
+      !queries.some(q => { try { return JSON.parse(q).method === 'offset'; } catch { return false; } }) &&
+      (all || (this.requestedLimit !== null && this.requestedLimit > 100));
+
+    const canCache = !this.mutation && (!boundedSingleRead || queries.length > 1);
+    const cacheKey = `${this.collectionName}:${JSON.stringify(queries)}:${boundedSingleRead ? 'single' : 'list'}:max=${all ? 'all' : (this.requestedLimit ?? 100)}`;
     if (canCache) {
       const cached = queryCache.get(cacheKey);
       if (cached && cached.expiresAt > Date.now()) {
@@ -969,7 +978,7 @@ export class AppwriteQueryBuilder<T = any> implements PromiseLike<{ data: T | nu
 
     const fetchPromise = (async () => {
       if (Date.now() < appwriteReadQuotaCooldownUntil) {
-        const fbResult = await querySupabaseFallback(this.collectionName, queries, all || (!hasLimit && !boundedSingleRead));
+        const fbResult = await querySupabaseFallback(this.collectionName, queries, shouldPaginate || (!hasLimit && !boundedSingleRead));
         if (canCache) {
           queryCache.set(cacheKey, { data: fbResult, expiresAt: Date.now() + 20000 });
         }
@@ -978,12 +987,32 @@ export class AppwriteQueryBuilder<T = any> implements PromiseLike<{ data: T | nu
       try {
         const response = await databases.listDocuments(DATABASE_ID, this.collectionName, queries);
         const documents = [...response.documents];
-        if (all && !boundedSingleRead && !queries.some(q => { try { return JSON.parse(q).method === 'offset'; } catch { return false; } })) {
-          while (documents.length < response.total) {
-            const page = await databases.listDocuments(DATABASE_ID, this.collectionName,
-              [...queries.filter(q => { try { return JSON.parse(q).method !== 'limit'; } catch { return false; } }), Query.limit(100), Query.offset(documents.length)]);
-            if (!page.documents.length) break;
-            documents.push(...page.documents);
+        if (shouldPaginate && response.total > documents.length) {
+          const targetTotal = all ? response.total : Math.min(response.total, this.requestedLimit || 100);
+          const baseQueries = queries.filter(q => {
+            try { return !['limit', 'offset'].includes(JSON.parse(q).method); } catch { return true; }
+          });
+          const offsets: number[] = [];
+          for (let offset = documents.length; offset < targetTotal; offset += 100) {
+            offsets.push(offset);
+          }
+          const PAGE_CONCURRENCY = 6;
+          for (let i = 0; i < offsets.length; i += PAGE_CONCURRENCY) {
+            const chunk = offsets.slice(i, i + PAGE_CONCURRENCY);
+            const pages = await Promise.all(
+              chunk.map(offset =>
+                databases.listDocuments(DATABASE_ID, this.collectionName, [
+                  ...baseQueries,
+                  Query.limit(Math.min(100, targetTotal - offset)),
+                  Query.offset(offset),
+                ])
+              )
+            );
+            for (const page of pages) {
+              if (page.documents?.length) {
+                documents.push(...page.documents);
+              }
+            }
           }
         }
         const result = { documents, total: response.total };

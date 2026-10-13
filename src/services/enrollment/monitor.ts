@@ -1,6 +1,7 @@
 import { enrollmentApi } from './api';
 import type { StudentDetails } from './types';
 import { supabase } from '@/integrations/supabase/client';
+import { invalidateCollectionCache } from '@/integrations/appwrite/adapter';
 import { normalizeClassSection } from '@/utils/studentIdentityResolver';
 import { resolveStudentPhotoUrl } from '@/utils/studentPhotoResolver';
 
@@ -88,12 +89,14 @@ export interface MonitorOverview {
 }
 
 let inMemoryOverviewCache: MonitorOverview | null = null;
-const CACHE_STORAGE_KEY = 'presences:enrollment_monitor_cache_v2';
+const CACHE_STORAGE_KEY = 'presences:enrollment_monitor_cache_v3';
 
 export function getCachedMonitorOverview(): MonitorOverview | null {
   if (inMemoryOverviewCache) return inMemoryOverviewCache;
   try {
-    const raw = sessionStorage.getItem(CACHE_STORAGE_KEY);
+    const raw =
+      sessionStorage.getItem(CACHE_STORAGE_KEY) ||
+      localStorage.getItem(CACHE_STORAGE_KEY);
     if (raw) {
       const parsed = JSON.parse(raw) as MonitorOverview;
       if (parsed && Array.isArray(parsed.students) && parsed.students.length > 0) {
@@ -108,7 +111,9 @@ export function getCachedMonitorOverview(): MonitorOverview | null {
 export function saveCachedMonitorOverview(data: MonitorOverview) {
   inMemoryOverviewCache = data;
   try {
-    sessionStorage.setItem(CACHE_STORAGE_KEY, JSON.stringify(data));
+    const serialized = JSON.stringify(data);
+    sessionStorage.setItem(CACHE_STORAGE_KEY, serialized);
+    localStorage.setItem(CACHE_STORAGE_KEY, serialized);
   } catch {}
 }
 
@@ -125,24 +130,29 @@ export function removeStudentFromMonitorCache(admissionNumber: string) {
     };
   }
 
-  try {
-    const raw = sessionStorage.getItem(CACHE_STORAGE_KEY);
-    if (raw) {
-      const parsed = JSON.parse(raw) as MonitorOverview;
-      if (parsed && Array.isArray(parsed.students)) {
-        parsed.students = parsed.students.filter(
-          (s) => s.admission_number.trim().toLowerCase() !== clean
-        );
-        sessionStorage.setItem(CACHE_STORAGE_KEY, JSON.stringify(parsed));
+  for (const store of [sessionStorage, localStorage]) {
+    try {
+      const raw = store.getItem(CACHE_STORAGE_KEY);
+      if (raw) {
+        const parsed = JSON.parse(raw) as MonitorOverview;
+        if (parsed && Array.isArray(parsed.students)) {
+          parsed.students = parsed.students.filter(
+            (s) => s.admission_number.trim().toLowerCase() !== clean
+          );
+          store.setItem(CACHE_STORAGE_KEY, JSON.stringify(parsed));
+        }
       }
-    }
-  } catch {}
+    } catch {}
+  }
 }
 
 export function clearMonitorCache() {
   inMemoryOverviewCache = null;
+  invalidateCollectionCache('profiles');
+  invalidateCollectionCache('face_descriptors');
   try {
     sessionStorage.removeItem(CACHE_STORAGE_KEY);
+    localStorage.removeItem(CACHE_STORAGE_KEY);
   } catch {}
 }
 
@@ -168,7 +178,10 @@ function parseMetadataObject(rawMeta: unknown): Record<string, any> {
 }
 
 export const fetchMonitor = async (force = false): Promise<MonitorOverview> => {
-  if (!force && inMemoryOverviewCache && Date.now() - inMemoryOverviewCache.generatedAt < 25000) {
+  if (force) {
+    invalidateCollectionCache('profiles');
+    invalidateCollectionCache('face_descriptors');
+  } else if (inMemoryOverviewCache && Date.now() - inMemoryOverviewCache.generatedAt < 20000) {
     return inMemoryOverviewCache;
   }
   if (inFlightMonitorRequest) {
@@ -182,7 +195,8 @@ export const fetchMonitor = async (force = false): Promise<MonitorOverview> => {
           .from('profiles')
           .select(
             'id, user_id, full_name, display_name, admission_number, employee_id, roll_number, class, section, category, parent_phone, phone, parent_name, father_name, address, blood_group, email, parent_email, avatar_url, photo_url, metadata, role, updated_at, created_at'
-          );
+          )
+          .limit(5000);
         return (data || []) as any[];
       } catch (err) {
         console.warn('[EnrollmentMonitor] Profiles fetch fallback:', err);
@@ -194,7 +208,8 @@ export const fetchMonitor = async (force = false): Promise<MonitorOverview> => {
       try {
         const { data } = await supabase
           .from('face_descriptors')
-          .select('id, student_id, user_id, label, student_name, class, section, category, image_url, metadata, created_at');
+          .select('id, student_id, user_id, label, student_name, class, section, category, image_url, metadata, created_at')
+          .limit(5000);
         return (data || []) as any[];
       } catch (err) {
         console.warn('[EnrollmentMonitor] Descriptors fetch fallback:', err);
@@ -202,36 +217,28 @@ export const fetchMonitor = async (force = false): Promise<MonitorOverview> => {
       }
     };
 
-    const fetchBackend = async () => {
-      if (typeof navigator !== 'undefined' && !navigator.onLine) return cachedBackendOverview;
-      if (Date.now() < backendUnavailableCooldownUntil) return cachedBackendOverview;
-      // Avoid invoking expensive multi-collection cloud scan more than once every 5 minutes
+    const triggerBackgroundBackendSync = () => {
+      if (typeof navigator !== 'undefined' && !navigator.onLine) return;
+      if (Date.now() < backendUnavailableCooldownUntil) return;
       if (!force && cachedBackendOverview && Date.now() - lastBackendFetchAt < 300000) {
-        return cachedBackendOverview;
+        return;
       }
-
-      try {
-        const timeout = new Promise<null>((resolve) => setTimeout(() => resolve(null), 2200));
-        const req = enrollmentApi<MonitorOverview>('staff.monitor')
-          .then((res) => {
-            if (res && Array.isArray(res.students)) {
-              cachedBackendOverview = res;
-              lastBackendFetchAt = Date.now();
-            }
-            return res;
-          })
-          .catch(() => {
-            backendUnavailableCooldownUntil = Date.now() + 10 * 60 * 1000;
-            return cachedBackendOverview;
-          });
-        return (await Promise.race([req, timeout])) || cachedBackendOverview;
-      } catch {
-        return cachedBackendOverview;
-      }
+      lastBackendFetchAt = Date.now();
+      void enrollmentApi<MonitorOverview>('staff.monitor')
+        .then((res) => {
+          if (res && Array.isArray(res.students)) {
+            cachedBackendOverview = res;
+          }
+        })
+        .catch(() => {
+          backendUnavailableCooldownUntil = Date.now() + 10 * 60 * 1000;
+        });
     };
 
-    const [backendResult, rawProfiles, rawDescriptors] = await Promise.all([
-      fetchBackend(),
+    // Trigger non-blocking cloud function sync for corrections/activity while resolving profiles + descriptors immediately (~200ms)
+    triggerBackgroundBackendSync();
+
+    const [rawProfiles, rawDescriptors] = await Promise.all([
       fetchProfiles(),
       fetchDescriptors(),
     ]);
@@ -276,27 +283,26 @@ export const fetchMonitor = async (force = false): Promise<MonitorOverview> => {
       if (d.user_id) addDescriptorRef(String(d.user_id), d);
     }
 
-    const baseOverview: MonitorOverview = backendResult
-      ? {
-          ...backendResult,
-          students: Array.isArray(backendResult.students) ? [...backendResult.students] : [],
-          activity: Array.isArray(backendResult.activity) ? [...backendResult.activity] : [],
-          corrections: Array.isArray(backendResult.corrections) ? [...backendResult.corrections] : [],
-        }
-      : {
-          scope: { all: true, classes: [] },
-          generatedAt: Date.now(),
-          students: [],
-          activity: [],
-          corrections: [],
-          canManage: true,
-        };
+    // Index any auxiliary state from cachedBackendOverview (such as pending corrections, active sessions, or samples)
+    // WITHOUT injecting deleted/stale students into the roster
+    const backendStudentAuxMap = new Map<string, MonitorStudent>();
+    if (cachedBackendOverview?.students) {
+      for (const s of cachedBackendOverview.students) {
+        const key = (s.admission_number || '').trim().toLowerCase();
+        if (key) backendStudentAuxMap.set(key, s);
+      }
+    }
+
+    const baseOverview: MonitorOverview = {
+      scope: cachedBackendOverview?.scope || { all: true, classes: [] },
+      generatedAt: Date.now(),
+      students: [],
+      activity: Array.isArray(cachedBackendOverview?.activity) ? [...cachedBackendOverview!.activity] : [],
+      corrections: Array.isArray(cachedBackendOverview?.corrections) ? [...cachedBackendOverview!.corrections] : [],
+      canManage: cachedBackendOverview?.canManage ?? true,
+    };
 
     const studentMap = new Map<string, MonitorStudent>();
-    for (const s of baseOverview.students) {
-      const key = (s.admission_number || '').trim().toLowerCase();
-      if (key) studentMap.set(key, { ...s });
-    }
 
     for (const p of rawProfiles) {
       if (p.role && p.role !== 'student') continue;
@@ -418,6 +424,17 @@ export const fetchMonitor = async (force = false): Promise<MonitorOverview> => {
           }
         }
       } else {
+        const backendAux = backendStudentAuxMap.get(lowerAdm);
+        const mergedSamples = fallbackSamples.length
+          ? fallbackSamples
+          : backendAux?.samples || [];
+        const effectiveFace = hasFace || Boolean(backendAux?.faceOnFile) || mergedSamples.length > 0;
+        const effectiveStatus: MonitorStatus = effectiveFace
+          ? 'completed'
+          : backendAux?.status && backendAux.status !== 'completed'
+          ? backendAux.status
+          : 'not_started';
+
         const newStudent: MonitorStudent = {
           id: p.id || p.$id,
           userId: p.user_id || p.id || p.$id,
@@ -426,35 +443,40 @@ export const fetchMonitor = async (force = false): Promise<MonitorOverview> => {
           roll_number: rollNo,
           pen_number: penNumber,
           blood_group: bloodGroup,
-          name: p.full_name || p.display_name || meta.name || admission,
+          name: p.full_name || p.display_name || meta.name || backendAux?.name || admission,
           class: rawClass || (category !== 'Unassigned' ? category.split('-')[0] || '' : ''),
           section: rawSection || (category.includes('-') ? category.split('-')[1] || '' : ''),
           category,
-          father_name: fatherName,
-          mother_name: motherName,
-          date_of_birth: dob,
-          address,
-          parent_phone: fullPhone,
-          parent_phone_full: fullPhone,
+          father_name: fatherName || backendAux?.father_name || '',
+          mother_name: motherName || backendAux?.mother_name || '',
+          date_of_birth: dob || backendAux?.date_of_birth || '',
+          address: address || backendAux?.address || '',
+          parent_phone: fullPhone || backendAux?.parent_phone_full || backendAux?.parent_phone || '',
+          parent_phone_full: fullPhone || backendAux?.parent_phone_full || '',
           email,
-          hasPhone: Boolean(fullPhone),
-          hasDob: Boolean(dob),
-          hasFather: Boolean(fatherName),
+          hasPhone: Boolean(fullPhone || backendAux?.hasPhone),
+          hasDob: Boolean(dob || backendAux?.hasDob),
+          hasFather: Boolean(fatherName || backendAux?.hasFather),
           hasMother: Boolean(motherName),
           hasAddress: Boolean(address),
-          status: hasFace ? 'completed' : 'not_started',
-          imported: isImported,
-          portrait: Boolean(avatar),
-          faceOnFile: hasFace,
-          vectorCount: Math.max(descCount, fallbackSamples.length),
-          samples: fallbackSamples,
-          method: hasFace ? 'staff' : '',
-          verifiedAt: completedTimestamp,
-          completedAt: completedTimestamp,
-          failures: 0,
-          correction: null,
-          lastActivity: Date.parse(p.updated_at || p.created_at || '') || completedTimestamp || 0,
-          avatarUrl: avatar,
+          status: effectiveStatus,
+          imported: isImported || Boolean(backendAux?.imported),
+          portrait: Boolean(avatar || backendAux?.portrait),
+          faceOnFile: effectiveFace,
+          vectorCount: Math.max(descCount, mergedSamples.length),
+          samples: mergedSamples,
+          method: backendAux?.method || (effectiveFace ? 'staff' : ''),
+          verifiedAt: completedTimestamp || backendAux?.verifiedAt || 0,
+          completedAt: completedTimestamp || backendAux?.completedAt || 0,
+          failures: backendAux?.failures || 0,
+          correction: backendAux?.correction || null,
+          inProgress: backendAux?.inProgress,
+          lastActivity:
+            Date.parse(p.updated_at || p.created_at || '') ||
+            completedTimestamp ||
+            backendAux?.lastActivity ||
+            0,
+          avatarUrl: avatar || backendAux?.avatarUrl,
           profilePhotoUrl: p.photo_url || p.avatar_url || undefined,
         };
         studentMap.set(lowerAdm, newStudent);
