@@ -13,11 +13,8 @@ import {
   Fingerprint,
   Loader2,
   LockKeyhole,
-  ScanFace,
-  Search,
   ShieldCheck,
   UserCheck,
-  X,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -29,7 +26,8 @@ import EnrollmentInformationCard from '@/components/enrollment/EnrollmentInforma
 import { enrollmentApi } from '@/services/enrollment/api';
 import { clearMonitorCache, getCachedMonitorOverview } from '@/services/enrollment/monitor';
 import { syncEnrolledFaceDataToSupabase } from '@/services/enrollment/syncEnrolledFaceData';
-import { prepareAppwriteBackendSamples, type CaptureResult, type EnrollmentSession, type StudentDetails } from '@/services/enrollment/types';
+import { type CaptureResult, type EnrollmentSession, type StudentDetails } from '@/services/enrollment/types';
+import { loadRegistrationModels } from '@/services/face-recognition/RegistrationService';
 import DobDatePicker from '@/components/enrollment/DobDatePicker';
 import { cn } from '@/lib/utils';
 import { supabase } from '@/integrations/supabase/client';
@@ -40,9 +38,6 @@ export default function StudentEnrollment() {
   const [admission, setAdmission] = useState('');
   const [phone, setPhone] = useState('');
   const [dob, setDob] = useState('');
-  const [quickQuery, setQuickQuery] = useState('');
-  const [quickResults, setQuickResults] = useState<StudentDetails[]>([]);
-  const [quickSearching, setQuickSearching] = useState(false);
   const [showCaptureDetails, setShowCaptureDetails] = useState(false);
   const [session, setSession] = useState<EnrollmentSession>();
   const [consent, setConsent] = useState(false);
@@ -76,104 +71,24 @@ export default function StudentEnrollment() {
   const navigate = useNavigate();
   const reduced = useReducedMotion();
   const staffStarted = useRef(false);
-  const uploadedKeysRef = useRef<Set<string>>(new Set());
-  const activeUploadRef = useRef<Promise<void> | null>(null);
 
-  // Instant Parallel Sample Upload Pool with On-The-Fly Lightweight Compression
-  const uploadSamplesParallel = useCallback(async (
-    sessionToken: string,
-    samples: CaptureResult['samples'],
-    onProgress?: (done: number, total: number) => void
-  ) => {
-    if (!sessionToken || sessionToken.startsWith('fast_')) {
-      onProgress?.(samples.length, samples.length);
-      return;
-    }
-    const total = samples.length;
-    const pendingSamples = samples.filter((sample) => {
-      const key = `${sample.pose}_${sample.glasses}_${sample.image.length}_${sample.image.slice(-24)}`;
-      return !uploadedKeysRef.current.has(key);
-    });
-
-    if (pendingSamples.length === 0) {
-      onProgress?.(total, total);
-      return;
-    }
-
-    let completed = total - pendingSamples.length;
-    onProgress?.(completed, total);
-
-    // Fast simultaneous parallel upload with lightweight image optimization
-    await Promise.all(
-      pendingSamples.map(async (sample) => {
-        const key = `${sample.pose}_${sample.glasses}_${sample.image.length}_${sample.image.slice(-24)}`;
-        try {
-          let imageToSend = sample.image;
-          // Quickly compress if image is large (> 110KB base64) to accelerate transfer by 5x
-          if (sample.image.length > 110000 && typeof window !== 'undefined') {
-            try {
-              const canvas = document.createElement('canvas');
-              const img = new Image();
-              img.crossOrigin = 'anonymous';
-              await new Promise<void>((resolve, reject) => {
-                img.onload = () => resolve();
-                img.onerror = () => reject();
-                img.src = sample.image;
-              });
-              let w = img.width;
-              let h = img.height;
-              const maxDim = 420;
-              if (w > maxDim || h > maxDim) {
-                if (w > h) { h = Math.round((h * maxDim) / w); w = maxDim; }
-                else { w = Math.round((w * maxDim) / h); h = maxDim; }
-              }
-              canvas.width = w;
-              canvas.height = h;
-              const ctx = canvas.getContext('2d');
-              if (ctx) {
-                ctx.drawImage(img, 0, 0, w, h);
-                const compressed = canvas.toDataURL('image/jpeg', 0.84);
-                if (compressed.length < sample.image.length) imageToSend = compressed;
-              }
-            } catch {
-              // fallback to original image
-            }
-          }
-
-          await enrollmentApi('sample', { session: sessionToken, sample: { ...sample, image: imageToSend } });
-          uploadedKeysRef.current.add(key);
-        } catch (err) {
-          console.warn(`Parallel upload retry for ${sample.pose}:`, err);
-        }
-        completed++;
-        onProgress?.(completed, total);
-      })
-    );
+  // Warm up face detection & landmark neural models in the background as soon as /enroll opens
+  useEffect(() => {
+    void loadRegistrationModels().catch(() => {});
   }, []);
 
-  const onCapture = useCallback((capture: CaptureResult) => { 
-    setResult(capture); 
-    setPhase('idphoto'); 
-    // Ultra-Fast: Start background parallel upload immediately so samples are already saved when user confirms
-    if (session?.session && !session.session.startsWith('fast_')) {
-      const backendSamples = prepareAppwriteBackendSamples(capture.samples, capture.wearsGlasses);
-      activeUploadRef.current = uploadSamplesParallel(session.session, backendSamples).catch(() => {});
-    }
-  }, [session?.session, uploadSamplesParallel]);
+  const onCapture = useCallback((capture: CaptureResult) => {
+    setResult(capture);
+    setPhase('idphoto');
+  }, []);
 
   const onIdPhotoConfirm = useCallback((finalPhotoUrl: string) => {
     if (result) {
       const updatedSamples = result.samples.map((s) => (s.pose === 'front' ? { ...s, image: finalPhotoUrl } : s));
-      const next = { ...result, samples: updatedSamples };
-      setResult(next);
-      // Background upload updated front portrait while student reviews
-      if (session?.session && !session.session.startsWith('fast_')) {
-        const backendSamples = prepareAppwriteBackendSamples(updatedSamples, next.wearsGlasses);
-        activeUploadRef.current = uploadSamplesParallel(session.session, backendSamples).catch(() => {});
-      }
+      setResult({ ...result, samples: updatedSamples });
     }
     setPhase('review');
-  }, [result, session?.session, uploadSamplesParallel]);
+  }, [result]);
 
   // Session expiry is checked once a second but only re-renders when the flag
   // actually flips — this used to re-render the whole page every second.
@@ -290,32 +205,11 @@ export default function StudentEnrollment() {
         } catch {
           // Non-blocking background enrichment
         }
-
-        // If initialized with a fast local session token, upgrade to a real backend session token in background
-        if (value.session.startsWith('fast_')) {
-          try {
-            const realSess = await enrollmentApi<EnrollmentSession>('staff.session', { admission: studentAdm });
-            if (realSess?.session) {
-              setSession((prev) =>
-                prev
-                  ? {
-                      ...prev,
-                      session: realSess.session,
-                      expires: realSess.expires || prev.expires,
-                      challenge: prev.challenge || realSess.challenge,
-                    }
-                  : realSess
-              );
-            }
-          } catch {
-            // Direct Supabase/Appwrite sync in completeEnrollment handles saving even if cloud session function is offline
-          }
-        }
       })();
     }
   }, [admission]);
 
-  // Helper to build an instant local session from StudentDetails so camera launches in 0ms
+  // Helper to build an instant local session from StudentDetails so camera launches in 0ms when redirected from Student Management
   const launchInstantStudentCapture = useCallback((student: StudentDetails) => {
     const challenges: ('left' | 'right' | 'up')[] = ['left', 'right', 'up'];
     const fastSession: EnrollmentSession = {
@@ -327,113 +221,6 @@ export default function StudentEnrollment() {
     setAdmission(student.admission_number);
     void acceptSession(fastSession, true, true);
   }, [acceptSession]);
-
-  // Quick search by Student Name or Admission Number right on /enroll
-  useEffect(() => {
-    const q = quickQuery.trim().toLowerCase();
-    if (!q) {
-      setQuickResults([]);
-      setQuickSearching(false);
-      return;
-    }
-
-    // 1. Check cached monitor overview first for 0ms search results
-    const cached = getCachedMonitorOverview();
-    if (cached?.students?.length) {
-      const matches = cached.students
-        .filter(
-          (s) =>
-            s.name.toLowerCase().includes(q) ||
-            s.admission_number.toLowerCase().includes(q) ||
-            (s.student_id_kv && s.student_id_kv.toLowerCase().includes(q)) ||
-            (s.father_name && s.father_name.toLowerCase().includes(q))
-        )
-        .sort((a, b) => {
-          const aExact = a.admission_number.toLowerCase() === q ? 0 : a.admission_number.toLowerCase().startsWith(q) ? 1 : a.name.toLowerCase().startsWith(q) ? 2 : 3;
-          const bExact = b.admission_number.toLowerCase() === q ? 0 : b.admission_number.toLowerCase().startsWith(q) ? 1 : b.name.toLowerCase().startsWith(q) ? 2 : 3;
-          return aExact - bExact || a.name.localeCompare(b.name);
-        })
-        .slice(0, 8)
-        .map((s) => ({
-          admission_number: s.admission_number,
-          name: s.name,
-          class: s.class || (s.category ? s.category.split('-')[0] : ''),
-          section: s.section || (s.category && s.category.includes('-') ? s.category.split('-').slice(1).join('-') : ''),
-          category: s.category,
-          father_name: s.father_name || '',
-          mother_name: s.mother_name || '',
-          date_of_birth: s.date_of_birth || '',
-          parent_phone: s.parent_phone_full || s.parent_phone || '',
-          blood_group: s.blood_group || '',
-          address: s.address || '',
-        }));
-      setQuickResults(matches);
-      return;
-    }
-
-    // 2. Fallback to querying Appwrite profiles table
-    let cancelled = false;
-    setQuickSearching(true);
-    const timer = window.setTimeout(async () => {
-      try {
-        const { data: rows } = await supabase
-          .from('profiles')
-          .select('full_name, display_name, admission_number, employee_id, class, section, category, father_name, parent_name, parent_phone, phone, blood_group, address, email, metadata')
-          .eq('role', 'student')
-          .limit(300);
-
-        if (cancelled) return;
-        const matched = (rows || [])
-          .map((p: any) => {
-            let meta: Record<string, any> = {};
-            try {
-              meta = typeof p.metadata === 'string' ? JSON.parse(p.metadata) : p.metadata || {};
-            } catch {}
-            const adm = String(p.admission_number || p.employee_id || '').trim();
-            const name = String(p.full_name || p.display_name || '').trim();
-            const cls = String(p.class || meta.class || '').trim();
-            const sec = String(p.section || meta.section || '').trim();
-            return {
-              admission_number: adm,
-              name,
-              class: cls,
-              section: sec,
-              category: p.category || (cls && sec ? `${cls}-${sec}` : cls),
-              father_name: p.father_name || meta.father_name || p.parent_name || '',
-              mother_name: meta.mother_name || '',
-              date_of_birth: meta.date_of_birth || '',
-              parent_phone: meta.verified_parent_phone || p.parent_phone || p.phone || '',
-              blood_group: p.blood_group || meta.blood_group || '',
-              address: p.address || meta.address || '',
-              email: p.email || '',
-            } as StudentDetails;
-          })
-          .filter(
-            (s) =>
-              s.admission_number &&
-              (s.name.toLowerCase().includes(q) ||
-                s.admission_number.toLowerCase().includes(q) ||
-                (s.father_name && s.father_name.toLowerCase().includes(q)))
-          )
-          .sort((a, b) => {
-            const aRank = a.admission_number.toLowerCase() === q ? 0 : a.admission_number.toLowerCase().startsWith(q) ? 1 : a.name.toLowerCase().startsWith(q) ? 2 : 3;
-            const bRank = b.admission_number.toLowerCase() === q ? 0 : b.admission_number.toLowerCase().startsWith(q) ? 1 : b.name.toLowerCase().startsWith(q) ? 2 : 3;
-            return aRank - bRank || a.name.localeCompare(b.name);
-          })
-          .slice(0, 8);
-        setQuickResults(matched);
-      } catch {
-        if (!cancelled) setQuickResults([]);
-      } finally {
-        if (!cancelled) setQuickSearching(false);
-      }
-    }, 180);
-
-    return () => {
-      cancelled = true;
-      window.clearTimeout(timer);
-    };
-  }, [quickQuery]);
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
@@ -582,7 +369,6 @@ export default function StudentEnrollment() {
     if (session) {
       if (Date.now() >= session.expires) {
         setSession(undefined); setResult(undefined); setDetails(undefined); setConsent(false); setError('');
-        uploadedKeysRef.current.clear();
         if (isStaffBypass || returnTo !== '/') {
           navigate(returnTo);
         } else {
@@ -596,7 +382,6 @@ export default function StudentEnrollment() {
         setResult(undefined);
         setDetails(undefined);
         setConsent(false);
-        uploadedKeysRef.current.clear();
         if (isStaffBypass || returnTo !== '/') {
           navigate(returnTo);
         } else {
@@ -609,7 +394,7 @@ export default function StudentEnrollment() {
   }
 
   const stepsList = [
-    { step: 1, label: 'Student Info', shortLabel: 'Find Student' },
+    { step: 1, label: 'Student Info', shortLabel: 'Verify Details' },
     { step: 2, label: 'Face Scan', shortLabel: 'Face Scan' },
     { step: 3, label: 'ID Photo', shortLabel: 'ID Photo' },
     { step: 4, label: 'Save & Finish', shortLabel: 'Save' },
@@ -640,20 +425,7 @@ export default function StudentEnrollment() {
       return;
     }
 
-    const backendSamples = prepareAppwriteBackendSamples(result.samples, result.wearsGlasses);
-
-    // Await any background upload that started during photo crop or review
-    if (activeUploadRef.current) {
-      try {
-        await activeUploadRef.current;
-      } catch { /* background upload already reported its own failure */ }
-    }
-
-    setMessage('Saving photos…');
-    await uploadSamplesParallel(session.session, backendSamples, (done, total) => {
-      setMessage(`Saving photos (${done}/${total})…`);
-    });
-    setMessage('Saving enrollment…');
+    setMessage('Saving face biometric & student profile…');
     const primaryPhoto =
       result.samples.find(
         (s) => s.pose === 'front' && s.glasses === (result.wearsGlasses ? 'with' : 'without')
@@ -670,8 +442,8 @@ export default function StudentEnrollment() {
       parent_phone: enforcedPhone || '',
     };
 
-    // 1. Sync face descriptors, 3D structure and details directly to Supabase/Appwrite (primary system of record)
-    const supabaseSyncPromise = syncEnrolledFaceDataToSupabase({
+    // Single parallel pipeline: uploads photos, saves all 128D face descriptors, and updates student profile in ~1 second
+    const supabaseResult = await syncEnrolledFaceDataToSupabase({
       admission: details.admission_number || admission,
       details: secureDetails,
       samples: result.samples,
@@ -685,106 +457,18 @@ export default function StudentEnrollment() {
       return { success: false, descriptorsCount: 0, photoUrl: undefined };
     });
 
-    // 2. Submit to Appwrite backend session with resilient fallback
-    let appwriteSaved: { completed?: boolean; correctionPending?: boolean } | null = null;
-    let appwriteErrMessage = '';
-
-    if (session.session && !session.session.startsWith('fast_')) {
-      try {
-        appwriteSaved = await enrollmentApi<{ completed: boolean; correctionPending: boolean }>('submit', {
-          session: session.session,
-          consent,
-          wearsGlasses: result.wearsGlasses,
-          challenge: result.challenge,
-          blinked: result.blinked,
-          changes: secureDetails,
-        });
-      } catch (err: unknown) {
-        console.warn('Appwrite session submission fallback:', err);
-        appwriteErrMessage = err instanceof Error ? err.message : String(err || '');
-      }
-    }
-
-    // Await Supabase/Appwrite sync completion
-    const supabaseResult = await supabaseSyncPromise;
-
-    // If both failed, notify the user with an actionable message
-    if (!appwriteSaved && (!supabaseResult || !supabaseResult.success)) {
-      throw new Error(appwriteErrMessage || 'Enrollment could not be saved. Please try again.');
-    }
-
-    // Update student profile & metadata in Appwrite profiles table
-    if (details.admission_number || admission) {
-      try {
-        const adm = (details.admission_number || admission).trim();
-        const finalPhotoUrl = (supabaseResult?.photoUrl && !supabaseResult.photoUrl.startsWith('data:'))
-          ? supabaseResult.photoUrl
-          : (primaryPhoto && !primaryPhoto.startsWith('data:'))
-            ? primaryPhoto
-            : undefined;
-
-        const { data: existingProfile } = await supabase
-          .from('profiles')
-          .select('metadata')
-          .or(`admission_number.ilike.${adm},employee_id.ilike.${adm}`)
-          .limit(1)
-          .maybeSingle();
-
-        let mergedMeta: Record<string, any> = {};
-        try {
-          mergedMeta =
-            typeof existingProfile?.metadata === 'string'
-              ? JSON.parse(existingProfile.metadata)
-              : existingProfile?.metadata || {};
-        } catch {
-          mergedMeta = {};
-        }
-
-        if (details.father_name?.trim()) mergedMeta.father_name = details.father_name.trim();
-        if (details.mother_name?.trim()) mergedMeta.mother_name = details.mother_name.trim();
-        if (details.date_of_birth?.trim()) mergedMeta.date_of_birth = details.date_of_birth.trim();
-        if (details.blood_group?.trim()) mergedMeta.blood_group = details.blood_group.trim();
-        if (details.address?.trim()) mergedMeta.address = details.address.trim();
-        if (enforcedPhone) mergedMeta.verified_parent_phone = enforcedPhone;
-
-        const cls = details.class?.trim() || undefined;
-        const sec = details.section?.trim() || undefined;
-        const cat = [cls, sec].filter(Boolean).join('-') || details.category?.trim() || undefined;
-
-        await supabase
-          .from('profiles')
-          .update({
-            ...(emailVal ? { email: emailVal, parent_email: emailVal } : {}),
-            parent_phone: enforcedPhone,
-            phone: enforcedPhone,
-            full_name: details.name?.trim() || undefined,
-            display_name: details.name?.trim() || undefined,
-            class: cls,
-            section: sec,
-            category: cat,
-            father_name: details.father_name?.trim() || undefined,
-            parent_name: details.father_name?.trim() || details.mother_name?.trim() || undefined,
-            blood_group: details.blood_group?.trim() || undefined,
-            address: details.address?.trim() || undefined,
-            metadata: JSON.stringify(mergedMeta),
-            ...(finalPhotoUrl ? { avatar_url: finalPhotoUrl, photo_url: finalPhotoUrl } : {}),
-            updated_at: new Date().toISOString(),
-          })
-          .or(`admission_number.ilike.${adm},employee_id.ilike.${adm}`);
-      } catch (profileUpdateErr) {
-        console.warn('Profile metadata sync notice:', profileUpdateErr);
-      }
+    if (!supabaseResult || !supabaseResult.success) {
+      throw new Error('Enrollment could not be saved. Please check your connection and try again.');
     }
 
     clearMonitorCache();
-    setPendingCorrections(Boolean(appwriteSaved?.correctionPending));
+    setPendingCorrections(false);
     setResult(undefined);
     setDetails(undefined);
     setSession(undefined);
-    uploadedKeysRef.current.clear();
     setPhase('done');
     setMessage('');
-  }, [admission, canEditPhone, consent, details, isPhoneLocked, isStaffBypass, originalVerifiedPhone, replaceExisting, result, session, uploadSamplesParallel]);
+  }, [admission, canEditPhone, details, isPhoneLocked, isStaffBypass, originalVerifiedPhone, replaceExisting, result, session]);
 
   return (
     <main className="enrollment-shell">
@@ -854,110 +538,10 @@ export default function StudentEnrollment() {
                 <>
                   <div className="text-center mb-5">
                     <div className="enrollment-icon mx-auto"><Fingerprint size={20} /></div>
-                    <h2 className="text-xl font-bold text-white">Find Student</h2>
+                    <h2 className="text-xl font-bold text-white">Verify Student Details</h2>
                     <p className="enrollment-muted text-xs">
-                      Search by Student Name or Admission Number to launch Face Capture directly
+                      Enter your Admission Number, Parent Mobile Number, and Date of Birth to continue
                     </p>
-                  </div>
-
-                  {/* Quick Search by Name or Admission Number -> Direct Face Capture */}
-                  <div className="mb-6 p-3.5 rounded-2xl bg-emerald-500/[0.06] border border-emerald-500/30 text-left space-y-3">
-                    <div className="flex items-center justify-between gap-2">
-                      <label className="text-xs font-bold text-emerald-300 flex items-center gap-1.5">
-                        <Search className="h-3.5 w-3.5 text-emerald-400" />
-                        <span>Quick Search by Name or Admission No.</span>
-                      </label>
-                      <Badge variant="outline" className="text-[10px] border-emerald-500/40 bg-emerald-500/15 text-emerald-300">
-                        Direct Face Capture
-                      </Badge>
-                    </div>
-
-                    <div className="flex items-center gap-2">
-                      <div className="relative flex-1">
-                        <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-slate-400" />
-                        <Input
-                          value={quickQuery}
-                          onChange={(e) => setQuickQuery(e.target.value)}
-                          onKeyDown={(e) => {
-                            if (e.key === 'Enter' && quickResults.length > 0) {
-                              e.preventDefault();
-                              launchInstantStudentCapture(quickResults[0]);
-                            }
-                          }}
-                          placeholder="Type student name or admission no (e.g. 10425)..."
-                          className="pl-9 pr-8 h-10 bg-slate-950/90 border-white/15 text-white text-xs rounded-xl focus:border-emerald-400"
-                        />
-                        {quickQuery && (
-                          <button
-                            type="button"
-                            onClick={() => setQuickQuery('')}
-                            className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-white"
-                          >
-                            <X className="h-3.5 w-3.5" />
-                          </button>
-                        )}
-                      </div>
-                      {quickResults.length > 0 && (
-                        <Button
-                          type="button"
-                          onClick={() => launchInstantStudentCapture(quickResults[0])}
-                          className="h-10 px-3.5 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold text-xs shrink-0 gap-1.5 shadow-sm"
-                        >
-                          <ScanFace className="h-4 w-4" />
-                          <span>Capture Face</span>
-                        </Button>
-                      )}
-                    </div>
-
-                    {quickSearching && (
-                      <div className="flex items-center gap-2 text-xs text-slate-400 py-1">
-                        <Loader2 className="h-3.5 w-3.5 animate-spin text-emerald-400" />
-                        <span>Searching student roster…</span>
-                      </div>
-                    )}
-
-                    {quickQuery.trim() && !quickSearching && quickResults.length === 0 && (
-                      <p className="text-xs text-slate-400 py-1">
-                        No matching student found for &ldquo;{quickQuery}&rdquo;. Try another name or admission number.
-                      </p>
-                    )}
-
-                    {quickResults.length > 0 && (
-                      <div className="max-h-60 overflow-y-auto divide-y divide-white/10 rounded-xl border border-white/10 bg-slate-950/90">
-                        {quickResults.map((st) => (
-                          <div
-                            key={st.admission_number}
-                            className="p-2.5 flex items-center justify-between gap-2 hover:bg-white/[0.04] transition-colors"
-                          >
-                            <div className="min-w-0 flex-1">
-                              <p className="text-xs font-bold text-white truncate">{st.name}</p>
-                              <p className="text-[11px] text-slate-400 font-mono truncate">
-                                Adm: <span className="text-emerald-400">{st.admission_number}</span>
-                                {st.category ? ` · Class ${st.category}` : ''}
-                                {st.father_name ? ` · F: ${st.father_name}` : ''}
-                              </p>
-                            </div>
-                            <Button
-                              type="button"
-                              size="sm"
-                              onClick={() => launchInstantStudentCapture(st)}
-                              className="h-8 px-3 rounded-lg bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold text-xs shrink-0 gap-1.5"
-                            >
-                              <ScanFace className="h-3.5 w-3.5" />
-                              <span>Capture Face</span>
-                            </Button>
-                          </div>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-
-                  <div className="relative my-4 flex items-center justify-center">
-                    <div className="border-t border-white/10 w-full" />
-                    <span className="bg-slate-900 px-3 text-[10px] uppercase tracking-wider text-slate-500 font-semibold shrink-0">
-                      Or Verify with Parent Details
-                    </span>
-                    <div className="border-t border-white/10 w-full" />
                   </div>
 
                   <form
@@ -969,7 +553,7 @@ export default function StudentEnrollment() {
                           phone,
                           dob
                         });
-                        await acceptSession(verifiedSession, false, true);
+                        await acceptSession(verifiedSession);
                       });
                     }}
                     className="space-y-4 text-left"
@@ -1018,7 +602,7 @@ export default function StudentEnrollment() {
                     </div>
 
                     <Button disabled={busy} className="w-full mt-2 font-semibold h-11 rounded-xl bg-emerald-500 hover:bg-emerald-600 text-slate-950 flex items-center justify-center gap-2 shadow-sm">
-                      {busy ? <Loader2 className="animate-spin h-4 w-4" /> : <>Find Student & Capture Face <ArrowRight className="h-4 w-4" /></>}
+                      {busy ? <Loader2 className="animate-spin h-4 w-4" /> : <>Verify & Continue <ArrowRight className="h-4 w-4" /></>}
                     </Button>
                   </form>
                 </>

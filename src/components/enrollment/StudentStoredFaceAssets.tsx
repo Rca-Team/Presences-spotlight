@@ -40,51 +40,10 @@ export default function StudentStoredFaceAssets({ student }: { student: MonitorS
       try {
         let loadedModel: Artifact | null = null;
         let loadedImages: string[] = [];
-
-        // 1. Try loading stored model artifact from Supabase storage if path exists
         const cleanAdm = student.admission_number?.trim();
-        const candidatePaths = [
-          student.modelPath,
-          cleanAdm ? `students/${cleanAdm}/models/face-model.json` : null,
-          cleanAdm ? `face_models/${cleanAdm}.json` : null,
-        ].filter(Boolean) as string[];
 
-        for (const candidatePath of candidatePaths) {
-          if (loadedModel) break;
-          try {
-            const { data, error: supaErr } = await supabase.storage
-              .from('student-registration-faces')
-              .download(candidatePath);
-            if (!supaErr && data) {
-              const text = await data.text();
-              loadedModel = JSON.parse(text) as Artifact;
-              break;
-            }
-          } catch (e) {
-            console.warn('[StudentStoredFaceAssets] Supabase model download note:', e);
-          }
-
-          // Fallback: Check Appwrite storage for the model file
-          if (!loadedModel) {
-            try {
-              const fileId = storageFileId(candidatePath);
-              const fileData = await appwriteStorage.getFileDownload(
-                APPWRITE_CONFIG.buckets.studentRegistrationFaces,
-                fileId
-              );
-              if (fileData) {
-                const text = await new Response(fileData).text();
-                loadedModel = JSON.parse(text) as Artifact;
-                break;
-              }
-            } catch (appwriteErr) {
-              console.warn('[StudentStoredFaceAssets] Appwrite model download note:', appwriteErr);
-            }
-          }
-        }
-
-        // 2. If no artifact loaded from storage or descriptor vector missing, query face_descriptors table
-        if (!loadedModel?.averaged_descriptor && cleanAdm) {
+        // 1. Primary authoritative source: query face_descriptors table directly (fast & zero 404s)
+        if (cleanAdm) {
           try {
             const { data: descRows, error: descErr } = await supabase
               .from('face_descriptors')
@@ -109,9 +68,13 @@ export default function StudentStoredFaceAssets({ student }: { student: MonitorS
                 if (Array.isArray(vec) && vec.length >= 64) {
                   cloud.push(vec.map(Number));
                 }
-                const pose = (row.metadata as Record<string, any>)?.pose;
-                if (pose && typeof pose === 'string') poses.push(pose);
-                if (row.image_url) dbImages.push(row.image_url);
+                let meta: any = row.metadata;
+                if (typeof meta === 'string') {
+                  try { meta = JSON.parse(meta); } catch { meta = {}; }
+                }
+                const pose = meta?.pose;
+                if (pose && typeof pose === 'string' && pose !== 'master_centroid') poses.push(pose);
+                if (row.image_url && !dbImages.includes(row.image_url)) dbImages.push(row.image_url);
               }
 
               if (cloud.length > 0) {
@@ -124,18 +87,34 @@ export default function StudentStoredFaceAssets({ student }: { student: MonitorS
                 }
 
                 loadedModel = {
-                  ...loadedModel,
                   sample_count: cloud.length,
                   descriptor_dimensions: dim,
                   averaged_descriptor: avg,
                   descriptor_cloud: cloud,
                   sample_poses: poses.length > 0 ? poses : ['front', 'left', 'right', 'up', 'down'],
-                  sample_images: loadedModel?.sample_images?.length ? loadedModel.sample_images : dbImages,
+                  sample_images: dbImages,
                 };
               }
             }
           } catch (queryErr) {
             console.warn('[StudentStoredFaceAssets] face_descriptors query error:', queryErr);
+          }
+        }
+
+        // 2. Optional model artifact from storage only if student.modelPath is explicitly present
+        if (!loadedModel && student.modelPath) {
+          try {
+            const { data, error: supaErr } = await supabase.storage
+              .from('student-registration-faces')
+              .download(student.modelPath);
+            if (!supaErr && data) {
+              const text = await data.text();
+              if (text.trim().startsWith('{')) {
+                loadedModel = JSON.parse(text) as Artifact;
+              }
+            }
+          } catch {
+            // Optional model artifact not in storage
           }
         }
 

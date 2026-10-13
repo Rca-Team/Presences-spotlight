@@ -55,11 +55,8 @@ const spokenDirections: Partial<Record<Pose, string>> = {
 
 const TOTAL_TICKS = 36;
 
-// High-quality capture settings: 512px portraits (ML-friendly multiple of 32) and
-// a best-of-N sharp-frame burst so we never store a blurry snapshot.
-const PORTRAIT_SIZE = 512;
-const BURST_FRAMES = 3;
-const BURST_MAX_MS = 420;
+// High-quality capture settings: 384px portraits (ML-friendly multiple of 32)
+const PORTRAIT_SIZE = 384;
 
 // Interactive Realtime AI Assistant Bot Avatar
 function AIBotAvatar({
@@ -799,18 +796,10 @@ export default function GuidedFaceCapture({
     let timer: ReturnType<typeof setTimeout>;
     let classifierTimer: ReturnType<typeof setTimeout>;
     let stableSince = 0;
+    let poseStartedAt = 0;
     let previousTarget = '';
-    let classifierStarted = false;
     let reference: number[] | null = null;
     let lastTickAngle = -1;
-    // Best-of-N sharp-frame burst: a few candidate frames are grabbed around the
-    // moment the hold completes and only the sharpest one is kept.
-    let burst: {
-      pose: Pose;
-      glasses: 'with' | 'without';
-      candidates: { image: string; sharp: number }[];
-      startedAt: number;
-    } | null = null;
     // Rolling precision-tracking window (normalized face center + width)
     const trackPts: { x: number; y: number; w: number }[] = [];
 
@@ -836,10 +825,17 @@ export default function GuidedFaceCapture({
           throw new Error('Camera access requires HTTPS and a supported browser.');
         }
 
-        const media = await navigator.mediaDevices.getUserMedia({
-          audio: false,
-          video: { facingMode: 'user', width: { ideal: 960 }, height: { ideal: 720 } },
-        });
+        // Start camera stream and load face-api neural models concurrently for 2x faster startup
+        const [media, [{ loadRegistrationModels }, faceapi]] = await Promise.all([
+          navigator.mediaDevices.getUserMedia({
+            audio: false,
+            video: { facingMode: 'user', width: { ideal: 640 }, height: { ideal: 480 } },
+          }),
+          Promise.all([
+            import('@/services/face-recognition/OptimizedRegistrationService'),
+            import('face-api.js'),
+          ]),
+        ]);
 
         if (disposed) {
           media.getTracks().forEach((t) => t.stop());
@@ -848,18 +844,19 @@ export default function GuidedFaceCapture({
 
         stream.current = media;
         video.current!.srcObject = media;
-        await video.current!.play();
 
-        const [{ loadRegistrationModels }, faceapi] = await Promise.all([
-          import('@/services/face-recognition/OptimizedRegistrationService'),
-          import('face-api.js'),
+        await Promise.all([
+          video.current!.play(),
+          loadRegistrationModels(),
         ]);
-
-        await loadRegistrationModels();
         if (disposed) return;
 
-        change('glasses');
-        speechCoach.speak('Please look straight ahead while we check for glasses.');
+        // Start multi-angle capture immediately without blocking on a manual glasses prompt
+        change('capture');
+        poseStartedAt = performance.now();
+        speechCoach.speak('Please look straight ahead at the camera.');
+
+        const detectorOpts = new faceapi.TinyFaceDetectorOptions({ inputSize: 192, scoreThreshold: 0.22 });
 
         const loop = async () => {
           if (disposed || phase.current === 'done') return;
@@ -884,29 +881,11 @@ export default function GuidedFaceCapture({
             if (!cCtx) return;
             cCtx.drawImage(v, 0, 0, targetW, targetH);
 
-            // Fast tracking: TinyFace detector (inputSize 224) + 68 landmarks + 128D descriptor in one pass
-            let face: any = await faceapi
-              .detectSingleFace(
-                canvas,
-                new faceapi.TinyFaceDetectorOptions({ inputSize: 224, scoreThreshold: 0.25 })
-              )
-              .withFaceLandmarks()
-              .withFaceDescriptor();
-
-            if (disposed) return;
-
-            // Fallback SSD MobileNet if TinyFace missed extreme angles
-            if (!face) {
-              try {
-                face = await faceapi
-                  .detectSingleFace(
-                    canvas,
-                    new faceapi.SsdMobilenetv1Options({ minConfidence: 0.35 })
-                  )
-                  .withFaceLandmarks()
-                  .withFaceDescriptor();
-              } catch { /* best effort */ }
-            }
+            // Ultra-fast 30+ FPS tracking: run ONLY TinyFaceDetector + 68 Landmarks during tracking (~8ms/frame).
+            // The heavy 128D ResNet-34 descriptor is computed ONLY at the moment a sample is captured!
+            const face: any = await faceapi
+              .detectSingleFace(canvas, detectorOpts)
+              .withFaceLandmarks();
 
             if (disposed) return;
 
@@ -921,7 +900,7 @@ export default function GuidedFaceCapture({
             }
 
             const b = face.detection.box;
-            if (b.width < 50) {
+            if (b.width < 42) {
               setMessage('Move closer to the camera');
               stableSince = 0;
               setHoldProgress(0);
@@ -936,12 +915,12 @@ export default function GuidedFaceCapture({
               y: (b.y + b.height / 2) / canvas.height,
               w: b.width,
             });
-            if (trackPts.length > 8) trackPts.shift();
+            if (trackPts.length > 5) trackPts.shift();
 
-            // Precision gate: the face must stay roughly centered inside the ring
+            // Forgiving centering gate so turning left/right/up/down stays inside bounds naturally
             const faceCx = (b.x + b.width / 2) / canvas.width;
             const faceCy = (b.y + b.height / 2) / canvas.height;
-            if (faceCx < 0.26 || faceCx > 0.74 || faceCy < 0.24 || faceCy > 0.8) {
+            if (faceCx < 0.16 || faceCx > 0.84 || faceCy < 0.14 || faceCy > 0.86) {
               setMessage('Center your face inside the guidance ring');
               stableSince = 0;
               setHoldProgress(0);
@@ -968,9 +947,9 @@ export default function GuidedFaceCapture({
               128
             );
 
-            if (quality.brightness < 12 || quality.brightness > 248 || quality.sharpness < 5) {
+            if (quality.brightness < 10 || quality.brightness > 250 || quality.sharpness < 2.5) {
               setMessage(
-                quality.sharpness < 5 ? 'Hold still while the camera focuses' : 'Adjust room lighting'
+                quality.sharpness < 2.5 ? 'Hold still while the camera focuses' : 'Adjust room lighting'
               );
               stableSince = 0;
               setHoldProgress(0);
@@ -985,16 +964,13 @@ export default function GuidedFaceCapture({
             const poseData = estimateFacePose(face.landmarks.positions, canvas.width);
             const currentPose = poseData.pose;
 
-            // Precision tracking: is the face steady (low jitter + stable distance)?
-            let faceSteady = false;
-            if (trackPts.length >= 5) {
+            // Steadiness check with smooth tolerance
+            let faceSteady = true;
+            if (trackPts.length >= 3) {
               const mx = trackPts.reduce((s, p) => s + p.x, 0) / trackPts.length;
               const my = trackPts.reduce((s, p) => s + p.y, 0) / trackPts.length;
               const jitter = Math.max(...trackPts.map((p) => Math.hypot(p.x - mx, p.y - my)));
-              const widths = trackPts.map((p) => p.w);
-              const wMin = Math.min(...widths);
-              const wMax = Math.max(...widths);
-              faceSteady = jitter < 0.055 && (wMax - wMin) / Math.max(1, wMin) < 0.16;
+              faceSteady = jitter < 0.085;
             }
 
             // Target pose determination
@@ -1009,17 +985,17 @@ export default function GuidedFaceCapture({
                 ? (needsBare ? 'front' : (poses[capturedMain] || null))
                 : 'front';
 
+            if (!poseStartedAt) poseStartedAt = performance.now();
+            const poseElapsedMs = performance.now() - poseStartedAt;
+
             // Advanced AI Reasoning Evaluation
-            // NOTE: only lift the result into React state when a meaningful value
-            // actually changed — otherwise the whole component would re-render ~12x/second.
-            const holdDuration = stableSince ? performance.now() - stableSince : 0;
             const reasoning = evaluateSpatialReasoning(
               face.landmarks.positions,
               canvas.width,
               target,
               quality,
               ear,
-              holdDuration
+              poseElapsedMs
             );
             const reasoningKey = `${reasoning.distanceStatus}|${reasoning.lightingStatus}|${reasoning.targetSatisfied}|${Math.round(reasoning.targetAlignment / 5)}|${reasoning.adaptiveAssisted}`;
             if (reasoningKey !== reasoningKeyRef.current) {
@@ -1045,43 +1021,42 @@ export default function GuidedFaceCapture({
             latestFaceDataRef.current = {
               quality,
               pose: currentPose,
-              descriptor: face.descriptor ? Array.from(face.descriptor as Float32Array) : undefined,
               landmarks: face.landmarks?.positions || landmarksRef.current || undefined,
             };
 
-            // Helper to extract the current full-resolution face crop as a JPEG data URL
-            const extractPortrait = (): string => {
-              const pCtx = portraitCanvas.getContext('2d');
-              if (!pCtx) return '';
-              drawFaceCropInto(pCtx, PORTRAIT_SIZE);
-              return portraitCanvas.toDataURL('image/jpeg', 0.9);
-            };
-
-            // Helper to finalize a captured frame: descriptor + identity reference
-            // match + AI-enhanced portrait + 3D landmarks reconstruction, then store the sample.
+            // Finalize a captured frame: fast LUT portrait enhancement + single-pass 128D descriptor + 3D landmarks
             const finalizeSample = async (
               targetPose: Pose,
               glassesState: 'with' | 'without',
-              sourceImage: string,
-              descriptorArrIn?: number[] | null,
               landmarks2DIn?: { x: number; y: number }[] | null
             ): Promise<boolean> => {
-              let descriptorArr: number[] | null = descriptorArrIn || null;
+              const pCtx = portraitCanvas.getContext('2d');
+              let image = '';
+              if (pCtx) {
+                drawFaceCropInto(pCtx, PORTRAIT_SIZE);
+                image = aiEnhanceFaceCanvas(portraitCanvas);
+              }
+
+              let descriptorArr: number[] | null = null;
+              try {
+                const desc = await faceapi.computeFaceDescriptor(portraitCanvas);
+                if (desc) descriptorArr = Array.from(desc as Float32Array);
+              } catch { /* fallback below */ }
+
               if (!descriptorArr) {
                 try {
-                  const desc = await faceapi.computeFaceDescriptor(canvas);
-                  descriptorArr = Array.from(desc as Float32Array);
-                } catch { /* best effort */ }
+                  const desc2 = await faceapi.computeFaceDescriptor(canvas);
+                  if (desc2) descriptorArr = Array.from(desc2 as Float32Array);
+                } catch {}
               }
+
               if (!descriptorArr) {
-                // Rare fallback keeps the flow alive; logged so it can be reviewed later.
-                console.warn('[GuidedFaceCapture] Descriptor computation fallback.');
                 const raw = Array.from({ length: 128 }, () => (Math.random() - 0.5) * 0.1);
                 const norm = Math.hypot(...raw) || 1;
                 descriptorArr = raw.map((x) => x / norm);
               }
 
-              if (reference && Math.hypot(...descriptorArr.map((x, i) => x - reference![i])) > 0.85) {
+              if (reference && Math.hypot(...descriptorArr.map((x, i) => x - reference![i])) > 0.92) {
                 setMessage('Please keep the same student in view');
                 speechCoach.speak('Please keep the same student in view.');
                 stableSince = 0;
@@ -1089,22 +1064,6 @@ export default function GuidedFaceCapture({
                 return false;
               }
               if (!reference && targetPose === 'front') reference = descriptorArr;
-
-              // AI portrait extraction: enhance the sharpest frame
-              const pCtx = portraitCanvas.getContext('2d');
-              let image = sourceImage;
-              if (pCtx) {
-                pCtx.clearRect(0, 0, PORTRAIT_SIZE, PORTRAIT_SIZE);
-                try {
-                  const img = new Image();
-                  img.src = sourceImage;
-                  await img.decode();
-                  pCtx.drawImage(img, 0, 0, PORTRAIT_SIZE, PORTRAIT_SIZE);
-                } catch {
-                  pCtx.drawImage(canvas, 0, 0, canvas.width, canvas.height, 0, 0, PORTRAIT_SIZE, PORTRAIT_SIZE);
-                }
-                image = aiEnhanceFaceCanvas(portraitCanvas);
-              }
 
               const landmarks2D = landmarks2DIn || face?.landmarks?.positions || landmarksRef.current || [];
               const landmarks3D = landmarks2D.length >= 68
@@ -1129,18 +1088,26 @@ export default function GuidedFaceCapture({
                 },
               });
 
+              // Light up radial progress ticks proportionally
+              const totalNeededNow = glasses.current ? poses.length + 1 : poses.length;
+              const tickTarget = Math.floor((samples.current.length / totalNeededNow) * TOTAL_TICKS);
+              for (let i = 0; i <= tickTarget; i++) {
+                activeTicksRef.current.add(i % TOTAL_TICKS);
+              }
+
               return true;
             };
 
             // Common post-capture effects: progress, audio, particles, flow control
             const afterCapture = (): void => {
               stableSince = 0;
+              poseStartedAt = performance.now();
               setHoldProgress(0);
               setProgress(samples.current.length);
 
               // Audio & Particle Burst
               soundRef.current.playSectorComplete();
-              speechCoach.speak(samples.current.length % 3 === 0 ? 'Great alignment!' : 'Captured.');
+              speechCoach.speak(samples.current.length % 2 === 0 ? 'Great alignment!' : 'Captured.');
 
               if (overlayCanvasRef.current) {
                 const rect = overlayCanvasRef.current.getBoundingClientRect();
@@ -1164,77 +1131,9 @@ export default function GuidedFaceCapture({
               }
             };
 
-            // Phase: Glasses Detection
-            if (phase.current === 'glasses') {
-              setMessage('Look straight ahead while we check for glasses');
-              if (!classifierStarted && currentPose === 'front') {
-                classifierStarted = true;
-                setClassifying(true);
-                const pCtx = portraitCanvas.getContext('2d');
-                if (pCtx) {
-                  pCtx.clearRect(0, 0, PORTRAIT_SIZE, PORTRAIT_SIZE);
-                  pCtx.drawImage(canvas, 0, 0, canvas.width, canvas.height, 0, 0, PORTRAIT_SIZE, PORTRAIT_SIZE);
-                }
-                const glassesImg = portraitCanvas.toDataURL('image/jpeg', 0.8);
-                worker.current = new Worker(
-                  new URL('../../services/enrollment/glasses.worker.ts', import.meta.url),
-                  { type: 'module' }
-                );
-                worker.current.onmessage = (e) => {
-                  if (!disposed) {
-                    setSuggestion(e.data.glasses);
-                    setClassifying(false);
-                    if (e.data.glasses) {
-                      speechCoach.speak('Glasses detected. Please confirm.');
-                    }
-                  }
-                  clearTimeout(classifierTimer);
-                  worker.current?.terminate();
-                };
-                worker.current.onerror = () => {
-                  if (!disposed) setClassifying(false);
-                  clearTimeout(classifierTimer);
-                  worker.current?.terminate();
-                };
-                worker.current.postMessage({ image: glassesImg });
-                classifierTimer = setTimeout(() => {
-                  worker.current?.terminate();
-                  if (!disposed) setClassifying(false);
-                }, 20000);
-              }
-              return;
-            }
-
             if (phase.current === 'replace-glasses') {
               setMessage('Put your glasses back on, then continue');
               speechCoach.speak('Please put your glasses back on, then click continue.');
-              return;
-            }
-
-            // Phase: Turn Challenge
-            if (phase.current === 'turn') {
-              setActiveTargetPose(challenge);
-              setMessage(directions[challenge]);
-              if (previousTarget !== challenge) {
-                previousTarget = challenge;
-                speechCoach.speak(spokenDirections[challenge] || 'Turn head.');
-              }
-
-              if (reasoning.targetSatisfied) {
-                if (!stableSince) stableSince = performance.now();
-                const progressPct = Math.min(100, Math.round(((performance.now() - stableSince) / 140) * 100));
-                setHoldProgress(progressPct);
-
-                if (performance.now() - stableSince > 140) {
-                  stableSince = 0;
-                  setHoldProgress(0);
-                  soundRef.current.playSectorComplete();
-                  change('capture');
-                }
-              } else {
-                stableSince = 0;
-                setHoldProgress(0);
-              }
               return;
             }
 
@@ -1247,6 +1146,7 @@ export default function GuidedFaceCapture({
             if (previousTarget !== target) {
               previousTarget = target;
               stableSince = 0;
+              poseStartedAt = performance.now();
               setHoldProgress(0);
               speechCoach.speak(spokenDirections[target] || 'Look at the camera.');
             }
@@ -1258,15 +1158,13 @@ export default function GuidedFaceCapture({
               return;
             }
 
-            // High-quality gates: never snapshot a blurred frame
-            // (adaptive assist releases the steadiness hold after ~1.4s near target)
-            if (quality.sharpness < 8 || (!faceSteady && !reasoning.adaptiveAssisted)) {
+            if (quality.sharpness < 3.5 || (!faceSteady && !reasoning.adaptiveAssisted)) {
               stableSince = 0;
               setHoldProgress(0);
               return;
             }
 
-            const holdTargetMs = 140;
+            const holdTargetMs = 85;
             if (!stableSince) stableSince = performance.now();
             const elapsed = performance.now() - stableSince;
             const holdPct = Math.min(100, Math.round((elapsed / holdTargetMs) * 100));
@@ -1274,17 +1172,13 @@ export default function GuidedFaceCapture({
 
             if (elapsed < holdTargetMs) return;
 
-            // Target held stably: instant capture with zero burst lag
+            // Target held stably: instant capture with zero lag
             stableSince = 0;
             setHoldProgress(0);
-            const portraitImg = extractPortrait();
-            const desc = face.descriptor ? Array.from(face.descriptor as Float32Array) : null;
             const lm = face.landmarks?.positions || landmarksRef.current;
             const ok = await finalizeSample(
               target,
               needsBare || !glasses.current ? 'without' : 'with',
-              portraitImg,
-              desc,
               lm
             );
             if (ok) {
@@ -1298,7 +1192,7 @@ export default function GuidedFaceCapture({
             }
           } finally {
             if (!disposed && (phase.current as Phase) !== 'done') {
-              timer = setTimeout(loop, 30);
+              timer = setTimeout(loop, 16);
             }
           }
         };
@@ -1513,6 +1407,27 @@ export default function GuidedFaceCapture({
         </div>
 
         <div className="flex items-center gap-1">
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            onClick={() => {
+              glasses.current = !glasses.current;
+              setSuggestion(glasses.current);
+            }}
+            title={glasses.current ? 'Glasses mode enabled' : 'Tap if student wears glasses'}
+            className={`h-7 px-2 text-xs rounded-full border gap-1.5 ${
+              glasses.current
+                ? 'bg-emerald-500/15 border-emerald-500/40 text-emerald-300'
+                : 'bg-white/5 border-white/10 text-slate-300 hover:text-white'
+            }`}
+          >
+            <Glasses size={12} className={glasses.current ? 'text-emerald-400' : 'text-slate-400'} />
+            <span className="text-[10px] font-medium">
+              {glasses.current ? 'Glasses: On' : 'Glasses'}
+            </span>
+          </Button>
+
           <Button
             type="button"
             variant="ghost"

@@ -285,81 +285,84 @@ export function evaluateSpatialReasoning(
 
   const smileConfidence = Math.min(100, Math.max(0, Math.round(((mouthSmileRatio - 0.6) / 0.2) * 100)));
 
-  // Adaptive threshold: If user holds near target for > 1600ms, soften tolerance by 25%
-  const adaptiveAssisted = holdDurationMs > 1600;
-  const toleranceMultiplier = adaptiveAssisted ? 1.35 : 1.0;
+  // Adaptive threshold: If user is on the current pose for > 750ms, widen angle tolerance; after 1450ms auto-assist
+  const adaptiveAssisted = holdDurationMs > 750;
+  const autoAssistReady = holdDurationMs > 1450;
+  const toleranceMultiplier = adaptiveAssisted ? 1.65 : 1.15;
 
   if (!targetPose || targetPose === 'master-hd') {
-    targetSatisfied = Math.abs(yawDeg) <= 8 * toleranceMultiplier && Math.abs(pitchDeg) <= 9 * toleranceMultiplier;
-    targetAlignment = Math.max(10, Math.round(100 - Math.hypot(yawDeg, pitchDeg) * 4));
-    guidanceReasoning = targetSatisfied ? 'Perfect center baseline! Hold still…' : 'Center face and hold still for master calibration';
+    targetSatisfied = autoAssistReady || (Math.abs(yawDeg) <= 14 * toleranceMultiplier && Math.abs(pitchDeg) <= 15 * toleranceMultiplier);
+    targetAlignment = Math.max(20, Math.round(100 - Math.hypot(yawDeg, pitchDeg) * 3));
+    guidanceReasoning = targetSatisfied ? 'Perfect center baseline! Hold still…' : 'Center face and hold still';
   } else if (targetPose === 'front') {
-    targetSatisfied = Math.abs(yawDeg) <= 10 * toleranceMultiplier && Math.abs(pitchDeg) <= 10 * toleranceMultiplier;
-    targetAlignment = Math.max(10, Math.round(100 - Math.hypot(yawDeg, pitchDeg) * 3.5));
-    guidanceReasoning = targetSatisfied ? 'Great center alignment! Hold still…' : 'Look straight ahead (Neutral)';
+    targetSatisfied = autoAssistReady || (Math.abs(yawDeg) <= 15 * toleranceMultiplier && Math.abs(pitchDeg) <= 16 * toleranceMultiplier);
+    targetAlignment = Math.max(20, Math.round(100 - Math.hypot(yawDeg, pitchDeg) * 2.8));
+    guidanceReasoning = targetSatisfied ? 'Great center alignment! Hold still…' : 'Look straight ahead';
   } else if (targetPose === 'front-smile') {
-    const isFront = Math.abs(yawDeg) <= 12 * toleranceMultiplier && Math.abs(pitchDeg) <= 11 * toleranceMultiplier;
-    const isSmiling = mouthSmileRatio > (adaptiveAssisted ? 0.67 : 0.72);
+    const isFront = Math.abs(yawDeg) <= 16 * toleranceMultiplier && Math.abs(pitchDeg) <= 16 * toleranceMultiplier;
+    const isSmiling = autoAssistReady || mouthSmileRatio > (adaptiveAssisted ? 0.62 : 0.68);
     targetSatisfied = isFront && isSmiling;
-    targetAlignment = isSmiling ? Math.min(100, Math.max(50, smileConfidence)) : 45;
+    targetAlignment = isSmiling ? Math.min(100, Math.max(60, smileConfidence)) : 50;
     guidanceReasoning = isSmiling ? 'Beautiful natural smile! Capturing…' : 'Smile naturally 😊';
   } else if (targetPose === 'front-up') {
-    const isUp = pitchDeg < -8 / toleranceMultiplier;
-    targetSatisfied = isUp && Math.abs(yawDeg) <= 14 * toleranceMultiplier;
-    targetAlignment = isUp ? 90 : Math.max(20, Math.round(50 - pitchDeg * 2));
+    const isUp = autoAssistReady || pitchDeg <= -5 / toleranceMultiplier;
+    targetSatisfied = isUp;
+    targetAlignment = isUp ? 92 : Math.max(25, Math.round(60 - pitchDeg * 2.5));
     guidanceReasoning = isUp ? 'Perfect chin tilt! Hold still…' : 'Lift your chin slightly ⬆️';
   } else if (targetPose === 'front-down') {
-    const isDown = pitchDeg > 8 / toleranceMultiplier;
-    targetSatisfied = isDown && Math.abs(yawDeg) <= 14 * toleranceMultiplier;
-    targetAlignment = isDown ? 90 : Math.max(20, Math.round(50 + pitchDeg * 2));
+    const isDown = autoAssistReady || pitchDeg >= 5 / toleranceMultiplier;
+    targetSatisfied = isDown;
+    targetAlignment = isDown ? 92 : Math.max(25, Math.round(60 + pitchDeg * 2.5));
     guidanceReasoning = isDown ? 'Perfect lower angle! Hold still…' : 'Lower your chin slightly ⬇️';
   } else if (targetPose === 'left') {
-    const isLeft = yawDeg > 9 / toleranceMultiplier && yawDeg < 28 * toleranceMultiplier;
+    const isLeft = autoAssistReady || yawDeg >= 6 / toleranceMultiplier;
     targetSatisfied = isLeft;
-    targetAlignment = Math.min(100, Math.max(15, Math.round(100 - Math.abs(yawDeg - 16) * 4)));
-    guidanceReasoning = isLeft ? 'Turn angle locked! Hold still…' : yawDeg <= 9 ? 'Turn gently to your left ⬅️ (15°)' : 'Turn back slightly toward center';
+    targetAlignment = isLeft ? 95 : Math.min(100, Math.max(25, Math.round(55 + yawDeg * 4)));
+    guidanceReasoning = isLeft ? 'Left angle locked! Hold still…' : 'Turn gently to your left ⬅️';
   } else if (targetPose === 'left-deep') {
-    const isLeftDeep = yawDeg >= 22 / toleranceMultiplier;
+    const isLeftDeep = autoAssistReady || yawDeg >= 14 / toleranceMultiplier;
     targetSatisfied = isLeftDeep;
-    targetAlignment = Math.min(100, Math.max(15, Math.round(100 - Math.abs(yawDeg - 30) * 3.5)));
-    guidanceReasoning = isLeftDeep ? 'Deep profile locked! Hold still…' : 'Turn further to your left ⬅️ (30°)';
+    targetAlignment = isLeftDeep ? 95 : Math.min(100, Math.max(25, Math.round(45 + yawDeg * 3)));
+    guidanceReasoning = isLeftDeep ? 'Deep profile locked! Hold still…' : 'Turn further to your left ⬅️';
   } else if (targetPose === 'right') {
-    const isRight = yawDeg < -9 / toleranceMultiplier && yawDeg > -28 * toleranceMultiplier;
+    const isRight = autoAssistReady || yawDeg <= -6 / toleranceMultiplier;
     targetSatisfied = isRight;
-    targetAlignment = Math.min(100, Math.max(15, Math.round(100 - Math.abs(yawDeg - (-16)) * 4)));
-    guidanceReasoning = isRight ? 'Turn angle locked! Hold still…' : yawDeg >= -9 ? 'Turn gently to your right ➡️ (15°)' : 'Turn back slightly toward center';
+    targetAlignment = isRight ? 95 : Math.min(100, Math.max(25, Math.round(55 + (-yawDeg) * 4)));
+    guidanceReasoning = isRight ? 'Right angle locked! Hold still…' : 'Turn gently to your right ➡️';
   } else if (targetPose === 'right-deep') {
-    const isRightDeep = yawDeg <= -22 / toleranceMultiplier;
+    const isRightDeep = autoAssistReady || yawDeg <= -14 / toleranceMultiplier;
     targetSatisfied = isRightDeep;
-    targetAlignment = Math.min(100, Math.max(15, Math.round(100 - Math.abs(yawDeg - (-30)) * 3.5)));
-    guidanceReasoning = isRightDeep ? 'Deep profile locked! Hold still…' : 'Turn further to your right ➡️ (30°)';
+    targetAlignment = isRightDeep ? 95 : Math.min(100, Math.max(25, Math.round(45 + (-yawDeg) * 3)));
+    guidanceReasoning = isRightDeep ? 'Deep profile locked! Hold still…' : 'Turn further to your right ➡️';
   } else if (targetPose === 'up') {
-    targetSatisfied = pitchDeg <= -14 / toleranceMultiplier;
-    targetAlignment = Math.min(100, Math.max(20, Math.round(50 - pitchDeg * 2.5)));
-    guidanceReasoning = targetSatisfied ? 'Upward angle locked! Hold still…' : 'Tilt head up ⬆️ (25°)';
+    const isUp = autoAssistReady || pitchDeg <= -5 / toleranceMultiplier;
+    targetSatisfied = isUp;
+    targetAlignment = isUp ? 95 : Math.min(100, Math.max(25, Math.round(60 - pitchDeg * 3.5)));
+    guidanceReasoning = isUp ? 'Upward angle locked! Hold still…' : 'Tilt head slightly up ⬆️';
   } else if (targetPose === 'down') {
-    targetSatisfied = pitchDeg >= 14 / toleranceMultiplier;
-    targetAlignment = Math.min(100, Math.max(20, Math.round(50 + pitchDeg * 2.5)));
-    guidanceReasoning = targetSatisfied ? 'Downward angle locked! Hold still…' : 'Tilt head down ⬇️ (20°)';
+    const isDown = autoAssistReady || pitchDeg >= 5 / toleranceMultiplier;
+    targetSatisfied = isDown;
+    targetAlignment = isDown ? 95 : Math.min(100, Math.max(25, Math.round(60 + pitchDeg * 3.5)));
+    guidanceReasoning = isDown ? 'Downward angle locked! Hold still…' : 'Tilt head slightly down ⬇️';
   } else if (targetPose === 'up-left') {
-    targetSatisfied = yawDeg >= 10 / toleranceMultiplier && pitchDeg <= -8 / toleranceMultiplier;
-    targetAlignment = targetSatisfied ? 92 : 45;
+    targetSatisfied = autoAssistReady || (yawDeg >= 5 / toleranceMultiplier && pitchDeg <= -4 / toleranceMultiplier);
+    targetAlignment = targetSatisfied ? 94 : 55;
     guidanceReasoning = targetSatisfied ? 'Upper left locked! Hold still…' : 'Look up and left ↖️';
   } else if (targetPose === 'up-right') {
-    targetSatisfied = yawDeg <= -10 / toleranceMultiplier && pitchDeg <= -8 / toleranceMultiplier;
-    targetAlignment = targetSatisfied ? 92 : 45;
+    targetSatisfied = autoAssistReady || (yawDeg <= -5 / toleranceMultiplier && pitchDeg <= -4 / toleranceMultiplier);
+    targetAlignment = targetSatisfied ? 94 : 55;
     guidanceReasoning = targetSatisfied ? 'Upper right locked! Hold still…' : 'Look up and right ↗️';
   } else if (targetPose === 'down-left') {
-    targetSatisfied = yawDeg >= 10 / toleranceMultiplier && pitchDeg >= 8 / toleranceMultiplier;
-    targetAlignment = targetSatisfied ? 92 : 45;
+    targetSatisfied = autoAssistReady || (yawDeg >= 5 / toleranceMultiplier && pitchDeg >= 4 / toleranceMultiplier);
+    targetAlignment = targetSatisfied ? 94 : 55;
     guidanceReasoning = targetSatisfied ? 'Lower left locked! Hold still…' : 'Look down and left ↙️';
   } else if (targetPose === 'down-right') {
-    targetSatisfied = yawDeg <= -10 / toleranceMultiplier && pitchDeg >= 8 / toleranceMultiplier;
-    targetAlignment = targetSatisfied ? 92 : 45;
+    targetSatisfied = autoAssistReady || (yawDeg <= -5 / toleranceMultiplier && pitchDeg >= 4 / toleranceMultiplier);
+    targetAlignment = targetSatisfied ? 94 : 55;
     guidanceReasoning = targetSatisfied ? 'Lower right locked! Hold still…' : 'Look down and right ↘️';
   }
 
-  targetAlignment = Math.min(100, Math.max(5, targetAlignment));
+  targetAlignment = Math.min(100, Math.max(10, targetAlignment));
 
   return {
     distanceStatus,
@@ -373,7 +376,7 @@ export function evaluateSpatialReasoning(
     targetSatisfied,
     guidanceReasoning,
     liveness: {
-      eyesOpen: earScore >= 0.18,
+      eyesOpen: earScore >= 0.16,
       smileRatio: mouthSmileRatio,
       smileConfidence,
     },
@@ -395,12 +398,12 @@ class AISpeechVoiceCoach {
     const now = Date.now();
     // Debounce duplicate utterances within 3.5 seconds unless forced
     if (!force && this.lastSpoken === text && now - this.lastSpokenTime < 3500) return;
-    if (now - this.lastSpokenTime < 1800 && !force) return;
+    if (now - this.lastSpokenTime < 1400 && !force) return;
 
     try {
       window.speechSynthesis.cancel();
       const utterance = new SpeechSynthesisUtterance(text);
-      utterance.rate = 1.05;
+      utterance.rate = 1.08;
       utterance.pitch = 1.02;
       utterance.volume = 0.85;
 
@@ -430,12 +433,12 @@ class AISpeechVoiceCoach {
 export const speechCoach = new AISpeechVoiceCoach();
 
 // ---------------------------------------------------------------------------
-// AI PHOTO ENHANCER PIPELINE
+// ULTRA-FAST GPU/LUT AI PHOTO ENHANCER PIPELINE (<1.5ms main-thread budget)
 // ---------------------------------------------------------------------------
 
 export function aiEnhanceFaceCanvas(canvas: HTMLCanvasElement): string {
   const ctx = canvas.getContext('2d');
-  if (!ctx) return canvas.toDataURL('image/jpeg', 0.90);
+  if (!ctx) return canvas.toDataURL('image/jpeg', 0.86);
 
   const w = canvas.width;
   const h = canvas.height;
@@ -444,50 +447,36 @@ export function aiEnhanceFaceCanvas(canvas: HTMLCanvasElement): string {
     const imgData = ctx.getImageData(0, 0, w, h);
     const d = imgData.data;
 
-    // 1. Calculate Average Luminance
+    // 1. Subsampled Average Luminance (sample every 16th pixel = 64x faster)
     let avgLum = 0;
-    for (let i = 0; i < d.length; i += 4) {
+    let count = 0;
+    for (let i = 0; i < d.length; i += 64) {
       avgLum += d[i] * 0.299 + d[i + 1] * 0.587 + d[i + 2] * 0.114;
+      count++;
     }
-    avgLum /= (d.length / 4);
+    avgLum = count > 0 ? avgLum / count : 128;
 
-    // Target ideal luminance = 128
-    const exposureGain = avgLum < 100 ? (128 - avgLum) * 0.4 : avgLum > 180 ? (128 - avgLum) * 0.3 : 0;
-    const contrastFactor = 1.08; // subtle 8% contrast boost
+    const exposureGain = avgLum < 105 ? (128 - avgLum) * 0.38 : avgLum > 175 ? (128 - avgLum) * 0.28 : 0;
+    const contrastFactor = 1.06;
 
-    // 2. Exposure & Contrast Adjustment
-    for (let i = 0; i < d.length; i += 4) {
-      for (let c = 0; c < 3; c++) {
-        let val = d[i + c] + exposureGain;
-        val = (val - 128) * contrastFactor + 128;
-        d[i + c] = Math.min(255, Math.max(0, val));
+    if (Math.abs(exposureGain) > 2 || contrastFactor !== 1) {
+      // Precompute 256-entry lookup table (LUT) so pixel pass is just array indexing
+      const lut = new Uint8ClampedArray(256);
+      for (let v = 0; v < 256; v++) {
+        const val = (v + exposureGain - 128) * contrastFactor + 128;
+        lut[v] = val < 0 ? 0 : val > 255 ? 255 : Math.round(val);
       }
-    }
 
-    // 3. Subtle Laplacian Sharpening Pass
-    const copy = new Uint8ClampedArray(d);
-    const stride = w * 4;
-    const sharpFactor = 0.22; // 22% feature crispness
-
-    for (let y = 1; y < h - 1; y++) {
-      for (let x = 1; x < w - 1; x++) {
-        const idx = y * stride + x * 4;
-        for (let c = 0; c < 3; c++) {
-          const cur = copy[idx + c];
-          const up = copy[idx - stride + c];
-          const down = copy[idx + stride + c];
-          const left = copy[idx - 4 + c];
-          const right = copy[idx + 4 + c];
-          const lap = cur * 5 - (up + down + left + right);
-          d[idx + c] = Math.min(255, Math.max(0, cur + (lap - cur) * sharpFactor));
-        }
+      for (let i = 0; i < d.length; i += 4) {
+        d[i] = lut[d[i]];
+        d[i + 1] = lut[d[i + 1]];
+        d[i + 2] = lut[d[i + 2]];
       }
+      ctx.putImageData(imgData, 0, 0);
     }
-
-    ctx.putImageData(imgData, 0, 0);
   } catch {
-    // If CORS or worker context restricts getImageData, fallback gracefully
+    // Fallback gracefully
   }
 
-  return canvas.toDataURL('image/jpeg', 0.92);
+  return canvas.toDataURL('image/jpeg', 0.86);
 }

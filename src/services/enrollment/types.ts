@@ -40,11 +40,6 @@ export const poses: Pose[] = [
   'right',
   'up',
   'down',
-  'up-left',
-  'up-right',
-  'down-left',
-  'down-right',
-  'front-smile'
 ];
 
 /**
@@ -87,6 +82,7 @@ export function prepareAppwriteBackendSamples(
   const frontSample = rawSamples.find(s => s.pose === 'front') || rawSamples[0];
   const leftSample = rawSamples.find(s => s.pose === 'left') || frontSample;
   const rightSample = rawSamples.find(s => s.pose === 'right') || frontSample;
+  const upSample = rawSamples.find(s => s.pose === 'up') || frontSample;
   const downSample = rawSamples.find(s => s.pose === 'down') || frontSample;
 
   for (const pose of appwritePoses) {
@@ -96,9 +92,11 @@ export function prepareAppwriteBackendSamples(
     }
 
     if (!sourceSample) {
-      // Fallback only if a pose was somehow skipped during capture (e.g. manual snap) —
-      // down-left / down-right / front-smile are now captured directly when possible.
-      if (pose === 'down-left') {
+      if (pose === 'up-left') {
+        sourceSample = upSample || leftSample || frontSample;
+      } else if (pose === 'up-right') {
+        sourceSample = upSample || rightSample || frontSample;
+      } else if (pose === 'down-left') {
         sourceSample = downSample || leftSample || frontSample;
       } else if (pose === 'down-right') {
         sourceSample = downSample || rightSample || frontSample;

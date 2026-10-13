@@ -261,6 +261,7 @@ async function mirrorMutationToSupabase(
   patchData?: Record<string, any>
 ): Promise<void> {
   if (typeof window === 'undefined' || typeof fetch !== 'function') return;
+  if ((import.meta as any)?.env?.VITE_ENABLE_SUPABASE_MIRROR !== 'true') return;
   if (!SUPABASE_MIRROR_TABLES.has(collectionName)) return;
   const { url, key } = getSupabaseFallbackConfig();
   const headers: Record<string, string> = {
@@ -1191,35 +1192,41 @@ export class AppwriteQueryBuilder<T = any> implements PromiseLike<{ data: T | nu
             return { data: [], error: new Error(`Unfiltered bulk ${kind} is blocked for database safety.`), count: 0 };
           }
           const matched = await this.readDocuments(true);
-          for (const doc of matched.documents) {
-            const docId = doc.$id || doc.id;
-            if (kind === 'update') {
-              try {
-                const updated = await updateDocumentWithSchemaRetry(this.collectionName, docId, sanitizeDocForSave(data));
-                const fullDoc = { ...doc, ...data, ...updated, $id: docId, id: docId };
-                saveLocalOverlayDoc(this.collectionName, docId, fullDoc);
-                void mirrorMutationToSupabase(this.collectionName, 'update', fullDoc, data);
-                docs.push(fullDoc);
-              } catch (updErr: any) {
-                if (isAppwriteQuotaLimitError(updErr) || updErr?.code === 404) {
-                  const localDoc = { ...doc, ...data, $id: docId, id: docId, updated_at: new Date().toISOString() };
-                  saveLocalOverlayDoc(this.collectionName, docId, localDoc);
-                  void mirrorMutationToSupabase(this.collectionName, 'update', localDoc, data);
-                  docs.push(localDoc);
+          const MUTATION_CONCURRENCY = 10;
+          for (let i = 0; i < matched.documents.length; i += MUTATION_CONCURRENCY) {
+            const batch = matched.documents.slice(i, i + MUTATION_CONCURRENCY);
+            const batchResults = await Promise.all(
+              batch.map(async (doc) => {
+                const docId = doc.$id || doc.id;
+                if (kind === 'update') {
+                  try {
+                    const updated = await updateDocumentWithSchemaRetry(this.collectionName, docId, sanitizeDocForSave(data));
+                    const fullDoc = { ...doc, ...data, ...updated, $id: docId, id: docId };
+                    saveLocalOverlayDoc(this.collectionName, docId, fullDoc);
+                    void mirrorMutationToSupabase(this.collectionName, 'update', fullDoc, data);
+                    return fullDoc;
+                  } catch (updErr: any) {
+                    if (isAppwriteQuotaLimitError(updErr) || updErr?.code === 404) {
+                      const localDoc = { ...doc, ...data, $id: docId, id: docId, updated_at: new Date().toISOString() };
+                      saveLocalOverlayDoc(this.collectionName, docId, localDoc);
+                      void mirrorMutationToSupabase(this.collectionName, 'update', localDoc, data);
+                      return localDoc;
+                    }
+                    throw updErr;
+                  }
                 } else {
-                  throw updErr;
+                  try {
+                    await databases.deleteDocument(DATABASE_ID, this.collectionName, docId);
+                  } catch (delErr: any) {
+                    if (!isAppwriteQuotaLimitError(delErr) && delErr?.code !== 404) throw delErr;
+                  }
+                  saveLocalOverlayDoc(this.collectionName, docId, null);
+                  void mirrorMutationToSupabase(this.collectionName, 'delete', doc);
+                  return doc;
                 }
-              }
-            } else {
-              try {
-                await databases.deleteDocument(DATABASE_ID, this.collectionName, docId);
-              } catch (delErr: any) {
-                if (!isAppwriteQuotaLimitError(delErr) && delErr?.code !== 404) throw delErr;
-              }
-              saveLocalOverlayDoc(this.collectionName, docId, null);
-              void mirrorMutationToSupabase(this.collectionName, 'delete', doc);
-              docs.push(doc);
-            }
+              })
+            );
+            docs.push(...batchResults);
           }
         }
         count = docs.length;

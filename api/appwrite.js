@@ -185,7 +185,8 @@ export default async function handler(req, res) {
       }
     }
 
-    res.setHeader('Access-Control-Expose-Headers', 'X-Fallback-Cookies, X-Appwrite-Warning');
+    res.setHeader('X-Appwrite-Proxy', '1');
+    res.setHeader('Access-Control-Expose-Headers', 'X-Fallback-Cookies, X-Appwrite-Warning, X-Appwrite-Proxy');
 
     const responseBuffer = Buffer.from(await upstreamRes.arrayBuffer());
     return res.status(upstreamRes.status).send(responseBuffer);

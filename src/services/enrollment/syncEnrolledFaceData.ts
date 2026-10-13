@@ -163,34 +163,33 @@ export async function syncEnrolledFaceDataToSupabase({
 
     const departmentValue = normalizedCategory || (parsedClass && parsedSection ? `${parsedClass}-${parsedSection}` : parsedClass) || null;
 
-    // 1. Locate existing profile strictly matching cleanAdmission (case-insensitive) to prevent cross-assignment
-    let existingProfile: any = null;
-    try {
-      const { data } = await supabase
-        .from('profiles')
-        .select('id, user_id, display_name, full_name, admission_number, employee_id, parent_phone, phone, metadata')
-        .or(`admission_number.ilike.${cleanAdmission},employee_id.ilike.${cleanAdmission}`)
-        .order('updated_at', { ascending: false })
-        .limit(1)
-        .maybeSingle();
-
-      if (data) {
-        const pAdm = String(data.admission_number || '').trim().toLowerCase();
-        const pEmp = String(data.employee_id || '').trim().toLowerCase();
-        const targetAdm = cleanAdmission.toLowerCase();
-        if (pAdm === targetAdm || pEmp === targetAdm) {
-          existingProfile = data;
-        }
-      }
-    } catch (_) {}
-
-    const stableStudentUserId = existingProfile?.user_id || existingProfile?.id || uuidv4();
-
-    // 2. Upload ALL captured multi-angle face images with structured, student-bound paths
+    // 1 & 2. Concurrently locate existing profile and upload captured face images
     const primarySample =
       samples.find((s) => s.pose === 'front' && s.glasses === (wearsGlasses ? 'with' : 'without')) ||
       samples.find((s) => s.pose === 'front') ||
       samples[0];
+
+    const profileLookupPromise = (async () => {
+      try {
+        const { data } = await supabase
+          .from('profiles')
+          .select('id, user_id, display_name, full_name, admission_number, employee_id, parent_phone, phone, metadata')
+          .or(`admission_number.ilike.${cleanAdmission},employee_id.ilike.${cleanAdmission}`)
+          .order('updated_at', { ascending: false })
+          .limit(1)
+          .maybeSingle();
+
+        if (data) {
+          const pAdm = String(data.admission_number || '').trim().toLowerCase();
+          const pEmp = String(data.employee_id || '').trim().toLowerCase();
+          const targetAdm = cleanAdmission.toLowerCase();
+          if (pAdm === targetAdm || pEmp === targetAdm) {
+            return data;
+          }
+        }
+      } catch (_) {}
+      return null;
+    })();
 
     const sampleUploadPromises = samples.map(async (s) => {
       try {
@@ -214,7 +213,12 @@ export async function syncEnrolledFaceDataToSupabase({
       return { pose: s.pose, path: '', publicUrl: '' };
     });
 
-    const uploadedSamples = await Promise.all(sampleUploadPromises);
+    const [existingProfile, uploadedSamples] = await Promise.all([
+      profileLookupPromise,
+      Promise.all(sampleUploadPromises),
+    ]);
+
+    const stableStudentUserId = existingProfile?.user_id || existingProfile?.id || uuidv4();
 
     const poseToUrl = new Map<string, string>();
     const poseToPath = new Map<string, string>();
@@ -275,7 +279,6 @@ export async function syncEnrolledFaceDataToSupabase({
               try { meta = JSON.parse(meta); } catch { meta = {}; }
             }
             const poseKey = `${meta?.pose || ''}:${meta?.glasses || 'without'}`;
-            // Delete old master_centroid or same pose+glasses slot so we replace it cleanly instead of duplicating!
             if (meta?.pose === 'master_centroid' || incomingPoses.has(poseKey)) {
               await supabase.from('face_descriptors').delete().eq('id', row.id);
               continue;
@@ -322,7 +325,7 @@ export async function syncEnrolledFaceDataToSupabase({
     const effectiveMasterDescriptor = masterDescriptor || masterPkg.masterDescriptor;
     const canonicalFace3D = face3DStructure || buildCanonical3DFaceStructure(validSamples);
 
-    // 5. Batch insert descriptors into face_descriptors table
+    // 5. Prepare descriptors for batch insert into face_descriptors table
     const descriptorsToInsert: any[] = [];
 
     if (effectiveMasterDescriptor && effectiveMasterDescriptor.length >= 64) {
@@ -353,7 +356,6 @@ export async function syncEnrolledFaceDataToSupabase({
       });
     }
 
-    // Follow with each deduplicated multi-angle pose descriptor
     for (let i = 0; i < validSamples.length; i++) {
       const s = validSamples[i];
       const descStr = typeof s.descriptor === 'string' ? s.descriptor : JSON.stringify(Array.from(s.descriptor));
@@ -385,277 +387,255 @@ export async function syncEnrolledFaceDataToSupabase({
       });
     }
 
-    if (descriptorsToInsert.length > 0) {
-      const { error: insertErr } = await supabase
-        .from('face_descriptors')
-        .insert(descriptorsToInsert);
+    const safeAdmission = cleanAdmission.replace(/[^a-zA-Z0-9_-]/g, '_');
+    const expectedModelPath = `students/${safeAdmission}/models/face-model.json`;
 
-      if (insertErr) {
-        console.warn('[SyncFaceData] face_descriptors insert error:', insertErr.message);
-      } else {
-        console.log(`[SyncFaceData] Inserted ${descriptorsToInsert.length} biometric descriptors (including Master Centroid) for ${studentName} (${cleanAdmission})`);
-      }
-    }
+    // 6. Concurrently insert face_descriptors and update profiles on the critical path
+    const insertDescriptorsTask = descriptorsToInsert.length > 0
+      ? supabase.from('face_descriptors').insert(descriptorsToInsert)
+      : Promise.resolve({ error: null });
 
-    // 6. Build and upload complete 3D facial model JSON artifact
-    const modelArtifact = {
-      version: 'face-model-v3',
-      created_at: new Date().toISOString(),
-      student_id: cleanAdmission,
-      employee_id: cleanAdmission,
-      student_name: studentName,
-      class: parsedClass,
-      section: parsedSection,
-      category: normalizedCategory,
-      capture_mode: 'guided-3d-true-depth-v3',
-      sample_count: validSamples.length,
-      descriptor_dimensions: masterPkg.dimensions,
-      averaged_descriptor: effectiveMasterDescriptor,
-      descriptor_cloud: masterPkg.descriptorCloud,
-      face_3d_structure: canonicalFace3D,
-      canonical_landmarks_3d: canonicalFace3D.canonical_landmarks_3d,
-      point_cloud_3d: canonicalFace3D.point_cloud_3d,
-      point_cloud_3d_equivalent: canonicalFace3D.point_cloud_3d,
-      triangulated_mesh: canonicalFace3D.triangulated_mesh,
-      facial_metrics: canonicalFace3D.facial_metrics,
-      intra_cluster_coherence: masterPkg.intraClusterCoherence,
-      sample_poses: validSamples.map((s) => s.pose),
-      sample_images: allSampleUrls,
-      sample_storage_paths: allSamplePaths,
-      primary_photo_url: primaryPublicUrl,
-      wears_glasses: wearsGlasses,
-    };
-
-    const uploadedModel = await uploadStudentFaceModelArtifact(modelArtifact, cleanAdmission);
-
-    // 6. Update or upsert profiles record strictly bound to cleanAdmission
-    try {
-      let prevMeta: Record<string, any> = {};
+    const updateProfileTask = (async () => {
       try {
-        prevMeta = typeof existingProfile?.metadata === 'string'
-          ? JSON.parse(existingProfile.metadata)
-          : (existingProfile?.metadata || {});
-      } catch {}
+        let prevMeta: Record<string, any> = {};
+        try {
+          prevMeta = typeof existingProfile?.metadata === 'string'
+            ? JSON.parse(existingProfile.metadata)
+            : (existingProfile?.metadata || {});
+        } catch {}
 
-      const isPhoneLocked = Boolean(
-        prevMeta.phone_locked ||
-        prevMeta.imported_from_pdf ||
-        prevMeta.source === 'pdf_upload' ||
-        prevMeta.source === 'pdf_import' ||
-        details?.phone_locked ||
-        details?.imported_from_pdf
-      );
+        const isPhoneLocked = Boolean(
+          prevMeta.phone_locked ||
+          prevMeta.imported_from_pdf ||
+          prevMeta.source === 'pdf_upload' ||
+          prevMeta.source === 'pdf_import' ||
+          details?.phone_locked ||
+          details?.imported_from_pdf
+        );
 
-      const verifiedParentPhone = (
-        prevMeta.verified_parent_phone ||
-        existingProfile?.parent_phone ||
-        existingProfile?.phone ||
-        details?.verified_parent_phone ||
-        ''
-      ).trim();
+        const verifiedParentPhone = (
+          prevMeta.verified_parent_phone ||
+          existingProfile?.parent_phone ||
+          existingProfile?.phone ||
+          details?.verified_parent_phone ||
+          ''
+        ).trim();
 
-      // If phone is locked from PDF upload, strictly preserve verified parent phone
-      const effectiveParentPhone = (isPhoneLocked && verifiedParentPhone)
-        ? verifiedParentPhone
-        : (details?.parent_phone || existingProfile?.parent_phone || '');
+        const effectiveParentPhone = (isPhoneLocked && verifiedParentPhone)
+          ? verifiedParentPhone
+          : (details?.parent_phone || existingProfile?.parent_phone || '');
 
-      const profileUpdates: Record<string, any> = {
-        user_id: stableStudentUserId,
-        full_name: studentName,
-        display_name: studentName,
-        admission_number: cleanAdmission,
-        employee_id: cleanAdmission,
-        class: parsedClass,
-        section: parsedSection,
-        category: normalizedCategory,
-        department: departmentValue,
-        avatar_url: primaryPublicUrl || undefined,
-        photo_url: primaryPublicUrl || undefined,
-        role: 'student',
-        updated_at: new Date().toISOString(),
-        metadata: {
-          ...prevMeta,
-          name: studentName,
-          student_id: cleanAdmission,
+        const profileUpdates: Record<string, any> = {
+          user_id: stableStudentUserId,
+          full_name: studentName,
+          display_name: studentName,
           admission_number: cleanAdmission,
           employee_id: cleanAdmission,
           class: parsedClass,
           section: parsedSection,
           category: normalizedCategory,
           department: departmentValue,
-          face_model_path: uploadedModel.path,
-          face_model_url: uploadedModel.publicUrl,
-          sample_images: allSampleUrls,
-          sample_storage_paths: allSamplePaths,
-          primary_photo_path: `students/${cleanAdmission}/faces/front.jpg`,
-          parent_name: details?.parent_name || details?.father_name || prevMeta.parent_name || '',
-          parent_phone: effectiveParentPhone,
-          phone_locked: isPhoneLocked,
-          imported_from_pdf: isPhoneLocked ? true : Boolean(prevMeta.imported_from_pdf),
-          source: prevMeta.source || (isPhoneLocked ? 'pdf_upload' : ''),
-          verified_parent_phone: verifiedParentPhone,
-          parent_email: details?.email || prevMeta.parent_email || '',
-          student_email: details?.email || prevMeta.student_email || '',
-          date_of_birth: details?.date_of_birth || prevMeta.date_of_birth || '',
-          address: details?.address || prevMeta.address || '',
-          blood_group: details?.blood_group || prevMeta.blood_group || '',
-          avatar_url: primaryPublicUrl || '',
-          photo_url: primaryPublicUrl || '',
-          biometric_summary: effectiveMasterDescriptor && effectiveMasterDescriptor.length >= 64
-            ? {
-                version: 1,
-                centroid_descriptor: effectiveMasterDescriptor.map((v: number) => Number(Number(v).toFixed(5))),
-                exemplar_descriptors: validSamples
-                  .slice(0, 5)
-                  .map((s) => Array.from(s.descriptor as any, (v: any) => Number(Number(v).toFixed(5)))),
-                sample_count: validSamples.length,
-                has_glasses_profile: Boolean(wearsGlasses),
-                updated_at: new Date().toISOString(),
-              }
-            : prevMeta.biometric_summary,
-        },
-      };
-
-      if (effectiveParentPhone) {
-        profileUpdates.parent_phone = effectiveParentPhone;
-        profileUpdates.phone = effectiveParentPhone;
-      }
-      if (details?.email) {
-        profileUpdates.email = details.email.trim();
-        profileUpdates.parent_email = details.email.trim();
-      }
-      if (details?.father_name) profileUpdates.father_name = details.father_name;
-      if (details?.mother_name) profileUpdates.mother_name = details.mother_name;
-      if (details?.date_of_birth) profileUpdates.date_of_birth = details.date_of_birth;
-      if (details?.address) profileUpdates.address = details.address;
-      if (details?.blood_group) profileUpdates.blood_group = details.blood_group;
-
-      if (existingProfile?.id) {
-        await supabase
-          .from('profiles')
-          .update(profileUpdates)
-          .eq('id', existingProfile.id);
-      } else {
-        await supabase.from('profiles').insert({
-          ...profileUpdates,
-          created_at: new Date().toISOString(),
-        });
-      }
-
-      // Ensure user_roles record
-      try {
-        const { data: existingRole } = await supabase
-          .from('user_roles')
-          .select('id')
-          .eq('user_id', stableStudentUserId)
-          .limit(1)
-          .maybeSingle();
-        if (!existingRole) {
-          await supabase.from('user_roles').insert({
-            user_id: stableStudentUserId,
-            role: 'student',
-            created_at: new Date().toISOString(),
-          });
-        }
-      } catch (_) {}
-    } catch (profileErr) {
-      console.warn('[SyncFaceData] profile update error:', profileErr);
-    }
-
-    // 7. Refresh attendance_records registered entry with model and photo paths
-    try {
-      const { data: existingReg } = await supabase
-        .from('attendance_records')
-        .select('id')
-        .eq('student_id', cleanAdmission)
-        .eq('status', 'registered')
-        .limit(1)
-        .maybeSingle();
-
-      const regPayload: Record<string, any> = {
-        user_id: stableStudentUserId,
-        student_id: cleanAdmission,
-        student_name: studentName,
-        status: 'registered',
-        source: 'guided_enrollment',
-        class: parsedClass,
-        section: parsedSection,
-        category: normalizedCategory,
-        image_url: primaryPublicUrl || undefined,
-        face_descriptor: primarySample?.descriptor
-          ? (typeof primarySample.descriptor === 'string' ? primarySample.descriptor : JSON.stringify(Array.from(primarySample.descriptor)))
-          : null,
-        confidence_score: 1.0,
-        timestamp: new Date().toISOString(),
-        device_info: {
-          type: 'guided_3d_enrollment',
-          registration: 'true',
-          sample_count: descriptorsToInsert.length,
-          wearsGlasses,
+          avatar_url: primaryPublicUrl || undefined,
+          photo_url: primaryPublicUrl || undefined,
+          role: 'student',
           updated_at: new Date().toISOString(),
-          face_model: {
-            storage_model_path: uploadedModel.path,
-            model_url: uploadedModel.publicUrl,
-            sample_images: allSampleUrls,
-            sample_storage_paths: allSamplePaths,
-            primary_photo_url: primaryPublicUrl,
-            id_card_photo_url: primaryPublicUrl,
-            sample_count: validSamples.length,
-            sample_poses: validSamples.map((s) => s.pose),
-          },
-          training_registration_path: `students/${cleanAdmission}/faces/front.jpg`,
           metadata: {
+            ...prevMeta,
             name: studentName,
-            student_name: studentName,
-            employee_id: cleanAdmission,
             student_id: cleanAdmission,
+            admission_number: cleanAdmission,
+            employee_id: cleanAdmission,
             class: parsedClass,
             section: parsedSection,
             category: normalizedCategory,
             department: departmentValue,
-            face_model: {
-              storage_model_path: uploadedModel.path,
-              sample_images: allSampleUrls,
-              primary_photo_url: primaryPublicUrl,
-            },
-            parent_name: details?.parent_name || details?.father_name || '',
-            parent_phone: details?.parent_phone || '',
-            parent_email: details?.email || '',
-            student_email: details?.email || '',
-            phone: details?.parent_phone || '',
-            date_of_birth: details?.date_of_birth || '',
-            address: details?.address || '',
-            blood_group: details?.blood_group || '',
-            roll_number: details?.roll_number || cleanAdmission,
-            image_url: primaryPublicUrl || '',
-            firebase_image_url: primaryPublicUrl || '',
+            face_model_path: expectedModelPath,
+            sample_images: allSampleUrls,
+            sample_storage_paths: allSamplePaths,
+            primary_photo_path: `students/${cleanAdmission}/faces/front.jpg`,
+            parent_name: details?.parent_name || details?.father_name || prevMeta.parent_name || '',
+            father_name: details?.father_name || prevMeta.father_name || '',
+            mother_name: details?.mother_name || prevMeta.mother_name || '',
+            parent_phone: effectiveParentPhone,
+            phone_locked: isPhoneLocked,
+            imported_from_pdf: isPhoneLocked ? true : Boolean(prevMeta.imported_from_pdf),
+            source: prevMeta.source || (isPhoneLocked ? 'pdf_upload' : ''),
+            verified_parent_phone: verifiedParentPhone,
+            parent_email: details?.email || prevMeta.parent_email || '',
+            student_email: details?.email || prevMeta.student_email || '',
+            date_of_birth: details?.date_of_birth || prevMeta.date_of_birth || '',
+            address: details?.address || prevMeta.address || '',
+            blood_group: details?.blood_group || prevMeta.blood_group || '',
             avatar_url: primaryPublicUrl || '',
             photo_url: primaryPublicUrl || '',
+            biometric_summary: effectiveMasterDescriptor && effectiveMasterDescriptor.length >= 64
+              ? {
+                  version: 1,
+                  centroid_descriptor: effectiveMasterDescriptor.map((v: number) => Number(Number(v).toFixed(5))),
+                  exemplar_descriptors: validSamples
+                    .slice(0, 5)
+                    .map((s) => Array.from(s.descriptor as any, (v: any) => Number(Number(v).toFixed(5)))),
+                  sample_count: validSamples.length,
+                  has_glasses_profile: Boolean(wearsGlasses),
+                  updated_at: new Date().toISOString(),
+                }
+              : prevMeta.biometric_summary,
           },
-        },
-      };
+        };
 
-      if (existingReg?.id) {
-        await supabase.from('attendance_records').update(regPayload).eq('id', existingReg.id);
-      } else {
-        await supabase.from('attendance_records').insert(regPayload);
+        if (effectiveParentPhone) {
+          profileUpdates.parent_phone = effectiveParentPhone;
+          profileUpdates.phone = effectiveParentPhone;
+        }
+        if (details?.email) {
+          profileUpdates.email = details.email.trim();
+          profileUpdates.parent_email = details.email.trim();
+        }
+        if (details?.father_name) profileUpdates.father_name = details.father_name;
+        if (details?.mother_name) profileUpdates.mother_name = details.mother_name;
+        if (details?.date_of_birth) profileUpdates.date_of_birth = details.date_of_birth;
+        if (details?.address) profileUpdates.address = details.address;
+        if (details?.blood_group) profileUpdates.blood_group = details.blood_group;
+
+        if (existingProfile?.id) {
+          await supabase.from('profiles').update(profileUpdates).eq('id', existingProfile.id);
+        } else {
+          await supabase.from('profiles').insert({
+            ...profileUpdates,
+            created_at: new Date().toISOString(),
+          });
+        }
+      } catch (profileErr) {
+        console.warn('[SyncFaceData] profile update error:', profileErr);
       }
-    } catch (attErr) {
-      console.warn('[SyncFaceData] attendance_records update warning:', attErr);
-    }
+    })();
 
-    // 8. Invalidate and re-sync in-memory descriptor cache immediately!
+    await Promise.all([insertDescriptorsTask, updateProfileTask]);
+
+    // Invalidate monitor cache immediately so returning to /enrollment-monitor shows fresh Enrolled status
     try {
       const { clearMonitorCache } = await import('./monitor');
       clearMonitorCache();
-      await syncDescriptorCache();
-      if (typeof window !== 'undefined') {
-        window.dispatchEvent(new CustomEvent('presence:descriptors-updated', { detail: { count: descriptorsToInsert.length } }));
+    } catch {}
+
+    // 7 & 8. Complete auxiliary artifacts, registration log & descriptor cache refresh in background (0ms UI block)
+    void (async () => {
+      try {
+        const modelArtifact = {
+          version: 'face-model-v3',
+          created_at: new Date().toISOString(),
+          student_id: cleanAdmission,
+          employee_id: cleanAdmission,
+          student_name: studentName,
+          class: parsedClass,
+          section: parsedSection,
+          category: normalizedCategory,
+          capture_mode: 'guided-3d-true-depth-v3',
+          sample_count: validSamples.length,
+          descriptor_dimensions: masterPkg.dimensions,
+          averaged_descriptor: effectiveMasterDescriptor,
+          descriptor_cloud: masterPkg.descriptorCloud,
+          face_3d_structure: canonicalFace3D,
+          canonical_landmarks_3d: canonicalFace3D.canonical_landmarks_3d,
+          point_cloud_3d: canonicalFace3D.point_cloud_3d,
+          point_cloud_3d_equivalent: canonicalFace3D.point_cloud_3d,
+          triangulated_mesh: canonicalFace3D.triangulated_mesh,
+          facial_metrics: canonicalFace3D.facial_metrics,
+          intra_cluster_coherence: masterPkg.intraClusterCoherence,
+          sample_poses: validSamples.map((s) => s.pose),
+          sample_images: allSampleUrls,
+          sample_storage_paths: allSamplePaths,
+          primary_photo_url: primaryPublicUrl,
+          wears_glasses: wearsGlasses,
+        };
+
+        const uploadedModel = await uploadStudentFaceModelArtifact(modelArtifact, cleanAdmission);
+
+        const { data: existingReg } = await supabase
+          .from('attendance_records')
+          .select('id')
+          .eq('student_id', cleanAdmission)
+          .eq('status', 'registered')
+          .limit(1)
+          .maybeSingle();
+
+        const regPayload: Record<string, any> = {
+          user_id: stableStudentUserId,
+          student_id: cleanAdmission,
+          student_name: studentName,
+          status: 'registered',
+          source: 'guided_enrollment',
+          class: parsedClass,
+          section: parsedSection,
+          category: normalizedCategory,
+          image_url: primaryPublicUrl || undefined,
+          face_descriptor: primarySample?.descriptor
+            ? (typeof primarySample.descriptor === 'string' ? primarySample.descriptor : JSON.stringify(Array.from(primarySample.descriptor)))
+            : null,
+          confidence_score: 1.0,
+          timestamp: new Date().toISOString(),
+          device_info: {
+            type: 'guided_3d_enrollment',
+            registration: 'true',
+            sample_count: descriptorsToInsert.length,
+            wearsGlasses,
+            updated_at: new Date().toISOString(),
+            face_model: {
+              storage_model_path: uploadedModel.path,
+              model_url: uploadedModel.publicUrl,
+              sample_images: allSampleUrls,
+              sample_storage_paths: allSamplePaths,
+              primary_photo_url: primaryPublicUrl,
+              id_card_photo_url: primaryPublicUrl,
+              sample_count: validSamples.length,
+              sample_poses: validSamples.map((s) => s.pose),
+            },
+            training_registration_path: `students/${cleanAdmission}/faces/front.jpg`,
+            metadata: {
+              name: studentName,
+              student_name: studentName,
+              employee_id: cleanAdmission,
+              student_id: cleanAdmission,
+              class: parsedClass,
+              section: parsedSection,
+              category: normalizedCategory,
+              department: departmentValue,
+              face_model: {
+                storage_model_path: uploadedModel.path,
+                sample_images: allSampleUrls,
+                primary_photo_url: primaryPublicUrl,
+              },
+              parent_name: details?.parent_name || details?.father_name || '',
+              parent_phone: details?.parent_phone || '',
+              parent_email: details?.email || '',
+              student_email: details?.email || '',
+              phone: details?.parent_phone || '',
+              date_of_birth: details?.date_of_birth || '',
+              address: details?.address || '',
+              blood_group: details?.blood_group || '',
+              roll_number: details?.roll_number || cleanAdmission,
+              image_url: primaryPublicUrl || '',
+              firebase_image_url: primaryPublicUrl || '',
+              avatar_url: primaryPublicUrl || '',
+              photo_url: primaryPublicUrl || '',
+            },
+          },
+        };
+
+        if (existingReg?.id) {
+          await supabase.from('attendance_records').update(regPayload).eq('id', existingReg.id);
+        } else {
+          await supabase.from('attendance_records').insert(regPayload);
+        }
+
+        await syncDescriptorCache();
+        if (typeof window !== 'undefined') {
+          window.dispatchEvent(new CustomEvent('presence:descriptors-updated', { detail: { count: descriptorsToInsert.length } }));
+        }
+      } catch (bgErr) {
+        console.warn('[SyncFaceData] Background artifact/cache sync notice:', bgErr);
       }
-      console.log(`[SyncFaceData] Successfully stored all images, model artifact, and ${descriptorsToInsert.length} descriptors for ${studentName} (${cleanAdmission})`);
-    } catch (cacheErr) {
-      console.warn('[SyncFaceData] Cache resync warning:', cacheErr);
-    }
+    })();
 
     return {
       success: true,

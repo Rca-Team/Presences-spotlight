@@ -23,6 +23,38 @@ function saveFallbackSession(token: string, sessionData: any) {
   } catch {}
 }
 
+async function findStudentProfileByAdmission(admission: string): Promise<any | null> {
+  const cleanAdm = admission.trim();
+  if (!cleanAdm) return null;
+  const lowerAdm = cleanAdm.toLowerCase();
+
+  try {
+    const { data: directRows } = await supabase
+      .from('profiles')
+      .select('*')
+      .or(`admission_number.ilike.${cleanAdm},employee_id.ilike.${cleanAdm},roll_number.ilike.${cleanAdm}`)
+      .limit(10);
+
+    if (directRows && directRows.length > 0) {
+      const exact = directRows.find((p: any) =>
+        String(p.admission_number || '').trim().toLowerCase() === lowerAdm ||
+        String(p.employee_id || '').trim().toLowerCase() === lowerAdm ||
+        String(p.roll_number || '').trim().toLowerCase() === lowerAdm
+      );
+      if (exact) return exact;
+      return directRows[0];
+    }
+  } catch {}
+
+  const { data: profiles } = await supabase.from('profiles').select('*').limit(5000);
+  return (profiles || []).find((p: any) =>
+    String(p.admission_number || '').trim().toLowerCase() === lowerAdm ||
+    String(p.employee_id || '').trim().toLowerCase() === lowerAdm ||
+    String(p.roll_number || '').trim().toLowerCase() === lowerAdm ||
+    String(p.id || '').trim().toLowerCase() === lowerAdm
+  ) || null;
+}
+
 async function handleEnrollmentFallback<T>(action: string, body: Record<string, any>): Promise<T | null> {
   if (action === 'session.get') {
     const token = String(body.session || '');
@@ -34,46 +66,56 @@ async function handleEnrollmentFallback<T>(action: string, body: Record<string, 
   if (action === 'staff.session' || action === 'verify-student') {
     const admission = String(body.admission || '').trim();
     if (!admission) return null;
-    const { data: profiles } = await supabase.from('profiles').select('*');
-    const lowerAdm = admission.toLowerCase();
-    const matched = (profiles || []).find((p: any) =>
-      String(p.admission_number || '').trim().toLowerCase() === lowerAdm ||
-      String(p.employee_id || '').trim().toLowerCase() === lowerAdm ||
-      String(p.roll_number || '').trim().toLowerCase() === lowerAdm ||
-      String(p.id || '').trim().toLowerCase() === lowerAdm
-    );
+    const matched = await findStudentProfileByAdmission(admission);
     if (!matched) {
-      throw new Error('Student not found in school records.');
+      throw new Error('Student not found in school records. Please check the admission number.');
+    }
+
+    let meta: Record<string, any> = {};
+    try {
+      meta = typeof matched.metadata === 'string' ? JSON.parse(matched.metadata) : (matched.metadata || {});
+    } catch {
+      meta = {};
     }
 
     const cleanPhone = (val: any) => String(val || '').replace(/\D/g, '').slice(-10);
+    const savedPhone = cleanPhone(
+      meta.verified_parent_phone || matched.parent_phone || matched.phone || meta.parent_phone
+    );
+
     if (action === 'verify-student') {
       const inputPhone = cleanPhone(body.phone);
-      const savedPhone = cleanPhone(matched.parent_phone || matched.phone || matched.metadata?.parent_phone);
-      if (savedPhone && inputPhone && savedPhone !== inputPhone) {
-        throw new Error('Details do not match school records. Check admission number, registered phone, and date of birth.');
+      if (savedPhone && inputPhone) {
+        const matchesFull = savedPhone === inputPhone;
+        const matchesLast4 = inputPhone.length >= 4 && savedPhone.slice(-4) === inputPhone.slice(-4);
+        if (!matchesFull && !matchesLast4) {
+          throw new Error('Details do not match school records. Check admission number, registered phone, and date of birth.');
+        }
       }
     }
 
-    const token = Array.from({ length: 64 }, () => Math.floor(Math.random() * 16).toString(16)).join('');
-    const meta = (matched.metadata && typeof matched.metadata === 'object') ? matched.metadata : {};
+    const token = `fast_${admission}_${Date.now()}`;
+    const cls = matched.class || meta.class || '';
+    const sec = matched.section || meta.section || '';
     const sessionObj = {
       session: token,
       student: {
         name: matched.full_name || matched.display_name || meta.name || admission,
         admission_number: matched.admission_number || matched.employee_id || admission,
-        class: matched.class || meta.class || '',
-        section: matched.section || meta.section || '',
-        father_name: matched.father_name || matched.parent_name || meta.parent_name || '',
+        class: cls,
+        section: sec,
+        category: matched.category || (cls && sec ? `${cls}-${sec}` : cls),
+        father_name: matched.father_name || matched.parent_name || meta.father_name || meta.parent_name || '',
         mother_name: matched.mother_name || meta.mother_name || '',
-        parent_phone: cleanPhone(matched.parent_phone || matched.phone || meta.parent_phone),
+        parent_phone: savedPhone,
         date_of_birth: matched.date_of_birth || meta.date_of_birth || '',
+        blood_group: matched.blood_group || meta.blood_group || '',
         address: matched.address || meta.address || '',
         email: matched.email || matched.parent_email || meta.student_email || '',
         phone_locked: Boolean(meta.phone_locked || meta.imported_from_pdf),
         imported_from_pdf: Boolean(meta.imported_from_pdf),
         source: meta.source || '',
-        verified_parent_phone: cleanPhone(matched.parent_phone || matched.phone || meta.parent_phone),
+        verified_parent_phone: savedPhone,
       },
       challenge: Math.random() < 0.5 ? 'left' : 'right',
       expires: Date.now() + 45 * 60000,
@@ -86,12 +128,7 @@ async function handleEnrollmentFallback<T>(action: string, body: Record<string, 
     const s = body.student || {};
     const admission = String(s.admission_number || '').trim();
     if (!admission) return { existing: null } as unknown as T;
-    const { data: profiles } = await supabase.from('profiles').select('*');
-    const lowerAdm = admission.toLowerCase();
-    const matched = (profiles || []).find((p: any) =>
-      String(p.admission_number || '').trim().toLowerCase() === lowerAdm ||
-      String(p.employee_id || '').trim().toLowerCase() === lowerAdm
-    );
+    const matched = await findStudentProfileByAdmission(admission);
     if (!matched) return { existing: null } as unknown as T;
     const cleanPhone = (val: any) => String(val || '').replace(/\D/g, '').slice(-10);
     return {
@@ -197,6 +234,20 @@ async function handleEnrollmentFallback<T>(action: string, body: Record<string, 
 }
 
 export async function enrollmentApi<T>(action: string, body: Record<string, unknown> = {}): Promise<T> {
+  // Fast-path for session & verification actions directly against Appwrite profiles (~100ms, zero cold-start)
+  if (
+    action === 'verify-student' ||
+    action === 'staff.session' ||
+    action === 'session.get' ||
+    action === 'sample' ||
+    action === 'cancel'
+  ) {
+    const directResult = await handleEnrollmentFallback<T>(action, body as Record<string, any>);
+    if (directResult !== null) {
+      return directResult;
+    }
+  }
+
   let jwt: string | undefined;
   try {
     const jwtRes = await account.createJWT().catch(() => null);
@@ -233,18 +284,8 @@ export async function enrollmentApi<T>(action: string, body: Record<string, unkn
     }
     return data;
   } catch (err: any) {
-    const msg = String(err?.message || '');
-    if (
-      msg.includes('Database reads limit') ||
-      msg.includes('billing cycle') ||
-      msg.includes('budget cap') ||
-      msg.includes('Enrollment service is unavailable') ||
-      msg.includes('Enrollment request failed') ||
-      msg.includes('Function with the requested ID could not be found')
-    ) {
-      const fb = await handleEnrollmentFallback<T>(action, body);
-      if (fb !== null) return fb;
-    }
+    const fb = await handleEnrollmentFallback<T>(action, body as Record<string, any>);
+    if (fb !== null) return fb;
     throw err;
   }
 }

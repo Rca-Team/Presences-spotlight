@@ -66,6 +66,17 @@ if (typeof window !== 'undefined' && typeof window.fetch === 'function') {
 
   let proxyUnavailable = false;
 
+  const isProxyRouteMissing = (res: Response): boolean => {
+    if (res.status !== 404) return false;
+    if (res.headers.get('x-appwrite-proxy') === '1') return false;
+    const ct = (res.headers.get('content-type') || '').toLowerCase();
+    // Legitimate Appwrite 404 responses (e.g. file/document not found) return JSON
+    if (ct.includes('application/json') || ct.includes('application/problem+json')) {
+      return false;
+    }
+    return true;
+  };
+
   window.fetch = async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
     const rawUrl =
       typeof input === 'string'
@@ -76,7 +87,7 @@ if (typeof window !== 'undefined' && typeof window.fetch === 'function') {
             ? input.url
             : '';
 
-    // If caller passed a /api/appwrite URL and the proxy returned 404 earlier, rewrite back to upstream
+    // If caller passed a /api/appwrite URL and the proxy route itself was missing, rewrite back to upstream
     if (rawUrl.includes('/api/appwrite/v1') && proxyUnavailable) {
       const directUrl = rawUrl.replace(/^https?:\/\/[^/]+\/api\/appwrite\/v1/, APPWRITE_ENDPOINT).replace(/^\/api\/appwrite\/v1/, APPWRITE_ENDPOINT);
       return originalFetch(directUrl, init);
@@ -84,7 +95,7 @@ if (typeof window !== 'undefined' && typeof window.fetch === 'function') {
 
     if (rawUrl.includes('/api/appwrite/v1')) {
       const res = await originalFetch(input, init);
-      if (res.status === 404) {
+      if (isProxyRouteMissing(res)) {
         proxyUnavailable = true;
         const directUrl = rawUrl.replace(/^https?:\/\/[^/]+\/api\/appwrite\/v1/, APPWRITE_ENDPOINT).replace(/^\/api\/appwrite\/v1/, APPWRITE_ENDPOINT);
         return originalFetch(directUrl, init);
@@ -100,7 +111,7 @@ if (typeof window !== 'undefined' && typeof window.fetch === 'function') {
       const proxyUrl = rewriteToSameOriginProxy(rawUrl);
       if (proxyUrl) {
         const res = await originalFetch(proxyUrl, init);
-        if (res.status === 404) {
+        if (isProxyRouteMissing(res)) {
           proxyUnavailable = true;
           return originalFetch(input, init);
         }
@@ -111,81 +122,21 @@ if (typeof window !== 'undefined' && typeof window.fetch === 'function') {
     return originalFetch(input, init);
   };
 
-  // Prevent infinite 1-second Realtime WebSocket reconnect loops when custom domain
-  // is not yet registered in Appwrite Console -> Web Platforms
-  if (typeof window.WebSocket === 'function' && !isLocalOrNativeOrigin()) {
+  // Prevent browser console spam ("WebSocket is already in CLOSING or CLOSED state")
+  // when Appwrite's heartbeat timer fires while a socket is reconnecting or offline
+  if (typeof window.WebSocket === 'function') {
     const NativeWebSocket = window.WebSocket;
-    let realtimeWsBlocked = false;
-
-    const PatchedWebSocket = function (
-      this: WebSocket,
-      url: string | URL,
-      protocols?: string | string[]
-    ): WebSocket {
-      const urlStr = String(url);
-      if (urlStr.includes('.cloud.appwrite.io/v1/realtime')) {
-        if (realtimeWsBlocked) {
-          // Return an inert WebSocket-like object that stays quiet so the SDK does not loop
-          const dummyTarget = new EventTarget();
-          return Object.assign(dummyTarget, {
-            url: urlStr,
-            readyState: NativeWebSocket.OPEN,
-            protocol: '',
-            extensions: '',
-            bufferedAmount: 0,
-            binaryType: 'blob' as BinaryType,
-            CONNECTING: NativeWebSocket.CONNECTING,
-            OPEN: NativeWebSocket.OPEN,
-            CLOSING: NativeWebSocket.CLOSING,
-            CLOSED: NativeWebSocket.CLOSED,
-            onopen: null,
-            onmessage: null,
-            onerror: null,
-            onclose: null,
-            send() {},
-            close() {},
-          }) as unknown as WebSocket;
-        }
-
-        const ws = protocols !== undefined
-          ? new NativeWebSocket(url, protocols)
-          : new NativeWebSocket(url);
-
-        let receivedValidMessage = false;
-        ws.addEventListener('message', (ev) => {
-          try {
-            const parsed = JSON.parse(String(ev.data || '{}'));
-            if (parsed?.type === 'connected' || parsed?.type === 'event' || parsed?.type === 'pong') {
-              receivedValidMessage = true;
-            }
-            if (parsed?.type === 'error' && (parsed?.data?.code === 1008 || parsed?.data?.code === 403)) {
-              realtimeWsBlocked = true;
-            }
-          } catch {
-            // ignore
-          }
-        });
-        ws.addEventListener('close', (ev) => {
-          if (!receivedValidMessage && (ev.code === 1008 || ev.code === 1006 || ev.code === 1000)) {
-            realtimeWsBlocked = true;
-          }
-        });
-        return ws;
+    const origSend = NativeWebSocket.prototype.send;
+    NativeWebSocket.prototype.send = function (data: string | ArrayBufferLike | Blob | ArrayBufferView) {
+      if (this.readyState !== NativeWebSocket.OPEN) {
+        return;
       }
-
-      return protocols !== undefined
-        ? new NativeWebSocket(url, protocols)
-        : new NativeWebSocket(url);
-    } as unknown as typeof WebSocket;
-
-    Object.assign(PatchedWebSocket, {
-      CONNECTING: NativeWebSocket.CONNECTING,
-      OPEN: NativeWebSocket.OPEN,
-      CLOSING: NativeWebSocket.CLOSING,
-      CLOSED: NativeWebSocket.CLOSED,
-      prototype: NativeWebSocket.prototype,
-    });
-    window.WebSocket = PatchedWebSocket;
+      try {
+        return origSend.call(this, data);
+      } catch {
+        // Ignore transient send errors on closing sockets
+      }
+    };
   }
 }
 
