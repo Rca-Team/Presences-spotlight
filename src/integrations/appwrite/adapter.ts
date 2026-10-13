@@ -22,8 +22,13 @@ function sanitizeImageUrl(url: any): string | null {
   if (url.includes('supabase.co')) {
     const match = url.match(/\/storage\/v1\/object\/(?:public|sign)\/([^/]+)\/(.*?)(?:\?|$)/);
     if (match) {
-      return getAppwriteStorageViewUrl(match[1], storageFileId(decodeURIComponent(match[2])));
+      const bucket = match[1];
+      const fileId = storageFileId(decodeURIComponent(match[2]));
+      return getAppwriteStorageViewUrl(bucket, fileId, APPWRITE_CONFIG.projectId);
     }
+  }
+  if (url.includes('6abfd34f000604fcf074')) {
+    return url.replace(/6abfd34f000604fcf074/g, APPWRITE_CONFIG.projectId);
   }
   return url;
 }
@@ -165,6 +170,154 @@ function saveLocalOverlayDoc(collectionName: string, id: string, doc: any | null
       localStorage.setItem(`presences_fallback_docs_${collectionName}`, JSON.stringify(map));
     }
   } catch {}
+}
+
+const SUPABASE_MIRROR_TABLES = new Set([
+  'profiles',
+  'face_descriptors',
+  'attendance_records',
+  'timetable',
+  'attendance_settings',
+  'emergency_events',
+  'user_roles',
+  'notifications',
+]);
+
+const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+function extractUnknownAttrFromError(err: any): string | null {
+  const msg = String(err?.message || '');
+  const m = msg.match(/Unknown attribute:\s*"?([a-zA-Z0-9_]+)"?/i);
+  if (m?.[1]) return m[1];
+  const m2 = msg.match(/Attribute\s+"?([a-zA-Z0-9_]+)"?\s+has invalid/i);
+  if (m2?.[1]) return m2[1];
+  return null;
+}
+
+async function createDocumentWithSchemaRetry(collectionName: string, docId: string, initialPayload: Record<string, any>): Promise<any> {
+  const payload = { ...initialPayload };
+  for (const k of Object.keys(payload)) {
+    if (payload[k] === undefined) delete payload[k];
+  }
+  for (let attempt = 0; attempt < 8; attempt++) {
+    try {
+      return await databases.createDocument(DATABASE_ID, collectionName, docId, payload);
+    } catch (err: any) {
+      const unknownAttr = extractUnknownAttrFromError(err);
+      if (unknownAttr && unknownAttr in payload) {
+        delete payload[unknownAttr];
+        continue;
+      }
+      throw err;
+    }
+  }
+  return await databases.createDocument(DATABASE_ID, collectionName, docId, payload);
+}
+
+async function updateDocumentWithSchemaRetry(collectionName: string, docId: string, initialPayload: Record<string, any>): Promise<any> {
+  const payload = { ...initialPayload };
+  for (const k of Object.keys(payload)) {
+    if (payload[k] === undefined) delete payload[k];
+  }
+  for (let attempt = 0; attempt < 8; attempt++) {
+    try {
+      return await databases.updateDocument(DATABASE_ID, collectionName, docId, payload);
+    } catch (err: any) {
+      const unknownAttr = extractUnknownAttrFromError(err);
+      if (unknownAttr && unknownAttr in payload) {
+        delete payload[unknownAttr];
+        continue;
+      }
+      throw err;
+    }
+  }
+  return await databases.updateDocument(DATABASE_ID, collectionName, docId, payload);
+}
+
+function prepareSupabaseMirrorRow(collectionName: string, raw: Record<string, any>): Record<string, any> {
+  const row: Record<string, any> = {};
+  for (const [k, v] of Object.entries(raw)) {
+    if (k.startsWith('$') || v === undefined) continue;
+    if (k === 'id' && !UUID_REGEX.test(String(v || ''))) continue;
+    if (k === 'user_id' && !UUID_REGEX.test(String(v || ''))) continue;
+    if ((k === 'metadata' || k === 'device_info') && typeof v === 'string') {
+      try {
+        row[k] = JSON.parse(v);
+        continue;
+      } catch {}
+    }
+    row[k] = v;
+  }
+  if (collectionName === 'face_descriptors' && row.descriptor && typeof row.descriptor !== 'string') {
+    row.descriptor = JSON.stringify(row.descriptor);
+  }
+  return row;
+}
+
+async function mirrorMutationToSupabase(
+  collectionName: string,
+  kind: 'insert' | 'upsert' | 'update' | 'delete',
+  docOrId: any,
+  patchData?: Record<string, any>
+): Promise<void> {
+  if (typeof window === 'undefined' || typeof fetch !== 'function') return;
+  if (!SUPABASE_MIRROR_TABLES.has(collectionName)) return;
+  const { url, key } = getSupabaseFallbackConfig();
+  const headers: Record<string, string> = {
+    apikey: key,
+    Authorization: `Bearer ${key}`,
+    'Content-Type': 'application/json',
+  };
+
+  try {
+    if (kind === 'insert' || kind === 'upsert') {
+      const row = prepareSupabaseMirrorRow(collectionName, docOrId);
+      if (Object.keys(row).length === 0) return;
+      await fetch(`${url}/rest/v1/${collectionName}`, {
+        method: 'POST',
+        headers: {
+          ...headers,
+          Prefer: 'resolution=merge-duplicates,return=minimal',
+        },
+        body: JSON.stringify(row),
+      });
+    } else if (kind === 'update') {
+      const row = prepareSupabaseMirrorRow(collectionName, patchData || docOrId);
+      delete row.id;
+      if (Object.keys(row).length === 0) return;
+      const docId = String(docOrId?.id || docOrId?.$id || '');
+      const adm = String(docOrId?.admission_number || docOrId?.employee_id || '').trim();
+      if (UUID_REGEX.test(docId)) {
+        await fetch(`${url}/rest/v1/${collectionName}?id=eq.${encodeURIComponent(docId)}`, {
+          method: 'PATCH',
+          headers: { ...headers, Prefer: 'return=minimal' },
+          body: JSON.stringify(row),
+        });
+      } else if (collectionName === 'profiles' && adm) {
+        await fetch(`${url}/rest/v1/profiles?or=(admission_number.eq.${encodeURIComponent(adm)},employee_id.eq.${encodeURIComponent(adm)})`, {
+          method: 'PATCH',
+          headers: { ...headers, Prefer: 'return=minimal' },
+          body: JSON.stringify(row),
+        });
+      }
+    } else if (kind === 'delete') {
+      const docId = String(docOrId?.id || docOrId?.$id || docOrId || '');
+      const studentId = String(docOrId?.student_id || '').trim();
+      if (UUID_REGEX.test(docId)) {
+        await fetch(`${url}/rest/v1/${collectionName}?id=eq.${encodeURIComponent(docId)}`, {
+          method: 'DELETE',
+          headers,
+        });
+      } else if (collectionName === 'face_descriptors' && studentId) {
+        await fetch(`${url}/rest/v1/face_descriptors?student_id=eq.${encodeURIComponent(studentId)}`, {
+          method: 'DELETE',
+          headers,
+        });
+      }
+    }
+  } catch {
+    // Non-blocking cloud mirror
+  }
 }
 
 function enrichSupabaseProfileDoc(raw: any): any {
@@ -582,6 +735,9 @@ export class AppwriteQueryBuilder<T = any> implements PromiseLike<{ data: T | nu
   }
 
   like(column: string, pattern: string): this {
+    if (!pattern.includes('%')) {
+      return this.eq(column, pattern);
+    }
     const clean = pattern.replace(/%/g, '');
     this.queries.push(Query.search(mapColumnName(column), clean));
     return this;
@@ -661,7 +817,10 @@ export class AppwriteQueryBuilder<T = any> implements PromiseLike<{ data: T | nu
             const cleanCol = mapColumnName(col);
             if (op === 'eq') subQueries.push(Query.equal(cleanCol, val));
             else if (op === 'neq') subQueries.push(Query.notEqual(cleanCol, val));
-            else if (op === 'like' || op === 'ilike') subQueries.push(Query.search(cleanCol, val.replace(/%/g, '')));
+            else if (op === 'like' || op === 'ilike') {
+              if (val.includes('%')) subQueries.push(Query.search(cleanCol, val.replace(/%/g, '')));
+              else subQueries.push(Query.equal(cleanCol, val));
+            }
           }
         }
         if (subQueries.length > 0) {
@@ -796,8 +955,9 @@ export class AppwriteQueryBuilder<T = any> implements PromiseLike<{ data: T | nu
     const boundedSingleRead = !all && !this.mutation && (this.isSingle || this.isMaybeSingle);
     if (!hasLimit) queries.push(Query.limit(boundedSingleRead ? 2 : 100));
 
+    const canCache = !this.mutation && !all && (!boundedSingleRead || queries.length > 1);
     const cacheKey = `${this.collectionName}:${JSON.stringify(queries)}:${boundedSingleRead ? 'single' : 'list'}`;
-    if (!this.mutation && !all && !boundedSingleRead) {
+    if (canCache) {
       const cached = queryCache.get(cacheKey);
       if (cached && cached.expiresAt > Date.now()) {
         return { documents: [...cached.data.documents], total: cached.data.total };
@@ -810,8 +970,8 @@ export class AppwriteQueryBuilder<T = any> implements PromiseLike<{ data: T | nu
     const fetchPromise = (async () => {
       if (Date.now() < appwriteReadQuotaCooldownUntil) {
         const fbResult = await querySupabaseFallback(this.collectionName, queries, all || (!hasLimit && !boundedSingleRead));
-        if (!this.mutation && !all && !boundedSingleRead) {
-          queryCache.set(cacheKey, { data: fbResult, expiresAt: Date.now() + 15000 });
+        if (canCache) {
+          queryCache.set(cacheKey, { data: fbResult, expiresAt: Date.now() + 20000 });
         }
         return fbResult;
       }
@@ -827,9 +987,9 @@ export class AppwriteQueryBuilder<T = any> implements PromiseLike<{ data: T | nu
           }
         }
         const result = { documents, total: response.total };
-        if (!this.mutation && !all && !boundedSingleRead) {
+        if (canCache && (!boundedSingleRead || documents.length <= 1)) {
           const fastChanging = ['attendance_records', 'gate_entries', 'notifications', 'emergency_events'];
-          const ttl = fastChanging.includes(this.collectionName) ? 12000 : 45000;
+          const ttl = fastChanging.includes(this.collectionName) ? 30000 : 120000;
           queryCache.set(cacheKey, { data: result, expiresAt: Date.now() + ttl });
         }
         return result;
@@ -842,8 +1002,8 @@ export class AppwriteQueryBuilder<T = any> implements PromiseLike<{ data: T | nu
           console.warn(`[AppwriteAdapter] Appwrite read limit reached (402) on "${this.collectionName}". Switching to live cloud failover.`);
           const fbResult = await querySupabaseFallback(this.collectionName, queries, all || (!hasLimit && !boundedSingleRead));
           if (fbResult.documents.length > 0) {
-            if (!this.mutation && !all && !boundedSingleRead) {
-              queryCache.set(cacheKey, { data: fbResult, expiresAt: Date.now() + 15000 });
+            if (canCache) {
+              queryCache.set(cacheKey, { data: fbResult, expiresAt: Date.now() + 20000 });
             }
             return fbResult;
           }
@@ -857,7 +1017,7 @@ export class AppwriteQueryBuilder<T = any> implements PromiseLike<{ data: T | nu
       }
     })();
 
-    if (!this.mutation && !all && !boundedSingleRead) {
+    if (canCache) {
       inFlightRequests.set(cacheKey, fetchPromise);
     }
 
@@ -875,7 +1035,39 @@ export class AppwriteQueryBuilder<T = any> implements PromiseLike<{ data: T | nu
         const { kind, data, options } = this.mutation;
         docs = [];
         if (kind === 'insert' || kind === 'upsert') {
-          for (const rawItem of Array.isArray(data) ? data : [data]) {
+          const rawList = Array.isArray(data) ? data : [data];
+          const conflictFields = (kind === 'upsert' && options?.onConflict)
+            ? String(options.onConflict).split(',').map((f: string) => f.trim()).filter(Boolean)
+            : [];
+
+          // Batch pre-fetch conflict IDs when upserting multiple rows on a single conflict column
+          const batchConflictMap = new Map<string, string>();
+          if (kind === 'upsert' && conflictFields.length === 1 && rawList.length > 1) {
+            const field = conflictFields[0];
+            const mappedCol = mapColumnName(field);
+            const values = Array.from(new Set(rawList.map(r => r?.[field]).filter(v => v !== undefined && v !== null && v !== '')));
+            const LOOKUP_CHUNK = 50;
+            for (let i = 0; i < values.length; i += LOOKUP_CHUNK) {
+              const slice = values.slice(i, i + LOOKUP_CHUNK);
+              const q = [Query.equal(mappedCol, slice), Query.limit(Math.min(100, slice.length * 2))];
+              try {
+                const existing = Date.now() < appwriteReadQuotaCooldownUntil
+                  ? await querySupabaseFallback(this.collectionName, q, false)
+                  : await databases.listDocuments(DATABASE_ID, this.collectionName, q);
+                for (const doc of existing.documents || []) {
+                  const keyVal = String(doc[mappedCol] ?? doc[field] ?? '').toLowerCase();
+                  const docId = doc.$id || doc.id;
+                  if (keyVal && docId) batchConflictMap.set(keyVal, docId);
+                }
+              } catch (confErr: any) {
+                if (isAppwriteQuotaLimitError(confErr)) {
+                  appwriteReadQuotaCooldownUntil = Date.now() + 10 * 60 * 1000;
+                }
+              }
+            }
+          }
+
+          const processSingleItem = async (rawItem: any) => {
             const item = { ...rawItem };
             if (this.collectionName === 'push_subscriptions') {
               if (!item.subscription && (item.endpoint || item.keys_p256dh || item.keys_auth)) {
@@ -893,53 +1085,75 @@ export class AppwriteQueryBuilder<T = any> implements PromiseLike<{ data: T | nu
               }
             }
             let id = item.id || item.$id;
-            if (kind === 'upsert' && !id && options?.onConflict) {
-              const fields = options.onConflict.split(',').map(f => f.trim());
+            if (kind === 'upsert' && !id && conflictFields.length === 1) {
+              const val = String(item[conflictFields[0]] ?? '').toLowerCase();
+              if (val && batchConflictMap.has(val)) {
+                id = batchConflictMap.get(val);
+              }
+            }
+            if (kind === 'upsert' && !id && conflictFields.length > 0 && rawList.length === 1) {
+              const conflictQueries = [...conflictFields.map((f: string) => Query.equal(mapColumnName(f), item[f])), Query.limit(2)];
               try {
                 if (Date.now() < appwriteReadQuotaCooldownUntil) {
-                  const existing = await querySupabaseFallback(this.collectionName, [...fields.map(f => Query.equal(mapColumnName(f), item[f])), Query.limit(2)], false);
+                  const existing = await querySupabaseFallback(this.collectionName, conflictQueries, false);
                   id = existing.documents[0]?.$id || existing.documents[0]?.id;
                 } else {
-                  const existing = await databases.listDocuments(DATABASE_ID, this.collectionName,
-                    [...fields.map(f => Query.equal(mapColumnName(f), item[f])), Query.limit(2)]);
+                  const existing = await databases.listDocuments(DATABASE_ID, this.collectionName, conflictQueries);
                   if (existing.total > 1) throw new Error('Conflict columns match multiple records');
                   id = existing.documents[0]?.$id;
                 }
-              } catch (_) {
-                // If conflict index doesn't exist, proceed with new creation
+              } catch (confErr: any) {
+                if (isAppwriteQuotaLimitError(confErr)) {
+                  appwriteReadQuotaCooldownUntil = Date.now() + 10 * 60 * 1000;
+                  try {
+                    const existing = await querySupabaseFallback(this.collectionName, conflictQueries, false);
+                    id = existing.documents[0]?.$id || existing.documents[0]?.id;
+                  } catch {}
+                }
               }
             }
             const payload = sanitizeDocForSave(item);
             const targetId = id || ID.unique();
             if (kind === 'upsert' && id) {
               try {
-                const updated = await databases.updateDocument(DATABASE_ID, this.collectionName, id, payload);
-                saveLocalOverlayDoc(this.collectionName, id, updated);
-                docs.push(updated);
-                continue;
+                const updated = await updateDocumentWithSchemaRetry(this.collectionName, id, payload);
+                const fullDoc = { ...item, ...updated, $id: id, id };
+                saveLocalOverlayDoc(this.collectionName, id, fullDoc);
+                void mirrorMutationToSupabase(this.collectionName, 'upsert', fullDoc);
+                return fullDoc;
               } catch (error: any) {
                 if (isAppwriteQuotaLimitError(error)) {
                   const localDoc = { ...item, ...payload, $id: id, id, updated_at: new Date().toISOString() };
                   saveLocalOverlayDoc(this.collectionName, id, localDoc);
-                  docs.push(localDoc);
-                  continue;
+                  void mirrorMutationToSupabase(this.collectionName, 'upsert', localDoc);
+                  return localDoc;
                 }
                 if (error.code !== 404) throw error;
               }
             }
             try {
-              const created = await databases.createDocument(DATABASE_ID, this.collectionName, targetId, payload);
-              saveLocalOverlayDoc(this.collectionName, created.$id || targetId, created);
-              docs.push(created);
+              const created = await createDocumentWithSchemaRetry(this.collectionName, targetId, payload);
+              const createdId = created.$id || targetId;
+              const fullDoc = { ...item, ...created, $id: createdId, id: createdId };
+              saveLocalOverlayDoc(this.collectionName, createdId, fullDoc);
+              void mirrorMutationToSupabase(this.collectionName, kind, fullDoc);
+              return fullDoc;
             } catch (createErr: any) {
               if (isAppwriteQuotaLimitError(createErr)) {
                 const localDoc = { ...item, ...payload, $id: targetId, id: targetId, created_at: new Date().toISOString() };
                 saveLocalOverlayDoc(this.collectionName, targetId, localDoc);
-                docs.push(localDoc);
-              } else {
-                throw createErr;
+                void mirrorMutationToSupabase(this.collectionName, kind, localDoc);
+                return localDoc;
               }
+              throw createErr;
             }
+          };
+
+          const WRITE_CONCURRENCY = 10;
+          for (let i = 0; i < rawList.length; i += WRITE_CONCURRENCY) {
+            const batch = rawList.slice(i, i + WRITE_CONCURRENCY);
+            const batchDocs = await Promise.all(batch.map(processSingleItem));
+            docs.push(...batchDocs);
           }
         } else {
           // Critical safety check: Refuse to update or delete without any query filters!
@@ -952,13 +1166,16 @@ export class AppwriteQueryBuilder<T = any> implements PromiseLike<{ data: T | nu
             const docId = doc.$id || doc.id;
             if (kind === 'update') {
               try {
-                const updated = await databases.updateDocument(DATABASE_ID, this.collectionName, docId, sanitizeDocForSave(data));
-                saveLocalOverlayDoc(this.collectionName, docId, updated);
-                docs.push(updated);
+                const updated = await updateDocumentWithSchemaRetry(this.collectionName, docId, sanitizeDocForSave(data));
+                const fullDoc = { ...doc, ...data, ...updated, $id: docId, id: docId };
+                saveLocalOverlayDoc(this.collectionName, docId, fullDoc);
+                void mirrorMutationToSupabase(this.collectionName, 'update', fullDoc, data);
+                docs.push(fullDoc);
               } catch (updErr: any) {
                 if (isAppwriteQuotaLimitError(updErr) || updErr?.code === 404) {
                   const localDoc = { ...doc, ...data, $id: docId, id: docId, updated_at: new Date().toISOString() };
                   saveLocalOverlayDoc(this.collectionName, docId, localDoc);
+                  void mirrorMutationToSupabase(this.collectionName, 'update', localDoc, data);
                   docs.push(localDoc);
                 } else {
                   throw updErr;
@@ -971,6 +1188,7 @@ export class AppwriteQueryBuilder<T = any> implements PromiseLike<{ data: T | nu
                 if (!isAppwriteQuotaLimitError(delErr) && delErr?.code !== 404) throw delErr;
               }
               saveLocalOverlayDoc(this.collectionName, docId, null);
+              void mirrorMutationToSupabase(this.collectionName, 'delete', doc);
               docs.push(doc);
             }
           }
@@ -1156,15 +1374,51 @@ class AppwriteAuthClient {
 
   async signInWithPassword({ email, password }: { email: string; password: string }): Promise<{ data: any; error: any }> {
     this.last401Time = 0;
+    this.userRequest = null;
+    const cleanEmail = email.trim().toLowerCase();
     try {
-      await account.createEmailPasswordSession(email.trim().toLowerCase(), password);
-      const user = this.formatUser(await account.get());
+      try {
+        await account.createEmailPasswordSession(cleanEmail, password);
+      } catch (sessionErr: any) {
+        const errType = String(sessionErr?.type || '').toLowerCase();
+        const errMsg = String(sessionErr?.message || '').toLowerCase();
+        if (
+          errType === 'user_session_already_exists' ||
+          errMsg.includes('session is active') ||
+          errMsg.includes('already exists')
+        ) {
+          try {
+            await account.deleteSession('current');
+          } catch {
+            // Ignore deleteSession failure
+          }
+          try {
+            if (typeof localStorage !== 'undefined') {
+              localStorage.removeItem('cookieFallback');
+            }
+          } catch {
+            // Ignore localStorage error
+          }
+          await account.createEmailPasswordSession(cleanEmail, password);
+        } else {
+          throw sessionErr;
+        }
+      }
+
+      this.last401Time = 0;
+      this.userRequest = null;
+      const rawAccount = await account.get();
+      const user = this.formatUser(rawAccount);
       this.cachedUser = user;
+      this.lastValidatedTime = Date.now();
+      this.last401Time = 0;
       this.saveLocalAuth(user);
-      const session = { user, access_token: 'appwrite-active-session' };
+      const session = { user, access_token: 'appwrite-active-session', expires_at: 9999999999 };
       this.notifyListeners('SIGNED_IN', session);
       return { data: { user, session }, error: null };
-    } catch (error: any) { return { data: null, error }; }
+    } catch (error: any) {
+      return { data: null, error };
+    }
   }
 
   signInWithOAuth = async (
@@ -1212,8 +1466,20 @@ class AppwriteAuthClient {
   async signOut(_options?: any): Promise<{ error: any }> {
     try {
       await account.deleteSession('current');
-    } catch (error: any) { if (error.code !== 401) return { error }; }
+    } catch {
+      // Ignore 401 or network error when clearing session
+    }
+    try {
+      if (typeof localStorage !== 'undefined') {
+        localStorage.removeItem('cookieFallback');
+      }
+    } catch {
+      // Ignore storage error
+    }
     this.cachedUser = null;
+    this.lastValidatedTime = 0;
+    this.last401Time = Date.now();
+    this.userRequest = null;
     this.saveLocalAuth(null);
     this.notifyListeners('SIGNED_OUT', null);
     return { error: null };
@@ -1649,13 +1915,21 @@ class AppwriteFunctionsBridge {
 
       // 3. Fallback to Appwrite Functions Execution
       try {
+        const safeHeaders: Record<string, string> = {};
+        if (options?.headers) {
+          for (const [k, v] of Object.entries(options.headers)) {
+            if (!k.toLowerCase().startsWith('x-appwrite')) {
+              safeHeaders[k] = v;
+            }
+          }
+        }
         const execution = await functions.createExecution(
           functionName,
           bodyStr,
           false,
           '/',
           'POST' as any,
-          options?.headers || {}
+          safeHeaders
         );
         if (execution.status === 'failed' || execution.responseStatusCode >= 400) {
           return { data: null, error: { message: execution.responseBody || 'Function execution failed', code: execution.responseStatusCode } };

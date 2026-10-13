@@ -31,9 +31,12 @@ export const fields = ['name', 'admission_number', 'class', 'section', 'father_n
 export const poses = ['front', 'left', 'right', 'up', 'down', 'up-left', 'up-right', 'down-left', 'down-right'];
 export function cleanStudent(input) {
   const row = Object.fromEntries(fields.map(key => [key, String(input?.[key] || '').normalize('NFKC').trim().slice(0, key === 'address' ? 250 : 120)]));
-  if (!row.name || !/^[\w./-]{1,64}$/.test(row.admission_number)) reject(400, 'Name and a valid admission number are required.');
-  if (row.parent_phone && !phoneNumber(row.parent_phone)) reject(400, 'Parent phone must include a valid country code.');
-  row.parent_phone = phoneNumber(row.parent_phone);
+  // Admission number: require at least 2 chars of word/digit/separator characters
+  const adm = row.admission_number || String(input?.employee_id || input?.student_id_kv || '').trim().slice(0, 64);
+  if (adm && adm !== row.admission_number) row.admission_number = adm;
+  if (!row.name || row.name.length < 2 || !row.admission_number || row.admission_number.length < 2) reject(400, `Name and a valid admission number are required (got name="${row.name}", adm="${row.admission_number}").`);
+  // Phone: silently clear if OCR produced an unrecognized format — never reject the student
+  row.parent_phone = phoneNumber(row.parent_phone) || '';
   return row;
 }
 export function validateSample(sample) {

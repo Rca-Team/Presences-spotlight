@@ -30,6 +30,7 @@ export type PortfolioMember = {
   bio: string;
   details?: string;
   image: string;
+  tags?: string[];
 };
 
 export type PortfolioSocials = {
@@ -302,6 +303,7 @@ function migrate(raw: any): PortfolioData {
       image: img,
       bio: m.bio ?? '',
       details: m.details ?? '',
+      tags: Array.isArray(m.tags) ? m.tags : undefined,
     };
   });
 

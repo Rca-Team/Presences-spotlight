@@ -165,6 +165,15 @@ export function ClassPDFIDCardImporter({ isOpen, onClose, onImportDrafts, initia
   async function confirm() {
     if (!chosen.length || invalid || busy || !classAllowed) return;
     setSaving(true); setError('');
+
+    // Safety net: always unlock after 90s max so the button never stays frozen
+    const safetyTimer = setTimeout(() => {
+      if (mounted.current) {
+        setSaving(false);
+        setError('Save timed out. Some records may have saved – check the student list and retry if needed.');
+      }
+    }, 90000);
+
     try {
       const students = chosen.map(({ student }) => ({
         ...student,
@@ -179,7 +188,10 @@ export function ClassPDFIDCardImporter({ isOpen, onClose, onImportDrafts, initia
       clear(); setFiles([]); onClose();
     } catch (failure) {
       setError(failure instanceof Error ? failure.message : 'Could not save the import. Your reviewed cards are still here; retry after correcting the error.');
-    } finally { if (mounted.current) setSaving(false); }
+    } finally {
+      clearTimeout(safetyTimer);
+      if (mounted.current) setSaving(false);
+    }
   }
 
   async function extract() {

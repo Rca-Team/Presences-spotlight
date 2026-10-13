@@ -403,17 +403,26 @@ export function PublicPortfolioView({
             {data.members.map((m) => {
               const n = (m.name || '').toLowerCase();
               const isLeader = n.includes('gaurav');
+              // Use first editable tag as label if set; otherwise fall back to name-based defaults
+              const tagLabel = m.tags && m.tags.length > 0 ? m.tags[0] : (
+                isLeader ? 'Team Leader · Architect'
+                  : n.includes('maurya') ? 'Bio Wale'
+                  : n.includes('dhama') || n.trim() === 'jatin' ? 'Gaming Wale'
+                  : n.includes('swami') || n.includes('anant') ? 'Hardware & Core'
+                  : n.includes('mayank') ? 'Bio Wale'
+                  : 'Team Member'
+              );
               const accent = isLeader
-                ? { border: 'rgba(245,158,11,0.55)', bar: 'linear-gradient(90deg,#f59e0b,#fde047,#f59e0b)', dot: '#fbbf24', label: 'Team Leader · Architect', pillBg: 'rgba(245,158,11,0.14)' }
+                ? { border: 'rgba(245,158,11,0.55)', bar: 'linear-gradient(90deg,#f59e0b,#fde047,#f59e0b)', dot: '#fbbf24', label: tagLabel, pillBg: 'rgba(245,158,11,0.14)' }
                 : n.includes('maurya')
-                  ? { border: 'rgba(148,0,211,0.28)', bar: 'none', dot: '#9400D3', label: 'Bio Wale', pillBg: 'rgba(148,0,211,0.10)' }
+                  ? { border: 'rgba(148,0,211,0.28)', bar: 'none', dot: '#9400D3', label: tagLabel, pillBg: 'rgba(148,0,211,0.10)' }
                   : n.includes('dhama') || n.trim() === 'jatin'
-                    ? { border: 'rgba(6,182,212,0.28)', bar: 'none', dot: '#06b6d4', label: 'Gaming Wale', pillBg: 'rgba(6,182,212,0.10)' }
+                    ? { border: 'rgba(6,182,212,0.28)', bar: 'none', dot: '#06b6d4', label: tagLabel, pillBg: 'rgba(6,182,212,0.10)' }
                     : n.includes('swami') || n.includes('anant')
-                      ? { border: 'rgba(220,38,38,0.28)', bar: 'none', dot: '#ef4444', label: 'Hardware & Core', pillBg: 'rgba(220,38,38,0.10)' }
+                      ? { border: 'rgba(220,38,38,0.28)', bar: 'none', dot: '#ef4444', label: tagLabel, pillBg: 'rgba(220,38,38,0.10)' }
                       : n.includes('mayank')
-                        ? { border: 'rgba(16,185,129,0.28)', bar: 'none', dot: '#10b981', label: 'Bio Wale', pillBg: 'rgba(16,185,129,0.10)' }
-                        : { border: 'rgba(100,116,139,0.28)', bar: 'none', dot: '#64748b', label: 'Team Member', pillBg: 'rgba(100,116,139,0.10)' };
+                        ? { border: 'rgba(16,185,129,0.28)', bar: 'none', dot: '#10b981', label: tagLabel, pillBg: 'rgba(16,185,129,0.10)' }
+                        : { border: 'rgba(100,116,139,0.28)', bar: 'none', dot: '#64748b', label: tagLabel, pillBg: 'rgba(100,116,139,0.10)' };
 
               return (
                 <motion.div
@@ -469,6 +478,19 @@ export function PublicPortfolioView({
                       <p className="mt-3 text-xs text-muted-foreground leading-relaxed line-clamp-2">
                         {m.bio}
                       </p>
+                    )}
+                    {m.tags && m.tags.length > 1 && (
+                      <div className="mt-2 flex flex-wrap gap-1">
+                        {m.tags.slice(1).map((tag) => (
+                          <span
+                            key={tag}
+                            className="rounded-full px-2 py-0.5 text-[9px] font-bold uppercase tracking-wide"
+                            style={{ backgroundColor: accent.pillBg, color: accent.dot }}
+                          >
+                            {tag}
+                          </span>
+                        ))}
+                      </div>
                     )}
                   </div>
 
@@ -1184,6 +1206,45 @@ const Portfolio = () => {
                                   <div className="md:col-span-2">
                                     <Label className="text-xs font-bold">Detailed Contributions</Label>
                                     <Textarea rows={2} value={m.details ?? ''} onChange={(e) => patchMember(m.id, { details: e.target.value })} className="mt-1" />
+                                  </div>
+                                  <div className="md:col-span-2">
+                                    <Label className="text-xs font-bold">Tags (shown on member card)</Label>
+                                    <div className="mt-1 flex flex-wrap gap-1.5 min-h-8 items-center p-2 border rounded-md bg-background">
+                                      {(m.tags ?? []).map((tag) => (
+                                        <span
+                                          key={tag}
+                                          className="inline-flex items-center gap-1 rounded-full bg-primary/10 border border-primary/20 px-2.5 py-0.5 text-xs font-semibold text-primary"
+                                        >
+                                          {tag}
+                                          <button
+                                            type="button"
+                                            aria-label={`Remove tag ${tag}`}
+                                            className="ml-0.5 rounded-full hover:bg-primary/20 p-0.5 leading-none text-primary/70 hover:text-primary transition"
+                                            onClick={() => patchMember(m.id, { tags: (m.tags ?? []).filter((t) => t !== tag) })}
+                                          >
+                                            ✕
+                                          </button>
+                                        </span>
+                                      ))}
+                                      <input
+                                        type="text"
+                                        placeholder="Type tag + Enter…"
+                                        className="flex-1 min-w-24 text-xs outline-none bg-transparent placeholder:text-muted-foreground/50"
+                                        onKeyDown={(e) => {
+                                          if (e.key === 'Enter' || e.key === ',') {
+                                            e.preventDefault();
+                                            const val = (e.currentTarget.value || '').trim();
+                                            if (!val) return;
+                                            const existing = m.tags ?? [];
+                                            if (!existing.includes(val)) {
+                                              patchMember(m.id, { tags: [...existing, val] });
+                                            }
+                                            e.currentTarget.value = '';
+                                          }
+                                        }}
+                                      />
+                                    </div>
+                                    <p className="text-[10px] text-muted-foreground mt-1">Press Enter or comma to add. Click ✕ to remove. First tag shows as the primary badge on the card.</p>
                                   </div>
                                 </div>
                               </div>

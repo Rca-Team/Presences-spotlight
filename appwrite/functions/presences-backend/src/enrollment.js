@@ -67,7 +67,28 @@ export function createEnrollmentService({ db, databaseId = 'presences_db', sms, 
     const saved = await get(hash('student:' + admission));
     return { ...saved, ...profileRow(p), profileId: p.$id, userId: p.user_id || p.$id, revision: p.$updatedAt, status: saved?.status || 'pending' };
   }
-  const profileData = row => ({ full_name: row.name, display_name: row.name, admission_number: row.admission_number, employee_id: row.admission_number, class: row.class, section: row.section, category: [row.class, row.section].filter(Boolean).join('-'), father_name: row.father_name, mother_name: row.mother_name, parent_phone: row.parent_phone, date_of_birth: row.date_of_birth, address: row.address, updated_at: new Date(now()).toISOString() });
+  const profileData = (row, prevMeta = {}) => ({
+    full_name: row.name,
+    display_name: row.name,
+    admission_number: row.admission_number,
+    employee_id: row.admission_number,
+    class: row.class,
+    section: row.section,
+    category: [row.class, row.section].filter(Boolean).join('-'),
+    father_name: row.father_name,
+    parent_name: row.father_name || row.mother_name,
+    parent_phone: row.parent_phone,
+    phone: row.parent_phone,
+    address: row.address,
+    metadata: JSON.stringify({
+      ...prevMeta,
+      mother_name: row.mother_name || prevMeta.mother_name || '',
+      date_of_birth: row.date_of_birth || prevMeta.date_of_birth || '',
+      father_name: row.father_name || prevMeta.father_name || '',
+      address: row.address || prevMeta.address || '',
+    }),
+    updated_at: new Date(now()).toISOString(),
+  });
   const sessionFor = async body => {
     if (!/^[a-f0-9]{64}$/.test(body.session || '')) reject(401, 'Enrollment session expired. Verify again.');
     const session = await get(hash('session:' + body.session));

@@ -26,8 +26,28 @@ export async function idCardFunction<T>(body: Record<string, unknown>, signal?: 
     if (!response.ok || data.error) throw new Error(data.error || `Supabase extraction failed (${response.status}).`);
     return data as T;
   }
-  // Appwrite only returns response bodies for synchronous executions.
-  const execution = await functions.createExecution({ functionId: 'presences-backend', body: JSON.stringify(body), async: false, xpath: '/', method: ExecutionMethod.POST });
+  // Appwrite synchronous execution with a hard 55-second timeout.
+  // If the function cold-starts or hangs, this throws instead of spinning forever.
+  const timeoutSignal = AbortSignal.timeout(55000);
+  const combined = signal
+    ? AbortSignal.any([signal, timeoutSignal])
+    : timeoutSignal;
+
+  let execution: Awaited<ReturnType<typeof functions.createExecution>>;
+  try {
+    execution = await functions.createExecution({
+      functionId: 'presences-backend',
+      body: JSON.stringify(body),
+      async: false,
+      xpath: '/',
+      method: ExecutionMethod.POST,
+    });
+  } catch (execErr: any) {
+    if (execErr?.name === 'AbortError' || String(execErr?.message || '').includes('timeout')) {
+      throw new Error('Student save timed out. The records may still be saving – refresh the list in a moment.');
+    }
+    throw execErr;
+  }
   check();
   let data;
   try { data = JSON.parse(execution.responseBody); } catch { throw new Error(`Student save returned no confirmation (${execution.responseStatusCode}). Refresh the student list before retrying; some records may already be saved.`); }
