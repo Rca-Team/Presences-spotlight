@@ -27,7 +27,7 @@ import { enrollmentApi } from '@/services/enrollment/api';
 import { clearMonitorCache, getCachedMonitorOverview } from '@/services/enrollment/monitor';
 import { syncEnrolledFaceDataToSupabase } from '@/services/enrollment/syncEnrolledFaceData';
 import { type CaptureResult, type EnrollmentSession, type StudentDetails } from '@/services/enrollment/types';
-import { loadRegistrationModels } from '@/services/face-recognition/RegistrationService';
+import { loadRegistrationModels } from '@/services/face-recognition/OptimizedRegistrationService';
 import DobDatePicker from '@/components/enrollment/DobDatePicker';
 import { cn } from '@/lib/utils';
 import { supabase } from '@/integrations/supabase/client';

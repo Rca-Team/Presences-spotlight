@@ -4,6 +4,7 @@ import { uploadImage } from './StorageService';
 import { v4 as uuidv4 } from 'uuid';
 import { descriptorToString } from './ModelService';
 import { uploadRegistrationTrainingImage } from './TrainingDataStorageService';
+export { loadRegistrationModels, areRegistrationModelsLoaded } from './OptimizedRegistrationService';
 
 // Define an interface for the metadata to ensure type safety
 export interface RegistrationMetadata {
