@@ -6,22 +6,44 @@ import { resolveStudentPhotoUrl } from '@/utils/studentPhotoResolver';
 
 export type MonitorStatus = 'not_started' | 'failed' | 'verified' | 'capturing' | 'completed';
 
-export interface MonitorSample { pose: string; glasses: 'with' | 'without'; fileId: string; brightness: number; sharpness: number }
+export interface MonitorSample {
+  pose: string;
+  glasses: 'with' | 'without';
+  fileId: string;
+  brightness: number;
+  sharpness: number;
+  imageUrl?: string;
+}
 
 export interface MonitorStudent {
+  id?: string;
+  userId?: string;
   admission_number: string;
+  student_id_kv?: string;
+  roll_number?: string;
+  pen_number?: string;
+  blood_group?: string;
   name: string;
   class: string;
   section: string;
   category: string;
+  father_name?: string;
+  mother_name?: string;
+  date_of_birth?: string;
+  address?: string;
   parent_phone: string;
+  parent_phone_full?: string;
+  email?: string;
   hasPhone: boolean;
   hasDob: boolean;
   hasFather: boolean;
+  hasMother?: boolean;
+  hasAddress?: boolean;
   status: MonitorStatus;
   imported: boolean;
   portrait: boolean;
   faceOnFile: boolean;
+  vectorCount?: number;
   samples: MonitorSample[];
   method: string;
   verifiedAt: number;
@@ -36,7 +58,14 @@ export interface MonitorStudent {
   modelPath?: string;
 }
 
-export interface MonitorActivity { event: string; student: string; name: string; category: string; method: string; at: number }
+export interface MonitorActivity {
+  event: string;
+  student: string;
+  name: string;
+  category: string;
+  method: string;
+  at: number;
+}
 
 export interface MonitorCorrection {
   id: string;
@@ -59,7 +88,7 @@ export interface MonitorOverview {
 }
 
 let inMemoryOverviewCache: MonitorOverview | null = null;
-const CACHE_STORAGE_KEY = 'presences:enrollment_monitor_cache';
+const CACHE_STORAGE_KEY = 'presences:enrollment_monitor_cache_v2';
 
 export function getCachedMonitorOverview(): MonitorOverview | null {
   if (inMemoryOverviewCache) return inMemoryOverviewCache;
@@ -122,8 +151,24 @@ let lastBackendFetchAt = 0;
 let cachedBackendOverview: MonitorOverview | null = null;
 let inFlightMonitorRequest: Promise<MonitorOverview> | null = null;
 
+function parseMetadataObject(rawMeta: unknown): Record<string, any> {
+  if (!rawMeta) return {};
+  if (typeof rawMeta === 'object' && !Array.isArray(rawMeta)) {
+    return rawMeta as Record<string, any>;
+  }
+  if (typeof rawMeta === 'string') {
+    try {
+      const parsed = JSON.parse(rawMeta);
+      return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : {};
+    } catch {
+      return {};
+    }
+  }
+  return {};
+}
+
 export const fetchMonitor = async (force = false): Promise<MonitorOverview> => {
-  if (!force && inMemoryOverviewCache && Date.now() - inMemoryOverviewCache.generatedAt < 20000) {
+  if (!force && inMemoryOverviewCache && Date.now() - inMemoryOverviewCache.generatedAt < 25000) {
     return inMemoryOverviewCache;
   }
   if (inFlightMonitorRequest) {
@@ -135,7 +180,9 @@ export const fetchMonitor = async (force = false): Promise<MonitorOverview> => {
       try {
         const { data } = await supabase
           .from('profiles')
-          .select('id, user_id, full_name, display_name, admission_number, employee_id, roll_number, class, section, category, parent_phone, phone, parent_name, date_of_birth, father_name, avatar_url, photo_url, metadata, role, updated_at, created_at');
+          .select(
+            'id, user_id, full_name, display_name, admission_number, employee_id, roll_number, class, section, category, parent_phone, phone, parent_name, father_name, address, blood_group, email, parent_email, avatar_url, photo_url, metadata, role, updated_at, created_at'
+          );
         return (data || []) as any[];
       } catch (err) {
         console.warn('[EnrollmentMonitor] Profiles fetch fallback:', err);
@@ -147,7 +194,7 @@ export const fetchMonitor = async (force = false): Promise<MonitorOverview> => {
       try {
         const { data } = await supabase
           .from('face_descriptors')
-          .select('student_id, user_id, label, image_url, created_at');
+          .select('id, student_id, user_id, label, student_name, class, section, category, image_url, metadata, created_at');
         return (data || []) as any[];
       } catch (err) {
         console.warn('[EnrollmentMonitor] Descriptors fetch fallback:', err);
@@ -158,205 +205,337 @@ export const fetchMonitor = async (force = false): Promise<MonitorOverview> => {
     const fetchBackend = async () => {
       if (typeof navigator !== 'undefined' && !navigator.onLine) return cachedBackendOverview;
       if (Date.now() < backendUnavailableCooldownUntil) return cachedBackendOverview;
-      // Avoid invoking expensive multi-collection cloud scan more than once every 3 minutes
-      if (!force && cachedBackendOverview && Date.now() - lastBackendFetchAt < 180000) {
+      // Avoid invoking expensive multi-collection cloud scan more than once every 5 minutes
+      if (!force && cachedBackendOverview && Date.now() - lastBackendFetchAt < 300000) {
         return cachedBackendOverview;
       }
 
       try {
-        const timeout = new Promise<null>((resolve) => setTimeout(() => resolve(null), 2500));
-        const req = enrollmentApi<MonitorOverview>('staff.monitor').then((res) => {
-          if (res) {
-            cachedBackendOverview = res;
-            lastBackendFetchAt = Date.now();
-          }
-          return res;
-        }).catch(() => {
-          // Cooldown backend function calls for 10 minutes if service is unavailable or over quota
-          backendUnavailableCooldownUntil = Date.now() + 10 * 60 * 1000;
-          return cachedBackendOverview;
-        });
+        const timeout = new Promise<null>((resolve) => setTimeout(() => resolve(null), 2200));
+        const req = enrollmentApi<MonitorOverview>('staff.monitor')
+          .then((res) => {
+            if (res && Array.isArray(res.students)) {
+              cachedBackendOverview = res;
+              lastBackendFetchAt = Date.now();
+            }
+            return res;
+          })
+          .catch(() => {
+            backendUnavailableCooldownUntil = Date.now() + 10 * 60 * 1000;
+            return cachedBackendOverview;
+          });
         return (await Promise.race([req, timeout])) || cachedBackendOverview;
       } catch {
         return cachedBackendOverview;
       }
     };
 
-    const [backendResult, rawProfiles, rawDescriptors, registrationsResult] = await Promise.all([
+    const [backendResult, rawProfiles, rawDescriptors] = await Promise.all([
       fetchBackend(),
       fetchProfiles(),
       fetchDescriptors(),
-      supabase.from('attendance_records').select('student_id, user_id, device_info, image_url, created_at').eq('status', 'registered').order('created_at', { ascending: false }).limit(1000),
     ]);
 
-  const descriptorKeys = new Set<string>();
-  const descriptorPhotos = new Map<string, string>();
-  for (const d of rawDescriptors) {
-    const sId = (d.student_id || '').trim().toLowerCase();
-    const uId = (d.user_id || '').trim();
-    if (sId) descriptorKeys.add(sId);
-    if (uId) descriptorKeys.add(uId);
-    const img = (d.image_url || '').trim();
-    if (img) {
-      if (sId && !descriptorPhotos.has(sId)) descriptorPhotos.set(sId, img);
-      if (uId && !descriptorPhotos.has(uId)) descriptorPhotos.set(uId, img);
-    }
-  }
+    // Index descriptors by student_id and user_id
+    const descriptorCountMap = new Map<string, number>();
+    const descriptorPhotos = new Map<string, string>();
+    const descriptorSamplesMap = new Map<string, MonitorSample[]>();
+    const descriptorLatestAt = new Map<string, number>();
 
-  const baseOverview: MonitorOverview = backendResult
-    ? { ...backendResult, students: [...backendResult.students] }
-    : {
-        scope: { all: true, classes: [] },
-        generatedAt: Date.now(),
-        students: [],
-        activity: [],
-        corrections: [],
-        canManage: true,
-      };
-
-  const studentMap = new Map<string, MonitorStudent>();
-  for (const s of baseOverview.students) {
-    const key = (s.admission_number || '').trim().toLowerCase();
-    if (key) studentMap.set(key, s);
-  }
-
-  for (const p of rawProfiles) {
-    if (p.role && p.role !== 'student') continue;
-    const admission = String(p.admission_number || p.employee_id || p.roll_number || p.id || '').trim();
-    if (!admission) continue;
-
-    const lowerAdm = admission.toLowerCase();
-    const existing = studentMap.get(lowerAdm);
-    const category = normalizeClassSection(p.class, p.section, p.category) || 'Unassigned';
-    const avatar = p.photo_url || p.avatar_url || descriptorPhotos.get(lowerAdm) || (p.user_id ? descriptorPhotos.get(p.user_id) : undefined);
-    const hasFace = descriptorKeys.has(lowerAdm) || (p.user_id ? descriptorKeys.has(p.user_id) : false);
-
-    if (existing) {
-      if (!existing.class && p.class) existing.class = p.class;
-      if (!existing.section && p.section) existing.section = p.section;
-      if (!existing.category || existing.category === 'Unassigned') existing.category = category;
-      if (p.parent_phone && !existing.parent_phone) {
-        existing.parent_phone = '•••• ' + String(p.parent_phone).slice(-4);
-        existing.hasPhone = true;
+    const addDescriptorRef = (key: string, row: any) => {
+      if (!key) return;
+      const k = key.trim().toLowerCase();
+      if (!k) return;
+      descriptorCountMap.set(k, (descriptorCountMap.get(k) || 0) + 1);
+      const img = String(row.image_url || '').trim();
+      if (img && !descriptorPhotos.has(k)) {
+        descriptorPhotos.set(k, img);
       }
-      if (p.date_of_birth) existing.hasDob = true;
-      if (p.father_name) existing.hasFather = true;
-      if (avatar && !existing.avatarUrl) existing.avatarUrl = avatar;
-      if (hasFace || avatar || existing.completedAt > 0) {
-        existing.faceOnFile = true;
-        if (existing.status === 'not_started' || existing.status === 'failed') {
-          existing.status = 'completed';
+      const createdMs = Date.parse(row.created_at || '') || 0;
+      if (createdMs > (descriptorLatestAt.get(k) || 0)) {
+        descriptorLatestAt.set(k, createdMs);
+      }
+      const meta = parseMetadataObject(row.metadata);
+      const poseLabel = String(meta.pose || row.label || `angle_${(descriptorSamplesMap.get(k)?.length || 0) + 1}`);
+      const list = descriptorSamplesMap.get(k) || [];
+      if (list.length < 15 && img) {
+        list.push({
+          pose: poseLabel,
+          glasses: meta.glasses === 'with' ? 'with' : 'without',
+          fileId: String(row.id || `${k}_${list.length}`),
+          brightness: Number(meta.brightness) || 85,
+          sharpness: Number(meta.sharpness) || 90,
+          imageUrl: img,
+        });
+        descriptorSamplesMap.set(k, list);
+      }
+    };
+
+    for (const d of rawDescriptors) {
+      if (d.student_id) addDescriptorRef(String(d.student_id), d);
+      if (d.user_id) addDescriptorRef(String(d.user_id), d);
+    }
+
+    const baseOverview: MonitorOverview = backendResult
+      ? {
+          ...backendResult,
+          students: Array.isArray(backendResult.students) ? [...backendResult.students] : [],
+          activity: Array.isArray(backendResult.activity) ? [...backendResult.activity] : [],
+          corrections: Array.isArray(backendResult.corrections) ? [...backendResult.corrections] : [],
         }
-      }
-    } else {
-      const newStudent: MonitorStudent = {
-        admission_number: admission,
-        name: p.full_name || p.display_name || admission,
-        class: p.class || '',
-        section: p.section || '',
-        category,
-        parent_phone: p.parent_phone ? '•••• ' + String(p.parent_phone).slice(-4) : '',
-        hasPhone: Boolean(p.parent_phone || p.phone),
-        hasDob: Boolean(p.date_of_birth),
-        hasFather: Boolean(p.father_name || p.parent_name),
-        status: hasFace ? 'completed' : 'not_started',
-        imported: false,
-        portrait: Boolean(avatar),
-        faceOnFile: hasFace,
-        samples: [],
-        method: hasFace ? 'staff' : '',
-        verifiedAt: 0,
-        completedAt: 0,
-        failures: 0,
-        correction: null,
-        lastActivity: Date.parse(p.updated_at || p.created_at || '') || 0,
-        avatarUrl: avatar,
-      };
-      studentMap.set(lowerAdm, newStudent);
-      baseOverview.students.push(newStudent);
-    }
-  }
+      : {
+          scope: { all: true, classes: [] },
+          generatedAt: Date.now(),
+          students: [],
+          activity: [],
+          corrections: [],
+          canManage: true,
+        };
 
-  for (const d of rawDescriptors) {
-    const sId = (d.student_id || '').trim();
-    if (!sId || sId.length > 36 || sId.startsWith('unknown')) continue;
-    const lower = sId.toLowerCase();
-    if (studentMap.has(lower)) {
-      const student = studentMap.get(lower)!;
-      student.faceOnFile = true;
-      if (student.status === 'not_started' || student.status === 'failed') {
-        student.status = 'completed';
-      }
-      if (!student.completedAt) student.completedAt = Date.parse(d.created_at || '') || 0;
-      if (!student.avatarUrl && d.image_url) student.avatarUrl = d.image_url;
-    } else {
-      const name = d.label && d.label !== 'Trained Student' ? d.label : sId;
-      const newStudent: MonitorStudent = {
-        admission_number: sId,
-        name,
-        class: '',
-        section: '',
-        category: 'Unassigned',
-        parent_phone: '',
-        hasPhone: false,
-        hasDob: false,
-        hasFather: false,
-        status: 'completed',
-        imported: false,
-        portrait: Boolean(d.image_url),
-        faceOnFile: true,
-        samples: [],
-        method: 'staff',
-        verifiedAt: 0,
-        completedAt: Date.parse(d.created_at || '') || 0,
-        failures: 0,
-        correction: null,
-        lastActivity: Date.parse(d.created_at || '') || 0,
-        avatarUrl: d.image_url,
-      };
-      studentMap.set(lower, newStudent);
-      baseOverview.students.push(newStudent);
+    const studentMap = new Map<string, MonitorStudent>();
+    for (const s of baseOverview.students) {
+      const key = (s.admission_number || '').trim().toLowerCase();
+      if (key) studentMap.set(key, { ...s });
     }
-  }
 
-  const allDiscoveredCategories = Array.from(
-    new Set(baseOverview.students.map((s) => s.category).filter(Boolean))
-  ).sort();
-  const aliases = new Map(studentMap);
-  for (const profile of rawProfiles) {
-    const student = studentMap.get(String(profile.admission_number || profile.employee_id || '').trim().toLowerCase());
-    if (!student) continue;
-    for (const key of [profile.id, profile.user_id, profile.employee_id, profile.metadata?.student_id_kv]) if (key) aliases.set(String(key).trim().toLowerCase(), student);
-    student.profilePhotoUrl = profile.photo_url || profile.avatar_url || undefined;
-  }
-  for (const record of registrationsResult.data || []) {
-    let info = record.device_info;
-    if (typeof info === 'string') { try { info = JSON.parse(info); } catch { continue; } }
-    const metadata = info?.metadata || {};
-    const student = [metadata.employee_id, record.student_id, record.user_id].map(key => aliases.get(String(key || '').trim().toLowerCase())).find(Boolean);
-    if (!student) continue;
-    student.faceOnFile = true;
-    if (student.status === 'not_started' || student.status === 'failed') {
-      student.status = 'completed';
-    }
-    if (student.modelPath) continue;
-    student.modelPath = metadata.face_model?.storage_model_path;
-    if (metadata.training_registration_path) student.primaryPhotoUrl = `student-registration-faces/${metadata.training_registration_path}`;
-    else student.primaryPhotoUrl = record.image_url || metadata.firebase_image_url;
-    student.profilePhotoUrl = metadata.face_model?.id_card_photo_url || metadata.id_card_photo_url || student.profilePhotoUrl;
-    student.avatarUrl = student.primaryPhotoUrl || student.profilePhotoUrl || student.avatarUrl;
-  }
-  await Promise.all(baseOverview.students.map(async student => {
-    for (const field of ['avatarUrl', 'primaryPhotoUrl', 'profilePhotoUrl'] as const) {
-      const val = student[field];
-      if (val && !val.startsWith('http') && !val.startsWith('data:')) {
-        student[field] = await resolveStudentPhotoUrl(val);
+    for (const p of rawProfiles) {
+      if (p.role && p.role !== 'student') continue;
+      const meta = parseMetadataObject(p.metadata);
+      const admission = String(
+        p.admission_number ||
+          p.employee_id ||
+          meta.admission_number ||
+          meta.employee_id ||
+          meta.student_id_kv ||
+          p.roll_number ||
+          p.id ||
+          ''
+      ).trim();
+      if (!admission) continue;
+
+      const lowerAdm = admission.toLowerCase();
+      const lowerUid = String(p.user_id || p.id || '').trim().toLowerCase();
+      const lowerKvId = String(meta.student_id_kv || '').trim().toLowerCase();
+
+      const existing = studentMap.get(lowerAdm);
+      const rawClass = String(p.class || meta.class || '').trim();
+      const rawSection = String(p.section || meta.section || '').trim();
+      const rawCategory = String(p.category || meta.class_section || meta.category || '').trim();
+      const category = normalizeClassSection(rawClass, rawSection, rawCategory) || 'Unassigned';
+
+      const fullPhone = String(
+        p.parent_phone || p.phone || meta.verified_parent_phone || meta.parent_phone || meta.phone || ''
+      ).trim();
+      const fatherName = String(p.father_name || p.parent_name || meta.father_name || meta.parent_name || '').trim();
+      const motherName = String(meta.mother_name || p.mother_name || '').trim();
+      const dob = String(p.date_of_birth || meta.date_of_birth || meta.dob || '').trim();
+      const address = String(p.address || meta.address || '').trim();
+      const rollNo = String(p.roll_number || meta.roll_number || '').trim();
+      const studentIdKv = String(meta.student_id_kv || '').trim();
+      const penNumber = String(meta.pen_number || '').trim();
+      const bloodGroup = String(p.blood_group || meta.blood_group || '').trim();
+      const email = String(p.email || p.parent_email || meta.student_email || meta.parent_email || '').trim();
+
+      const bioSummary = meta.biometric_summary;
+      const bioSampleCount = Number(bioSummary?.sample_count) || 0;
+      const descCount =
+        (descriptorCountMap.get(lowerAdm) || 0) ||
+        (lowerUid ? descriptorCountMap.get(lowerUid) || 0 : 0) ||
+        (lowerKvId ? descriptorCountMap.get(lowerKvId) || 0 : 0) ||
+        bioSampleCount;
+
+      const hasFace =
+        descCount > 0 ||
+        Boolean(bioSummary?.centroid_descriptor) ||
+        Boolean(meta.face_enrolled);
+
+      const avatar =
+        p.photo_url ||
+        p.avatar_url ||
+        meta.photo_url ||
+        meta.avatar_url ||
+        descriptorPhotos.get(lowerAdm) ||
+        (lowerUid ? descriptorPhotos.get(lowerUid) : undefined) ||
+        (lowerKvId ? descriptorPhotos.get(lowerKvId) : undefined);
+
+      const fallbackSamples =
+        descriptorSamplesMap.get(lowerAdm) ||
+        (lowerUid ? descriptorSamplesMap.get(lowerUid) : undefined) ||
+        (lowerKvId ? descriptorSamplesMap.get(lowerKvId) : undefined) ||
+        [];
+
+      const completedTimestamp =
+        descriptorLatestAt.get(lowerAdm) ||
+        (lowerUid ? descriptorLatestAt.get(lowerUid) : 0) ||
+        (bioSummary?.updated_at ? Date.parse(bioSummary.updated_at) : 0) ||
+        0;
+
+      const isImported = Boolean(
+        meta.imported_from_pdf ||
+          meta.source === 'pdf_upload' ||
+          meta.source === 'bulk_id_card'
+      );
+
+      if (existing) {
+        existing.id = p.id || p.$id || existing.id;
+        existing.userId = p.user_id || existing.userId;
+        existing.name = p.full_name || p.display_name || meta.name || existing.name || admission;
+        existing.class = rawClass || existing.class || (category !== 'Unassigned' ? category.split('-')[0] || '' : '');
+        existing.section = rawSection || existing.section || (category.includes('-') ? category.split('-')[1] || '' : '');
+        if (!existing.category || existing.category === 'Unassigned') existing.category = category;
+        existing.father_name = fatherName || existing.father_name;
+        existing.mother_name = motherName || existing.mother_name;
+        existing.date_of_birth = dob || existing.date_of_birth;
+        existing.address = address || existing.address;
+        existing.roll_number = rollNo || existing.roll_number;
+        existing.student_id_kv = studentIdKv || existing.student_id_kv;
+        existing.pen_number = penNumber || existing.pen_number;
+        existing.blood_group = bloodGroup || existing.blood_group;
+        existing.email = email || existing.email;
+        if (fullPhone) {
+          existing.parent_phone_full = fullPhone;
+          existing.parent_phone = fullPhone;
+          existing.hasPhone = true;
+        }
+        if (dob) existing.hasDob = true;
+        if (fatherName) existing.hasFather = true;
+        if (motherName) existing.hasMother = true;
+        if (address) existing.hasAddress = true;
+        if (isImported) existing.imported = true;
+        if (avatar && !existing.avatarUrl) existing.avatarUrl = avatar;
+        if (avatar) existing.portrait = true;
+        if (!existing.samples?.length && fallbackSamples.length) {
+          existing.samples = fallbackSamples;
+        }
+        existing.vectorCount = Math.max(descCount, existing.samples?.length || 0);
+        if (hasFace || existing.completedAt > 0 || existing.samples.length > 0) {
+          existing.faceOnFile = true;
+          if (existing.status === 'not_started' || existing.status === 'failed') {
+            existing.status = 'completed';
+          }
+          if (!existing.completedAt && completedTimestamp) {
+            existing.completedAt = completedTimestamp;
+          }
+        }
+      } else {
+        const newStudent: MonitorStudent = {
+          id: p.id || p.$id,
+          userId: p.user_id || p.id || p.$id,
+          admission_number: admission,
+          student_id_kv: studentIdKv,
+          roll_number: rollNo,
+          pen_number: penNumber,
+          blood_group: bloodGroup,
+          name: p.full_name || p.display_name || meta.name || admission,
+          class: rawClass || (category !== 'Unassigned' ? category.split('-')[0] || '' : ''),
+          section: rawSection || (category.includes('-') ? category.split('-')[1] || '' : ''),
+          category,
+          father_name: fatherName,
+          mother_name: motherName,
+          date_of_birth: dob,
+          address,
+          parent_phone: fullPhone,
+          parent_phone_full: fullPhone,
+          email,
+          hasPhone: Boolean(fullPhone),
+          hasDob: Boolean(dob),
+          hasFather: Boolean(fatherName),
+          hasMother: Boolean(motherName),
+          hasAddress: Boolean(address),
+          status: hasFace ? 'completed' : 'not_started',
+          imported: isImported,
+          portrait: Boolean(avatar),
+          faceOnFile: hasFace,
+          vectorCount: Math.max(descCount, fallbackSamples.length),
+          samples: fallbackSamples,
+          method: hasFace ? 'staff' : '',
+          verifiedAt: completedTimestamp,
+          completedAt: completedTimestamp,
+          failures: 0,
+          correction: null,
+          lastActivity: Date.parse(p.updated_at || p.created_at || '') || completedTimestamp || 0,
+          avatarUrl: avatar,
+          profilePhotoUrl: p.photo_url || p.avatar_url || undefined,
+        };
+        studentMap.set(lowerAdm, newStudent);
+        baseOverview.students.push(newStudent);
       }
     }
-  }));
-  if (baseOverview.scope.all || baseOverview.scope.classes.length === 0) {
-    baseOverview.scope = { all: true, classes: allDiscoveredCategories };
-  }
+
+    // Include any students present in face_descriptors whose profile wasn't matched by admission_number
+    const knownUserIds = new Set(
+      baseOverview.students.map((s) => (s.userId || '').toLowerCase()).filter(Boolean)
+    );
+    for (const d of rawDescriptors) {
+      const sId = String(d.student_id || '').trim();
+      const uId = String(d.user_id || '').trim().toLowerCase();
+      if (!sId || sId.length > 36 || sId.startsWith('unknown')) continue;
+      const lower = sId.toLowerCase();
+      if (studentMap.has(lower) || (uId && knownUserIds.has(uId))) {
+        const student = studentMap.get(lower);
+        if (student) {
+          student.faceOnFile = true;
+          if (student.status === 'not_started' || student.status === 'failed') {
+            student.status = 'completed';
+          }
+          if (!student.completedAt) student.completedAt = Date.parse(d.created_at || '') || 0;
+          if (!student.avatarUrl && d.image_url) student.avatarUrl = d.image_url;
+        }
+      } else {
+        const name = d.student_name || (d.label && d.label !== 'Trained Student' ? d.label : sId);
+        const category = normalizeClassSection(d.class, d.section, d.category) || 'Unassigned';
+        const fallbackSamples = descriptorSamplesMap.get(lower) || [];
+        const newStudent: MonitorStudent = {
+          userId: d.user_id,
+          admission_number: sId,
+          name,
+          class: d.class || '',
+          section: d.section || '',
+          category,
+          parent_phone: '',
+          hasPhone: false,
+          hasDob: false,
+          hasFather: false,
+          status: 'completed',
+          imported: false,
+          portrait: Boolean(d.image_url),
+          faceOnFile: true,
+          vectorCount: descriptorCountMap.get(lower) || 1,
+          samples: fallbackSamples,
+          method: 'staff',
+          verifiedAt: Date.parse(d.created_at || '') || 0,
+          completedAt: Date.parse(d.created_at || '') || 0,
+          failures: 0,
+          correction: null,
+          lastActivity: Date.parse(d.created_at || '') || 0,
+          avatarUrl: d.image_url,
+        };
+        studentMap.set(lower, newStudent);
+        if (uId) knownUserIds.add(uId);
+        baseOverview.students.push(newStudent);
+      }
+    }
+
+    // Resolve any relative storage paths to full URLs
+    await Promise.all(
+      baseOverview.students.map(async (student) => {
+        for (const field of ['avatarUrl', 'primaryPhotoUrl', 'profilePhotoUrl'] as const) {
+          const val = student[field];
+          if (val && !val.startsWith('http') && !val.startsWith('data:')) {
+            student[field] = await resolveStudentPhotoUrl(val);
+          }
+        }
+      })
+    );
+
+    const allDiscoveredCategories = Array.from(
+      new Set(baseOverview.students.map((s) => s.category).filter(Boolean))
+    ).sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
+
+    if (baseOverview.scope.all || baseOverview.scope.classes.length === 0) {
+      baseOverview.scope = { all: true, classes: allDiscoveredCategories };
+    }
+    baseOverview.generatedAt = Date.now();
 
     saveCachedMonitorOverview(baseOverview);
     return baseOverview;
@@ -367,21 +546,129 @@ export const fetchMonitor = async (force = false): Promise<MonitorOverview> => {
   });
   return inFlightMonitorRequest;
 };
+
 export const fetchMonitorPhoto = async (admission: string, fileId: string): Promise<string> => {
-  if (/^[a-f0-9]{32,36}$/i.test(fileId)) {
+  if (!fileId) return '';
+  if (fileId.startsWith('http://') || fileId.startsWith('https://') || fileId.startsWith('data:')) {
+    return fileId;
+  }
+  if (/^[a-f0-9]{20,36}$/i.test(fileId)) {
     const { getAppwriteStorageViewUrl, APPWRITE_CONFIG } = await import('@/integrations/appwrite/client');
     return getAppwriteStorageViewUrl(APPWRITE_CONFIG.buckets.studentRegistrationFaces, fileId);
   }
-  return enrollmentApi<{ image: string }>('staff.photo', { admission, fileId }).then(r => r.image);
+  return enrollmentApi<{ image: string }>('staff.photo', { admission, fileId }).then((r) => r.image);
 };
-export const reviewCorrection = (id: string, approve: boolean) => enrollmentApi('staff.review', { id, approve });
+
+export const reviewCorrection = (id: string, approve: boolean) =>
+  enrollmentApi('staff.review', { id, approve });
+
+export async function updateStudentProfileDetails(
+  admissionNumber: string,
+  updates: {
+    name?: string;
+    class?: string;
+    section?: string;
+    roll_number?: string;
+    father_name?: string;
+    mother_name?: string;
+    date_of_birth?: string;
+    parent_phone?: string;
+    blood_group?: string;
+    pen_number?: string;
+    student_id_kv?: string;
+    address?: string;
+  }
+): Promise<void> {
+  const adm = admissionNumber.trim();
+  const { data: existingRows } = await supabase
+    .from('profiles')
+    .select('id, metadata')
+    .or(`admission_number.eq.${adm},employee_id.eq.${adm}`)
+    .limit(1);
+
+  const existingRow = existingRows?.[0];
+  const prevMeta = parseMetadataObject(existingRow?.metadata);
+
+  const cleanClass = (updates.class ?? '').trim();
+  const cleanSection = (updates.section ?? '').trim().toUpperCase();
+  const category = [cleanClass, cleanSection].filter(Boolean).join('-') || null;
+  const rawPhone = String(updates.parent_phone ?? '').replace(/\D/g, '');
+  const cleanPhone = rawPhone.length >= 10 ? rawPhone.slice(-10) : rawPhone;
+
+  const mergedMeta: Record<string, any> = {
+    ...prevMeta,
+    father_name: updates.father_name?.trim() ?? prevMeta.father_name ?? '',
+    mother_name: updates.mother_name?.trim() ?? prevMeta.mother_name ?? '',
+    date_of_birth: updates.date_of_birth?.trim() ?? prevMeta.date_of_birth ?? '',
+    blood_group: updates.blood_group?.trim() ?? prevMeta.blood_group ?? '',
+    pen_number: updates.pen_number?.trim() ?? prevMeta.pen_number ?? '',
+    student_id_kv: updates.student_id_kv?.trim() ?? prevMeta.student_id_kv ?? '',
+    roll_number: updates.roll_number?.trim() ?? prevMeta.roll_number ?? '',
+    address: updates.address?.trim() ?? prevMeta.address ?? '',
+    verified_parent_phone: cleanPhone || prevMeta.verified_parent_phone || '',
+  };
+
+  for (const k of Object.keys(mergedMeta)) {
+    if (mergedMeta[k] === '' || mergedMeta[k] == null) delete mergedMeta[k];
+  }
+
+  const payload: Record<string, any> = {
+    full_name: updates.name?.trim() || undefined,
+    display_name: updates.name?.trim() || undefined,
+    admission_number: adm,
+    employee_id: adm,
+    class: cleanClass || null,
+    section: cleanSection || null,
+    category,
+    roll_number: updates.roll_number?.trim() || null,
+    father_name: updates.father_name?.trim() || null,
+    parent_name: updates.father_name?.trim() || updates.mother_name?.trim() || null,
+    parent_phone: cleanPhone || null,
+    phone: cleanPhone || null,
+    blood_group: updates.blood_group?.trim() || null,
+    address: updates.address?.trim() || null,
+    role: 'student',
+    metadata: JSON.stringify(mergedMeta),
+    updated_at: new Date().toISOString(),
+  };
+
+  if (existingRow?.id) {
+    const { error } = await supabase.from('profiles').update(payload).eq('id', existingRow.id);
+    if (error) throw error;
+  } else {
+    const { error } = await supabase.from('profiles').upsert([payload], { onConflict: 'admission_number' });
+    if (error) throw error;
+  }
+
+  clearMonitorCache();
+}
 
 export const statusMeta: Record<MonitorStatus, { label: string; tone: string; dot: string }> = {
-  completed: { label: 'Face enrolled', tone: 'text-emerald-700 dark:text-emerald-300 bg-emerald-500/10 border-emerald-500/20', dot: 'bg-emerald-500' },
-  capturing: { label: 'Capturing', tone: 'text-blue-700 dark:text-blue-300 bg-blue-500/10 border-blue-500/20', dot: 'bg-blue-500' },
-  verified: { label: 'Verified', tone: 'text-indigo-700 dark:text-indigo-300 bg-indigo-500/10 border-indigo-500/20', dot: 'bg-indigo-500' },
-  failed: { label: 'Verification failed', tone: 'text-rose-700 dark:text-rose-300 bg-rose-500/10 border-rose-500/20', dot: 'bg-rose-500' },
-  not_started: { label: 'Not started', tone: 'text-muted-foreground bg-muted/60 border-border', dot: 'bg-slate-400' },
+  completed: {
+    label: 'Face Enrolled',
+    tone: 'text-emerald-300 bg-emerald-500/15 border-emerald-500/30',
+    dot: 'bg-emerald-400',
+  },
+  capturing: {
+    label: 'Capturing',
+    tone: 'text-cyan-300 bg-cyan-500/15 border-cyan-500/30',
+    dot: 'bg-cyan-400',
+  },
+  verified: {
+    label: 'Verified',
+    tone: 'text-indigo-300 bg-indigo-500/15 border-indigo-500/30',
+    dot: 'bg-indigo-400',
+  },
+  failed: {
+    label: 'Failed Check',
+    tone: 'text-rose-300 bg-rose-500/15 border-rose-500/30',
+    dot: 'bg-rose-400',
+  },
+  not_started: {
+    label: 'Pending Scan',
+    tone: 'text-amber-300/90 bg-amber-500/10 border-amber-500/25',
+    dot: 'bg-amber-400',
+  },
 };
 
 export const eventLabels: Record<string, string> = {

@@ -1,7 +1,6 @@
 import React, { lazy, Suspense, useCallback, useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { formatDistanceToNow, format } from 'date-fns';
-import { motion } from 'framer-motion';
 import {
   ArrowLeft,
   RefreshCw,
@@ -17,37 +16,35 @@ import {
   FileEdit,
   Loader2,
   Activity,
-  Image as ImageIcon,
   PhoneOff,
   CheckCircle2,
   Glasses,
   AlertCircle,
-  ExternalLink,
-  ChevronRight,
   Sparkles,
-  SlidersHorizontal,
   Check,
   Eye,
   Camera,
   Layers,
-  Flame,
-  Filter as FilterIcon,
   X,
   Phone,
-  UserCheck,
   ArrowUp,
   Share2,
-  MessageSquare,
-  LockKeyhole,
-  Building2,
   RotateCcw,
   Trash2,
   MoreHorizontal,
-  UserMinus,
+  LayoutGrid,
+  Table as TableIcon,
+  UserPlus,
+  Calendar,
+  MapPin,
+  Save,
+  Pencil,
+  Database,
 } from 'lucide-react';
 import PageTransition from '@/components/PageTransition';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from '@/components/ui/sheet';
@@ -69,7 +66,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
-import { universalDeleteStudent, universalDeleteStudentsBatch } from '@/services/student/studentDeletionService';
+import { universalDeleteStudent } from '@/services/student/studentDeletionService';
 import { useToast } from '@/hooks/use-toast';
 import { useUserRole } from '@/hooks/useUserRole';
 import { cn } from '@/lib/utils';
@@ -81,37 +78,39 @@ import {
   getCachedMonitorOverview,
   removeStudentFromMonitorCache,
   reviewCorrection,
+  updateStudentProfileDetails,
   statusMeta,
   eventLabels,
   methodLabels,
   REQUIRED_POSES,
   type MonitorOverview,
   type MonitorStudent,
-  type MonitorStatus,
   type MonitorCorrection,
 } from '@/services/enrollment/monitor';
 import { ClassPDFIDCardImporter, type ExtractedStudentCard } from '@/components/register/ClassPDFIDCardImporter';
-import { supabase } from '@/integrations/supabase/client';
 import { enrollmentApi } from '@/services/enrollment/api';
 import '@/components/enrollment/enrollment.css';
 
 const StudentStoredFaceAssets = lazy(() => import('@/components/enrollment/StudentStoredFaceAssets'));
 
 type Filter = 'all' | 'not_started' | 'in_progress' | 'failed' | 'completed' | 'attention';
+type DesktopViewMode = 'table' | 'grid';
 
 const FILTERS: { id: Filter; label: string; icon: React.ElementType }[] = [
   { id: 'all', label: 'All Students', icon: Users },
-  { id: 'completed', label: '3D Enrolled', icon: ShieldCheck },
+  { id: 'completed', label: 'Biometric Enrolled', icon: ShieldCheck },
+  { id: 'not_started', label: 'Pending Scan', icon: Sparkles },
   { id: 'in_progress', label: 'In Progress', icon: Clock },
   { id: 'attention', label: 'Needs Attention', icon: AlertCircle },
-  { id: 'not_started', label: 'Not Started', icon: Sparkles },
-  { id: 'failed', label: 'Failed Attempts', icon: ShieldAlert },
+  { id: 'failed', label: 'Failed Check', icon: ShieldAlert },
 ];
 
-const PAGE = 80;
+const PAGE = 100;
 const ago = (t: number) => (t ? formatDistanceToNow(t, { addSuffix: true }) : '—');
 const needsAttention = (s: MonitorStudent) => Boolean(s.correction) || !s.hasPhone || s.failures > 0;
-export const isStudentEnrolled = (s: MonitorStudent) => s.status === 'completed' || s.faceOnFile || s.samples.length > 0;
+export const isStudentEnrolled = (s: MonitorStudent) =>
+  s.status === 'completed' || s.faceOnFile || s.samples.length > 0 || (s.vectorCount ?? 0) > 0;
+
 const matchesFilter = (s: MonitorStudent, f: Filter) =>
   f === 'all'
     ? true
@@ -125,26 +124,24 @@ const matchesFilter = (s: MonitorStudent, f: Filter) =>
     ? needsAttention(s)
     : s.status === f;
 
-// Enhanced Modern Status Badge
 function ModernStatusBadge({ student, className }: { student: MonitorStudent; className?: string }) {
   const isEnrolled = isStudentEnrolled(student);
   const m = isEnrolled ? statusMeta['completed'] : statusMeta[student.status] || statusMeta['not_started'];
   return (
     <span
       className={cn(
-        'inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[11px] font-bold tracking-tight shadow-sm select-none transition-all shrink-0',
+        'inline-flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 text-[11px] font-semibold tracking-tight select-none shrink-0',
         m.tone,
         className
       )}
     >
-      <span className={cn('h-2 w-2 rounded-full animate-pulse', m.dot)} />
+      <span className={cn('h-1.5 w-1.5 rounded-full', m.dot)} />
       {m.label}
     </span>
   );
 }
 
-// Glowing Stat Card with Touch / Hover Polish
-function GlowStatCard({
+function StatCard({
   label,
   value,
   subvalue,
@@ -152,88 +149,109 @@ function GlowStatCard({
   icon: Icon,
   tone = 'default',
   progress,
-  className,
+  onClick,
+  active,
 }: {
   label: string;
   value: number | string;
   subvalue?: string;
   hint?: string;
   icon: React.ElementType;
-  tone?: 'emerald' | 'cyan' | 'amber' | 'rose' | 'default';
+  tone?: 'emerald' | 'cyan' | 'amber' | 'rose' | 'indigo' | 'default';
   progress?: number;
-  className?: string;
+  onClick?: () => void;
+  active?: boolean;
 }) {
   const toneClasses = {
-    emerald: 'border-emerald-500/30 bg-gradient-to-br from-emerald-500/15 via-emerald-500/5 to-transparent shadow-emerald-950/20 text-emerald-400',
-    cyan: 'border-cyan-500/30 bg-gradient-to-br from-cyan-500/15 via-cyan-500/5 to-transparent shadow-cyan-950/20 text-cyan-400',
-    amber: 'border-amber-500/30 bg-gradient-to-br from-amber-500/15 via-amber-500/5 to-transparent shadow-amber-950/20 text-amber-400',
-    rose: 'border-rose-500/30 bg-gradient-to-br from-rose-500/15 via-rose-500/5 to-transparent shadow-rose-950/20 text-rose-400',
-    default: 'border-white/10 bg-gradient-to-br from-white/10 via-white/5 to-transparent shadow-black/40 text-slate-300',
+    emerald: 'border-emerald-500/30 bg-emerald-500/10 text-emerald-400',
+    cyan: 'border-cyan-500/30 bg-cyan-500/10 text-cyan-400',
+    amber: 'border-amber-500/30 bg-amber-500/10 text-amber-400',
+    rose: 'border-rose-500/30 bg-rose-500/10 text-rose-400',
+    indigo: 'border-indigo-500/30 bg-indigo-500/10 text-indigo-400',
+    default: 'border-slate-800 bg-slate-900/80 text-slate-300',
   }[tone];
 
   return (
-    <motion.div
-      whileHover={{ y: -3, transition: { duration: 0.2 } }}
-      whileTap={{ scale: 0.98 }}
+    <div
+      onClick={onClick}
+      role={onClick ? 'button' : undefined}
+      tabIndex={onClick ? 0 : undefined}
+      onKeyDown={onClick ? (e) => (e.key === 'Enter' || e.key === ' ') && onClick() : undefined}
       className={cn(
-        'relative rounded-2xl sm:rounded-3xl border p-3.5 sm:p-4 backdrop-blur-xl shadow-lg flex flex-col justify-between overflow-hidden touch-manipulation',
+        'rounded-2xl border p-3.5 sm:p-4 flex flex-col justify-between transition-all',
         toneClasses,
-        className
+        onClick && 'cursor-pointer hover:border-white/30 hover:bg-slate-800/70',
+        active && 'ring-2 ring-emerald-400 border-emerald-400'
       )}
     >
       <div className="flex items-start justify-between gap-2">
         <div className="min-w-0 flex-1">
-          <p className="text-[11px] sm:text-xs font-semibold text-white/70 truncate">{label}</p>
-          <div className="flex items-baseline gap-1.5 sm:gap-2 mt-1">
-            <span className="text-xl sm:text-3xl font-black text-white tabular-nums tracking-tight">
+          <p className="text-[11px] sm:text-xs font-medium text-slate-400 truncate">{label}</p>
+          <div className="flex items-baseline gap-1.5 mt-1">
+            <span className="text-xl sm:text-2xl font-bold text-white tabular-nums tracking-tight">
               {value}
             </span>
             {subvalue && (
-              <span className="text-[11px] sm:text-xs font-bold text-white/60 font-mono">
-                {subvalue}
-              </span>
+              <span className="text-xs font-semibold text-slate-300 font-mono">{subvalue}</span>
             )}
           </div>
         </div>
-        <div className="h-8 w-8 sm:h-10 sm:w-10 rounded-xl bg-white/10 border border-white/15 flex items-center justify-center shrink-0 shadow-inner">
-          <Icon className="h-4 w-4 sm:h-5 sm:w-5" />
+        <div className="h-8 w-8 sm:h-9 sm:w-9 rounded-xl bg-white/5 border border-white/10 flex items-center justify-center shrink-0">
+          <Icon className="h-4 w-4 sm:h-4.5 sm:w-4.5" />
         </div>
       </div>
 
       {progress !== undefined && (
-        <div className="mt-2.5 sm:mt-3 space-y-1">
+        <div className="mt-2.5">
           <div className="h-1.5 w-full rounded-full bg-white/10 overflow-hidden">
-            <motion.div
-              initial={{ width: 0 }}
-              animate={{ width: `${Math.min(100, Math.max(0, progress))}%` }}
-              transition={{ duration: 0.8, ease: 'easeOut' }}
-              className="h-full bg-gradient-to-r from-emerald-400 to-teal-300 rounded-full"
+            <div
+              style={{ width: `${Math.min(100, Math.max(0, progress))}%` }}
+              className="h-full bg-gradient-to-r from-emerald-400 to-teal-300 rounded-full transition-all duration-500"
             />
           </div>
         </div>
       )}
 
-      {hint && (
-        <p className="text-[10px] sm:text-[11px] text-white/50 mt-2 truncate font-medium">
-          {hint}
-        </p>
-      )}
-    </motion.div>
+      {hint && <p className="text-[11px] text-slate-400 mt-2 truncate">{hint}</p>}
+    </div>
   );
 }
 
-// Sample Photo Viewer with High-Res Fetching
-function SamplePhoto({ admission, fileId }: { admission: string; fileId: string }) {
-  const [src, setSrc] = useState('');
-  const [state, setState] = useState<'idle' | 'loading' | 'error'>('idle');
+function SamplePhoto({
+  admission,
+  fileId,
+  directUrl,
+}: {
+  admission: string;
+  fileId: string;
+  directUrl?: string;
+}) {
+  const [src, setSrc] = useState(directUrl || '');
+  const [state, setState] = useState<'idle' | 'loading' | 'error'>(directUrl ? 'idle' : 'loading');
+
   useEffect(() => {
+    if (directUrl) {
+      setSrc(directUrl);
+      setState('idle');
+      return;
+    }
     let active = true;
-    setSrc(''); setState('loading');
-    void fetchMonitorPhoto(admission, fileId).then(image => {
-      if (active) { setSrc(image); setState('idle'); }
-    }).catch(() => { if (active) setState('error'); });
-    return () => { active = false; };
-  }, [admission, fileId]);
+    setSrc('');
+    setState('loading');
+    void fetchMonitorPhoto(admission, fileId)
+      .then((image) => {
+        if (active) {
+          setSrc(image);
+          setState('idle');
+        }
+      })
+      .catch(() => {
+        if (active) setState('error');
+      });
+    return () => {
+      active = false;
+    };
+  }, [admission, fileId, directUrl]);
 
   const load = async () => {
     setState('loading');
@@ -250,9 +268,12 @@ function SamplePhoto({ admission, fileId }: { admission: string; fileId: string 
       <img
         src={src}
         alt="Enrollment capture"
-        onError={() => { setSrc(''); setState('error'); }}
+        onError={() => {
+          setSrc('');
+          setState('error');
+        }}
         loading="lazy"
-        className="absolute inset-0 h-full w-full object-cover rounded-xl transition-all duration-300 hover:scale-105"
+        className="absolute inset-0 h-full w-full object-cover rounded-xl"
       />
     );
   }
@@ -261,23 +282,22 @@ function SamplePhoto({ admission, fileId }: { admission: string; fileId: string 
     <button
       type="button"
       onClick={load}
-      className="absolute inset-0 flex flex-col items-center justify-center gap-1 text-xs text-white/60 hover:text-white hover:bg-white/10 active:scale-95 transition-all rounded-xl touch-manipulation"
+      className="absolute inset-0 flex flex-col items-center justify-center gap-1 text-xs text-slate-400 hover:text-white hover:bg-white/10 transition-all rounded-xl"
     >
       {state === 'loading' ? (
-        <Loader2 className="h-4 w-4 sm:h-5 sm:w-5 animate-spin text-emerald-400" />
+        <Loader2 className="h-4 w-4 animate-spin text-emerald-400" />
       ) : state === 'error' ? (
-        <AlertCircle className="h-4 w-4 sm:h-5 sm:w-5 text-rose-400" />
+        <AlertCircle className="h-4 w-4 text-rose-400" />
       ) : (
-        <Eye className="h-4 w-4 sm:h-5 sm:w-5 text-cyan-400" />
+        <Eye className="h-4 w-4 text-cyan-400" />
       )}
-      <span className="text-[10px] font-bold">
-        {state === 'loading' ? 'Loading...' : state === 'error' ? 'Retry' : 'View Face'}
+      <span className="text-[10px] font-semibold">
+        {state === 'loading' ? 'Loading...' : state === 'error' ? 'Retry' : 'View'}
       </span>
     </button>
   );
 }
 
-// Correction Request Card
 function CorrectionCard({
   c,
   canManage,
@@ -311,28 +331,25 @@ function CorrectionCard({
   };
 
   return (
-    <div className="rounded-2xl border border-white/15 bg-white/5 p-3.5 sm:p-4 backdrop-blur-md space-y-3">
+    <div className="rounded-xl border border-slate-800 bg-slate-900/90 p-3.5 space-y-3">
       <div className="flex items-center justify-between gap-2">
         <p className="text-sm font-bold text-white truncate">
           {c.name}{' '}
-          <span className="text-white/60 font-normal text-xs block sm:inline">
+          <span className="text-slate-400 font-normal text-xs">
             · Adm: {c.student} · Class: {c.category || '—'}
           </span>
         </p>
-        <Badge
-          variant="outline"
-          className="text-[10px] uppercase font-bold tracking-wider border-amber-500/40 text-amber-300 shrink-0"
-        >
+        <Badge variant="outline" className="text-[10px] uppercase border-amber-500/40 text-amber-300">
           {c.status}
         </Badge>
       </div>
 
       <dl className="space-y-1.5 text-xs">
         {Object.entries(c.changes).map(([k, v]) => (
-          <div key={k} className="flex flex-col sm:grid sm:grid-cols-[130px_1fr] gap-1 sm:gap-2 p-2 rounded-xl bg-black/30 border border-white/5">
-            <dt className="text-white/60 font-medium">{fieldLabels[k as keyof StudentDetails] || k}</dt>
+          <div key={k} className="grid grid-cols-[120px_1fr] gap-2 p-2 rounded-lg bg-black/30 border border-white/5">
+            <dt className="text-slate-400 font-medium">{fieldLabels[k as keyof StudentDetails] || k}</dt>
             <dd className="text-white">
-              <span className="line-through text-white/40 mr-1.5">
+              <span className="line-through text-slate-500 mr-1.5">
                 {c.original?.[k as keyof StudentDetails] || '(blank)'}
               </span>
               → <span className="font-bold text-emerald-400">{v || '(blank)'}</span>
@@ -341,16 +358,16 @@ function CorrectionCard({
         ))}
       </dl>
 
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pt-1">
-        <span className="text-[11px] text-white/50">Requested {ago(c.at)}</span>
+      <div className="flex items-center justify-between gap-2 pt-1">
+        <span className="text-[11px] text-slate-400">Requested {ago(c.at)}</span>
         {canManage && c.status === 'pending' && (
-          <div className="flex gap-2 w-full sm:w-auto">
+          <div className="flex gap-2">
             <Button
               size="sm"
               variant="outline"
               disabled={busy}
               onClick={() => act(false)}
-              className="flex-1 sm:flex-initial rounded-xl h-9 sm:h-8 text-xs border-white/20 hover:bg-rose-500/20 hover:text-rose-300"
+              className="rounded-lg h-8 text-xs border-slate-700"
             >
               Reject
             </Button>
@@ -358,9 +375,9 @@ function CorrectionCard({
               size="sm"
               disabled={busy}
               onClick={() => act(true)}
-              className="flex-1 sm:flex-initial rounded-xl h-9 sm:h-8 text-xs font-bold bg-emerald-600 hover:bg-emerald-500 text-white"
+              className="rounded-lg h-8 text-xs font-semibold bg-emerald-600 hover:bg-emerald-500 text-white"
             >
-              Approve Changes
+              Approve
             </Button>
           </div>
         )}
@@ -369,7 +386,6 @@ function CorrectionCard({
   );
 }
 
-// Ultra-Modern Mobile & Desktop Slide-Over Sheet
 function StudentDetailSheet({
   student,
   data,
@@ -389,6 +405,44 @@ function StudentDetailSheet({
   onDelete?: (student: MonitorStudent) => void;
   onCopyBypassLink?: (student: MonitorStudent) => void;
 }) {
+  const { toast } = useToast();
+  const [editing, setEditing] = useState(false);
+  const [savingEdit, setSavingEdit] = useState(false);
+  const [form, setForm] = useState({
+    name: '',
+    class: '',
+    section: '',
+    roll_number: '',
+    father_name: '',
+    mother_name: '',
+    date_of_birth: '',
+    parent_phone: '',
+    blood_group: '',
+    pen_number: '',
+    student_id_kv: '',
+    address: '',
+  });
+
+  useEffect(() => {
+    if (student) {
+      setEditing(false);
+      setForm({
+        name: student.name || '',
+        class: student.class || '',
+        section: student.section || '',
+        roll_number: student.roll_number || '',
+        father_name: student.father_name || '',
+        mother_name: student.mother_name || '',
+        date_of_birth: student.date_of_birth || '',
+        parent_phone: student.parent_phone_full || student.parent_phone || '',
+        blood_group: student.blood_group || '',
+        pen_number: student.pen_number || '',
+        student_id_kv: student.student_id_kv || '',
+        address: student.address || '',
+      });
+    }
+  }, [student]);
+
   const events = useMemo(
     () => (student && data ? data.activity.filter((a) => a.student === student.admission_number) : []),
     [student, data]
@@ -400,172 +454,345 @@ function StudentDetailSheet({
 
   if (!student) return null;
 
-  const steps = [
-    {
-      label: 'Record on File',
-      done: true,
-      detail: student.imported ? 'Imported from Official ID Card' : 'Existing School Record Database',
-    },
-    {
-      label: 'Parent Phone Verification',
-      done: Boolean(student.verifiedAt) || ['verified', 'capturing', 'completed'].includes(student.status),
-      detail: student.method
-        ? methodLabels[student.method] || student.method
-        : student.failures
-        ? `${student.failures} failed OTP attempt(s)`
-        : 'Awaiting parent sign-in',
-    },
-    {
-      label: 'TrueDepth 15-Angle 3D Face Calibration',
-      done: isStudentEnrolled(student),
-      detail:
-        student.status === 'capturing'
-          ? `${student.inProgress?.samples.length || 0} of ${REQUIRED_POSES.length} angles synced`
-          : student.completedAt
-          ? format(student.completedAt, 'd MMM yyyy, h:mm a')
-          : isStudentEnrolled(student)
-          ? 'Biometric vectors calibrated & active'
-          : 'Waiting for biometric scan',
-    },
-  ];
+  const handleSaveProfile = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setSavingEdit(true);
+    try {
+      await updateStudentProfileDetails(student.admission_number, form);
+      toast({
+        title: 'Student Profile Updated',
+        description: `Saved updated details for ${form.name || student.name} to Appwrite Cloud.`,
+      });
+      setEditing(false);
+      onChanged();
+    } catch (err: any) {
+      toast({
+        title: 'Save Failed',
+        description: err?.message || 'Could not update student record.',
+        variant: 'destructive',
+      });
+    } finally {
+      setSavingEdit(false);
+    }
+  };
 
   const glasses = student.samples.some((s) => s.glasses === 'with');
+  const vecCount = student.vectorCount ?? student.samples.length;
 
   return (
     <Sheet open onOpenChange={(open) => !open && onClose()}>
-      <SheetContent className="w-full sm:max-w-xl max-h-[100dvh] overflow-y-auto bg-slate-950/95 border-white/15 text-white backdrop-blur-2xl p-4 sm:p-6 pb-28 sm:pb-8">
-        <SheetHeader className="text-left pb-4 border-b border-white/10">
+      <SheetContent className="w-full sm:max-w-2xl max-h-[100dvh] overflow-y-auto bg-slate-950 border-slate-800 text-white p-4 sm:p-6 pb-24 sm:pb-10">
+        <SheetHeader className="text-left pb-4 border-b border-slate-800">
           <div className="flex items-start justify-between gap-3">
-            <div className="min-w-0">
-              <SheetTitle className="text-lg sm:text-xl font-extrabold text-white flex items-center gap-2 truncate">
-                {student.name}
-              </SheetTitle>
-              <p className="text-xs text-white/70 font-mono mt-1">
-                Adm: <span className="text-emerald-400 font-bold">{student.admission_number}</span> · Class:{' '}
-                <span className="text-cyan-400 font-bold">{student.category || 'Unassigned'}</span>
-              </p>
+            <div className="flex items-center gap-3 min-w-0">
+              <div className="h-14 w-14 rounded-2xl bg-slate-900 border border-slate-700 flex items-center justify-center font-bold text-base text-white overflow-hidden shrink-0">
+                {student.avatarUrl ? (
+                  <img src={student.avatarUrl} alt={student.name} className="h-full w-full object-cover" />
+                ) : (
+                  student.name.slice(0, 2).toUpperCase()
+                )}
+              </div>
+              <div className="min-w-0">
+                <SheetTitle className="text-lg sm:text-xl font-bold text-white truncate">
+                  {student.name}
+                </SheetTitle>
+                <SheetDescription className="text-xs text-slate-400 font-mono mt-0.5">
+                  Adm No: <span className="text-emerald-400 font-semibold">{student.admission_number}</span>
+                  {' · '}Class: <span className="text-cyan-400 font-semibold">{student.category || 'Unassigned'}</span>
+                  {student.roll_number ? ` · Roll: ${student.roll_number}` : ''}
+                </SheetDescription>
+              </div>
             </div>
             <ModernStatusBadge student={student} />
           </div>
-          <SheetDescription className="text-xs text-white/60 font-mono">
-            Parent Phone: {student.parent_phone || 'Not on file'}
-          </SheetDescription>
         </SheetHeader>
 
-        {/* Action Button: Recapture 3D Face & Revert */}
+        {/* Action Toolbar */}
         {data?.canManage && (
-          <div className="mt-4 p-3.5 sm:p-4 rounded-2xl bg-gradient-to-r from-blue-600/20 via-indigo-600/20 to-purple-600/20 border border-blue-500/30 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-            <div>
-              <p className="text-xs font-bold text-white">Biometric Face Management</p>
-              <p className="text-[11px] text-white/60 mt-0.5">
-                {isStudentEnrolled(student)
-                  ? 'Open dedicated studio to recapture, or copy direct link'
-                  : 'Open full-screen capture studio or copy bypass link'}
-              </p>
-            </div>
-            <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto">
+          <div className="mt-4 p-3.5 rounded-xl bg-slate-900/90 border border-slate-800 flex flex-wrap items-center justify-between gap-2">
+            <div className="flex flex-wrap items-center gap-2">
+              <Button
+                size="sm"
+                onClick={() => {
+                  onClose();
+                  onOpenRecapture(student);
+                }}
+                className="rounded-lg h-9 font-semibold text-xs bg-emerald-600 hover:bg-emerald-500 text-white gap-1.5"
+              >
+                <ScanFace className="h-4 w-4" />
+                {isStudentEnrolled(student) ? 'Re-scan 3D Face' : 'Capture Face in Studio'}
+              </Button>
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => setEditing((v) => !v)}
+                className="rounded-lg h-9 text-xs border-slate-700 bg-slate-800/70 hover:bg-slate-800 text-white gap-1.5"
+              >
+                <Pencil className="h-3.5 w-3.5 text-cyan-400" />
+                {editing ? 'Cancel Edit' : 'Edit Details'}
+              </Button>
               {onCopyBypassLink && (
                 <Button
                   variant="outline"
                   size="sm"
-                  title="Copy Direct Capture Bypass Link"
                   onClick={() => onCopyBypassLink(student)}
-                  className="rounded-xl h-10 sm:h-9 font-semibold text-xs border-white/20 bg-white/5 hover:bg-white/10 text-white/90 gap-1.5 touch-manipulation"
+                  className="rounded-lg h-9 text-xs border-slate-700 bg-slate-800/70 hover:bg-slate-800 text-white gap-1.5"
                 >
                   <Copy className="h-3.5 w-3.5 text-cyan-400" />
-                  Copy Link
+                  Copy Capture Link
                 </Button>
               )}
+            </div>
+
+            <div className="flex items-center gap-2">
               {isStudentEnrolled(student) && onRevert && (
                 <Button
+                  size="sm"
                   variant="outline"
                   onClick={() => {
                     onClose();
                     onRevert(student);
                   }}
-                  className="flex-1 sm:flex-none rounded-xl h-10 sm:h-9 font-bold text-xs border-amber-500/30 bg-amber-500/10 text-amber-300 hover:bg-amber-500/20 hover:text-white gap-1.5 shrink-0 touch-manipulation"
+                  className="rounded-lg h-9 text-xs border-amber-500/30 bg-amber-500/10 text-amber-300 hover:bg-amber-500/20 gap-1"
                 >
-                  <RotateCcw className="h-4 w-4 text-amber-400" />
+                  <RotateCcw className="h-3.5 w-3.5" />
                   Revert
                 </Button>
               )}
               {onDelete && (
                 <Button
+                  size="sm"
                   variant="outline"
                   onClick={() => {
                     onClose();
                     onDelete(student);
                   }}
-                  className="flex-1 sm:flex-none rounded-xl h-10 sm:h-9 font-bold text-xs border-rose-500/40 bg-rose-500/15 text-rose-300 hover:bg-rose-500/25 hover:text-white gap-1.5 shrink-0 touch-manipulation"
+                  className="rounded-lg h-9 text-xs border-rose-500/30 bg-rose-500/10 text-rose-300 hover:bg-rose-500/20 gap-1"
                 >
-                  <Trash2 className="h-4 w-4 text-rose-400" />
-                  Delete Student
+                  <Trash2 className="h-3.5 w-3.5" />
+                  Delete
                 </Button>
               )}
-              <Button
-                onClick={() => {
-                  onClose();
-                  onOpenRecapture(student);
-                }}
-                className="flex-1 sm:flex-none rounded-xl h-10 sm:h-9 font-bold text-xs bg-gradient-to-r from-cyan-500 via-blue-600 to-indigo-600 text-white hover:from-cyan-600 hover:to-indigo-700 shadow-md shadow-blue-500/20 gap-1.5 shrink-0 touch-manipulation"
-              >
-                <ScanFace className="h-4 w-4" />
-                {isStudentEnrolled(student) ? 'Recapture Face' : 'Capture in Studio'}
-              </Button>
             </div>
           </div>
         )}
 
-        {/* Step Progress Timeline */}
-        <section className="mt-5 space-y-2.5">
-          <h4 className="text-xs font-extrabold uppercase tracking-wider text-white/60 flex items-center gap-1.5">
-            <Activity className="h-3.5 w-3.5 text-emerald-400" />
-            Enrollment Flow Progress
-          </h4>
-          <ol className="space-y-3 p-3.5 sm:p-4 rounded-2xl bg-white/5 border border-white/10">
-            {steps.map((s, idx) => (
-              <li key={s.label} className="flex items-start gap-3">
-                <span
-                  className={cn(
-                    'mt-0.5 h-6 w-6 rounded-full border flex items-center justify-center shrink-0 text-xs font-bold shadow-sm',
-                    s.done
-                      ? 'bg-emerald-500 border-emerald-400 text-slate-950 shadow-emerald-500/30'
-                      : 'border-white/20 text-white/40 bg-white/5'
-                  )}
-                >
-                  {s.done ? <Check className="h-3.5 w-3.5 stroke-[3]" /> : idx + 1}
-                </span>
-                <div className="min-w-0 flex-1">
-                  <p className={cn('text-sm font-bold', s.done ? 'text-white' : 'text-white/60')}>
-                    {s.label}
-                  </p>
-                  <p className="text-xs text-white/50 mt-0.5">{s.detail}</p>
+        {/* Inline Edit Form OR Complete Student Details Grid */}
+        {editing ? (
+          <form onSubmit={handleSaveProfile} className="mt-5 p-4 rounded-xl bg-slate-900 border border-slate-800 space-y-4">
+            <div className="flex items-center justify-between border-b border-slate-800 pb-2.5">
+              <h4 className="text-xs font-bold uppercase tracking-wider text-emerald-400 flex items-center gap-1.5">
+                <Pencil className="h-3.5 w-3.5" /> Edit Student Record ({student.admission_number})
+              </h4>
+            </div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div>
+                <Label className="text-xs text-slate-300">Full Name</Label>
+                <Input
+                  value={form.name}
+                  onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))}
+                  className="mt-1 h-9 text-xs bg-slate-950 border-slate-700 text-white"
+                  required
+                />
+              </div>
+              <div className="grid grid-cols-3 gap-2">
+                <div>
+                  <Label className="text-xs text-slate-300">Class</Label>
+                  <Input
+                    value={form.class}
+                    onChange={(e) => setForm((f) => ({ ...f, class: e.target.value }))}
+                    placeholder="e.g. 10"
+                    className="mt-1 h-9 text-xs bg-slate-950 border-slate-700 text-white"
+                  />
                 </div>
-              </li>
-            ))}
-          </ol>
-        </section>
+                <div>
+                  <Label className="text-xs text-slate-300">Section</Label>
+                  <Input
+                    value={form.section}
+                    onChange={(e) => setForm((f) => ({ ...f, section: e.target.value }))}
+                    placeholder="e.g. A"
+                    className="mt-1 h-9 text-xs bg-slate-950 border-slate-700 text-white"
+                  />
+                </div>
+                <div>
+                  <Label className="text-xs text-slate-300">Roll No</Label>
+                  <Input
+                    value={form.roll_number}
+                    onChange={(e) => setForm((f) => ({ ...f, roll_number: e.target.value }))}
+                    className="mt-1 h-9 text-xs bg-slate-950 border-slate-700 text-white"
+                  />
+                </div>
+              </div>
+              <div>
+                <Label className="text-xs text-slate-300">Father's Name</Label>
+                <Input
+                  value={form.father_name}
+                  onChange={(e) => setForm((f) => ({ ...f, father_name: e.target.value }))}
+                  className="mt-1 h-9 text-xs bg-slate-950 border-slate-700 text-white"
+                />
+              </div>
+              <div>
+                <Label className="text-xs text-slate-300">Mother's Name</Label>
+                <Input
+                  value={form.mother_name}
+                  onChange={(e) => setForm((f) => ({ ...f, mother_name: e.target.value }))}
+                  className="mt-1 h-9 text-xs bg-slate-950 border-slate-700 text-white"
+                />
+              </div>
+              <div>
+                <Label className="text-xs text-slate-300">Parent Phone (10 digits)</Label>
+                <Input
+                  value={form.parent_phone}
+                  onChange={(e) => setForm((f) => ({ ...f, parent_phone: e.target.value }))}
+                  className="mt-1 h-9 text-xs bg-slate-950 border-slate-700 text-white font-mono"
+                />
+              </div>
+              <div>
+                <Label className="text-xs text-slate-300">Date of Birth</Label>
+                <Input
+                  value={form.date_of_birth}
+                  onChange={(e) => setForm((f) => ({ ...f, date_of_birth: e.target.value }))}
+                  placeholder="DD.MM.YYYY or YYYY-MM-DD"
+                  className="mt-1 h-9 text-xs bg-slate-950 border-slate-700 text-white"
+                />
+              </div>
+              <div>
+                <Label className="text-xs text-slate-300">KV Student ID</Label>
+                <Input
+                  value={form.student_id_kv}
+                  onChange={(e) => setForm((f) => ({ ...f, student_id_kv: e.target.value }))}
+                  className="mt-1 h-9 text-xs bg-slate-950 border-slate-700 text-white font-mono"
+                />
+              </div>
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <Label className="text-xs text-slate-300">PEN Number</Label>
+                  <Input
+                    value={form.pen_number}
+                    onChange={(e) => setForm((f) => ({ ...f, pen_number: e.target.value }))}
+                    className="mt-1 h-9 text-xs bg-slate-950 border-slate-700 text-white font-mono"
+                  />
+                </div>
+                <div>
+                  <Label className="text-xs text-slate-300">Blood Group</Label>
+                  <Input
+                    value={form.blood_group}
+                    onChange={(e) => setForm((f) => ({ ...f, blood_group: e.target.value }))}
+                    className="mt-1 h-9 text-xs bg-slate-950 border-slate-700 text-white"
+                  />
+                </div>
+              </div>
+              <div className="sm:col-span-2">
+                <Label className="text-xs text-slate-300">Residential Address</Label>
+                <Input
+                  value={form.address}
+                  onChange={(e) => setForm((f) => ({ ...f, address: e.target.value }))}
+                  className="mt-1 h-9 text-xs bg-slate-950 border-slate-700 text-white"
+                />
+              </div>
+            </div>
+            <div className="flex justify-end gap-2 pt-2">
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                onClick={() => setEditing(false)}
+                disabled={savingEdit}
+                className="text-xs text-slate-300"
+              >
+                Cancel
+              </Button>
+              <Button
+                type="submit"
+                size="sm"
+                disabled={savingEdit}
+                className="bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-semibold gap-1.5"
+              >
+                {savingEdit ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Save className="h-3.5 w-3.5" />}
+                Save Changes
+              </Button>
+            </div>
+          </form>
+        ) : (
+          <section className="mt-5 space-y-2.5">
+            <h4 className="text-xs font-bold uppercase tracking-wider text-slate-400">
+              Complete Student Profile Details
+            </h4>
+            <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5 p-3.5 rounded-xl bg-slate-900/90 border border-slate-800 text-xs">
+              <div>
+                <span className="text-slate-400 block text-[11px]">Admission No</span>
+                <span className="font-mono font-semibold text-white">{student.admission_number}</span>
+              </div>
+              <div>
+                <span className="text-slate-400 block text-[11px]">Class & Section</span>
+                <span className="font-semibold text-cyan-400">{student.category || 'Unassigned'}</span>
+              </div>
+              <div>
+                <span className="text-slate-400 block text-[11px]">Roll No / KV ID</span>
+                <span className="font-mono text-white">
+                  {student.roll_number || '—'} {student.student_id_kv ? `(${student.student_id_kv})` : ''}
+                </span>
+              </div>
+              <div>
+                <span className="text-slate-400 block text-[11px]">Father's Name</span>
+                <span className="font-semibold text-white">{student.father_name || '—'}</span>
+              </div>
+              <div>
+                <span className="text-slate-400 block text-[11px]">Mother's Name</span>
+                <span className="font-semibold text-white">{student.mother_name || '—'}</span>
+              </div>
+              <div>
+                <span className="text-slate-400 block text-[11px]">Date of Birth</span>
+                <span className="font-mono text-white">{student.date_of_birth || '—'}</span>
+              </div>
+              <div>
+                <span className="text-slate-400 block text-[11px]">Parent Phone</span>
+                <span className="font-mono font-semibold text-emerald-400">
+                  {student.parent_phone_full || student.parent_phone || 'Not on file'}
+                </span>
+              </div>
+              <div>
+                <span className="text-slate-400 block text-[11px]">PEN / Blood Group</span>
+                <span className="font-mono text-white">
+                  {student.pen_number || '—'} {student.blood_group ? `· ${student.blood_group}` : ''}
+                </span>
+              </div>
+              <div>
+                <span className="text-slate-400 block text-[11px]">3D Vectors Stored</span>
+                <span className="font-mono font-semibold text-cyan-400">
+                  {vecCount > 0 ? `${vecCount} biometric sample(s)` : '0 samples'}
+                </span>
+              </div>
+              {student.address && (
+                <div className="col-span-2 sm:col-span-3 pt-1 border-t border-slate-800/80">
+                  <span className="text-slate-400 block text-[11px]">Address</span>
+                  <span className="text-slate-200">{student.address}</span>
+                </div>
+              )}
+            </div>
+          </section>
+        )}
 
-        {/* Record Checks Chips */}
+        {/* Verification Checklist */}
         <section className="mt-5 space-y-2">
-          <h4 className="text-xs font-extrabold uppercase tracking-wider text-white/60">
-            Database Record Verification
+          <h4 className="text-xs font-bold uppercase tracking-wider text-slate-400">
+            Data & Biometric Readiness Checks
           </h4>
-          <div className="flex flex-wrap gap-1.5 sm:gap-2">
+          <div className="flex flex-wrap gap-1.5">
             {[
-              ['Parent Phone on File', student.hasPhone],
-              ["Father's Name Recorded", student.hasFather],
-              ['Date of Birth Verified', student.hasDob],
-              ['ID-Card Photo Extracted', student.portrait],
-              ['Biometric Vectors Ready', student.faceOnFile],
+              ['Parent Phone', student.hasPhone],
+              ["Father's Name", student.hasFather],
+              ['Date of Birth', student.hasDob],
+              ['ID Portrait', student.portrait],
+              ['3D Face Vectors', isStudentEnrolled(student)],
             ].map(([label, ok]) => (
               <span
                 key={String(label)}
                 className={cn(
-                  'rounded-xl border px-2.5 sm:px-3 py-1 text-[11px] sm:text-xs font-bold flex items-center gap-1.5',
+                  'rounded-lg border px-2.5 py-1 text-xs font-medium flex items-center gap-1.5',
                   ok
-                    ? 'border-emerald-500/40 bg-emerald-500/10 text-emerald-300'
-                    : 'border-amber-500/40 bg-amber-500/10 text-amber-300'
+                    ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-300'
+                    : 'border-amber-500/30 bg-amber-500/10 text-amber-300'
                 )}
               >
                 {ok ? <CheckCircle2 className="h-3.5 w-3.5" /> : <AlertCircle className="h-3.5 w-3.5" />}
@@ -577,42 +804,43 @@ function StudentDetailSheet({
 
         <Suspense
           fallback={
-            <div className="mt-5 p-5 rounded-2xl bg-white/5 border border-white/10 text-center space-y-2">
+            <div className="mt-5 p-5 rounded-xl bg-slate-900 border border-slate-800 text-center space-y-2">
               <div className="h-6 w-6 border-2 border-cyan-400 border-t-transparent rounded-full animate-spin mx-auto" />
-              <p className="text-xs text-white/60">Loading Biometric 3D Models & Assets…</p>
+              <p className="text-xs text-slate-400">Loading Biometric 3D Models & Assets…</p>
             </div>
           }
         >
           <StudentStoredFaceAssets key={student.admission_number} student={student} />
         </Suspense>
 
-        {/* Captured 15-Angle Samples Grid */}
+        {/* Captured Samples */}
         {student.samples.length > 0 && (
           <section className="mt-5 space-y-3">
-            <div className="flex items-center justify-between">
-              <h4 className="text-xs font-extrabold uppercase tracking-wider text-white/60 flex items-center gap-1.5">
-                <Camera className="h-3.5 w-3.5 text-cyan-400" />
-                Captured 3D Face Samples ({student.samples.length})
-                {glasses && (
-                  <Badge variant="outline" className="border-cyan-500/40 text-cyan-300 text-[10px] ml-1">
-                    <Glasses className="h-3 w-3 mr-1" /> Glasses
-                  </Badge>
-                )}
-              </h4>
-            </div>
-            {/* 2 columns on mobile for large clear photos, 3 on larger */}
-            <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 sm:gap-2.5">
+            <h4 className="text-xs font-bold uppercase tracking-wider text-slate-400 flex items-center gap-1.5">
+              <Camera className="h-3.5 w-3.5 text-cyan-400" />
+              Captured Face Samples ({student.samples.length})
+              {glasses && (
+                <Badge variant="outline" className="border-cyan-500/40 text-cyan-300 text-[10px] ml-1">
+                  <Glasses className="h-3 w-3 mr-1" /> Glasses
+                </Badge>
+              )}
+            </h4>
+            <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5">
               {student.samples.map((s) => (
                 <figure
                   key={s.fileId}
-                  className="rounded-2xl border border-white/15 bg-white/5 overflow-hidden shadow-md group"
+                  className="rounded-xl border border-slate-800 bg-slate-900 overflow-hidden"
                 >
-                  <div className="relative aspect-square bg-slate-900">
-                    <SamplePhoto admission={student.admission_number} fileId={s.fileId} />
+                  <div className="relative aspect-square bg-slate-950">
+                    <SamplePhoto
+                      admission={student.admission_number}
+                      fileId={s.fileId}
+                      directUrl={s.imageUrl}
+                    />
                   </div>
-                  <figcaption className="p-2 text-[10px] bg-black/40 backdrop-blur-md">
-                    <span className="font-extrabold text-white capitalize block truncate">{s.pose}</span>
-                    <span className="text-white/60 block mt-0.5 truncate text-[9px]">
+                  <figcaption className="p-2 text-[10px] bg-slate-900">
+                    <span className="font-bold text-white capitalize block truncate">{s.pose}</span>
+                    <span className="text-slate-400 block mt-0.5 truncate">
                       L: {s.brightness} · S: {s.sharpness}
                     </span>
                   </figcaption>
@@ -625,8 +853,8 @@ function StudentDetailSheet({
         {/* Corrections Requests */}
         {corrections.length > 0 && (
           <section className="mt-5 space-y-3">
-            <h4 className="text-xs font-extrabold uppercase tracking-wider text-white/60">
-              Pending Corrections Requests
+            <h4 className="text-xs font-bold uppercase tracking-wider text-slate-400">
+              Pending Correction Requests
             </h4>
             {corrections.map((c) => (
               <CorrectionCard
@@ -640,39 +868,34 @@ function StudentDetailSheet({
         )}
 
         {/* Audit Activity Trail */}
-        <section className="mt-5 space-y-3">
-          <h4 className="text-xs font-extrabold uppercase tracking-wider text-white/60 flex items-center gap-1.5">
-            <Clock className="h-3.5 w-3.5 text-amber-400" />
-            Audit Activity Trail
-          </h4>
-          {events.length ? (
-            <ul className="space-y-2 p-3 rounded-2xl bg-white/5 border border-white/10 text-xs">
+        {events.length > 0 && (
+          <section className="mt-5 space-y-2.5">
+            <h4 className="text-xs font-bold uppercase tracking-wider text-slate-400 flex items-center gap-1.5">
+              <Clock className="h-3.5 w-3.5 text-amber-400" />
+              Recent Activity
+            </h4>
+            <ul className="space-y-1.5 p-3 rounded-xl bg-slate-900 border border-slate-800 text-xs">
               {events.map((e, i) => (
-                <li key={i} className="flex items-start justify-between gap-2 p-2 rounded-xl bg-black/20 border border-white/5">
-                  <div className="min-w-0 flex-1">
-                    <span className="font-bold text-white block truncate">{eventLabels[e.event] || e.event}</span>
+                <li key={i} className="flex items-center justify-between gap-2 py-1.5 border-b border-slate-800/60 last:border-0">
+                  <div>
+                    <span className="font-semibold text-white">{eventLabels[e.event] || e.event}</span>
                     {e.method && (
-                      <span className="text-white/60 block text-[11px] mt-0.5">
-                        Method: {methodLabels[e.method] || e.method}
+                      <span className="text-slate-400 ml-2 text-[11px]">
+                        ({methodLabels[e.method] || e.method})
                       </span>
                     )}
                   </div>
-                  <span className="text-[11px] text-white/40 font-mono shrink-0">{ago(e.at)}</span>
+                  <span className="text-[11px] text-slate-400 font-mono">{ago(e.at)}</span>
                 </li>
               ))}
             </ul>
-          ) : (
-            <p className="text-xs text-white/50 italic p-3 rounded-xl bg-white/5 border border-white/10">
-              No recent audit activity in the last 90 days.
-            </p>
-          )}
-        </section>
+          </section>
+        )}
       </SheetContent>
     </Sheet>
   );
 }
 
-// MAIN ENROLLMENT MONITOR PAGE
 export default function EnrollmentMonitor() {
   const { role } = useUserRole();
   const { toast } = useToast();
@@ -683,6 +906,7 @@ export default function EnrollmentMonitor() {
   const [query, setQuery] = useState('');
   const [category, setCategory] = useState('all');
   const [filter, setFilter] = useState<Filter>('all');
+  const [desktopView, setDesktopView] = useState<DesktopViewMode>('table');
   const [limit, setLimit] = useState(PAGE);
   const [selectedStudentAdm, setSelectedStudentAdm] = useState<string | null>(null);
   const [uploadOpen, setUploadOpen] = useState(false);
@@ -700,7 +924,12 @@ export default function EnrollmentMonitor() {
   const [showScrollTop, setShowScrollTop] = useState(false);
 
   const parentLink = `${window.location.origin}/enroll`;
-  const backTo = role === 'teacher' ? '/teacher' : (role === 'enroller' || role === 'student_coordinator') ? '/attendance' : '/admin';
+  const backTo =
+    role === 'teacher'
+      ? '/teacher'
+      : role === 'enroller' || role === 'student_coordinator'
+      ? '/attendance'
+      : '/admin';
 
   const handleLaunchDirectCapture = async (student: MonitorStudent) => {
     try {
@@ -777,12 +1006,14 @@ export default function EnrollmentMonitor() {
   const handleRevert = async (s: MonitorStudent) => {
     setIsReverting(true);
     try {
-      const result = await enrollmentApi<{ reverted: boolean }>('staff.revert', { admission: s.admission_number });
+      const result = await enrollmentApi<{ reverted: boolean }>('staff.revert', {
+        admission: s.admission_number,
+      });
       if (!result.reverted) throw new Error('The server did not confirm face unenrollment.');
 
       toast({
         title: 'Enrollment Reverted',
-        description: `Biometric enrollment for ${s.name} has been cleared. The student can now re-enroll.`,
+        description: `Biometric enrollment for ${s.name} has been cleared.`,
       });
 
       setRevertingStudent(null);
@@ -808,10 +1039,16 @@ export default function EnrollmentMonitor() {
       for (const [index, student] of unenrollTargets.entries()) {
         setUnenrollProgress(`Unenrolling ${index + 1}/${unenrollTargets.length}: ${student.name}`);
         try {
-          const result = await enrollmentApi<{ reverted: boolean }>('staff.revert', { admission: student.admission_number });
+          const result = await enrollmentApi<{ reverted: boolean }>('staff.revert', {
+            admission: student.admission_number,
+          });
           if (!result.reverted) throw new Error('Server did not confirm unenrollment.');
           saved++;
-          setSelectedAdmissions(previous => { const next = new Set(previous); next.delete(student.admission_number); return next; });
+          setSelectedAdmissions((previous) => {
+            const next = new Set(previous);
+            next.delete(student.admission_number);
+            return next;
+          });
         } catch (error) {
           failed.push(student);
           errors.push(`${student.name}: ${error instanceof Error ? error.message : 'Request failed'}`);
@@ -819,10 +1056,18 @@ export default function EnrollmentMonitor() {
       }
       setUnenrollTargets(failed);
       setUnenrollProgress(errors.slice(0, 3).join('\n'));
-      toast({ title: `${saved} students unenrolled`, description: failed.length ? `${failed.length} failed. Review the errors and retry.` : 'Students can enroll their faces again. Profiles and attendance history were kept.', variant: failed.length ? 'destructive' : 'default' });
+      toast({
+        title: `${saved} students unenrolled`,
+        description: failed.length
+          ? `${failed.length} failed. Review the errors and retry.`
+          : 'Students can enroll their faces again.',
+        variant: failed.length ? 'destructive' : 'default',
+      });
       setSelectedStudentAdm(null);
       await load(true);
-    } finally { setUnenrollBusy(false); }
+    } finally {
+      setUnenrollBusy(false);
+    }
   };
 
   const handleConfirmPermanentDelete = async () => {
@@ -832,16 +1077,15 @@ export default function EnrollmentMonitor() {
     setIsDeleting(true);
     setDeleteProgress(`Starting permanent deletion for ${nameToRemove}...`);
 
-    // Optimistically update the UI and cache immediately for 0ms latency
     removeStudentFromMonitorCache(admissionToRemove);
-    setData(prev => {
+    setData((prev) => {
       if (!prev) return prev;
       return {
         ...prev,
-        students: prev.students.filter(s => s.admission_number !== admissionToRemove)
+        students: prev.students.filter((s) => s.admission_number !== admissionToRemove),
       };
     });
-    setSelectedAdmissions(prev => {
+    setSelectedAdmissions((prev) => {
       const next = new Set(prev);
       next.delete(admissionToRemove);
       return next;
@@ -853,34 +1097,33 @@ export default function EnrollmentMonitor() {
           admission_number: admissionToRemove,
           employee_id: admissionToRemove,
           name: nameToRemove,
-          samples: studentToDelete.samples.map(s => ({ fileId: s.fileId })),
+          samples: studentToDelete.samples.map((s) => ({ fileId: s.fileId })),
         },
         (status) => setDeleteProgress(status)
       );
 
       if (res.success) {
         toast({
-          title: "Student Permanently Deleted",
-          description: `Completely removed ${nameToRemove} (${admissionToRemove}) from the database and storage.`,
+          title: 'Student Permanently Deleted',
+          description: `Completely removed ${nameToRemove} (${admissionToRemove}) from database and storage.`,
         });
         setStudentToDelete(null);
         setSelectedStudentAdm(null);
         await load(true);
       } else {
         toast({
-          title: "Deletion Completed with Warnings",
-          description: res.errors.join("; ") || "Some records could not be purged.",
-          variant: "destructive",
+          title: 'Deletion Completed with Warnings',
+          description: res.errors.join('; ') || 'Some records could not be purged.',
+          variant: 'destructive',
         });
         setStudentToDelete(null);
         await load(true);
       }
     } catch (err: any) {
-      console.error('Delete student error:', err);
       toast({
-        title: "Deletion Failed",
-        description: err?.message || "Could not permanently delete student.",
-        variant: "destructive",
+        title: 'Deletion Failed',
+        description: err?.message || 'Could not permanently delete student.',
+        variant: 'destructive',
       });
       await load(true);
     } finally {
@@ -895,16 +1138,15 @@ export default function EnrollmentMonitor() {
     let successCount = 0;
     const errors: string[] = [];
 
-    // Optimistically remove bulk targets immediately
     for (const student of bulkDeleteTargets) {
       removeStudentFromMonitorCache(student.admission_number);
     }
-    const targetAdms = new Set(bulkDeleteTargets.map(s => s.admission_number));
-    setData(prev => {
+    const targetAdms = new Set(bulkDeleteTargets.map((s) => s.admission_number));
+    setData((prev) => {
       if (!prev) return prev;
       return {
         ...prev,
-        students: prev.students.filter(s => !targetAdms.has(s.admission_number))
+        students: prev.students.filter((s) => !targetAdms.has(s.admission_number)),
       };
     });
 
@@ -916,11 +1158,11 @@ export default function EnrollmentMonitor() {
             admission_number: student.admission_number,
             employee_id: student.admission_number,
             name: student.name,
-            samples: student.samples.map(s => ({ fileId: s.fileId })),
+            samples: student.samples.map((s) => ({ fileId: s.fileId })),
           });
           if (res.success) {
             successCount++;
-            setSelectedAdmissions(prev => {
+            setSelectedAdmissions((prev) => {
               const next = new Set(prev);
               next.delete(student.admission_number);
               return next;
@@ -936,8 +1178,8 @@ export default function EnrollmentMonitor() {
       toast({
         title: `${successCount} Students Permanently Deleted`,
         description: errors.length
-          ? `${errors.length} could not be completely removed. Check logs.`
-          : `Permanently removed ${successCount} students and their biometric records from the database.`,
+          ? `${errors.length} could not be completely removed.`
+          : `Permanently removed ${successCount} students from the database.`,
         variant: errors.length ? 'destructive' : 'default',
       });
 
@@ -950,7 +1192,6 @@ export default function EnrollmentMonitor() {
     }
   };
 
-  // Scroll to top listener for mobile FAB
   useEffect(() => {
     const handleScroll = () => {
       setShowScrollTop(window.scrollY > 300);
@@ -962,14 +1203,16 @@ export default function EnrollmentMonitor() {
   const hasDataRef = React.useRef(Boolean(data));
   hasDataRef.current = Boolean(data);
 
-  const load = useCallback(async (quiet = false) => {
-    if (!quiet && !hasDataRef.current) setLoading(true);
+  const load = useCallback(async (force = false) => {
+    if (!force && !hasDataRef.current) setLoading(true);
     try {
-      const fresh = await fetchMonitor();
+      const fresh = await fetchMonitor(force);
       setData(fresh);
       setError('');
     } catch (e) {
-      if (!hasDataRef.current) setError(e instanceof Error ? e.message : 'Could not load enrollment data.');
+      if (!hasDataRef.current) {
+        setError(e instanceof Error ? e.message : 'Could not load enrollment data.');
+      }
     } finally {
       setLoading(false);
     }
@@ -982,7 +1225,7 @@ export default function EnrollmentMonitor() {
   useEffect(() => {
     const id = window.setInterval(() => {
       if (document.visibilityState === 'visible' && (typeof navigator === 'undefined' || navigator.onLine)) {
-        void load(true);
+        void load(false);
       }
     }, 120000);
     return () => window.clearInterval(id);
@@ -992,7 +1235,7 @@ export default function EnrollmentMonitor() {
     if (!cards.length) return;
     toast({
       title: 'Saving Students...',
-      description: `Fast-syncing ${cards.length} students into enrollment database...`,
+      description: `Fast-syncing ${cards.length} students into Appwrite Cloud...`,
     });
 
     try {
@@ -1001,9 +1244,8 @@ export default function EnrollmentMonitor() {
       let directSaved = 0;
       let directFailed = 0;
 
-      // Pre-fetch existing metadata for all students in ONE query to avoid N+1 slowness
       const allAdmNumbers = Array.from(
-        new Set(cards.map(c => (c.employee_id || c.student_id_kv || '').trim()).filter(Boolean))
+        new Set(cards.map((c) => (c.employee_id || c.student_id_kv || '').trim()).filter(Boolean))
       );
       const existingMetaMap: Record<string, Record<string, any>> = {};
       if (allAdmNumbers.length > 0) {
@@ -1015,24 +1257,22 @@ export default function EnrollmentMonitor() {
           for (const row of existingRows || []) {
             const key = (row.admission_number || row.employee_id || '').toLowerCase();
             try {
-              existingMetaMap[key] = typeof row.metadata === 'string' ? JSON.parse(row.metadata) : (row.metadata || {});
+              existingMetaMap[key] =
+                typeof row.metadata === 'string' ? JSON.parse(row.metadata) : row.metadata || {};
             } catch {
               existingMetaMap[key] = {};
             }
           }
-        } catch {
-          /* proceed without existing metadata – upsert will overwrite safely */
-        }
+        } catch {}
       }
 
       for (let i = 0; i < cards.length; i += BATCH_SIZE) {
         const chunk = cards.slice(i, i + BATCH_SIZE);
-        const rows = chunk.map(c => {
+        const rows = chunk.map((c) => {
           const adm = (c.employee_id || c.student_id_kv || '').trim().replace(/\s+/g, '-');
           const rawPhone = String(c.parent_phone || c.phone || '').replace(/\D/g, '');
           const cleanPhone = rawPhone.length >= 10 ? rawPhone.slice(-10) : rawPhone;
           const existingMeta = existingMetaMap[adm.toLowerCase()] || {};
-          // Extra fields stored in metadata (not top-level Supabase/Appwrite columns)
           const mergedMeta: Record<string, any> = {
             ...existingMeta,
             blood_group: c.blood_group || existingMeta.blood_group || '',
@@ -1062,6 +1302,7 @@ export default function EnrollmentMonitor() {
             phone: cleanPhone || null,
             parent_name: c.parent_name || c.father_name || c.mother_name || null,
             father_name: c.father_name?.trim() || null,
+            blood_group: c.blood_group?.trim() || null,
             address: c.address?.trim() || null,
             role: 'student',
             metadata: JSON.stringify(mergedMeta),
@@ -1070,7 +1311,9 @@ export default function EnrollmentMonitor() {
         });
 
         try {
-          const { error: upsertErr } = await supabase.from('profiles').upsert(rows, { onConflict: 'admission_number' });
+          const { error: upsertErr } = await supabase
+            .from('profiles')
+            .upsert(rows, { onConflict: 'admission_number' });
           if (upsertErr) {
             directFailed += chunk.length;
             console.warn('Upsert chunk error:', upsertErr.message);
@@ -1086,25 +1329,31 @@ export default function EnrollmentMonitor() {
       if (directSaved > 0) {
         clearMonitorCache();
         toast({
-          title: directFailed > 0 ? `Partial Import (${directSaved}/${cards.length})` : 'Class ID Cards Imported! 🚀',
-          description: directFailed > 0
-            ? `${directSaved} students saved quickly. ${directFailed} could not be saved.`
-            : `Successfully added ${directSaved} students to Biometric Enrollment Hub.`,
+          title:
+            directFailed > 0
+              ? `Partial Import (${directSaved}/${cards.length})`
+              : 'Class ID Cards Imported! 🚀',
+          description:
+            directFailed > 0
+              ? `${directSaved} students saved quickly. ${directFailed} could not be saved.`
+              : `Successfully added ${directSaved} students to Enrollment Management.`,
         });
         void load(true);
         setUploadOpen(false);
         return;
       }
 
-      // Fallback to backend function if direct save saved 0 records
       const { idCardFunction } = await import('@/services/enrollment/bulkPdfExtractor');
-      const result: { saved: string[]; failed: { admission_number: string; error: string }[] } = { saved: [], failed: [] };
+      const result: { saved: string[]; failed: { admission_number: string; error: string }[] } = {
+        saved: [],
+        failed: [],
+      };
       const SAVE_BATCH_SIZE = 50;
       for (let offset = 0; offset < cards.length; offset += SAVE_BATCH_SIZE) {
         const batch = await idCardFunction<typeof result>({
           action: 'idcards.save',
           approveUpdates: true,
-          students: cards.slice(offset, offset + SAVE_BATCH_SIZE).map(card => {
+          students: cards.slice(offset, offset + SAVE_BATCH_SIZE).map((card) => {
             const rawDigits = String(card.parent_phone || card.phone || '').replace(/\D/g, '');
             const tenDigits = rawDigits.length >= 10 ? rawDigits.slice(-10) : '';
             const validMobile = /^[6-9]\d{9}$/.test(tenDigits) ? tenDigits : '';
@@ -1137,12 +1386,11 @@ export default function EnrollmentMonitor() {
       clearMonitorCache();
       toast({
         title: 'Class ID Cards Imported! 🚀',
-        description: `Successfully added ${result.saved.length || cards.length} students to Biometric Enrollment Hub.`,
+        description: `Successfully added ${result.saved.length || cards.length} students to Enrollment Management.`,
       });
       void load(true);
       setUploadOpen(false);
     } catch (err: any) {
-      console.error('Import failed:', err);
       toast({
         title: 'Import Failure',
         description: err?.message || 'Some records could not be saved. Please refresh.',
@@ -1157,18 +1405,40 @@ export default function EnrollmentMonitor() {
 
   const students = data?.students ?? [];
 
-  // Summary statistics
+  // Accurate, Comprehensive Summary Statistics
   const stats = useMemo(() => {
+    const total = students.length;
     const done = students.filter(isStudentEnrolled).length;
+    const pct = total ? Math.round((done / total) * 100) : 0;
+    const progress = students.filter(
+      (s) => !isStudentEnrolled(s) && (s.status === 'verified' || s.status === 'capturing')
+    ).length;
+    const notStarted = students.filter((s) => !isStudentEnrolled(s) && s.status === 'not_started').length;
+    const failed = students.filter((s) => !isStudentEnrolled(s) && s.failures > 0).length;
+    const corrections = data?.corrections.filter((c) => c.status === 'pending').length ?? 0;
+    const withPhone = students.filter((s) => s.hasPhone).length;
+    const noPhone = total - withPhone;
+    const phonePct = total ? Math.round((withPhone / total) * 100) : 0;
+    const withDob = students.filter((s) => s.hasDob).length;
+    const withFather = students.filter((s) => s.hasFather).length;
+    const totalVectors = students.reduce((acc, s) => acc + (s.vectorCount ?? s.samples.length), 0);
+    const attentionCount = students.filter(needsAttention).length;
+
     return {
-      total: students.length,
+      total,
       done,
-      pct: students.length ? Math.round((done / students.length) * 100) : 0,
-      progress: students.filter((s) => !isStudentEnrolled(s) && (s.status === 'verified' || s.status === 'capturing')).length,
-      notStarted: students.filter((s) => !isStudentEnrolled(s) && s.status === 'not_started').length,
-      failed: students.filter((s) => !isStudentEnrolled(s) && s.failures > 0).length,
-      corrections: data?.corrections.filter((c) => c.status === 'pending').length ?? 0,
-      noPhone: students.filter((s) => !s.hasPhone).length,
+      pct,
+      progress,
+      notStarted,
+      failed,
+      corrections,
+      withPhone,
+      noPhone,
+      phonePct,
+      withDob,
+      withFather,
+      totalVectors,
+      attentionCount,
     };
   }, [students, data]);
 
@@ -1190,64 +1460,102 @@ export default function EnrollmentMonitor() {
     const q = query.trim().toLowerCase();
     return students
       .filter((s) => (category === 'all' || (s.category || 'Unassigned') === category) && matchesFilter(s, filter))
-      .filter((s) => !q || s.name.toLowerCase().includes(q) || s.admission_number.toLowerCase().includes(q))
-      .sort((a, b) => (a.category || '').localeCompare(b.category || '', undefined, { numeric: true }) || a.name.localeCompare(b.name));
+      .filter(
+        (s) =>
+          !q ||
+          s.name.toLowerCase().includes(q) ||
+          s.admission_number.toLowerCase().includes(q) ||
+          (s.father_name && s.father_name.toLowerCase().includes(q)) ||
+          (s.parent_phone_full && s.parent_phone_full.includes(q)) ||
+          (s.student_id_kv && s.student_id_kv.toLowerCase().includes(q))
+      )
+      .sort(
+        (a, b) =>
+          (a.category || '').localeCompare(b.category || '', undefined, { numeric: true }) ||
+          a.name.localeCompare(b.name)
+      );
   }, [students, query, category, filter]);
 
   const selectedStudent = students.find((s) => s.admission_number === selectedStudentAdm) ?? null;
+
+  const allVisibleSelected =
+    visible.length > 0 && visible.every((s) => selectedAdmissions.has(s.admission_number));
+
+  const toggleSelectAllVisible = () => {
+    if (allVisibleSelected) {
+      setSelectedAdmissions((prev) => {
+        const next = new Set(prev);
+        for (const s of visible) next.delete(s.admission_number);
+        return next;
+      });
+    } else {
+      setSelectedAdmissions((prev) => {
+        const next = new Set(prev);
+        for (const s of visible) next.add(s.admission_number);
+        return next;
+      });
+    }
+  };
 
   const exportCsv = () => {
     const rows = [
       [
         'Admission Number',
+        'KV Student ID',
+        'Roll Number',
         'Full Name',
         'Class Section',
-        'Status',
-        'Verification Method',
-        'Captured Views Count',
-        'Verified Timestamp',
+        'Father Name',
+        'Mother Name',
+        'Date of Birth',
+        'Parent Phone',
+        'Blood Group',
+        'PEN Number',
+        'Address',
+        'Biometric Status',
+        '3D Vectors Count',
         'Completed Timestamp',
-        'Failed Attempts',
-        'Pending Correction',
-        'Phone on File',
       ],
     ];
     for (const s of visible) {
       rows.push([
         s.admission_number,
+        s.student_id_kv || '',
+        s.roll_number || '',
         s.name,
         s.category || '',
-        statusMeta[s.status].label,
-        methodLabels[s.method] || s.method || '',
-        String(s.samples.length || s.inProgress?.samples.length || 0),
-        s.verifiedAt ? new Date(s.verifiedAt).toISOString() : '',
+        s.father_name || '',
+        s.mother_name || '',
+        s.date_of_birth || '',
+        s.parent_phone_full || s.parent_phone || '',
+        s.blood_group || '',
+        s.pen_number || '',
+        s.address || '',
+        isStudentEnrolled(s) ? 'Face Enrolled' : statusMeta[s.status]?.label || s.status,
+        String(s.vectorCount ?? s.samples.length ?? 0),
         s.completedAt ? new Date(s.completedAt).toISOString() : '',
-        String(s.failures),
-        s.correction ? 'Yes' : 'No',
-        s.hasPhone ? 'Yes' : 'No',
       ]);
     }
     const csv = rows.map((r) => r.map((v) => `"${String(v ?? '').replace(/"/g, '""')}"`).join(',')).join('\n');
     const url = URL.createObjectURL(new Blob(['\ufeff' + csv], { type: 'text/csv;charset=utf-8' }));
     const a = document.createElement('a');
     a.href = url;
-    a.download = `enrollment-radar-status-${format(new Date(), 'yyyy-MM-dd')}.csv`;
+    a.download = `enrollment-roster-${category !== 'all' ? `${category}-` : ''}${format(new Date(), 'yyyy-MM-dd')}.csv`;
     a.click();
     URL.revokeObjectURL(url);
   };
 
   const copyReminder = async () => {
-    const pending = visible.filter((s) => s.status !== 'completed');
+    const pending = visible.filter((s) => !isStudentEnrolled(s));
     if (!pending.length) {
-      toast({ title: 'Everyone in this view is enrolled!' });
+      toast({ title: 'Everyone in this view is already enrolled!' });
       return;
     }
     const text =
       `Dear parents, please complete your child's 3D face biometric registration at ${parentLink} using your registered admission number.\n\n` +
-      `Pending Students:\n` +
+      `Pending Students (${pending.length}):\n` +
       pending.map((s) => `• ${s.name} (${s.category || '—'}) – Admission ID: ${s.admission_number}`).join('\n');
-    
-    // Check if Web Share API is supported (mobile native share)
+
     if (navigator.share) {
       try {
         await navigator.share({
@@ -1255,645 +1563,954 @@ export default function EnrollmentMonitor() {
           text,
           url: parentLink,
         });
-        toast({ title: 'Shared via native dialog!' });
         return;
-      } catch {
-        // Fallback to clipboard
-      }
+      } catch {}
     }
 
     await navigator.clipboard.writeText(text);
     toast({
       title: 'Reminder Copied to Clipboard',
-      description: `${pending.length} pending student invitations ready to paste into WhatsApp, Email, or SMS.`,
+      description: `${pending.length} pending student invitations ready to paste into WhatsApp or SMS.`,
     });
-  };
-
-  const scrollToTop = () => {
-    window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
   return (
     <PageTransition>
-      <div className="enrollment-shell min-h-screen pb-24 sm:pb-16">
-        <div className="max-w-7xl mx-auto px-3 sm:px-6 py-4 sm:py-6 space-y-4 sm:space-y-6 relative z-10">
-          
-          {/* Official Presences Brand Header */}
-          <header className="flex items-center justify-between gap-3 px-1 py-1">
-            <Link to="/" className="font-semibold tracking-tight text-white flex items-center gap-2 group">
-              <img
-                src="/logo.png"
-                alt="Presences AI"
-                className="w-7 h-7 sm:w-8 sm:h-8 object-contain group-hover:scale-105 transition-transform"
-                onError={(e) => {
-                  (e.target as HTMLElement).style.display = 'none';
-                }}
-              />
-              <div className="flex items-center gap-1">
-                <span className="font-black text-base sm:text-lg tracking-tight bg-clip-text text-transparent bg-gradient-to-r from-emerald-400 via-teal-300 to-cyan-400">
-                  presences
-                </span>
-                <span className="text-emerald-400 font-black text-base sm:text-lg">.ai</span>
-              </div>
-            </Link>
-
-            <div className="flex items-center gap-2">
-              <div className="hidden xs:flex items-center gap-2 text-xs font-semibold px-3 py-1.5 rounded-full bg-white/5 border border-white/10 text-slate-300 backdrop-blur-md">
-                <ShieldCheck size={13} className="text-emerald-400" />
-                <span>Biometric Operations</span>
-                <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 animate-pulse" />
-              </div>
-              <Badge variant="outline" className="text-[10px] font-mono font-bold px-2 py-0.5 border-emerald-500/30 text-emerald-400 bg-emerald-500/10">
-                v2.4
-              </Badge>
-            </div>
-          </header>
-
-          {/* Header Navigation Bar */}
-          <div className="flex flex-col gap-3.5 p-3.5 sm:p-5 rounded-2xl sm:rounded-3xl bg-white/5 border border-white/10 backdrop-blur-xl shadow-2xl">
-            
-            {/* Top row: Back Button + Title + Status */}
-            <div className="flex items-center justify-between gap-3">
-              <div className="flex items-center gap-2.5 sm:gap-3.5 min-w-0">
-                <Button
-                  asChild
-                  variant="ghost"
-                  size="icon"
-                  className="h-9 w-9 sm:h-10 sm:w-10 rounded-xl sm:rounded-2xl bg-white/10 border border-white/15 text-white hover:bg-white/20 active:scale-95 shrink-0"
-                >
-                  <Link to={backTo} aria-label="Back">
-                    <ArrowLeft className="h-4 w-4 sm:h-5 sm:w-5" />
-                  </Link>
-                </Button>
-                <div className="min-w-0">
-                  <div className="flex items-center gap-2">
-                    <h1 className="text-lg sm:text-2xl font-black text-white tracking-tight flex items-center gap-1.5 sm:gap-2 truncate">
-                      <ScanFace className="h-5 w-5 sm:h-6 sm:w-6 text-emerald-400 shrink-0" />
-                      <span className="truncate">Biometric Enrollment Hub</span>
-                    </h1>
-                    <span className="flex h-2 w-2 sm:h-2.5 sm:w-2.5 relative shrink-0">
-                      <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
-                      <span className="relative inline-flex rounded-full h-2 w-2 sm:h-2.5 sm:w-2.5 bg-emerald-500"></span>
-                    </span>
-                  </div>
-                  <p className="text-[11px] sm:text-xs text-white/60 font-medium truncate mt-0.5">
-                    {data ? (data.scope.all ? 'All school classes' : `Assigned: ${data.scope.classes.join(', ')}`) : 'Live student biometric onboarding'}
-                    {data && ` · Updated ${ago(data.generatedAt)}`}
-                  </p>
-                </div>
-              </div>
-
-              {/* Mobile Quick Refresh Icon */}
+      <div className="enrollment-shell min-h-screen bg-slate-950 text-white pb-24 sm:pb-14">
+        <div className="max-w-[1440px] mx-auto px-3 sm:px-6 py-4 sm:py-6 space-y-5 relative z-10">
+          {/* TOP COMMAND BAR (Desktop-Logical & Mobile-Friendly) */}
+          <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4 p-4 sm:p-5 rounded-2xl bg-slate-900/90 border border-slate-800 shadow-xl">
+            <div className="flex items-center gap-3 min-w-0">
               <Button
+                asChild
+                variant="outline"
                 size="icon"
-                variant="ghost"
-                className="h-9 w-9 sm:hidden rounded-xl bg-white/10 border border-white/15 text-white hover:bg-white/20 active:scale-95 shrink-0"
-                onClick={() => void load()}
-                disabled={loading}
-                aria-label="Refresh"
+                className="h-10 w-10 rounded-xl border-slate-700 bg-slate-800/70 text-white hover:bg-slate-800 shrink-0"
               >
-                <RefreshCw className={cn('h-4 w-4', loading && 'animate-spin text-emerald-400')} />
+                <Link to={backTo} aria-label="Back">
+                  <ArrowLeft className="h-4 w-4" />
+                </Link>
               </Button>
+              <div className="min-w-0">
+                <div className="flex items-center gap-2 flex-wrap">
+                  <h1 className="text-lg sm:text-2xl font-bold text-white tracking-tight flex items-center gap-2">
+                    <ScanFace className="h-5 w-5 sm:h-6 sm:w-6 text-emerald-400 shrink-0" />
+                    <span>Enrollment Management</span>
+                  </h1>
+                  <Badge
+                    variant="outline"
+                    className="border-emerald-500/30 bg-emerald-500/10 text-emerald-400 text-[11px] font-medium gap-1.5"
+                  >
+                    <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                    Appwrite Cloud Synced
+                  </Badge>
+                </div>
+                <p className="text-xs text-slate-400 mt-0.5 truncate">
+                  {data
+                    ? `${stats.total} registered students across ${classes.length} class sections · Updated ${ago(data.generatedAt)}`
+                    : 'Loading student roster and biometric status from Appwrite Cloud…'}
+                </p>
+              </div>
             </div>
 
-            {/* Action Bar (Horizontally scrollable on mobile, flex on desktop) */}
-            <div className="flex items-center gap-2 overflow-x-auto no-scrollbar pb-0.5 -mx-1 px-1">
-              <Button
-                size="sm"
-                variant="outline"
-                className="hidden sm:inline-flex h-9 px-3.5 rounded-2xl text-xs font-bold border-white/15 bg-white/5 text-white hover:bg-white/15 shadow-sm active:scale-95 shrink-0"
-                onClick={() => void load()}
-                disabled={loading}
-              >
-                <RefreshCw className={cn('h-3.5 w-3.5 mr-1.5', loading && 'animate-spin text-emerald-400')} />
-                Refresh
-              </Button>
-
-              {data?.canManage && (
-                <Button
-                  size="sm"
-                  className="h-8 sm:h-9 px-3 sm:px-3.5 rounded-xl sm:rounded-2xl text-xs font-bold bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-600 hover:to-teal-700 text-white shadow-lg shadow-emerald-500/20 active:scale-95 shrink-0"
-                  onClick={() => setUploadOpen(true)}
-                >
-                  <Upload className="h-3.5 w-3.5 mr-1.5" />
-                  Upload ID Cards
-                </Button>
-              )}
-
-              <Button
-                size="sm"
-                variant="outline"
-                className="h-8 sm:h-9 px-3 sm:px-3.5 rounded-xl sm:rounded-2xl text-xs font-bold border-white/15 bg-white/5 text-white hover:bg-white/15 shadow-sm active:scale-95 shrink-0"
-                onClick={copyReminder}
-                disabled={!data}
-              >
-                <Share2 className="h-3.5 w-3.5 mr-1.5 text-cyan-400" />
-                <span className="hidden xs:inline">Share</span> WhatsApp Reminder
-              </Button>
-
-              <Button
-                size="sm"
-                variant="outline"
-                className="h-8 sm:h-9 px-3 sm:px-3.5 rounded-xl sm:rounded-2xl text-xs font-bold border-white/15 bg-white/5 text-white hover:bg-white/15 shadow-sm active:scale-95 shrink-0"
-                onClick={exportCsv}
-                disabled={!visible.length}
-              >
-                <Download className="h-3.5 w-3.5 mr-1.5 text-blue-400" />
-                Export CSV
-              </Button>
-
+            {/* Action Toolbar */}
+            <div className="flex flex-wrap items-center gap-2">
               {data?.canManage && (
                 <>
-                  {selectedAdmissions.size > 0 ? (
-                    /* Active Selection Operations */
-                    <div className="flex items-center gap-2 pl-2 border-l border-white/15 shrink-0">
-                      <Badge variant="outline" className="border-emerald-500/30 bg-emerald-500/10 text-emerald-400 text-xs px-2.5 py-1 font-semibold">
-                        {selectedAdmissions.size} Selected
-                      </Badge>
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        className="h-8 sm:h-9 px-2.5 rounded-xl sm:rounded-2xl text-xs text-slate-300 hover:text-white"
-                        disabled={unenrollBusy || isDeleting}
-                        onClick={() => setSelectedAdmissions(new Set())}
-                      >
-                        <X className="h-3.5 w-3.5 mr-1" />
-                        Clear
-                      </Button>
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        className="h-8 sm:h-9 px-3 rounded-xl sm:rounded-2xl border-amber-500/30 bg-amber-500/10 text-amber-300 hover:bg-amber-500/20 text-xs font-semibold"
-                        disabled={unenrollBusy || isReverting || isDeleting}
-                        onClick={() => {
-                          setUnenrollProgress('');
-                          setUnenrollTargets(students.filter(student => selectedAdmissions.has(student.admission_number)));
-                        }}
-                      >
-                        <RotateCcw className="h-3.5 w-3.5 mr-1.5" />
-                        Unenroll ({selectedAdmissions.size})
-                      </Button>
-                      <Button
-                        variant="destructive"
-                        size="sm"
-                        className="h-8 sm:h-9 px-3 rounded-xl sm:rounded-2xl bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold shadow-md shadow-rose-600/20"
-                        disabled={unenrollBusy || isReverting || isDeleting}
-                        onClick={() => setBulkDeleteTargets(students.filter(student => selectedAdmissions.has(student.admission_number)))}
-                      >
-                        <Trash2 className="h-3.5 w-3.5 mr-1.5" />
-                        Permanently Delete
-                      </Button>
-                    </div>
-                  ) : (
-                    /* Inactive Selection Controls */
-                    <div className="flex items-center gap-2 pl-2 border-l border-white/15 shrink-0">
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        className="h-8 sm:h-9 px-3 rounded-xl sm:rounded-2xl border-white/15 bg-white/5 text-slate-300 hover:text-white text-xs font-semibold"
-                        disabled={unenrollBusy || isReverting || isDeleting || !visible.length}
-                        onClick={() => setSelectedAdmissions(new Set(visible.map(student => student.admission_number)))}
-                      >
-                        Select Filtered ({visible.length})
-                      </Button>
-
-                      <DropdownMenu>
-                        <DropdownMenuTrigger asChild>
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            className="h-8 w-8 sm:h-9 sm:w-9 rounded-xl sm:rounded-2xl border border-white/15 bg-white/5 text-slate-300 hover:text-white"
-                            aria-label="More actions"
-                          >
-                            <MoreHorizontal className="h-4 w-4" />
-                          </Button>
-                        </DropdownMenuTrigger>
-                        <DropdownMenuContent align="end" className="bg-slate-900 border-white/10 text-white w-56 rounded-2xl shadow-2xl p-1.5">
-                          <DropdownMenuItem
-                            className="text-xs py-2 rounded-xl cursor-pointer hover:bg-white/10"
-                            disabled={!visible.length}
-                            onClick={() => setSelectedAdmissions(new Set(visible.map(student => student.admission_number)))}
-                          >
-                            <Check className="h-3.5 w-3.5 mr-2 text-emerald-400" />
-                            Select all filtered ({visible.length})
-                          </DropdownMenuItem>
-                          <DropdownMenuSeparator className="bg-white/10 my-1" />
-                          <DropdownMenuItem
-                            className="text-xs py-2 rounded-xl cursor-pointer text-rose-300 hover:bg-rose-500/20 focus:bg-rose-500/20 focus:text-rose-200"
-                            disabled={unenrollBusy || isReverting || isDeleting || !students.length}
-                            onClick={() => {
-                              setUnenrollProgress('');
-                              setUnenrollTargets([...students]);
-                            }}
-                          >
-                            <RotateCcw className="h-3.5 w-3.5 mr-2 text-rose-400" />
-                            Unenroll all school students ({students.length})
-                          </DropdownMenuItem>
-                        </DropdownMenuContent>
-                      </DropdownMenu>
-                    </div>
-                  )}
+                  <Button
+                    size="sm"
+                    onClick={() => setUploadOpen(true)}
+                    className="h-9 px-3.5 rounded-xl text-xs font-semibold bg-emerald-600 hover:bg-emerald-500 text-white shadow-sm gap-1.5"
+                  >
+                    <Upload className="h-3.5 w-3.5" />
+                    Import ID Cards (PDF)
+                  </Button>
+                  <Button
+                    asChild
+                    size="sm"
+                    variant="outline"
+                    className="h-9 px-3.5 rounded-xl text-xs font-semibold border-slate-700 bg-slate-800/80 hover:bg-slate-800 text-white gap-1.5"
+                  >
+                    <Link to="/register">
+                      <UserPlus className="h-3.5 w-3.5 text-cyan-400" />
+                      Register Student
+                    </Link>
+                  </Button>
                 </>
               )}
+
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={copyReminder}
+                disabled={!data}
+                className="h-9 px-3 rounded-xl text-xs font-medium border-slate-700 bg-slate-800/60 hover:bg-slate-800 text-slate-200 gap-1.5"
+              >
+                <Share2 className="h-3.5 w-3.5 text-cyan-400" />
+                Share Pending
+              </Button>
+
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={exportCsv}
+                disabled={!visible.length}
+                className="h-9 px-3 rounded-xl text-xs font-medium border-slate-700 bg-slate-800/60 hover:bg-slate-800 text-slate-200 gap-1.5"
+              >
+                <Download className="h-3.5 w-3.5 text-blue-400" />
+                Export CSV ({visible.length})
+              </Button>
+
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => void load(true)}
+                disabled={loading}
+                className="h-9 px-3 rounded-xl text-xs font-medium border-slate-700 bg-slate-800/60 hover:bg-slate-800 text-slate-200 gap-1.5"
+              >
+                <RefreshCw className={cn('h-3.5 w-3.5', loading && 'animate-spin text-emerald-400')} />
+                Refresh
+              </Button>
             </div>
           </div>
 
-          {/* Error Message */}
+          {/* Error Banner */}
           {error && (
-            <div role="alert" className="rounded-2xl border border-rose-500/30 bg-rose-500/10 p-3.5 sm:p-4 text-xs sm:text-sm flex items-start gap-3 text-rose-200">
-              <ShieldAlert className="h-5 w-5 text-rose-400 mt-0.5 shrink-0" />
+            <div
+              role="alert"
+              className="rounded-xl border border-rose-500/30 bg-rose-500/10 p-3.5 text-xs sm:text-sm flex items-center gap-3 text-rose-200"
+            >
+              <ShieldAlert className="h-5 w-5 text-rose-400 shrink-0" />
               <div className="flex-1">{error}</div>
-              <Button size="sm" variant="outline" className="rounded-xl h-8" onClick={() => void load()}>Retry</Button>
+              <Button size="sm" variant="outline" className="rounded-lg h-8" onClick={() => void load(true)}>
+                Retry
+              </Button>
             </div>
           )}
 
-          {/* Loading Skeleton */}
           {loading && !data ? (
             <div className="space-y-4">
-              <div className="grid grid-cols-2 md:grid-cols-5 gap-2.5 sm:gap-3.5">
-                {Array.from({ length: 5 }).map((_, i) => (
-                  <Skeleton key={i} className="h-24 sm:h-28 rounded-2xl sm:rounded-3xl bg-white/5" />
+              <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
+                {Array.from({ length: 6 }).map((_, i) => (
+                  <Skeleton key={i} className="h-24 rounded-2xl bg-slate-900" />
                 ))}
               </div>
-              <Skeleton className="h-96 rounded-2xl sm:rounded-3xl bg-white/5" />
+              <Skeleton className="h-96 rounded-2xl bg-slate-900" />
             </div>
-          ) : data && (
-            <>
-              {/* TOP LIVE METRIC HIGHLIGHTS DECK (Swipeable carousel on mobile, grid on desktop) */}
-              <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2.5 sm:gap-3.5">
-                <GlowStatCard
-                  label="Total Students"
-                  value={stats.total}
-                  hint={stats.noPhone ? `${stats.noPhone} missing parent phone` : '100% phone coverage'}
-                  icon={Users}
-                  tone="default"
-                />
-                <GlowStatCard
-                  label="3D Face Enrolled"
-                  value={stats.done}
-                  subvalue={`${stats.pct}%`}
-                  progress={stats.pct}
-                  hint={`${stats.done} of ${stats.total} calibrated`}
-                  icon={ShieldCheck}
-                  tone="emerald"
-                />
-                <GlowStatCard
-                  label="In Progress"
-                  value={stats.progress}
-                  hint="Active parent scans"
-                  icon={Clock}
-                  tone="cyan"
-                />
-                <GlowStatCard
-                  label="Awaiting Action"
-                  value={stats.notStarted}
-                  hint="Invitation link sent"
-                  icon={Sparkles}
-                  tone="amber"
-                />
-                <GlowStatCard
-                  label="Attention & Edits"
-                  value={stats.corrections + stats.failed}
-                  hint={`${stats.corrections} edits · ${stats.failed} failed`}
-                  icon={AlertCircle}
-                  tone={stats.corrections + stats.failed > 0 ? 'rose' : 'default'}
-                  className="col-span-2 sm:col-span-1"
-                />
-              </div>
-
-              {/* CLASS SECTION COMPLETION CAROUSEL / STRIP */}
-              {classes.length > 0 && (
-                <div className="p-3.5 sm:p-4 rounded-2xl sm:rounded-3xl bg-white/5 border border-white/10 backdrop-blur-xl space-y-2">
-                  <div className="flex items-center justify-between">
-                    <span className="text-[11px] sm:text-xs font-extrabold uppercase tracking-wider text-white/70 flex items-center gap-1.5">
-                      <Layers className="h-3.5 w-3.5 text-cyan-400" />
-                      Class Onboarding Progress (Tap to filter)
-                    </span>
-                    {category !== 'all' && (
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => setCategory('all')}
-                        className="h-6 text-[10px] sm:text-[11px] rounded-lg text-emerald-400 hover:text-emerald-300 hover:bg-emerald-500/10 p-1 px-2"
-                      >
-                        Reset Class ({category})
-                      </Button>
-                    )}
-                  </div>
-                  <div className="flex gap-2 overflow-x-auto pb-1.5 no-scrollbar snap-x snap-mandatory -mx-1 px-1">
-                    {classes.map(([cls, stat]) => {
-                      const pct = stat.total ? Math.round((stat.done / stat.total) * 100) : 0;
-                      const isSelected = category === cls;
-                      return (
-                        <button
-                          key={cls}
-                          type="button"
-                          onClick={() => setCategory(category === cls ? 'all' : cls)}
-                          className={cn(
-                            'relative shrink-0 p-2.5 sm:p-3 rounded-xl sm:rounded-2xl border text-left transition-all duration-200 cursor-pointer min-w-[115px] sm:min-w-[130px] snap-center active:scale-95 touch-manipulation',
-                            isSelected
-                              ? 'border-emerald-400 bg-emerald-500/25 shadow-md shadow-emerald-500/20 ring-2 ring-emerald-400/40'
-                              : 'border-white/10 bg-white/5 hover:bg-white/10'
-                          )}
-                        >
-                          <div className="flex items-center justify-between gap-1">
-                            <span className="text-xs font-black text-white truncate">Class {cls}</span>
-                            <span className="text-[10px] sm:text-[11px] font-mono font-bold text-emerald-400">{pct}%</span>
-                          </div>
-                          <div className="h-1.5 w-full bg-white/10 rounded-full mt-1.5 overflow-hidden">
-                            <div className="h-full bg-gradient-to-r from-emerald-400 to-teal-300 rounded-full" style={{ width: `${pct}%` }} />
-                          </div>
-                          <p className="text-[9px] sm:text-[10px] text-white/50 mt-1 font-mono">
-                            {stat.done}/{stat.total} enrolled
-                          </p>
-                        </button>
-                      );
-                    })}
-                  </div>
+          ) : (
+            data && (
+              <>
+                {/* 6-CARD KPI OVERVIEW GRID (Interactive filter cards) */}
+                <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
+                  <StatCard
+                    label="Total Students"
+                    value={stats.total}
+                    hint={`${classes.length} active class sections`}
+                    icon={Users}
+                    tone="default"
+                    active={filter === 'all'}
+                    onClick={() => setFilter('all')}
+                  />
+                  <StatCard
+                    label="Biometric Enrolled"
+                    value={stats.done}
+                    subvalue={`${stats.pct}%`}
+                    progress={stats.pct}
+                    hint={`${stats.totalVectors} total 3D face vectors`}
+                    icon={ShieldCheck}
+                    tone="emerald"
+                    active={filter === 'completed'}
+                    onClick={() => setFilter('completed')}
+                  />
+                  <StatCard
+                    label="Pending Scan"
+                    value={stats.notStarted}
+                    subvalue={stats.total ? `${100 - stats.pct}%` : '0%'}
+                    hint="Awaiting face calibration"
+                    icon={Sparkles}
+                    tone="amber"
+                    active={filter === 'not_started'}
+                    onClick={() => setFilter('not_started')}
+                  />
+                  <StatCard
+                    label="In Progress"
+                    value={stats.progress}
+                    hint="Active capture sessions"
+                    icon={Clock}
+                    tone="cyan"
+                    active={filter === 'in_progress'}
+                    onClick={() => setFilter('in_progress')}
+                  />
+                  <StatCard
+                    label="Profile Completeness"
+                    value={`${stats.phonePct}%`}
+                    subvalue={`${stats.withPhone}/${stats.total}`}
+                    hint={`DOB: ${stats.withDob} · Father: ${stats.withFather}`}
+                    icon={Database}
+                    tone="indigo"
+                  />
+                  <StatCard
+                    label="Needs Attention"
+                    value={stats.attentionCount}
+                    hint={`${stats.noPhone} no phone · ${stats.corrections} edits`}
+                    icon={AlertCircle}
+                    tone={stats.attentionCount > 0 ? 'rose' : 'default'}
+                    active={filter === 'attention'}
+                    onClick={() => setFilter('attention')}
+                  />
                 </div>
-              )}
 
-              {/* FILTER PILLS & SEARCH BAR DOCK */}
-              <div className="p-3.5 sm:p-4 rounded-2xl sm:rounded-3xl bg-white/5 border border-white/10 backdrop-blur-xl flex flex-col md:flex-row md:items-center justify-between gap-3">
-                
-                {/* Filter Tabs (Smooth horizontal touch scrolling on mobile) */}
-                <div className="flex gap-1.5 overflow-x-auto no-scrollbar py-0.5 -mx-1 px-1 snap-x snap-mandatory">
-                  {FILTERS.map((f) => {
-                    const active = filter === f.id;
-                    const Icon = f.icon;
-                    const count =
-                      f.id === 'all'
-                        ? stats.total
-                        : f.id === 'completed'
-                        ? stats.done
-                        : f.id === 'in_progress'
-                        ? stats.progress
-                        : f.id === 'attention'
-                        ? stats.corrections + stats.failed
-                        : f.id === 'not_started'
-                        ? stats.notStarted
-                        : stats.failed;
-
-                    return (
+                {/* CLASS / SECTION SELECTOR BAR */}
+                {classes.length > 0 && (
+                  <div className="p-3.5 sm:p-4 rounded-2xl bg-slate-900/90 border border-slate-800 space-y-2.5">
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="text-xs font-bold uppercase tracking-wider text-slate-400 flex items-center gap-1.5">
+                        <Layers className="h-3.5 w-3.5 text-cyan-400" />
+                        Filter by Class & Section
+                      </span>
+                      {category !== 'all' && (
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => setCategory('all')}
+                          className="h-6 text-xs text-emerald-400 hover:text-emerald-300 px-2"
+                        >
+                          Show All Classes (Reset {category})
+                        </Button>
+                      )}
+                    </div>
+                    <div className="flex gap-2 overflow-x-auto pb-1 no-scrollbar">
                       <button
-                        key={f.id}
                         type="button"
-                        onClick={() => setFilter(f.id)}
+                        onClick={() => setCategory('all')}
                         className={cn(
-                          'relative shrink-0 h-8 sm:h-9 px-3 sm:px-3.5 rounded-xl sm:rounded-2xl flex items-center gap-1.5 sm:gap-2 text-[11px] sm:text-xs font-bold transition-all duration-200 cursor-pointer select-none active:scale-95 touch-manipulation snap-start',
-                          active
-                            ? 'bg-gradient-to-r from-emerald-500 to-teal-600 text-slate-950 font-black shadow-lg shadow-emerald-500/25'
-                            : 'bg-white/5 text-white/70 hover:text-white hover:bg-white/10 border border-white/10'
+                          'shrink-0 px-3 py-2 rounded-xl border text-left transition-all min-w-[110px]',
+                          category === 'all'
+                            ? 'border-emerald-400 bg-emerald-500/20 text-white'
+                            : 'border-slate-800 bg-slate-950/60 text-slate-300 hover:bg-slate-800/60'
                         )}
                       >
-                        <Icon className="h-3.5 w-3.5 shrink-0" />
-                        <span className="whitespace-nowrap">{f.label}</span>
-                        <Badge
-                          variant="secondary"
-                          className={cn(
-                            'text-[9px] sm:text-[10px] px-1.5 py-0 rounded-md font-mono shrink-0',
-                            active ? 'bg-black/30 text-white border-0' : 'bg-white/10 text-white/80'
-                          )}
-                        >
-                          {count}
-                        </Badge>
+                        <div className="flex items-center justify-between gap-2">
+                          <span className="text-xs font-bold">All Classes</span>
+                          <span className="text-[11px] font-mono font-semibold text-emerald-400">
+                            {stats.pct}%
+                          </span>
+                        </div>
+                        <p className="text-[10px] text-slate-400 font-mono mt-1">
+                          {stats.done}/{stats.total} enrolled
+                        </p>
                       </button>
-                    );
-                  })}
-                </div>
 
-                {/* Search Bar */}
-                <div className="flex items-center gap-2 w-full md:w-auto md:min-w-[280px]">
-                  <div className="relative flex-1">
-                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-white/40" />
-                    <Input
-                      placeholder="Search name, admission ID..."
-                      value={query}
-                      onChange={(e) => setQuery(e.target.value)}
-                      className="h-9 pl-9 pr-8 text-xs rounded-xl sm:rounded-2xl bg-white/5 border-white/15 text-white placeholder:text-white/40 focus:border-emerald-400"
-                    />
-                    {query && (
-                      <button
-                        onClick={() => setQuery('')}
-                        className="absolute right-2.5 top-1/2 -translate-y-1/2 text-white/40 hover:text-white p-1"
-                        aria-label="Clear search"
-                      >
-                        <X className="h-3.5 w-3.5" />
-                      </button>
-                    )}
+                      {classes.map(([cls, stat]) => {
+                        const pct = stat.total ? Math.round((stat.done / stat.total) * 100) : 0;
+                        const isSelected = category === cls;
+                        return (
+                          <button
+                            key={cls}
+                            type="button"
+                            onClick={() => setCategory(isSelected ? 'all' : cls)}
+                            className={cn(
+                              'shrink-0 px-3 py-2 rounded-xl border text-left transition-all min-w-[115px]',
+                              isSelected
+                                ? 'border-emerald-400 bg-emerald-500/20 text-white'
+                                : 'border-slate-800 bg-slate-950/60 text-slate-300 hover:bg-slate-800/60'
+                            )}
+                          >
+                            <div className="flex items-center justify-between gap-2">
+                              <span className="text-xs font-bold truncate">Class {cls}</span>
+                              <span className="text-[11px] font-mono font-semibold text-emerald-400">{pct}%</span>
+                            </div>
+                            <div className="h-1 w-full bg-slate-800 rounded-full mt-1.5 overflow-hidden">
+                              <div
+                                className="h-full bg-emerald-400 rounded-full"
+                                style={{ width: `${pct}%` }}
+                              />
+                            </div>
+                            <p className="text-[10px] text-slate-400 mt-1 font-mono">
+                              {stat.done}/{stat.total} enrolled
+                            </p>
+                          </button>
+                        );
+                      })}
+                    </div>
                   </div>
-                </div>
-              </div>
+                )}
 
-              {/* ROSTER GRID OF STUDENTS */}
-              {visible.length === 0 ? (
-                <div className="text-center py-12 sm:py-16 px-4 rounded-2xl sm:rounded-3xl bg-white/5 border border-white/10 backdrop-blur-xl space-y-3">
-                  <ShieldAlert className="h-10 w-10 sm:h-12 sm:w-12 mx-auto text-white/30" />
-                  <h3 className="text-sm sm:text-base font-bold text-white">No students match your filter</h3>
-                  <p className="text-xs text-white/60 max-w-sm mx-auto">
-                    Try adjusting your search query, class selection, or status filter tab.
-                  </p>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    className="rounded-xl border-white/20 text-white hover:bg-white/10 text-xs"
-                    onClick={() => {
-                      setQuery('');
-                      setCategory('all');
-                      setFilter('all');
-                    }}
-                  >
-                    Reset Filters
-                  </Button>
-                </div>
-              ) : (
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 sm:gap-3.5">
-                    {visible.slice(0, limit).map((s) => {
-                      const isComplete = isStudentEnrolled(s);
-                      const isCapturing = s.status === 'capturing' || s.status === 'verified';
-                      const hasAttention = needsAttention(s);
+                {/* FILTER TABS, SEARCH, BULK ACTIONS & VIEW SWITCHER */}
+                <div className="p-3.5 sm:p-4 rounded-2xl bg-slate-900/90 border border-slate-800 space-y-3">
+                  <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3">
+                    {/* Status Filter Tabs */}
+                    <div className="flex gap-1.5 overflow-x-auto no-scrollbar pb-0.5">
+                      {FILTERS.map((f) => {
+                        const active = filter === f.id;
+                        const Icon = f.icon;
+                        const count =
+                          f.id === 'all'
+                            ? stats.total
+                            : f.id === 'completed'
+                            ? stats.done
+                            : f.id === 'in_progress'
+                            ? stats.progress
+                            : f.id === 'attention'
+                            ? stats.attentionCount
+                            : f.id === 'not_started'
+                            ? stats.notStarted
+                            : stats.failed;
 
-                      return (
-                        <div
-                          key={s.admission_number}
+                        return (
+                          <button
+                            key={f.id}
+                            type="button"
+                            onClick={() => setFilter(f.id)}
+                            className={cn(
+                              'shrink-0 h-9 px-3 rounded-xl flex items-center gap-1.5 text-xs font-semibold transition-all',
+                              active
+                                ? 'bg-emerald-500 text-slate-950 font-bold shadow-sm'
+                                : 'bg-slate-950/70 text-slate-300 hover:text-white hover:bg-slate-800 border border-slate-800'
+                            )}
+                          >
+                            <Icon className="h-3.5 w-3.5 shrink-0" />
+                            <span className="whitespace-nowrap">{f.label}</span>
+                            <span
+                              className={cn(
+                                'text-[10px] px-1.5 py-0.2 rounded font-mono',
+                                active ? 'bg-black/25 text-slate-950 font-bold' : 'bg-slate-800 text-slate-300'
+                              )}
+                            >
+                              {count}
+                            </span>
+                          </button>
+                        );
+                      })}
+                    </div>
+
+                    {/* Search Input & Desktop View Toggle */}
+                    <div className="flex items-center gap-2 w-full lg:w-auto">
+                      <div className="relative flex-1 lg:w-72">
+                        <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-slate-400" />
+                        <Input
+                          placeholder="Search name, admission no, father, phone..."
+                          value={query}
+                          onChange={(e) => setQuery(e.target.value)}
+                          className="h-9 pl-9 pr-8 text-xs rounded-xl bg-slate-950 border-slate-800 text-white placeholder:text-slate-500 focus:border-emerald-500"
+                        />
+                        {query && (
+                          <button
+                            onClick={() => setQuery('')}
+                            className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-white"
+                            aria-label="Clear search"
+                          >
+                            <X className="h-3.5 w-3.5" />
+                          </button>
+                        )}
+                      </div>
+
+                      {/* Desktop Table vs Card Grid Switcher */}
+                      <div className="hidden md:flex items-center rounded-xl bg-slate-950 border border-slate-800 p-0.5">
+                        <button
+                          type="button"
+                          onClick={() => setDesktopView('table')}
                           className={cn(
-                            'group relative rounded-2xl sm:rounded-3xl border p-3.5 sm:p-4 backdrop-blur-xl transition-all duration-200 flex flex-col justify-between overflow-hidden shadow-md touch-manipulation',
-                            isComplete
-                              ? 'border-emerald-500/20 bg-gradient-to-br from-emerald-500/10 via-white/5 to-transparent hover:border-emerald-500/40'
-                              : isCapturing
-                              ? 'border-cyan-500/20 bg-gradient-to-br from-cyan-500/10 via-white/5 to-transparent hover:border-cyan-500/40'
-                              : hasAttention
-                              ? 'border-amber-500/20 bg-gradient-to-br from-amber-500/10 via-white/5 to-transparent hover:border-amber-500/40'
-                              : 'border-white/10 bg-white/5 hover:border-white/20 hover:bg-white/10'
+                            'h-8 px-2.5 rounded-lg flex items-center gap-1.5 text-xs font-medium transition-all',
+                            desktopView === 'table'
+                              ? 'bg-slate-800 text-white shadow-sm'
+                              : 'text-slate-400 hover:text-white'
                           )}
+                          title="Table View (Best for Desktop)"
                         >
-                          {/* Student Header */}
-                          {data?.canManage && (
-                            <label className="flex items-center gap-2 mb-3 text-xs text-white/80">
-                              <input type="checkbox" checked={selectedAdmissions.has(s.admission_number)} disabled={unenrollBusy || isReverting} onChange={event => setSelectedAdmissions(previous => { const next = new Set(previous); if (event.target.checked) next.add(s.admission_number); else next.delete(s.admission_number); return next; })} aria-label={`Select ${s.name} (${s.admission_number}) for face unenrollment`} />
-                              Select student
-                            </label>
+                          <TableIcon className="h-3.5 w-3.5" />
+                          <span>Table</span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setDesktopView('grid')}
+                          className={cn(
+                            'h-8 px-2.5 rounded-lg flex items-center gap-1.5 text-xs font-medium transition-all',
+                            desktopView === 'grid'
+                              ? 'bg-slate-800 text-white shadow-sm'
+                              : 'text-slate-400 hover:text-white'
                           )}
-                          <div>
-                            <div className="flex items-start justify-between gap-2">
-                              <div className="flex items-center gap-2.5 sm:gap-3 min-w-0 flex-1">
-                                <div className="h-10 w-10 sm:h-11 sm:w-11 rounded-xl sm:rounded-2xl bg-gradient-to-br from-white/20 to-white/5 border border-white/15 flex items-center justify-center font-black text-xs sm:text-sm text-white overflow-hidden shrink-0 shadow-inner">
-                                  {s.avatarUrl ? (
-                                    <img
-                                      src={s.avatarUrl}
-                                      alt={s.name}
-                                      className="h-full w-full object-cover"
-                                      onError={(e) => {
-                                        (e.target as HTMLElement).style.display = 'none';
-                                      }}
+                          title="Card Grid View"
+                        >
+                          <LayoutGrid className="h-3.5 w-3.5" />
+                          <span>Cards</span>
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Bulk Selection Bar (Shown when students are selected or for quick selection) */}
+                  {data.canManage && selectedAdmissions.size > 0 && (
+                    <div className="flex flex-wrap items-center justify-between gap-2 pt-2.5 border-t border-slate-800">
+                      <div className="flex items-center gap-2">
+                        <Badge className="bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 text-xs">
+                          {selectedAdmissions.size} student(s) selected
+                        </Badge>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => setSelectedAdmissions(new Set())}
+                          className="h-7 px-2 text-xs text-slate-400 hover:text-white"
+                        >
+                          Clear Selection
+                        </Button>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          disabled={unenrollBusy || isReverting || isDeleting}
+                          onClick={() => {
+                            setUnenrollProgress('');
+                            setUnenrollTargets(
+                              students.filter((student) => selectedAdmissions.has(student.admission_number))
+                            );
+                          }}
+                          className="h-8 px-3 rounded-lg border-amber-500/30 bg-amber-500/10 text-amber-300 hover:bg-amber-500/20 text-xs font-semibold"
+                        >
+                          <RotateCcw className="h-3.5 w-3.5 mr-1.5" />
+                          Unenroll Faces ({selectedAdmissions.size})
+                        </Button>
+                        <Button
+                          variant="destructive"
+                          size="sm"
+                          disabled={unenrollBusy || isReverting || isDeleting}
+                          onClick={() =>
+                            setBulkDeleteTargets(
+                              students.filter((student) => selectedAdmissions.has(student.admission_number))
+                            )
+                          }
+                          className="h-8 px-3 rounded-lg bg-rose-600 hover:bg-rose-700 text-white text-xs font-semibold"
+                        >
+                          <Trash2 className="h-3.5 w-3.5 mr-1.5" />
+                          Delete Selected ({selectedAdmissions.size})
+                        </Button>
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                {/* STUDENT ROSTER: Empty State */}
+                {visible.length === 0 ? (
+                  <div className="text-center py-14 px-4 rounded-2xl bg-slate-900/90 border border-slate-800 space-y-3">
+                    <ShieldAlert className="h-10 w-10 mx-auto text-slate-500" />
+                    <h3 className="text-base font-bold text-white">No students match the current filter</h3>
+                    <p className="text-xs text-slate-400 max-w-sm mx-auto">
+                      Try clearing your search query, switching class sections, or importing student ID cards.
+                    </p>
+                    <div className="flex items-center justify-center gap-2 pt-1">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="rounded-xl border-slate-700 text-white hover:bg-slate-800 text-xs"
+                        onClick={() => {
+                          setQuery('');
+                          setCategory('all');
+                          setFilter('all');
+                        }}
+                      >
+                        Reset Filters
+                      </Button>
+                      {data.canManage && (
+                        <Button
+                          size="sm"
+                          onClick={() => setUploadOpen(true)}
+                          className="rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs"
+                        >
+                          <Upload className="h-3.5 w-3.5 mr-1.5" />
+                          Import ID Cards
+                        </Button>
+                      )}
+                    </div>
+                  </div>
+                ) : (
+                  <>
+                    {/* DESKTOP TABLE VIEW (Visible on md+ when desktopView === 'table') */}
+                    {desktopView === 'table' && (
+                      <div className="hidden md:block rounded-2xl bg-slate-900/95 border border-slate-800 overflow-hidden shadow-xl">
+                        <div className="overflow-x-auto">
+                          <table className="w-full text-left border-collapse">
+                            <thead>
+                              <tr className="border-b border-slate-800 bg-slate-950/80 text-[11px] font-bold uppercase tracking-wider text-slate-400">
+                                {data.canManage && (
+                                  <th className="py-3.5 pl-4 pr-2 w-10">
+                                    <input
+                                      type="checkbox"
+                                      checked={allVisibleSelected}
+                                      onChange={toggleSelectAllVisible}
+                                      aria-label="Select all visible students"
+                                      className="rounded border-slate-700 bg-slate-900"
                                     />
-                                  ) : (
-                                    s.name.slice(0, 2).toUpperCase()
+                                  </th>
+                                )}
+                                <th className="py-3.5 px-3">Student</th>
+                                <th className="py-3.5 px-3">Class & Roll</th>
+                                <th className="py-3.5 px-3">Parents & Phone</th>
+                                <th className="py-3.5 px-3">DOB & Profile Data</th>
+                                <th className="py-3.5 px-3">Biometric Status</th>
+                                <th className="py-3.5 pl-3 pr-4 text-right">Actions</th>
+                              </tr>
+                            </thead>
+                            <tbody className="divide-y divide-slate-800/80 text-xs">
+                              {visible.slice(0, limit).map((s) => {
+                                const isComplete = isStudentEnrolled(s);
+                                const vecCount = s.vectorCount ?? s.samples.length;
+                                const phoneDisplay = s.parent_phone_full || s.parent_phone;
+
+                                return (
+                                  <tr
+                                    key={s.admission_number}
+                                    className="hover:bg-slate-800/50 transition-colors group"
+                                  >
+                                    {data.canManage && (
+                                      <td className="py-3 pl-4 pr-2 align-middle">
+                                        <input
+                                          type="checkbox"
+                                          checked={selectedAdmissions.has(s.admission_number)}
+                                          onChange={(e) =>
+                                            setSelectedAdmissions((prev) => {
+                                              const next = new Set(prev);
+                                              if (e.target.checked) next.add(s.admission_number);
+                                              else next.delete(s.admission_number);
+                                              return next;
+                                            })
+                                          }
+                                          aria-label={`Select ${s.name}`}
+                                          className="rounded border-slate-700 bg-slate-900"
+                                        />
+                                      </td>
+                                    )}
+
+                                    {/* Student Identity */}
+                                    <td className="py-3 px-3 align-middle">
+                                      <div className="flex items-center gap-3">
+                                        <button
+                                          type="button"
+                                          onClick={() => setSelectedStudentAdm(s.admission_number)}
+                                          className="h-10 w-10 rounded-xl bg-slate-800 border border-slate-700 flex items-center justify-center font-bold text-xs text-white overflow-hidden shrink-0 hover:ring-2 hover:ring-emerald-400 transition-all"
+                                        >
+                                          {s.avatarUrl ? (
+                                            <img
+                                              src={s.avatarUrl}
+                                              alt={s.name}
+                                              className="h-full w-full object-cover"
+                                              onError={(e) => {
+                                                (e.target as HTMLElement).style.display = 'none';
+                                              }}
+                                            />
+                                          ) : (
+                                            s.name.slice(0, 2).toUpperCase()
+                                          )}
+                                        </button>
+                                        <div className="min-w-0">
+                                          <button
+                                            type="button"
+                                            onClick={() => setSelectedStudentAdm(s.admission_number)}
+                                            className="font-bold text-white hover:text-emerald-400 transition-colors text-left block truncate max-w-[220px]"
+                                          >
+                                            {s.name}
+                                          </button>
+                                          <div className="flex items-center gap-1.5 text-[11px] text-slate-400 font-mono mt-0.5">
+                                            <span>Adm: {s.admission_number}</span>
+                                            {s.student_id_kv && <span>· KV: {s.student_id_kv}</span>}
+                                          </div>
+                                        </div>
+                                      </div>
+                                    </td>
+
+                                    {/* Class & Roll */}
+                                    <td className="py-3 px-3 align-middle">
+                                      <Badge
+                                        variant="outline"
+                                        className="border-cyan-500/30 bg-cyan-500/10 text-cyan-300 font-mono text-xs"
+                                      >
+                                        {s.category || 'Unassigned'}
+                                      </Badge>
+                                      {s.roll_number && (
+                                        <span className="block text-[11px] text-slate-400 font-mono mt-1">
+                                          Roll: {s.roll_number}
+                                        </span>
+                                      )}
+                                    </td>
+
+                                    {/* Parents & Phone */}
+                                    <td className="py-3 px-3 align-middle">
+                                      <div className="space-y-0.5">
+                                        <p className="text-slate-200 truncate max-w-[200px]">
+                                          {s.father_name ? (
+                                            <>
+                                              <span className="text-slate-500">F:</span> {s.father_name}
+                                            </>
+                                          ) : (
+                                            <span className="text-slate-500 italic">Father not recorded</span>
+                                          )}
+                                        </p>
+                                        {s.mother_name && (
+                                          <p className="text-[11px] text-slate-400 truncate max-w-[200px]">
+                                            <span className="text-slate-500">M:</span> {s.mother_name}
+                                          </p>
+                                        )}
+                                        {phoneDisplay ? (
+                                          <div className="flex items-center gap-1.5 text-[11px] font-mono text-emerald-400">
+                                            <Phone className="h-3 w-3" />
+                                            <span>{phoneDisplay}</span>
+                                          </div>
+                                        ) : (
+                                          <span className="inline-flex items-center gap-1 text-[11px] text-rose-400">
+                                            <PhoneOff className="h-3 w-3" /> No phone
+                                          </span>
+                                        )}
+                                      </div>
+                                    </td>
+
+                                    {/* DOB & Data Completeness */}
+                                    <td className="py-3 px-3 align-middle">
+                                      <div className="space-y-1">
+                                        <div className="flex items-center gap-1.5 text-slate-300 font-mono text-[11px]">
+                                          <Calendar className="h-3 w-3 text-slate-400" />
+                                          <span>{s.date_of_birth || 'DOB missing'}</span>
+                                          {s.blood_group && (
+                                            <Badge
+                                              variant="outline"
+                                              className="text-[10px] px-1.5 py-0 border-slate-700 text-slate-300"
+                                            >
+                                              {s.blood_group}
+                                            </Badge>
+                                          )}
+                                        </div>
+                                        <div className="flex items-center gap-1">
+                                          <span
+                                            title={s.hasPhone ? 'Phone on file' : 'Missing phone'}
+                                            className={cn(
+                                              'px-1.5 py-0.5 rounded text-[10px] font-medium',
+                                              s.hasPhone
+                                                ? 'bg-emerald-500/15 text-emerald-300'
+                                                : 'bg-rose-500/15 text-rose-300'
+                                            )}
+                                          >
+                                            Phone
+                                          </span>
+                                          <span
+                                            title={s.hasFather ? "Father's name on file" : "Missing father's name"}
+                                            className={cn(
+                                              'px-1.5 py-0.5 rounded text-[10px] font-medium',
+                                              s.hasFather
+                                                ? 'bg-emerald-500/15 text-emerald-300'
+                                                : 'bg-amber-500/15 text-amber-300'
+                                            )}
+                                          >
+                                            Parent
+                                          </span>
+                                          <span
+                                            title={s.hasDob ? 'DOB on file' : 'Missing DOB'}
+                                            className={cn(
+                                              'px-1.5 py-0.5 rounded text-[10px] font-medium',
+                                              s.hasDob
+                                                ? 'bg-emerald-500/15 text-emerald-300'
+                                                : 'bg-amber-500/15 text-amber-300'
+                                            )}
+                                          >
+                                            DOB
+                                          </span>
+                                        </div>
+                                      </div>
+                                    </td>
+
+                                    {/* Biometric Status */}
+                                    <td className="py-3 px-3 align-middle">
+                                      <div className="space-y-1">
+                                        <ModernStatusBadge student={s} />
+                                        <div className="text-[11px] text-slate-400 font-mono flex items-center gap-1">
+                                          <Camera className="h-3 w-3 text-cyan-400" />
+                                          <span>
+                                            {vecCount > 0 ? `${vecCount} 3D sample(s)` : 'No face vectors'}
+                                          </span>
+                                        </div>
+                                      </div>
+                                    </td>
+
+                                    {/* Actions */}
+                                    <td className="py-3 pl-3 pr-4 align-middle text-right">
+                                      <div className="inline-flex items-center justify-end gap-1.5">
+                                        {data.canManage && (
+                                          <Button
+                                            size="sm"
+                                            disabled={launchingCaptureAdm === s.admission_number}
+                                            onClick={() => void handleLaunchDirectCapture(s)}
+                                            className={cn(
+                                              'h-8 px-3 rounded-lg text-xs font-semibold gap-1.5',
+                                              isComplete
+                                                ? 'bg-slate-800 hover:bg-slate-700 text-white border border-slate-700'
+                                                : 'bg-emerald-600 hover:bg-emerald-500 text-white'
+                                            )}
+                                          >
+                                            {launchingCaptureAdm === s.admission_number ? (
+                                              <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                                            ) : (
+                                              <ScanFace className="h-3.5 w-3.5" />
+                                            )}
+                                            <span>{isComplete ? 'Re-scan' : 'Capture'}</span>
+                                          </Button>
+                                        )}
+
+                                        <Button
+                                          size="sm"
+                                          variant="outline"
+                                          onClick={() => setSelectedStudentAdm(s.admission_number)}
+                                          className="h-8 px-2.5 rounded-lg text-xs border-slate-700 bg-slate-800/60 hover:bg-slate-800 text-slate-200 gap-1"
+                                        >
+                                          <Eye className="h-3.5 w-3.5 text-cyan-400" />
+                                          <span>Manage</span>
+                                        </Button>
+
+                                        {data.canManage && (
+                                          <DropdownMenu>
+                                            <DropdownMenuTrigger asChild>
+                                              <Button
+                                                variant="ghost"
+                                                size="icon"
+                                                className="h-8 w-8 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800"
+                                                aria-label="More student actions"
+                                              >
+                                                <MoreHorizontal className="h-4 w-4" />
+                                              </Button>
+                                            </DropdownMenuTrigger>
+                                            <DropdownMenuContent
+                                              align="end"
+                                              className="bg-slate-900 border-slate-800 text-white w-48 rounded-xl p-1"
+                                            >
+                                              <DropdownMenuItem
+                                                onClick={() => setSelectedStudentAdm(s.admission_number)}
+                                                className="text-xs rounded-lg cursor-pointer"
+                                              >
+                                                <Pencil className="h-3.5 w-3.5 mr-2 text-cyan-400" />
+                                                View / Edit Profile
+                                              </DropdownMenuItem>
+                                              <DropdownMenuItem
+                                                onClick={() => void copyDirectCaptureLink(s)}
+                                                className="text-xs rounded-lg cursor-pointer"
+                                              >
+                                                <Copy className="h-3.5 w-3.5 mr-2 text-emerald-400" />
+                                                Copy Capture Link
+                                              </DropdownMenuItem>
+                                              {isComplete && (
+                                                <DropdownMenuItem
+                                                  onClick={() => setRevertingStudent(s)}
+                                                  className="text-xs rounded-lg cursor-pointer text-amber-300"
+                                                >
+                                                  <RotateCcw className="h-3.5 w-3.5 mr-2 text-amber-400" />
+                                                  Revert Biometrics
+                                                </DropdownMenuItem>
+                                              )}
+                                              <DropdownMenuSeparator className="bg-slate-800 my-1" />
+                                              <DropdownMenuItem
+                                                onClick={() => setStudentToDelete(s)}
+                                                className="text-xs rounded-lg cursor-pointer text-rose-400"
+                                              >
+                                                <Trash2 className="h-3.5 w-3.5 mr-2 text-rose-400" />
+                                                Delete Student
+                                              </DropdownMenuItem>
+                                            </DropdownMenuContent>
+                                          </DropdownMenu>
+                                        )}
+                                      </div>
+                                    </td>
+                                  </tr>
+                                );
+                              })}
+                            </tbody>
+                          </table>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* MOBILE CARDS & DESKTOP CARD GRID VIEW */}
+                    <div
+                      className={cn(
+                        'grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3',
+                        desktopView === 'table' && 'md:hidden'
+                      )}
+                    >
+                      {visible.slice(0, limit).map((s) => {
+                        const isComplete = isStudentEnrolled(s);
+                        const vecCount = s.vectorCount ?? s.samples.length;
+                        const phoneDisplay = s.parent_phone_full || s.parent_phone;
+
+                        return (
+                          <div
+                            key={s.admission_number}
+                            className={cn(
+                              'rounded-2xl border p-4 bg-slate-900/90 flex flex-col justify-between transition-all',
+                              isComplete
+                                ? 'border-emerald-500/25'
+                                : needsAttention(s)
+                                ? 'border-amber-500/25'
+                                : 'border-slate-800'
+                            )}
+                          >
+                            <div>
+                              <div className="flex items-start justify-between gap-2">
+                                <div className="flex items-center gap-3 min-w-0 flex-1">
+                                  {data.canManage && (
+                                    <input
+                                      type="checkbox"
+                                      checked={selectedAdmissions.has(s.admission_number)}
+                                      onChange={(e) =>
+                                        setSelectedAdmissions((prev) => {
+                                          const next = new Set(prev);
+                                          if (e.target.checked) next.add(s.admission_number);
+                                          else next.delete(s.admission_number);
+                                          return next;
+                                        })
+                                      }
+                                      aria-label={`Select ${s.name}`}
+                                      className="rounded border-slate-700 bg-slate-950 shrink-0"
+                                    />
                                   )}
-                                </div>
-                                <div className="min-w-0 flex-1">
-                                  <h4 className="text-sm font-extrabold text-white truncate group-hover:text-emerald-300 transition-colors">
-                                    {s.name}
-                                  </h4>
-                                  <div className="flex flex-wrap items-center gap-1.5 text-[11px] sm:text-xs text-white/60 font-mono mt-0.5">
-                                    <span>ID: {s.admission_number}</span>
-                                    {s.category && <span>• Class {s.category}</span>}
+                                  <div className="h-11 w-11 rounded-xl bg-slate-800 border border-slate-700 flex items-center justify-center font-bold text-xs text-white overflow-hidden shrink-0">
+                                    {s.avatarUrl ? (
+                                      <img
+                                        src={s.avatarUrl}
+                                        alt={s.name}
+                                        className="h-full w-full object-cover"
+                                        onError={(e) => {
+                                          (e.target as HTMLElement).style.display = 'none';
+                                        }}
+                                      />
+                                    ) : (
+                                      s.name.slice(0, 2).toUpperCase()
+                                    )}
+                                  </div>
+                                  <div className="min-w-0 flex-1">
+                                    <h4 className="text-sm font-bold text-white truncate">{s.name}</h4>
+                                    <div className="flex flex-wrap items-center gap-1.5 text-[11px] text-slate-400 font-mono mt-0.5">
+                                      <span>ID: {s.admission_number}</span>
+                                      <span>· Class {s.category || 'Unassigned'}</span>
+                                    </div>
                                   </div>
                                 </div>
+                                <ModernStatusBadge student={s} />
                               </div>
 
-                              <ModernStatusBadge student={s} />
+                              {/* Rich Student Info Grid on Mobile Card */}
+                              <div className="mt-3 pt-2.5 border-t border-slate-800/80 grid grid-cols-2 gap-2 text-[11px]">
+                                <div className="truncate">
+                                  <span className="text-slate-500">Father: </span>
+                                  <span className="text-slate-200 font-medium">{s.father_name || '—'}</span>
+                                </div>
+                                <div className="truncate">
+                                  <span className="text-slate-500">DOB: </span>
+                                  <span className="text-slate-200 font-mono">{s.date_of_birth || '—'}</span>
+                                </div>
+                                <div className="truncate">
+                                  <span className="text-slate-500">Phone: </span>
+                                  <span className={cn('font-mono', phoneDisplay ? 'text-emerald-400' : 'text-rose-400')}>
+                                    {phoneDisplay || 'Missing'}
+                                  </span>
+                                </div>
+                                <div className="truncate">
+                                  <span className="text-slate-500">Biometrics: </span>
+                                  <span className="text-cyan-400 font-mono">
+                                    {vecCount > 0 ? `${vecCount} sample(s)` : '0 samples'}
+                                  </span>
+                                </div>
+                              </div>
                             </div>
 
-                            {/* Indicators Pill Strip */}
-                            <div className="flex flex-wrap gap-1.5 mt-2.5 sm:mt-3 pt-2.5 sm:pt-3 border-t border-white/10 text-[10px] font-medium">
-                              {s.samples.length > 0 && (
-                                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg bg-cyan-500/15 border border-cyan-500/30 text-cyan-300">
-                                  <Camera className="h-3 w-3" /> {s.samples.length} 3D views
-                                </span>
-                              )}
-                              {s.hasPhone ? (
-                                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg bg-white/5 border border-white/10 text-white/70">
-                                  <Phone className="h-3 w-3 text-emerald-400" /> Phone on file
-                                </span>
-                              ) : (
-                                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg bg-rose-500/15 border border-rose-500/30 text-rose-300">
-                                  <PhoneOff className="h-3 w-3" /> Missing phone
-                                </span>
-                              )}
-                              {s.correction && (
-                                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg bg-amber-500/15 border border-amber-500/30 text-amber-300">
-                                  <FileEdit className="h-3 w-3" /> Edit requested
-                                </span>
-                              )}
-                            </div>
-                          </div>
+                            {/* Card Footer Actions */}
+                            <div className="flex items-center gap-2 mt-3.5 pt-2.5 border-t border-slate-800">
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                onClick={() => setSelectedStudentAdm(s.admission_number)}
+                                className="flex-1 h-9 rounded-xl text-xs font-semibold border-slate-700 bg-slate-800/70 hover:bg-slate-800 text-white gap-1.5"
+                              >
+                                <Eye className="h-3.5 w-3.5 text-cyan-400" />
+                                Details & Edit
+                              </Button>
 
-                          {/* Actions Footer (Enhanced touch target height on mobile) */}
-                          <div className="flex items-center gap-2 mt-3.5 pt-2.5 sm:pt-3 border-t border-white/10">
-                            <Button
-                              size="sm"
-                              variant="ghost"
-                              onClick={() => setSelectedStudentAdm(s.admission_number)}
-                              className="flex-1 h-9 sm:h-8 rounded-xl text-xs font-bold bg-white/5 hover:bg-white/15 text-white gap-1.5 active:scale-95 touch-manipulation"
-                            >
-                              <Eye className="h-3.5 w-3.5 text-cyan-400" />
-                              Inspect
-                            </Button>
-
-                            {data.canManage && (
-                              <>
-                                {isComplete && (
+                              {data.canManage && (
+                                <>
+                                  {isComplete && (
+                                    <Button
+                                      size="sm"
+                                      variant="ghost"
+                                      onClick={() => setRevertingStudent(s)}
+                                      className="h-9 px-2.5 rounded-xl text-xs text-amber-300 hover:bg-amber-500/20 border border-amber-500/30"
+                                      title="Revert biometric enrollment"
+                                    >
+                                      <RotateCcw className="h-3.5 w-3.5" />
+                                    </Button>
+                                  )}
                                   <Button
                                     size="sm"
                                     variant="ghost"
-                                    title="Revert biometric enrollment"
-                                    onClick={() => setRevertingStudent(s)}
-                                    className="h-9 sm:h-8 px-2 rounded-xl text-xs font-bold text-amber-300 hover:text-amber-100 hover:bg-amber-500/20 border border-amber-500/30 gap-1 active:scale-95 touch-manipulation"
+                                    onClick={() => setStudentToDelete(s)}
+                                    className="h-9 px-2.5 rounded-xl text-xs text-rose-400 hover:bg-rose-500/20 border border-rose-500/30"
+                                    title="Delete student"
                                   >
-                                    <RotateCcw className="h-3.5 w-3.5 text-amber-400" />
-                                    <span className="hidden xs:inline">Revert</span>
+                                    <Trash2 className="h-3.5 w-3.5" />
                                   </Button>
-                                )}
-                                <Button
-                                  size="sm"
-                                  variant="ghost"
-                                  title="Permanently delete student from database"
-                                  onClick={() => setStudentToDelete(s)}
-                                  className="h-9 sm:h-8 px-2 rounded-xl text-xs font-bold text-rose-400 hover:text-rose-200 hover:bg-rose-500/20 border border-rose-500/30 gap-1 active:scale-95 touch-manipulation"
-                                >
-                                  <Trash2 className="h-3.5 w-3.5 text-rose-400" />
-                                  <span className="hidden xs:inline">Delete</span>
-                                </Button>
-                                <Button
-                                  size="sm"
-                                  disabled={launchingCaptureAdm === s.admission_number}
-                                  onClick={() => void handleLaunchDirectCapture(s)}
-                                  className={cn(
-                                    'h-9 sm:h-8 px-3 rounded-xl text-xs font-bold gap-1.5 shadow-sm active:scale-95 touch-manipulation',
-                                    isComplete
-                                      ? 'bg-white/10 hover:bg-white/20 text-white border border-white/15'
-                                      : 'bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-600 hover:to-teal-700 text-slate-950 font-black'
-                                  )}
-                                >
-                                  {launchingCaptureAdm === s.admission_number ? (
-                                    <>
+                                  <Button
+                                    size="sm"
+                                    disabled={launchingCaptureAdm === s.admission_number}
+                                    onClick={() => void handleLaunchDirectCapture(s)}
+                                    className={cn(
+                                      'h-9 px-3.5 rounded-xl text-xs font-semibold gap-1.5',
+                                      isComplete
+                                        ? 'bg-slate-800 hover:bg-slate-700 text-white border border-slate-700'
+                                        : 'bg-emerald-600 hover:bg-emerald-500 text-white'
+                                    )}
+                                  >
+                                    {launchingCaptureAdm === s.admission_number ? (
                                       <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                                      <span>Opening...</span>
-                                    </>
-                                  ) : (
-                                    <>
+                                    ) : (
                                       <ScanFace className="h-3.5 w-3.5" />
-                                      <span>{isComplete ? 'Re-scan' : 'Capture'}</span>
-                                    </>
-                                  )}
-                                </Button>
-                              </>
-                            )}
+                                    )}
+                                    <span>{isComplete ? 'Re-scan' : 'Capture'}</span>
+                                  </Button>
+                                </>
+                              )}
+                            </div>
                           </div>
-                        </div>
-                      );
-                    })}
-                </div>
-              )}
+                        );
+                      })}
+                    </div>
+                  </>
+                )}
 
-              {/* Load More Pagination */}
-              {visible.length > limit && (
-                <div className="text-center pt-3 sm:pt-4">
-                  <Button
-                    variant="outline"
-                    onClick={() => setLimit((prev) => prev + PAGE)}
-                    className="w-full sm:w-auto rounded-xl sm:rounded-2xl border-white/20 text-white hover:bg-white/10 px-6 font-bold text-xs sm:text-sm h-10"
-                  >
-                    Load More Students ({visible.length - limit} remaining)
-                  </Button>
-                </div>
-              )}
-            </>
+                {/* Load More Pagination */}
+                {visible.length > limit && (
+                  <div className="text-center pt-3">
+                    <Button
+                      variant="outline"
+                      onClick={() => setLimit((prev) => prev + PAGE)}
+                      className="w-full sm:w-auto rounded-xl border-slate-700 bg-slate-900 text-white hover:bg-slate-800 px-6 font-semibold text-xs h-10"
+                    >
+                      Show More Students ({visible.length - limit} remaining)
+                    </Button>
+                  </div>
+                )}
+              </>
+            )
           )}
-
         </div>
 
-        {/* Mobile Quick Floating Status & Scroll-To-Top Button */}
+        {/* Mobile Scroll-To-Top Button */}
         {showScrollTop && (
-          <motion.div
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: 20 }}
-            className="fixed bottom-4 right-4 z-40 sm:hidden flex items-center gap-2"
-          >
+          <div className="fixed bottom-4 right-4 z-40 sm:hidden">
             <Button
               size="sm"
-              onClick={scrollToTop}
-              className="h-10 px-3.5 rounded-full bg-slate-900/90 border border-white/20 text-white shadow-2xl backdrop-blur-xl gap-1 text-xs font-bold"
+              onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })}
+              className="h-10 px-3.5 rounded-full bg-slate-900 border border-slate-700 text-white shadow-xl gap-1 text-xs font-bold"
             >
               <ArrowUp className="h-4 w-4 text-emerald-400" />
               Top
             </Button>
-          </motion.div>
+          </div>
         )}
 
-        {/* Slide-over Inspection Sheet */}
+        {/* Slide-over Inspection & Inline Profile Edit Sheet */}
         {selectedStudent && (
           <StudentDetailSheet
             student={selectedStudent}
@@ -1907,53 +2524,54 @@ export default function EnrollmentMonitor() {
           />
         )}
 
-        <Dialog open={unenrollTargets.length > 0} onOpenChange={open => { if (!open && !unenrollBusy) setUnenrollTargets([]); }}>
-          <DialogContent className="max-w-md bg-slate-900 border-white/10 text-white" onInteractOutside={event => { if (unenrollBusy) event.preventDefault(); }} onEscapeKeyDown={event => { if (unenrollBusy) event.preventDefault(); }}>
+        {/* Bulk Unenroll Dialog */}
+        <Dialog
+          open={unenrollTargets.length > 0}
+          onOpenChange={(open) => {
+            if (!open && !unenrollBusy) setUnenrollTargets([]);
+          }}
+        >
+          <DialogContent className="max-w-md bg-slate-900 border-slate-800 text-white">
             <DialogHeader>
               <DialogTitle>Unenroll faces for {unenrollTargets.length} students?</DialogTitle>
-              <DialogDescription>This permanently removes saved face samples and recognition vectors and invalidates enrollment sessions. Student profiles and attendance history are kept. Students will need to enroll again.</DialogDescription>
+              <DialogDescription className="text-slate-400 text-xs">
+                This removes saved face samples and recognition vectors so students can re-enroll. Student profiles and attendance history are kept.
+              </DialogDescription>
             </DialogHeader>
-            <div className="max-h-48 overflow-auto text-sm space-y-1">{unenrollTargets.map(student => <p key={student.admission_number}>{student.name} · {student.admission_number} · {student.category}</p>)}</div>
-            {unenrollProgress && <p role="status" className="text-xs whitespace-pre-line">{unenrollProgress}</p>}
+            <div className="max-h-48 overflow-auto text-xs space-y-1 p-2 rounded-lg bg-slate-950 border border-slate-800">
+              {unenrollTargets.map((student) => (
+                <p key={student.admission_number}>
+                  {student.name} · {student.admission_number} · {student.category}
+                </p>
+              ))}
+            </div>
+            {unenrollProgress && <p className="text-xs text-cyan-400 whitespace-pre-line">{unenrollProgress}</p>}
             <DialogFooter>
-              <Button variant="outline" disabled={unenrollBusy} onClick={() => setUnenrollTargets([])}>Cancel</Button>
-              <Button variant="destructive" disabled={unenrollBusy} onClick={() => void handleBulkUnenroll()}>{unenrollBusy ? 'Unenrolling…' : 'Confirm face unenrollment'}</Button>
+              <Button variant="outline" disabled={unenrollBusy} onClick={() => setUnenrollTargets([])}>
+                Cancel
+              </Button>
+              <Button variant="destructive" disabled={unenrollBusy} onClick={() => void handleBulkUnenroll()}>
+                {unenrollBusy ? 'Unenrolling…' : 'Confirm Unenrollment'}
+              </Button>
             </DialogFooter>
           </DialogContent>
         </Dialog>
 
-        {/* Revert Confirmation Dialog */}
+        {/* Single Revert Dialog */}
         <Dialog open={Boolean(revertingStudent)} onOpenChange={(open) => !open && setRevertingStudent(null)}>
-          <DialogContent className="max-w-md bg-slate-900 border-white/10 text-white">
+          <DialogContent className="max-w-md bg-slate-900 border-slate-800 text-white">
             <DialogHeader>
-              <DialogTitle className="flex items-center gap-2 text-rose-400">
+              <DialogTitle className="flex items-center gap-2 text-amber-400">
                 <RotateCcw className="h-5 w-5" />
                 Revert Biometric Enrollment
               </DialogTitle>
-              <DialogDescription className="text-white/70 text-xs">
-                Are you sure you want to revert biometric enrollment for{' '}
-                <strong className="text-white">{revertingStudent?.name}</strong> (ID:{' '}
+              <DialogDescription className="text-slate-300 text-xs">
+                Revert biometric enrollment for <strong className="text-white">{revertingStudent?.name}</strong> (ID:{' '}
                 <span className="font-mono text-emerald-300">{revertingStudent?.admission_number}</span>)?
               </DialogDescription>
             </DialogHeader>
-
-            <div className="rounded-xl border border-rose-500/20 bg-rose-500/10 p-3 text-xs text-rose-200 space-y-1">
-              <p className="font-semibold">This action will:</p>
-              <ul className="list-disc list-inside text-rose-200/80 space-y-0.5">
-                <li>Clear all 3D face samples and registered biometric vectors</li>
-                <li>Reset enrollment status to <strong>Not Started</strong></li>
-                <li>Allow the student or parent to start fresh calibration</li>
-              </ul>
-            </div>
-
-            <DialogFooter className="gap-2 sm:gap-0 mt-2">
-              <Button
-                variant="ghost"
-                size="sm"
-                disabled={isReverting}
-                onClick={() => setRevertingStudent(null)}
-                className="text-white/70 hover:text-white"
-              >
+            <DialogFooter className="gap-2 mt-2">
+              <Button variant="ghost" size="sm" disabled={isReverting} onClick={() => setRevertingStudent(null)}>
                 Cancel
               </Button>
               <Button
@@ -1961,57 +2579,39 @@ export default function EnrollmentMonitor() {
                 size="sm"
                 disabled={isReverting}
                 onClick={() => revertingStudent && void handleRevert(revertingStudent)}
-                className="bg-rose-600 hover:bg-rose-700 text-white gap-1.5 font-bold"
               >
-                {isReverting ? (
-                  <>
-                    <RefreshCw className="h-3.5 w-3.5 animate-spin" />
-                    Reverting...
-                  </>
-                ) : (
-                  <>
-                    <RotateCcw className="h-3.5 w-3.5" />
-                    Yes, Revert Enrollment
-                  </>
-                )}
+                {isReverting ? 'Reverting...' : 'Yes, Revert Enrollment'}
               </Button>
             </DialogFooter>
           </DialogContent>
         </Dialog>
 
-        {/* Permanent Delete Single Student AlertDialog */}
-        <AlertDialog open={Boolean(studentToDelete)} onOpenChange={(open) => { if (!open && !isDeleting) setStudentToDelete(null); }}>
-          <AlertDialogContent className="max-w-md bg-slate-900 border-white/10 text-white">
+        {/* Single Permanent Delete AlertDialog */}
+        <AlertDialog
+          open={Boolean(studentToDelete)}
+          onOpenChange={(open) => {
+            if (!open && !isDeleting) setStudentToDelete(null);
+          }}
+        >
+          <AlertDialogContent className="max-w-md bg-slate-900 border-slate-800 text-white">
             <AlertDialogHeader>
               <AlertDialogTitle className="flex items-center gap-2 text-rose-400">
                 <Trash2 className="h-5 w-5" />
-                Permanently Delete Student from Database?
+                Permanently Delete Student?
               </AlertDialogTitle>
-              <AlertDialogDescription className="text-white/80 text-xs sm:text-sm space-y-3 pt-2">
+              <AlertDialogDescription className="text-slate-300 text-xs space-y-2 pt-1">
                 <p>
-                  Are you sure you want to permanently erase <strong className="text-white">{studentToDelete?.name}</strong> (Admission ID:{' '}
-                  <span className="font-mono text-emerald-300">{studentToDelete?.admission_number}</span>)?
+                  Permanently delete <strong className="text-white">{studentToDelete?.name}</strong> (Admission ID:{' '}
+                  <span className="font-mono text-emerald-300">{studentToDelete?.admission_number}</span>) and all associated biometric records?
                 </p>
-                <div className="rounded-xl border border-rose-500/20 bg-rose-500/10 p-3 text-xs text-rose-200 space-y-1.5">
-                  <p className="font-bold text-rose-300">This will permanently delete from EVERYWHERE:</p>
-                  <ul className="list-disc pl-4 space-y-0.5 text-rose-200/90">
-                    <li>Student profile & registration accounts</li>
-                    <li>All facial biometric descriptors and recognition models</li>
-                    <li>All attendance records and verification history</li>
-                    <li>All stored face samples and ID photos in Cloud Storage</li>
-                    <li>Enrollment credentials and session documents</li>
-                  </ul>
-                </div>
-                {deleteProgress && (
-                  <p className="text-xs font-semibold text-cyan-400 animate-pulse">{deleteProgress}</p>
-                )}
+                {deleteProgress && <p className="text-xs font-semibold text-cyan-400">{deleteProgress}</p>}
               </AlertDialogDescription>
             </AlertDialogHeader>
-            <AlertDialogFooter className="gap-2 sm:gap-0 mt-2">
+            <AlertDialogFooter className="gap-2 mt-2">
               <AlertDialogCancel
                 disabled={isDeleting}
                 onClick={() => setStudentToDelete(null)}
-                className="border-white/10 bg-white/5 hover:bg-white/10 text-white"
+                className="border-slate-700 bg-slate-800 text-white"
               >
                 Cancel
               </AlertDialogCancel>
@@ -2021,53 +2621,39 @@ export default function EnrollmentMonitor() {
                   e.preventDefault();
                   void handleConfirmPermanentDelete();
                 }}
-                className="bg-rose-600 hover:bg-rose-700 text-white font-bold gap-1.5 shadow-md shadow-rose-600/20"
+                className="bg-rose-600 hover:bg-rose-700 text-white font-semibold"
               >
-                {isDeleting ? (
-                  <>
-                    <RefreshCw className="h-3.5 w-3.5 animate-spin" />
-                    <span>Deleting Permanently...</span>
-                  </>
-                ) : (
-                  <>
-                    <Trash2 className="h-3.5 w-3.5" />
-                    <span>Yes, Permanently Delete</span>
-                  </>
-                )}
+                {isDeleting ? 'Deleting...' : 'Yes, Permanently Delete'}
               </AlertDialogAction>
             </AlertDialogFooter>
           </AlertDialogContent>
         </AlertDialog>
 
         {/* Bulk Permanent Delete AlertDialog */}
-        <AlertDialog open={bulkDeleteTargets.length > 0} onOpenChange={(open) => { if (!open && !isDeleting) setBulkDeleteTargets([]); }}>
-          <AlertDialogContent className="max-w-md bg-slate-900 border-white/10 text-white">
+        <AlertDialog
+          open={bulkDeleteTargets.length > 0}
+          onOpenChange={(open) => {
+            if (!open && !isDeleting) setBulkDeleteTargets([]);
+          }}
+        >
+          <AlertDialogContent className="max-w-md bg-slate-900 border-slate-800 text-white">
             <AlertDialogHeader>
               <AlertDialogTitle className="flex items-center gap-2 text-rose-400">
                 <Trash2 className="h-5 w-5" />
                 Permanently Delete {bulkDeleteTargets.length} Students?
               </AlertDialogTitle>
-              <AlertDialogDescription className="text-white/80 text-xs sm:text-sm space-y-3 pt-2">
+              <AlertDialogDescription className="text-slate-300 text-xs space-y-2 pt-1">
                 <p>
-                  This will permanently erase all selected students from the database including their profiles, biometric face models, attendance records, and cloud storage images. This action cannot be undone.
+                  This will permanently erase all {bulkDeleteTargets.length} selected students, their profiles, and biometric descriptors from Appwrite Cloud.
                 </p>
-                <div className="max-h-36 overflow-auto text-xs space-y-1 p-2 rounded-lg bg-black/40 border border-white/10">
-                  {bulkDeleteTargets.map(s => (
-                    <p key={s.admission_number} className="text-white/80 truncate">
-                      {s.name} · {s.admission_number} · {s.category || 'N/A'}
-                    </p>
-                  ))}
-                </div>
-                {deleteProgress && (
-                  <p className="text-xs font-semibold text-cyan-400 animate-pulse">{deleteProgress}</p>
-                )}
+                {deleteProgress && <p className="text-xs font-semibold text-cyan-400">{deleteProgress}</p>}
               </AlertDialogDescription>
             </AlertDialogHeader>
-            <AlertDialogFooter className="gap-2 sm:gap-0 mt-2">
+            <AlertDialogFooter className="gap-2 mt-2">
               <AlertDialogCancel
                 disabled={isDeleting}
                 onClick={() => setBulkDeleteTargets([])}
-                className="border-white/10 bg-white/5 hover:bg-white/10 text-white"
+                className="border-slate-700 bg-slate-800 text-white"
               >
                 Cancel
               </AlertDialogCancel>
@@ -2077,19 +2663,9 @@ export default function EnrollmentMonitor() {
                   e.preventDefault();
                   void handleBulkPermanentDelete();
                 }}
-                className="bg-rose-600 hover:bg-rose-700 text-white font-bold gap-1.5 shadow-md shadow-rose-600/20"
+                className="bg-rose-600 hover:bg-rose-700 text-white font-semibold"
               >
-                {isDeleting ? (
-                  <>
-                    <RefreshCw className="h-3.5 w-3.5 animate-spin" />
-                    <span>Deleting Selected...</span>
-                  </>
-                ) : (
-                  <>
-                    <Trash2 className="h-3.5 w-3.5" />
-                    <span>Confirm Permanent Deletion</span>
-                  </>
-                )}
+                {isDeleting ? 'Deleting...' : 'Confirm Permanent Deletion'}
               </AlertDialogAction>
             </AlertDialogFooter>
           </AlertDialogContent>
