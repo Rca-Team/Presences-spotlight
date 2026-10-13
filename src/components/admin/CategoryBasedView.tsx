@@ -1,22 +1,21 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
+import { useNavigate } from 'react-router-dom';
+import { Card, CardContent, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Avatar, AvatarImage, AvatarFallback } from '@/components/ui/avatar';
 import { Skeleton } from '@/components/ui/skeleton';
-import { 
-  Users, User, Printer, Calendar, Bell, ChevronLeft, GraduationCap,
-  FileText, Download, FolderInput, MoreVertical, CalendarClock,
-  Search, CheckCircle2, XCircle, Clock, ArrowRight, UserCheck,
-  Sparkles, RefreshCw, Layers
+import {
+  Users, User, Printer, Bell, ChevronLeft, GraduationCap,
+  FolderInput, MoreVertical, CalendarClock,
+  Search, CheckCircle2, Clock, RefreshCw, Layers, ScanFace, X,
 } from 'lucide-react';
 import ClassTeacherManager from './ClassTeacherManager';
 import FullTimetableManager from './TimetableManager';
 import { supabase } from '@/integrations/supabase/client';
 import { pushNotificationService } from '@/services/PushNotificationService';
 import { useToast } from '@/hooks/use-toast';
-import { format, startOfMonth, endOfMonth, eachDayOfInterval } from 'date-fns';
-import { filterWorkingDaysForSchool } from '@/utils/workingDays';
+import { format } from 'date-fns';
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger,
 } from '@/components/ui/dialog';
@@ -27,11 +26,15 @@ import ChangeCategoryDialog from './ChangeCategoryDialog';
 import {
   DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
-import { 
-  CLASSES, SECTIONS, CLASS_COLORS, getCategoryLabel, getCategoryShortLabel,
-  type Category, type SchoolClass 
+import {
+  CLASSES, SECTIONS, CLASS_COLORS, getCategoryLabel,
 } from '@/constants/schoolConfig';
-import { resolveStudentPhotoUrl } from '@/utils/studentPhotoResolver';
+import {
+  fetchUnifiedStudentSnapshot,
+  getCachedUnifiedStudentSnapshot,
+  invalidateUnifiedStatsCache,
+  type UnifiedStudentSnapshot,
+} from '@/utils/attendanceStatsHelper';
 
 export interface CategoryUser {
   id: string;
@@ -54,256 +57,138 @@ export interface CategoryUser {
   attendanceStatus?: 'present' | 'late' | 'absent';
 }
 
+function mapSnapshotToCategoryUsers(snapshot: UnifiedStudentSnapshot | null): CategoryUser[] {
+  if (!snapshot?.roster?.length) return [];
+  return snapshot.roster.map((s) => {
+    const key = s.employee_id || s.name || s.id;
+    const statusObj =
+      snapshot.statusesByEmployeeId[key] ||
+      (s.user_id ? snapshot.statusesByEmployeeId[s.user_id] : undefined) ||
+      snapshot.statusesByEmployeeId[s.id] ||
+      { status: 'absent' as const };
+
+    const isTeacher = s.role === 'teacher' || s.category === 'Teacher';
+    const cls = isTeacher ? 'Teacher' : (s.class || '6');
+    const sec = isTeacher ? '' : (s.section || 'A');
+    const cat = isTeacher ? 'Teacher' : (s.category || `${cls}-${sec}`);
+    const isPresent = statusObj.status === 'present' || statusObj.status === 'late';
+
+    return {
+      id: s.id,
+      user_id: s.user_id || s.id,
+      name: s.name,
+      employee_id: s.employee_id || 'N/A',
+      roll_number: s.roll_number,
+      admission_number: s.admission_number || s.employee_id,
+      department: s.department || (isTeacher ? 'Faculty' : `Class ${cat}`),
+      image_url: s.image_url || '',
+      category: cat,
+      class: cls,
+      section: sec,
+      role: isTeacher ? 'teacher' : 'student',
+      parent_name: s.parent_name,
+      parent_phone: s.parent_phone,
+      parent_email: s.parent_email,
+      phone: s.phone,
+      isPresentToday: isPresent,
+      attendanceStatus: statusObj.status,
+    };
+  });
+}
+
 const CategoryBasedView: React.FC = () => {
   const { toast } = useToast();
+  const navigate = useNavigate();
+
+  // Instant 0ms hydration from cached unified snapshot so tab opens with zero skeleton delay
+  const initialUsers = useMemo(() => mapSnapshotToCategoryUsers(getCachedUnifiedStudentSnapshot()), []);
   const [selectedClass, setSelectedClass] = useState<number | string | null>(null);
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
-  const [users, setUsers] = useState<CategoryUser[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
+  const [users, setUsers] = useState<CategoryUser[]>(initialUsers);
+  const [isLoading, setIsLoading] = useState<boolean>(initialUsers.length === 0);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
-  
+  const [globalSearch, setGlobalSearch] = useState('');
+
   // Notification dialog states
   const [notificationOpen, setNotificationOpen] = useState(false);
   const [notificationSubject, setNotificationSubject] = useState('');
   const [notificationMessage, setNotificationMessage] = useState('');
   const [sendingNotification, setSendingNotification] = useState(false);
-  
-  // Print & Timetable states
-  const [selectedMonth, setSelectedMonth] = useState(new Date());
+
+  // Class Teacher & Timetable states
   const [showTeacherManager, setShowTeacherManager] = useState(false);
   const [fullTimetableOpen, setFullTimetableOpen] = useState(false);
 
-  useEffect(() => {
-    fetchUsers();
-  }, []);
-
-  const fetchUsers = async () => {
-    setIsLoading(true);
+  const fetchUsers = useCallback(async (forceFresh = false) => {
+    if (users.length === 0 && !forceFresh) {
+      setIsLoading(true);
+    }
     try {
-      // 1. Fetch all profiles (source of truth for registered students & staff)
-      let allProfiles: any[] = [];
-      let offset = 0;
-      const pageSize = 100;
-      let hasMore = true;
-
-      while (hasMore) {
-        const { data: page, error: pErr } = await supabase
-          .from('profiles')
-          .select('*')
-          .range(offset, offset + pageSize - 1);
-
-        if (pErr) {
-          console.warn('[CategoryBasedView] Profiles query warning:', pErr);
-          hasMore = false;
-        } else if (page && page.length > 0) {
-          allProfiles = allProfiles.concat(page);
-          if (page.length < pageSize) hasMore = false;
-          else offset += pageSize;
-        } else {
-          hasMore = false;
-        }
+      if (forceFresh) {
+        invalidateUnifiedStatsCache();
       }
-
-      // 2. Fetch registered attendance records as auxiliary fallback
-      const { data: registrationRecords } = await supabase
-        .from('attendance_records')
-        .select('id, user_id, device_info, image_url, category, timestamp')
-        .eq('status', 'registered');
-
-      // 3. Fetch today's attendance logs (to display live Present vs Absent statuses)
-      const today = format(new Date(), 'yyyy-MM-dd');
-      const { data: todayAttendance } = await supabase
-        .from('attendance_records')
-        .select('user_id, student_id, student_name, device_info, status, timestamp')
-        .in('status', ['present', 'late'])
-        .gte('timestamp', `${today}T00:00:00`)
-        .lte('timestamp', `${today}T23:59:59`);
-
-      // Build present lookup sets
-      const presentUserIds = new Set<string>();
-      const presentStudentIds = new Set<string>();
-      const presentNames = new Set<string>();
-
-      (todayAttendance || []).forEach((row: any) => {
-        if (row.user_id) presentUserIds.add(String(row.user_id));
-        if (row.student_id) presentStudentIds.add(String(row.student_id).toLowerCase().trim());
-        const di = typeof row.device_info === 'string' ? safeJsonParse(row.device_info) : row.device_info;
-        const emp = di?.metadata?.employee_id || di?.employee_id;
-        if (emp) presentStudentIds.add(String(emp).toLowerCase().trim());
-        const name = row.student_name || di?.metadata?.name || di?.name;
-        if (name) presentNames.add(String(name).toLowerCase().trim());
-      });
-
-      const processedMap = new Map<string, CategoryUser>();
-
-      // Process Profiles
-      for (const p of allProfiles) {
-        const id = p.id || p.user_id || p.$id;
-        if (!id) continue;
-
-        const pm = typeof p.metadata === 'string' ? safeJsonParse(p.metadata) : p.metadata || {};
-        const name = p.display_name || p.full_name || pm.name || 'Student';
-        const roleStr = String(p.role || pm.role || '').toLowerCase();
-        const isTeacher = roleStr === 'teacher' || roleStr === 'staff' || String(p.department || '').toLowerCase() === 'teacher';
-
-        let studentClass = String(p.class || pm.class || '').trim();
-        let studentSection = String(p.section || pm.section || 'A').toUpperCase().trim();
-
-        // Extract class from department if missing
-        if (!studentClass && p.department) {
-          const match = p.department.match(/\d+/);
-          if (match) studentClass = match[0];
-        }
-
-        // Default student class fallback if unassigned
-        if (!isTeacher && !studentClass) {
-          studentClass = '6';
-        }
-
-        const category = isTeacher ? 'Teacher' : `${studentClass}-${studentSection || 'A'}`;
-        const employeeId = p.admission_number || p.roll_number || p.employee_id || pm.employee_id || pm.roll_number || 'N/A';
-        const rawPhoto = p.avatar_url || p.photo_url || pm.photo_url || '';
-
-        const isPresent = (
-          (p.user_id && presentUserIds.has(String(p.user_id))) ||
-          (id && presentUserIds.has(String(id))) ||
-          (employeeId !== 'N/A' && presentStudentIds.has(String(employeeId).toLowerCase().trim())) ||
-          presentNames.has(name.toLowerCase().trim())
-        );
-
-        const canonicalKey = (employeeId && employeeId !== 'N/A')
-          ? `emp:${employeeId.toLowerCase()}`
-          : `uid:${p.user_id || id}`;
-
-        processedMap.set(canonicalKey, {
-          id: id,
-          user_id: p.user_id || id,
-          name,
-          employee_id: employeeId,
-          roll_number: p.roll_number || pm.roll_number,
-          admission_number: p.admission_number || pm.admission_number,
-          department: p.department || (isTeacher ? 'Faculty' : `Class ${studentClass}-${studentSection}`),
-          image_url: rawPhoto,
-          category,
-          class: isTeacher ? 'Teacher' : studentClass,
-          section: isTeacher ? '' : (studentSection || 'A'),
-          role: isTeacher ? 'teacher' : 'student',
-          parent_name: p.parent_name || pm.parent_name,
-          parent_phone: p.parent_phone || pm.parent_phone || p.phone,
-          parent_email: p.parent_email || pm.parent_email,
-          phone: p.phone,
-          isPresentToday: isPresent,
-          attendanceStatus: isPresent ? 'present' : 'absent',
-        });
-      }
-
-      // Process auxiliary attendance registration records
-      for (const rec of registrationRecords || []) {
-        const di = typeof rec.device_info === 'string' ? safeJsonParse(rec.device_info) : rec.device_info;
-        const meta = di?.metadata || {};
-        const name = meta.name || di?.name || 'Unknown';
-        if (name === 'Unknown') continue;
-
-        const employeeId = meta.employee_id || di?.employee_id || 'N/A';
-        const canonicalKey = (employeeId && employeeId !== 'N/A')
-          ? `emp:${employeeId.toLowerCase()}`
-          : `uid:${rec.user_id || rec.id}`;
-
-        if (!processedMap.has(canonicalKey)) {
-          let category = rec.category || meta.department || '6-A';
-          let cls = '6';
-          let sec = 'A';
-          if (category === 'Teacher') {
-            cls = 'Teacher';
-            sec = '';
-          } else {
-            const match = category.match(/^(\d+)-?([A-D])?$/i);
-            if (match) {
-              cls = match[1];
-              sec = (match[2] || 'A').toUpperCase();
-              category = `${cls}-${sec}`;
-            }
-          }
-
-          const isPresent = (
-            (rec.user_id && presentUserIds.has(String(rec.user_id))) ||
-            (employeeId !== 'N/A' && presentStudentIds.has(String(employeeId).toLowerCase().trim())) ||
-            presentNames.has(name.toLowerCase().trim())
-          );
-
-          processedMap.set(canonicalKey, {
-            id: rec.id,
-            user_id: rec.user_id,
-            name,
-            employee_id: employeeId,
-            roll_number: meta.roll_number,
-            department: meta.department || `Class ${cls}-${sec}`,
-            image_url: rec.image_url || meta.firebase_image_url || '',
-            category,
-            class: cls,
-            section: sec,
-            role: category === 'Teacher' ? 'teacher' : 'student',
-            parent_name: meta.parent_name,
-            parent_phone: meta.parent_phone || meta.phone,
-            parent_email: meta.parent_email,
-            isPresentToday: isPresent,
-            attendanceStatus: isPresent ? 'present' : 'absent',
-          });
-        }
-      }
-
-      const userList = Array.from(processedMap.values());
-      // Resolve photo URLs asynchronously
-      const resolvedList = await Promise.all(
-        userList.map(async (u) => ({
-          ...u,
-          image_url: await resolveStudentPhotoUrl(u.image_url),
-        }))
-      );
-
-      setUsers(resolvedList);
+      const snapshot = await fetchUnifiedStudentSnapshot(forceFresh);
+      setUsers(mapSnapshotToCategoryUsers(snapshot));
     } catch (error) {
-      console.error('Error fetching users:', error);
+      console.error('Error fetching class data:', error);
       toast({ title: 'Error', description: 'Failed to load class data', variant: 'destructive' });
     } finally {
       setIsLoading(false);
       setIsRefreshing(false);
     }
-  };
+  }, [toast, users.length]);
+
+  useEffect(() => {
+    void fetchUsers(false);
+  }, []);
 
   const handleRefresh = () => {
     setIsRefreshing(true);
-    fetchUsers();
+    void fetchUsers(true);
   };
 
-  // Helper for safe JSON parsing
-  function safeJsonParse(val: any) {
-    if (!val || typeof val !== 'string') return {};
-    try {
-      return JSON.parse(val);
-    } catch {
-      return {};
-    }
-  }
-
   // Summary counts
-  const totalStudents = useMemo(() => users.filter(u => u.role === 'student').length, [users]);
-  const totalTeachers = useMemo(() => users.filter(u => u.role === 'teacher').length, [users]);
-  const presentTodayCount = useMemo(() => users.filter(u => u.role === 'student' && u.isPresentToday).length, [users]);
-  const overallAttendanceRate = totalStudents > 0 ? Math.round((presentTodayCount / totalStudents) * 100) : 0;
+  const { totalStudents, totalTeachers, presentTodayCount, overallAttendanceRate } = useMemo(() => {
+    let students = 0;
+    let teachers = 0;
+    let present = 0;
+    for (const u of users) {
+      if (u.role === 'teacher') {
+        teachers++;
+      } else {
+        students++;
+        if (u.isPresentToday) present++;
+      }
+    }
+    return {
+      totalStudents: students,
+      totalTeachers: teachers,
+      presentTodayCount: present,
+      overallAttendanceRate: students > 0 ? Math.round((present / students) * 100) : 0,
+    };
+  }, [users]);
 
-  // Breakdown by Class
+  // Breakdown by Class (O(N) single pass)
   const classStats = useMemo(() => {
     const stats: Record<string, { total: number; present: number; sections: Record<string, { total: number; present: number }> }> = {};
 
     CLASSES.forEach(c => {
       const classStr = String(c);
-      stats[classStr] = { total: 0, present: 0, sections: { 'A': { total: 0, present: 0 }, 'B': { total: 0, present: 0 }, 'C': { total: 0, present: 0 }, 'D': { total: 0, present: 0 } } };
+      stats[classStr] = {
+        total: 0,
+        present: 0,
+        sections: {
+          A: { total: 0, present: 0 },
+          B: { total: 0, present: 0 },
+          C: { total: 0, present: 0 },
+          D: { total: 0, present: 0 },
+        },
+      };
     });
 
-    users.forEach(u => {
-      if (u.role === 'teacher') return;
+    for (const u of users) {
+      if (u.role === 'teacher') continue;
       const c = u.class;
       const s = u.section || 'A';
 
@@ -320,10 +205,25 @@ const CategoryBasedView: React.FC = () => {
         stats[c].present += 1;
         stats[c].sections[s].present += 1;
       }
-    });
+    }
 
     return stats;
   }, [users]);
+
+  // Global search results on main Classes & Sections screen
+  const globalSearchResults = useMemo(() => {
+    const q = globalSearch.trim().toLowerCase();
+    if (!q) return [];
+    return users
+      .filter(
+        (u) =>
+          u.name.toLowerCase().includes(q) ||
+          u.employee_id.toLowerCase().includes(q) ||
+          (u.roll_number && u.roll_number.toLowerCase().includes(q)) ||
+          u.category.toLowerCase().includes(q)
+      )
+      .slice(0, 16);
+  }, [users, globalSearch]);
 
   // Filtered users for Section level view
   const sectionUsers = useMemo(() => {
@@ -331,8 +231,8 @@ const CategoryBasedView: React.FC = () => {
     let list = users.filter(u => u.category === selectedCategory);
     if (searchQuery.trim()) {
       const q = searchQuery.toLowerCase().trim();
-      list = list.filter(u => 
-        u.name.toLowerCase().includes(q) || 
+      list = list.filter(u =>
+        u.name.toLowerCase().includes(q) ||
         u.employee_id.toLowerCase().includes(q) ||
         (u.roll_number && u.roll_number.toLowerCase().includes(q))
       );
@@ -388,43 +288,46 @@ const CategoryBasedView: React.FC = () => {
     if (w) { w.document.write(printContent); w.document.close(); w.print(); }
   };
 
-  // Bulk Notification to Parents
+  // Bulk Notification to Parents (parallelized with concurrency)
   const handleBulkNotification = async () => {
     if (!selectedCategory || !notificationMessage.trim()) return;
     setSendingNotification(true);
     try {
-      const categoryUsers = sectionUsers;
+      const categoryUsers = sectionUsers.filter(u => (u.user_id || u.id) && (u.parent_email || u.parent_phone));
       let successCount = 0;
       let failCount = 0;
 
-      for (const user of categoryUsers) {
-        if (!user.user_id && !user.id) continue;
-        if (user.parent_email || user.parent_phone) {
-          try {
-            await supabase.functions.invoke('send-notification', {
-              body: {
-                recipient: {
-                  email: user.parent_email,
-                  name: user.parent_name || 'Parent',
-                  phone: user.parent_phone || user.phone || null,
+      const BATCH_SIZE = 8;
+      for (let i = 0; i < categoryUsers.length; i += BATCH_SIZE) {
+        const batch = categoryUsers.slice(i, i + BATCH_SIZE);
+        await Promise.all(
+          batch.map(async (user) => {
+            try {
+              await supabase.functions.invoke('send-notification', {
+                body: {
+                  recipient: {
+                    email: user.parent_email,
+                    name: user.parent_name || 'Parent',
+                    phone: user.parent_phone || user.phone || null,
+                  },
+                  message: {
+                    subject: notificationSubject || `${getCategoryLabel(selectedCategory)} Announcement`,
+                    body: notificationMessage,
+                  },
+                  student: {
+                    id: user.user_id || user.id,
+                    name: user.name,
+                    status: 'notification',
+                  },
+                  targetUserId: user.user_id || user.id,
                 },
-                message: {
-                  subject: notificationSubject || `${getCategoryLabel(selectedCategory)} Announcement`,
-                  body: notificationMessage,
-                },
-                student: {
-                  id: user.user_id || user.id,
-                  name: user.name,
-                  status: 'notification',
-                },
-                targetUserId: user.user_id || user.id,
-              },
-            });
-            successCount++;
-          } catch {
-            failCount++;
-          }
-        }
+              });
+              successCount++;
+            } catch {
+              failCount++;
+            }
+          })
+        );
       }
 
       toast({
@@ -441,7 +344,7 @@ const CategoryBasedView: React.FC = () => {
       setNotificationOpen(false);
       setNotificationMessage('');
       setNotificationSubject('');
-    } catch (error) {
+    } catch {
       toast({ title: 'Error', description: 'Failed to broadcast notification', variant: 'destructive' });
     } finally {
       setSendingNotification(false);
@@ -470,6 +373,16 @@ const CategoryBasedView: React.FC = () => {
     );
   }
 
+  // Class Teacher sub-view when opened inside a section
+  if (showTeacherManager && selectedCategory) {
+    return (
+      <ClassTeacherManager
+        category={selectedCategory}
+        onBack={() => setShowTeacherManager(false)}
+      />
+    );
+  }
+
   // LEVEL 3: View students in a specific section / category
   if (selectedCategory) {
     return (
@@ -477,9 +390,9 @@ const CategoryBasedView: React.FC = () => {
         {/* Top Breadcrumb & Action Header */}
         <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4 p-4 rounded-2xl bg-card/50 border border-border/60 backdrop-blur-md">
           <div className="flex items-center gap-3">
-            <Button 
-              variant="outline" 
-              size="icon" 
+            <Button
+              variant="outline"
+              size="icon"
               className="h-10 w-10 rounded-xl hover:bg-primary/10"
               onClick={() => setSelectedCategory(null)}
             >
@@ -493,8 +406,8 @@ const CategoryBasedView: React.FC = () => {
                 </Badge>
               </div>
               <p className="text-xs text-muted-foreground mt-0.5">
-                {selectedCategory === 'Teacher' 
-                  ? 'Faculty roster & assigned subjects' 
+                {selectedCategory === 'Teacher'
+                  ? 'Faculty roster & assigned subjects'
                   : `Present Today: ${sectionUsers.filter(u => u.isPresentToday).length} / ${sectionUsers.length}`}
               </p>
             </div>
@@ -503,9 +416,9 @@ const CategoryBasedView: React.FC = () => {
           <div className="flex flex-wrap items-center gap-2 w-full md:w-auto">
             {selectedCategory !== 'Teacher' && (
               <>
-                <Button 
-                  variant="outline" 
-                  size="sm" 
+                <Button
+                  variant="outline"
+                  size="sm"
                   className="rounded-xl border-border/70"
                   onClick={() => setShowTeacherManager(true)}
                 >
@@ -530,9 +443,9 @@ const CategoryBasedView: React.FC = () => {
               </>
             )}
 
-            <Button 
-              variant="outline" 
-              size="sm" 
+            <Button
+              variant="outline"
+              size="sm"
               className="rounded-xl border-border/70"
               onClick={handlePrintDailyAttendance}
             >
@@ -555,27 +468,27 @@ const CategoryBasedView: React.FC = () => {
                 <div className="space-y-4 pt-2">
                   <div>
                     <Label>Subject</Label>
-                    <Input 
-                      value={notificationSubject} 
-                      onChange={(e) => setNotificationSubject(e.target.value)} 
-                      placeholder="e.g. Important Class Notice" 
+                    <Input
+                      value={notificationSubject}
+                      onChange={(e) => setNotificationSubject(e.target.value)}
+                      placeholder="e.g. Important Class Notice"
                       className="mt-1.5"
                     />
                   </div>
                   <div>
                     <Label>Message Content</Label>
-                    <Textarea 
-                      value={notificationMessage} 
-                      onChange={(e) => setNotificationMessage(e.target.value)} 
-                      placeholder="Enter announcement message..." 
-                      rows={4} 
+                    <Textarea
+                      value={notificationMessage}
+                      onChange={(e) => setNotificationMessage(e.target.value)}
+                      placeholder="Enter announcement message..."
+                      rows={4}
                       className="mt-1.5"
                     />
                   </div>
                   <p className="text-xs text-muted-foreground">Will be delivered to {sectionUsers.length} student parent contacts.</p>
-                  <Button 
-                    onClick={handleBulkNotification} 
-                    disabled={!notificationMessage.trim() || sendingNotification} 
+                  <Button
+                    onClick={handleBulkNotification}
+                    disabled={!notificationMessage.trim() || sendingNotification}
                     className="w-full rounded-xl"
                   >
                     {sendingNotification ? 'Delivering...' : 'Send Broadcast'}
@@ -589,12 +502,21 @@ const CategoryBasedView: React.FC = () => {
         {/* Search bar inside section */}
         <div className="relative max-w-md">
           <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-          <Input 
+          <Input
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             placeholder={`Search ${getCategoryLabel(selectedCategory)} by name or ID...`}
-            className="pl-10 rounded-xl bg-card/40 border-border/60"
+            className="pl-10 pr-8 rounded-xl bg-card/40 border-border/60"
           />
+          {searchQuery && (
+            <button
+              type="button"
+              onClick={() => setSearchQuery('')}
+              className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+            >
+              <X className="h-3.5 w-3.5" />
+            </button>
+          )}
         </div>
 
         {/* Student / Teacher Cards Grid */}
@@ -609,8 +531,8 @@ const CategoryBasedView: React.FC = () => {
         ) : (
           <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
             {sectionUsers.map(user => (
-              <Card 
-                key={user.id} 
+              <Card
+                key={user.id}
                 className="overflow-hidden bg-card/60 border-border/50 hover:border-primary/40 hover:shadow-lg transition-all rounded-2xl backdrop-blur-sm group"
               >
                 <CardContent className="p-4">
@@ -623,8 +545,8 @@ const CategoryBasedView: React.FC = () => {
                         </AvatarFallback>
                       </Avatar>
                       {user.role === 'student' && (
-                        <span 
-                          className={`absolute -bottom-1 -right-1 h-3.5 w-3.5 rounded-full border-2 border-background ${user.isPresentToday ? 'bg-emerald-500' : 'bg-rose-500'}`} 
+                        <span
+                          className={`absolute -bottom-1 -right-1 h-3.5 w-3.5 rounded-full border-2 border-background ${user.isPresentToday ? 'bg-emerald-500' : 'bg-rose-500'}`}
                           title={user.isPresentToday ? 'Present Today' : 'Absent Today'}
                         />
                       )}
@@ -645,7 +567,7 @@ const CategoryBasedView: React.FC = () => {
                         )}
                         {user.role === 'student' && (
                           <span className={`text-[10px] font-semibold uppercase px-1.5 py-0.5 rounded ${user.isPresentToday ? 'bg-emerald-500/15 text-emerald-400' : 'bg-rose-500/15 text-rose-400'}`}>
-                            {user.isPresentToday ? 'Present' : 'Absent'}
+                            {user.attendanceStatus === 'late' ? 'Late' : user.isPresentToday ? 'Present' : 'Absent'}
                           </span>
                         )}
                       </div>
@@ -658,11 +580,22 @@ const CategoryBasedView: React.FC = () => {
                         </Button>
                       </DropdownMenuTrigger>
                       <DropdownMenuContent align="end" className="rounded-xl">
+                        {user.role === 'student' && user.employee_id && user.employee_id !== 'N/A' && (
+                          <DropdownMenuItem
+                            onSelect={() => {
+                              navigate(`/enroll?student=${encodeURIComponent(user.employee_id)}&bypass=true&direct=capture&returnTo=/admin?tab=sections`);
+                            }}
+                            className="cursor-pointer font-semibold text-emerald-500"
+                          >
+                            <ScanFace className="h-4 w-4 mr-2 text-emerald-500" />
+                            Capture / Update Face
+                          </DropdownMenuItem>
+                        )}
                         <ChangeCategoryDialog
-                          userId={user.user_id || user.id} 
-                          userName={user.name} 
+                          userId={user.user_id || user.id}
+                          userName={user.name}
                           currentCategory={user.category}
-                          onCategoryChanged={fetchUsers}
+                          onCategoryChanged={() => void fetchUsers(true)}
                           trigger={
                             <DropdownMenuItem onSelect={(e) => e.preventDefault()} className="cursor-pointer">
                               <FolderInput className="h-4 w-4 mr-2 text-primary" />
@@ -691,9 +624,9 @@ const CategoryBasedView: React.FC = () => {
       <div className="space-y-6">
         <div className="flex items-center justify-between p-4 rounded-2xl bg-card/50 border border-border/60 backdrop-blur-md">
           <div className="flex items-center gap-3">
-            <Button 
-              variant="outline" 
-              size="icon" 
+            <Button
+              variant="outline"
+              size="icon"
               className="h-10 w-10 rounded-xl"
               onClick={() => setSelectedClass(null)}
             >
@@ -707,14 +640,14 @@ const CategoryBasedView: React.FC = () => {
                 </Badge>
               </div>
               <p className="text-xs text-muted-foreground mt-0.5">
-                Today's Attendance: <span className="text-emerald-400 font-semibold">{currClassStats.present} Present</span> of {currClassStats.total} ({currClassStats.total > 0 ? Math.round((currClassStats.present / currClassStats.total) * 100) : 0}%)
+                Today&apos;s Attendance: <span className="text-emerald-400 font-semibold">{currClassStats.present} Present</span> of {currClassStats.total} ({currClassStats.total > 0 ? Math.round((currClassStats.present / currClassStats.total) * 100) : 0}%)
               </p>
             </div>
           </div>
 
-          <Button 
-            variant="outline" 
-            size="sm" 
+          <Button
+            variant="outline"
+            size="sm"
             className="rounded-xl"
             onClick={() => setSelectedClass(null)}
           >
@@ -731,7 +664,7 @@ const CategoryBasedView: React.FC = () => {
             const classColor = typeof selectedClass === 'number' ? CLASS_COLORS[selectedClass] : 'bg-cyan-500';
 
             return (
-              <Card 
+              <Card
                 key={section}
                 className="cursor-pointer border-border/50 bg-card/60 backdrop-blur-md hover:border-primary/50 hover:shadow-xl transition-all duration-300 rounded-2xl group hover:-translate-y-1"
                 onClick={() => setSelectedCategory(cat)}
@@ -743,7 +676,7 @@ const CategoryBasedView: React.FC = () => {
                   <h3 className="font-bold text-base text-foreground group-hover:text-primary transition-colors">
                     Section {section}
                   </h3>
-                  
+
                   <div className="mt-2.5 flex items-center justify-center gap-1.5">
                     <Badge variant="secondary" className="font-mono text-xs font-semibold px-2.5 py-0.5 rounded-lg">
                       <Users className="h-3 w-3 mr-1 text-primary" />
@@ -752,7 +685,7 @@ const CategoryBasedView: React.FC = () => {
                   </div>
 
                   <div className="mt-4 pt-3 border-t border-border/40 text-xs text-muted-foreground flex items-center justify-between">
-                    <span>Today's Present:</span>
+                    <span>Today&apos;s Present:</span>
                     <span className="font-semibold text-emerald-400">
                       {secInfo.present} ({attendancePct}%)
                     </span>
@@ -828,34 +761,104 @@ const CategoryBasedView: React.FC = () => {
         </Card>
       </div>
 
-      {/* Subheader and Refresh Bar */}
-      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 pt-2">
+      {/* Subheader, Quick Student Search, and Refresh Bar */}
+      <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 pt-2">
         <div>
           <h2 className="text-lg font-bold tracking-tight">Select a Class</h2>
-          <p className="text-xs text-muted-foreground">Click any class below to inspect sections and student rosters.</p>
+          <p className="text-xs text-muted-foreground">Click any class below to inspect sections, class teachers, and student rosters.</p>
         </div>
 
-        <Button 
-          variant="outline" 
-          size="sm" 
-          onClick={handleRefresh}
-          disabled={isRefreshing}
-          className="rounded-xl border-border/70 text-xs h-8"
-        >
-          <RefreshCw className={`h-3.5 w-3.5 mr-1.5 ${isRefreshing ? 'animate-spin' : ''}`} />
-          {isRefreshing ? 'Refreshing...' : 'Sync Class Data'}
-        </Button>
+        <div className="flex items-center gap-2">
+          <div className="relative flex-1 sm:w-64">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
+            <Input
+              value={globalSearch}
+              onChange={(e) => setGlobalSearch(e.target.value)}
+              placeholder="Find student or class..."
+              className="pl-8 pr-7 h-8 text-xs rounded-xl bg-card/60 border-border/70"
+            />
+            {globalSearch && (
+              <button
+                type="button"
+                onClick={() => setGlobalSearch('')}
+                className="absolute right-2.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+              >
+                <X className="h-3.5 w-3.5" />
+              </button>
+            )}
+          </div>
+
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={handleRefresh}
+            disabled={isRefreshing}
+            className="rounded-xl border-border/70 text-xs h-8 shrink-0"
+          >
+            <RefreshCw className={`h-3.5 w-3.5 mr-1.5 ${isRefreshing ? 'animate-spin' : ''}`} />
+            {isRefreshing ? 'Refreshing...' : 'Sync Class Data'}
+          </Button>
+        </div>
       </div>
+
+      {/* Instant Global Student Search Results across all Classes */}
+      {globalSearch.trim() !== '' && (
+        <Card className="p-4 rounded-2xl border-primary/30 bg-card/70 space-y-3">
+          <div className="flex items-center justify-between">
+            <p className="text-xs font-bold text-foreground">
+              Search Results ({globalSearchResults.length})
+            </p>
+            <Button variant="ghost" size="sm" className="h-6 text-xs px-2" onClick={() => setGlobalSearch('')}>
+              Clear
+            </Button>
+          </div>
+          {globalSearchResults.length === 0 ? (
+            <p className="text-xs text-muted-foreground py-2">
+              No student or teacher found matching &ldquo;{globalSearch}&rdquo;.
+            </p>
+          ) : (
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2.5">
+              {globalSearchResults.map((u) => (
+                <div
+                  key={u.id}
+                  onClick={() => {
+                    setGlobalSearch('');
+                    setSelectedCategory(u.category);
+                  }}
+                  className="p-2.5 rounded-xl border border-border/60 bg-background/70 hover:border-primary/50 cursor-pointer flex items-center justify-between gap-2 transition-all"
+                >
+                  <div className="flex items-center gap-2.5 min-w-0">
+                    <Avatar className="h-8 w-8 rounded-lg shrink-0">
+                      <AvatarImage src={u.image_url} alt={u.name} />
+                      <AvatarFallback className="rounded-lg text-xs font-bold bg-primary/10 text-primary">
+                        {u.name.charAt(0)}
+                      </AvatarFallback>
+                    </Avatar>
+                    <div className="min-w-0">
+                      <p className="text-xs font-bold truncate">{u.name}</p>
+                      <p className="text-[10px] text-muted-foreground font-mono truncate">
+                        ID: {u.employee_id}
+                      </p>
+                    </div>
+                  </div>
+                  <Badge variant="outline" className="text-[10px] font-mono shrink-0">
+                    {u.category === 'Teacher' ? 'Teacher' : `Class ${u.category}`}
+                  </Badge>
+                </div>
+              ))}
+            </div>
+          )}
+        </Card>
+      )}
 
       {/* Classes Grid */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
         {CLASSES.map(cls => {
           const classStr = String(cls);
           const cStats = classStats[classStr] || { total: 0, present: 0, sections: {} };
-          const activeSectionsCount = Object.values(cStats.sections).filter(s => s.total > 0).length;
 
           return (
-            <Card 
+            <Card
               key={cls}
               className="cursor-pointer border-border/50 bg-card/60 backdrop-blur-md hover:border-primary/50 hover:shadow-xl transition-all duration-300 rounded-2xl group hover:-translate-y-1 relative overflow-hidden"
               onClick={() => setSelectedClass(cls)}
@@ -864,14 +867,14 @@ const CategoryBasedView: React.FC = () => {
                 <div className={`w-16 h-16 ${CLASS_COLORS[cls]} rounded-2xl flex items-center justify-center mx-auto mb-3.5 text-white shadow-lg group-hover:scale-105 transition-transform`}>
                   <span className="font-extrabold text-2xl">{cls}</span>
                 </div>
-                
+
                 <h3 className="font-bold text-lg text-foreground group-hover:text-primary transition-colors">
                   Class {cls}
                 </h3>
-                
+
                 <div className="mt-2 flex items-center justify-center gap-1.5">
-                  <Badge 
-                    variant={cStats.total > 0 ? 'secondary' : 'outline'} 
+                  <Badge
+                    variant={cStats.total > 0 ? 'secondary' : 'outline'}
                     className={`font-semibold px-2.5 py-0.5 rounded-lg text-xs ${cStats.total > 0 ? 'bg-primary/10 text-primary border-primary/20' : 'text-muted-foreground'}`}
                   >
                     <Users className="h-3 w-3 mr-1" />
@@ -889,9 +892,9 @@ const CategoryBasedView: React.FC = () => {
             </Card>
           );
         })}
-        
+
         {/* Teachers & Faculty Card */}
-        <Card 
+        <Card
           className="cursor-pointer border-border/50 bg-card/60 backdrop-blur-md hover:border-purple-500/50 hover:shadow-xl transition-all duration-300 rounded-2xl group hover:-translate-y-1 relative overflow-hidden"
           onClick={() => setSelectedCategory('Teacher')}
         >
@@ -899,14 +902,14 @@ const CategoryBasedView: React.FC = () => {
             <div className="w-16 h-16 bg-gradient-to-tr from-purple-600 to-indigo-500 rounded-2xl flex items-center justify-center mx-auto mb-3.5 text-white shadow-lg group-hover:scale-105 transition-transform">
               <GraduationCap className="h-8 w-8" />
             </div>
-            
+
             <h3 className="font-bold text-lg text-foreground group-hover:text-purple-400 transition-colors">
               Teachers & Staff
             </h3>
-            
+
             <div className="mt-2 flex items-center justify-center gap-1.5">
-              <Badge 
-                variant="secondary" 
+              <Badge
+                variant="secondary"
                 className="font-semibold px-2.5 py-0.5 rounded-lg text-xs bg-purple-500/10 text-purple-400 border-purple-500/20"
               >
                 <Users className="h-3 w-3 mr-1" />

@@ -35,10 +35,17 @@ export const ALL_CLASS_SECTIONS: ClassSection[] = CLASSES.flatMap(cls =>
 export const ALL_CATEGORIES: Category[] = [...ALL_CLASS_SECTIONS, 'Teacher'];
 
 // Parse a category string into class and section
-export const parseCategory = (category: string): { class: number; section: string } | null => {
-  const match = category.match(/^(\d+)-([A-D])$/);
+export const parseCategory = (category?: string | null): { class: number; section: string } | null => {
+  if (!category) return null;
+  const cleaned = String(category)
+    .trim()
+    .replace(/^(?:class|grade)\s*/i, '');
+  const match = cleaned.match(/^(\d{1,2})(?:\s*[-_/\s]\s*(?:section\s*)?([A-Da-d]))?$/i);
   if (!match) return null;
-  return { class: parseInt(match[1]), section: match[2] };
+  return {
+    class: parseInt(match[1], 10),
+    section: (match[2] || 'A').toUpperCase(),
+  };
 };
 
 // Get display label for a category

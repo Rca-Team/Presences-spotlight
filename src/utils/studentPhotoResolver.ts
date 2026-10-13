@@ -277,10 +277,10 @@ export function getOptimizedStudentPhotoUrl(
   return cleanUrl;
 }
 
-export const resolveStudentPhotoUrl = async (
+export const resolveStudentPhotoUrlSync = (
   raw?: string | null,
   options?: ImageTransformOptions
-): Promise<string> => {
+): string => {
   const value = sanitizeStudentPhotoUrl(raw);
   if (!value) return '';
   if (value.startsWith('data:') || value.startsWith('blob:')) return value;
@@ -343,6 +343,13 @@ export const resolveStudentPhotoUrl = async (
 
   signedUrlCache.set(cacheKey, supabaseUrl);
   return supabaseUrl;
+};
+
+export const resolveStudentPhotoUrl = async (
+  raw?: string | null,
+  options?: ImageTransformOptions
+): Promise<string> => {
+  return resolveStudentPhotoUrlSync(raw, options);
 };
 
 

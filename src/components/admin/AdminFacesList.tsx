@@ -10,7 +10,6 @@ import { useToast } from '@/hooks/use-toast';
 import { supabase } from '@/integrations/supabase/client';
 import { Search, User, Users, UserCheck, UserX, Calendar, MoreVertical, Phone, Filter, ArrowUpDown, Clock, CheckCircle2, XCircle, SortAsc, SortDesc, Trash2, BellRing, X, BrainCircuit, ScanFace, FileText } from 'lucide-react';
 import NotificationService from './NotificationService';
-import ExistingUserContactPopup from './ExistingUserContactPopup';
 import AttendanceCalendar from './AttendanceCalendar';
 import CaptureFaceDialog from './CaptureFaceDialog';
 import { 
@@ -51,9 +50,14 @@ import {
 } from "@/components/ui/select";
 import { format } from 'date-fns';
 import { cn } from '@/lib/utils';
-import { fetchUnifiedStudentSnapshot } from '@/utils/attendanceStatsHelper';
-import { pickPreferredPhotoCandidate, resolveStudentPhotoUrl } from '@/utils/studentPhotoResolver';
-import { CLASSES, SECTIONS } from '@/constants/schoolConfig';
+import {
+  fetchUnifiedStudentSnapshot,
+  getCachedUnifiedStudentSnapshot,
+  invalidateUnifiedStatsCache,
+  type UnifiedStudentSnapshot,
+} from '@/utils/attendanceStatsHelper';
+import { pickPreferredPhotoCandidate, resolveStudentPhotoUrlSync } from '@/utils/studentPhotoResolver';
+import { CLASSES, SECTIONS, parseCategory } from '@/constants/schoolConfig';
 import { parseClassSection, saveTeacherCategories } from '@/utils/teacherAccess';
 
 interface AdminFacesListProps {
@@ -80,6 +84,69 @@ type StatusFilter = 'all' | 'present' | 'late' | 'absent';
 type SortField = 'name' | 'status' | 'attendance' | 'lastSeen';
 type SortDir = 'asc' | 'desc';
 
+// Module-level caches so switching between Admin tabs is 0ms instant
+let cachedAttendanceCounts: Record<string, number> | null = null;
+let cachedAttendanceCountsAt = 0;
+let cachedEmotionStats: Record<string, { label: string; confidence: number; samples: number }> | null = null;
+let cachedEmotionStatsAt = 0;
+let cachedDescriptorPhotoMaps: {
+  byUserId: Map<string, string>;
+  byStudentKey: Map<string, string>;
+  fetchedAt: number;
+} | null = null;
+
+function deriveFacesAndStatusesFromSnapshot(
+  snapshot: UnifiedStudentSnapshot,
+  countsMap?: Record<string, number> | null,
+  descriptorMaps?: { byUserId: Map<string, string>; byStudentKey: Map<string, string> } | null
+): {
+  faces: RegisteredFace[];
+  statuses: Record<string, { status: TodayStatus; time?: string }>;
+} {
+  const statusMap: Record<string, { status: TodayStatus; time?: string }> = {};
+  const faces: RegisteredFace[] = snapshot.students.map((student) => {
+    const empId = student.employee_id || student.admission_number || student.user_id || student.id;
+    const empKey = empId.toLowerCase();
+    const uid = student.user_id || '';
+
+    const candidateImg = pickPreferredPhotoCandidate(
+      student.image_url,
+      uid && descriptorMaps ? descriptorMaps.byUserId.get(uid) : '',
+      empKey && descriptorMaps ? descriptorMaps.byStudentKey.get(empKey) : ''
+    );
+    const resolvedImg = resolveStudentPhotoUrlSync(candidateImg);
+
+    const candidateKeys = [empId, student.admission_number, student.user_id, student.id].filter(Boolean) as string[];
+    const matched = candidateKeys
+      .map((key) => snapshot.statusesByEmployeeId[key])
+      .find(Boolean);
+
+    statusMap[empId] = matched
+      ? {
+          status: matched.status,
+          time: matched.time ? format(new Date(matched.time), 'hh:mm a') : undefined,
+        }
+      : { status: 'absent' };
+
+    const totalAtt =
+      (countsMap && (countsMap[empId] || (uid ? countsMap[uid] : 0))) || 0;
+
+    return {
+      id: student.id,
+      user_id: student.user_id,
+      name: student.name,
+      employee_id: empId,
+      department: student.department || student.category || 'N/A',
+      position: student.role === 'teacher' ? 'Teacher' : 'Student',
+      image_url: resolvedImg,
+      total_attendance: totalAtt,
+      last_attendance: matched?.time || 'Never',
+    };
+  });
+
+  return { faces, statuses: statusMap };
+}
+
 const AdminFacesList: React.FC<AdminFacesListProps> = ({ 
   viewMode, 
   selectedFaceId,
@@ -88,18 +155,28 @@ const AdminFacesList: React.FC<AdminFacesListProps> = ({
 }) => {
   const { toast } = useToast();
   const navigate = useNavigate();
+  const initialSnapshot = useMemo(() => getCachedUnifiedStudentSnapshot(), []);
+  const initialDerived = useMemo(
+    () => (initialSnapshot ? deriveFacesAndStatusesFromSnapshot(initialSnapshot, cachedAttendanceCounts, cachedDescriptorPhotoMaps) : null),
+    [initialSnapshot]
+  );
+
   const [subTab, setSubTab] = useState<'roster' | 'calendar'>('roster');
-  const [isLoading, setIsLoading] = useState(true);
-  const [faces, setFaces] = useState<RegisteredFace[]>([]);
+  const [isLoading, setIsLoading] = useState(() => !initialDerived);
+  const [faces, setFaces] = useState<RegisteredFace[]>(() => initialDerived?.faces || []);
   const [searchTerm, setSearchTerm] = useState('');
-  const [attendanceCounts, setAttendanceCounts] = useState<Record<string, number>>({});
+  const [attendanceCounts, setAttendanceCounts] = useState<Record<string, number>>(() => cachedAttendanceCounts || {});
   const [sectionFilter, setSectionFilter] = useState<string>('all');
   const [classFilter, setClassFilter] = useState<string>('all');
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('all');
   const [sortField, setSortField] = useState<SortField>('name');
   const [sortDir, setSortDir] = useState<SortDir>('asc');
-  const [todayStatuses, setTodayStatuses] = useState<Record<string, { status: TodayStatus; time?: string }>>({});
-  const [emotionStatsByStudent, setEmotionStatsByStudent] = useState<Record<string, { label: string; confidence: number; samples: number }>>({});
+  const [todayStatuses, setTodayStatuses] = useState<Record<string, { status: TodayStatus; time?: string }>>(
+    () => initialDerived?.statuses || {}
+  );
+  const [emotionStatsByStudent, setEmotionStatsByStudent] = useState<Record<string, { label: string; confidence: number; samples: number }>>(
+    () => cachedEmotionStats || {}
+  );
   const [promoteOpen, setPromoteOpen] = useState(false);
   const [selectedTeacher, setSelectedTeacher] = useState<RegisteredFace | null>(null);
   const [teacherCategories, setTeacherCategories] = useState<string[]>([]);
@@ -116,7 +193,7 @@ const AdminFacesList: React.FC<AdminFacesListProps> = ({
   const [isDeleting, setIsDeleting] = useState(false);
   const [deleteProgress, setDeleteProgress] = useState('');
 
-  const hasLoadedOnceRef = useRef(false);
+  const hasLoadedOnceRef = useRef(Boolean(initialDerived));
   const selectedFaceIdRef = useRef(selectedFaceId);
   useEffect(() => {
     selectedFaceIdRef.current = selectedFaceId;
@@ -124,49 +201,19 @@ const AdminFacesList: React.FC<AdminFacesListProps> = ({
 
   const extractSection = (department: string): string => {
     if (!department) return '';
-    // Match "Section A" or "6-A" or "10-B" format
-    const match = department.match(/Section\s*([A-D])/i) || department.match(/^\d+\s*-\s*([A-Da-d])$/);
+    const parsed = parseCategory(department);
+    if (parsed?.section) return parsed.section;
+    const match = department.match(/Section\s*([A-D])/i) || department.match(/\d+\s*-\s*([A-Da-d])/);
     return match ? match[1].toUpperCase() : '';
   };
 
   const extractClass = (department: string): string => {
     if (!department) return '';
-    // Match "Class 6" or "Grade 6" or "6-A" format
-    const match = department.match(/(?:Class|Grade)\s*(\d+)/i) || department.match(/^(\d+)\s*-[A-Da-d]$/);
+    const parsed = parseCategory(department);
+    if (parsed?.classNum) return parsed.classNum;
+    const match = department.match(/(?:Class|Grade)\s*(\d+)/i) || department.match(/(\d+)\s*-[A-Da-d]/);
     return match ? match[1] : '';
   };
-
-  // Fetch today's attendance statuses - match by MULTIPLE identifiers
-  const fetchTodayStatuses = useCallback(async (faceList: RegisteredFace[]) => {
-    try {
-      const unified = await fetchUnifiedStudentSnapshot();
-
-      const statusMap: Record<string, { status: TodayStatus; time?: string }> = {};
-
-      // Initialize all as absent
-      faceList.forEach(face => {
-        statusMap[face.employee_id] = { status: 'absent' };
-      });
-
-      faceList.forEach((face) => {
-        const candidateKeys = [face.employee_id, face.user_id, face.id].filter(Boolean) as string[];
-        const matched = candidateKeys
-          .map((key) => unified.statusesByEmployeeId[key])
-          .find(Boolean);
-
-        if (!matched) return;
-
-        statusMap[face.employee_id] = {
-          status: matched.status,
-          time: matched.time ? format(new Date(matched.time), 'hh:mm a') : undefined,
-        };
-      });
-
-      setTodayStatuses(statusMap);
-    } catch (error) {
-      console.error('Error fetching today statuses:', error);
-    }
-  }, []);
 
   const filteredAndSortedFaces = useMemo(() => {
     let result = faces.filter(face => {
@@ -212,8 +259,8 @@ const AdminFacesList: React.FC<AdminFacesListProps> = ({
           cmp = a.total_attendance - b.total_attendance;
           break;
         case 'lastSeen': {
-          const da = a.last_attendance ? new Date(a.last_attendance).getTime() : 0;
-          const db = b.last_attendance ? new Date(b.last_attendance).getTime() : 0;
+          const da = a.last_attendance && a.last_attendance !== 'Never' ? new Date(a.last_attendance).getTime() : 0;
+          const db = b.last_attendance && b.last_attendance !== 'Never' ? new Date(b.last_attendance).getTime() : 0;
           cmp = da - db;
           break;
         }
@@ -244,305 +291,18 @@ const AdminFacesList: React.FC<AdminFacesListProps> = ({
     return counts;
   }, [faces, todayStatuses]);
 
-  const fetchRegisteredFaces = useCallback(async () => {
-    try {
-      if (!hasLoadedOnceRef.current) {
-        setIsLoading(true);
-      }
-      
-      const { data: registrationRecords, error } = await supabase
-        .from('attendance_records')
-        .select('id, user_id, device_info, image_url, category')
-        .eq('status', 'registered')
-        .order('timestamp', { ascending: false });
-
-      if (error) throw error;
-
-      if (registrationRecords) {
-        const [{ data: profileRows }, { data: descriptorRows }] = await Promise.all([
-          supabase
-            .from('profiles')
-            .select('id, user_id, admission_number, employee_id, roll_number, avatar_url, photo_url')
-            .or('avatar_url.not.is.null,photo_url.not.is.null'),
-          supabase
-            .from('face_descriptors')
-            .select('user_id, student_id, image_url, metadata, label, created_at')
-            .not('image_url', 'is', null)
-            .order('created_at', { ascending: true }),
-        ]);
-
-        const profileImageByUserId = new Map<string, string>();
-        const profileImageByEmpId = new Map<string, string>();
-        (profileRows || []).forEach((profile: any) => {
-          const img = (profile?.avatar_url || profile?.photo_url || '').toString().trim();
-          if (!img) return;
-          if (profile?.user_id && !profileImageByUserId.has(profile.user_id)) {
-            profileImageByUserId.set(profile.user_id, img);
-          }
-          if (profile?.id && !profileImageByUserId.has(profile.id)) {
-            profileImageByUserId.set(profile.id, img);
-          }
-          const emp = (profile?.admission_number || profile?.employee_id || profile?.roll_number || '').toString().trim().toLowerCase();
-          if (emp && !profileImageByEmpId.has(emp)) {
-            profileImageByEmpId.set(emp, img);
-          }
-        });
-
-        const descriptorImageByUserId = new Map<string, string>();
-        const descriptorImageByStudentKey = new Map<string, string>();
-        // First pass: prefer registration primary/front photos
-        (descriptorRows || []).forEach((row: any) => {
-          const descriptorImg = (row?.image_url || '').toString().trim();
-          const descriptorUserId = (row?.user_id || '').toString().trim();
-          const descriptorStudentId = (row?.student_id || '').toString().trim().toLowerCase();
-          if (!descriptorImg) return;
-          const meta = row?.metadata || {};
-          const isPrimary = meta.registration === 'true' || meta.registration === true || row?.label === 'registration-primary' || (row?.label && row.label.toLowerCase().includes('front'));
-          if (isPrimary) {
-            if (descriptorUserId && !descriptorImageByUserId.has(descriptorUserId)) {
-              descriptorImageByUserId.set(descriptorUserId, descriptorImg);
-            }
-            if (descriptorStudentId && !descriptorImageByStudentKey.has(descriptorStudentId)) {
-              descriptorImageByStudentKey.set(descriptorStudentId, descriptorImg);
-            }
-          }
-        });
-        // Second pass: fill in earliest created descriptor if no primary found
-        (descriptorRows || []).forEach((row: any) => {
-          const descriptorImg = (row?.image_url || '').toString().trim();
-          const descriptorUserId = (row?.user_id || '').toString().trim();
-          const descriptorStudentId = (row?.student_id || '').toString().trim().toLowerCase();
-          if (!descriptorImg) return;
-          if (descriptorUserId && !descriptorImageByUserId.has(descriptorUserId)) {
-            descriptorImageByUserId.set(descriptorUserId, descriptorImg);
-          }
-          if (descriptorStudentId && !descriptorImageByStudentKey.has(descriptorStudentId)) {
-            descriptorImageByStudentKey.set(descriptorStudentId, descriptorImg);
-          }
-        });
-
-        // Deduplicate by employee_id first, keeping the most recent registration
-        const seenKeys = new Set<string>();
-        const processedFaces = registrationRecords
-          .map(record => {
-            try {
-              let di: any = {};
-              let rawDi = '';
-              if (typeof record.device_info === 'string') {
-                rawDi = record.device_info;
-                try {
-                  di = JSON.parse(record.device_info);
-                } catch {
-                  di = {};
-                }
-              } else {
-                di = record.device_info || {};
-              }
-              const extractField = (f: string) => {
-                if (!rawDi) return '';
-                const m = rawDi.match(new RegExp(`"${f}"\\s*:\\s*"([^"]+)"`));
-                return m ? m[1] : '';
-              };
-              const metadata = di.metadata || {};
-              const name = metadata.name || di.name || record.student_name || extractField('name') || 'Unknown';
-              const employeeId = (metadata.employee_id || di.employee_id || record.student_id || extractField('employee_id') || '').toString().trim();
-              const category = record.category || metadata.department || 'A';
-              const empKey = employeeId.toLowerCase();
-              const key = employeeId
-                ? `emp:${empKey}`
-                : `name:${name.toLowerCase().trim()}#${category.toLowerCase()}#${record.id}`;
-              const canonicalUserId = (record.user_id || '').toString().trim();
-              if (!name || name === 'Unknown' || name === 'User') return null;
-              if (seenKeys.has(key)) return null;
-              seenKeys.add(key);
-
-              // Correct precedence:
-              // 1. Profile avatar / photo
-              // 2. ID card photo crop
-              // 3. Primary registration portrait photo (record.image_url / firebase_image_url)
-              // 4. Last resort: registered descriptor sample (never preferred over actual portrait)
-              const profilePhoto = (canonicalUserId && profileImageByUserId.get(canonicalUserId)) ||
-                (empKey && profileImageByEmpId.get(empKey)) ||
-                '';
-
-              const imageCandidate = pickPreferredPhotoCandidate(
-                profilePhoto,
-                metadata?.face_model?.id_card_photo_url,
-                metadata?.id_card_photo_url,
-                record.image_url,
-                metadata.firebase_image_url,
-                metadata.image,
-                canonicalUserId ? descriptorImageByUserId.get(canonicalUserId) : '',
-                empKey ? descriptorImageByStudentKey.get(empKey) : '',
-              );
-
-              return {
-                id: record.id,
-                user_id: record.user_id,
-                name,
-                employee_id: employeeId,
-                department: metadata.department || metadata.class_section || record.category || 'N/A',
-                position: metadata.position || 'Student',
-                image_url: imageCandidate,
-                total_attendance: 0,
-                last_attendance: metadata.last_attendance || 'Never'
-              } as RegisteredFace;
-            } catch {
-              return null;
-            }
-          })
-          .filter((face): face is RegisteredFace => face !== null);
-
-        // Also fetch from profiles table to ensure any directly enrolled student is included
-        const { data: profileStudents } = await supabase
-          .from('profiles')
-          .select('id, user_id, full_name, display_name, admission_number, employee_id, class, section, avatar_url, photo_url, role')
-          .or('role.eq.student,admission_number.not.is.null');
-
-        (profileStudents || []).forEach(prof => {
-          const empId = (prof.admission_number || prof.employee_id || '').toString().trim();
-          const pName = prof.full_name || prof.display_name || '';
-          if (!pName || pName === 'Unknown' || pName === 'User') return;
-          const key = empId ? `emp:${empId.toLowerCase()}` : `prof:${prof.id}`;
-          if (seenKeys.has(key)) return;
-          seenKeys.add(key);
-
-          const classSec = prof.class && prof.section ? `${prof.class}-${prof.section}` : (prof.class || 'N/A');
-          processedFaces.push({
-            id: prof.id || prof.user_id || `prof-${empId}`,
-            user_id: prof.user_id || prof.id,
-            name: pName,
-            employee_id: empId || prof.user_id || prof.id,
-            department: classSec,
-            position: 'Student',
-            image_url: prof.avatar_url || prof.photo_url || '',
-            total_attendance: 0,
-            last_attendance: 'Never',
-          });
-        });
-
-        const resolvedFaces = await Promise.all(
-          processedFaces.map(async (face) => ({
-            ...face,
-            image_url: await resolveStudentPhotoUrl(face.image_url),
-          }))
-        );
-
-        setFaces(resolvedFaces);
-        fetchTodayStatuses(resolvedFaces);
-        const fetchEmotionStats = async () => {
-          try {
-            const { data: emotionRows, error: emotionErr } = await supabase
-              .from('emotion_events')
-              .select('user_id, student_id, emotion_label, confidence_score')
-              .limit(100);
-
-            if (emotionErr || !emotionRows) return;
-
-            const summary: Record<string, { label: string; confidence: number; samples: number }> = {};
-
-            processedFaces.forEach((face) => {
-            const matches = (emotionRows || []).filter((row: any) =>
-              (face.user_id && row.user_id === face.user_id) ||
-              (row.student_id && [face.employee_id, face.user_id].filter(Boolean).includes(row.student_id)),
-            );
-
-            if (!matches.length) {
-              summary[face.employee_id] = { label: 'neutral', confidence: 0, samples: 0 };
-              return;
-            }
-
-            const latest = matches.slice(0, 24);
-            const grouped = latest.reduce((acc: Record<string, { count: number; confidenceSum: number }>, row: any) => {
-              const key = String(row.emotion_label || 'neutral').toLowerCase();
-              if (!acc[key]) acc[key] = { count: 0, confidenceSum: 0 };
-              acc[key].count += 1;
-              acc[key].confidenceSum += Number(row.confidence_score || 0);
-              return acc;
-            }, {});
-
-            let dominantLabel = 'neutral';
-            let dominant = { count: 0, confidenceSum: 0 };
-            for (const [label, stats] of Object.entries(grouped) as [string, { count: number; confidenceSum: number }][]) {
-              if (stats.count > dominant.count) {
-                dominantLabel = label;
-                dominant = stats;
-              }
-            }
-            summary[face.employee_id] = {
-              label: dominantLabel,
-              confidence: dominant.count ? Math.round((dominant.confidenceSum / dominant.count) * 100) : 0,
-              samples: latest.length,
-            };
-          });
-
-          setEmotionStatsByStudent(summary);
-          } catch {
-            // Safe fallback if emotion_events is unavailable or unindexed
-          }
-        };
-
-        fetchEmotionStats();
-        
-        if (selectedFaceIdRef.current && !processedFaces.some(face => face.id === selectedFaceIdRef.current)) {
-          setSelectedFaceId(null);
-        }
-
-        fetchBatchAttendanceCounts(processedFaces);
-      }
-    } catch (error) {
-      console.error('Error fetching registered faces:', error);
-      toast({
-        title: "Error",
-        description: "Failed to load registered faces",
-        variant: "destructive"
-      });
-    } finally {
-      hasLoadedOnceRef.current = true;
-      setIsLoading(false);
+  const fetchBatchAttendanceCounts = useCallback(async (faceList: RegisteredFace[]) => {
+    if (cachedAttendanceCounts && Date.now() - cachedAttendanceCountsAt < 120_000) {
+      setAttendanceCounts(cachedAttendanceCounts);
+      return;
     }
-  }, [toast, setSelectedFaceId, fetchTodayStatuses]);
-
-  useEffect(() => {
-    fetchRegisteredFaces();
-
-    let updateTimeout: ReturnType<typeof setTimeout>;
-    
-    const attendanceChannel = supabase
-      .channel('attendance-changes')
-      .on('postgres_changes', 
-        { event: '*', schema: 'public', table: 'attendance_records' }, 
-        () => {
-          clearTimeout(updateTimeout);
-          updateTimeout = setTimeout(() => {
-            fetchRegisteredFaces();
-          }, 2500);
-        }
-      )
-      .on('postgres_changes',
-        { event: '*', schema: 'public', table: 'emotion_events' },
-        () => {
-          clearTimeout(updateTimeout);
-          updateTimeout = setTimeout(() => {
-            fetchRegisteredFaces();
-          }, 2500);
-        }
-      )
-      .subscribe();
-
-    return () => {
-      clearTimeout(updateTimeout);
-      supabase.removeChannel(attendanceChannel);
-    };
-  }, [nameFilter, fetchRegisteredFaces]);
-
-  const fetchBatchAttendanceCounts = async (faceList: RegisteredFace[]) => {
     try {
       const { data, error } = await supabase
         .from('attendance_records')
         .select('timestamp, status, student_id, user_id, device_info')
         .in('status', ['present', 'late', 'unauthorized'])
-        .limit(10000);
+        .order('timestamp', { ascending: false })
+        .limit(1500);
 
       if (error || !data) return;
 
@@ -571,6 +331,8 @@ const AdminFacesList: React.FC<AdminFacesListProps> = ({
         countsMap[emp] = daysSet.size;
       });
 
+      cachedAttendanceCounts = countsMap;
+      cachedAttendanceCountsAt = Date.now();
       setAttendanceCounts(countsMap);
       setFaces(prev => prev.map(face => ({
         ...face,
@@ -579,7 +341,171 @@ const AdminFacesList: React.FC<AdminFacesListProps> = ({
     } catch (error) {
       console.error('Error batch fetching attendance counts:', error);
     }
-  };
+  }, []);
+
+  const fetchRegisteredFaces = useCallback(async (forceRefresh = false) => {
+    try {
+      if (!hasLoadedOnceRef.current) {
+        setIsLoading(true);
+      }
+      if (forceRefresh) {
+        invalidateUnifiedStatsCache();
+      }
+
+      // 1. Instant primary render from shared unified student snapshot (1 shared request burst across Admin)
+      const unified = await fetchUnifiedStudentSnapshot(forceRefresh);
+      const derived = deriveFacesAndStatusesFromSnapshot(unified, cachedAttendanceCounts, cachedDescriptorPhotoMaps);
+      setFaces(derived.faces);
+      setTodayStatuses(derived.statuses);
+      hasLoadedOnceRef.current = true;
+      setIsLoading(false);
+
+      if (selectedFaceIdRef.current && !derived.faces.some(face => face.id === selectedFaceIdRef.current)) {
+        setSelectedFaceId(null);
+      }
+
+      // 2. Non-blocking background enrichment: fallback descriptor photos, attendance counts, emotion stats
+      const enrichBackground = async () => {
+        try {
+          if (!cachedDescriptorPhotoMaps || Date.now() - cachedDescriptorPhotoMaps.fetchedAt > 180_000) {
+            const { data: descriptorRows } = await supabase
+              .from('face_descriptors')
+              .select('user_id, student_id, image_url, metadata, label, created_at')
+              .not('image_url', 'is', null)
+              .order('created_at', { ascending: true })
+              .limit(600);
+
+            if (descriptorRows && descriptorRows.length > 0) {
+              const byUserId = new Map<string, string>();
+              const byStudentKey = new Map<string, string>();
+              descriptorRows.forEach((row: any) => {
+                const descriptorImg = (row?.image_url || '').toString().trim();
+                const descriptorUserId = (row?.user_id || '').toString().trim();
+                const descriptorStudentId = (row?.student_id || '').toString().trim().toLowerCase();
+                if (!descriptorImg) return;
+                const meta = row?.metadata || {};
+                const isPrimary = meta.registration === 'true' || meta.registration === true || row?.label === 'registration-primary' || (row?.label && row.label.toLowerCase().includes('front'));
+                if (isPrimary) {
+                  if (descriptorUserId && !byUserId.has(descriptorUserId)) byUserId.set(descriptorUserId, descriptorImg);
+                  if (descriptorStudentId && !byStudentKey.has(descriptorStudentId)) byStudentKey.set(descriptorStudentId, descriptorImg);
+                }
+              });
+              descriptorRows.forEach((row: any) => {
+                const descriptorImg = (row?.image_url || '').toString().trim();
+                const descriptorUserId = (row?.user_id || '').toString().trim();
+                const descriptorStudentId = (row?.student_id || '').toString().trim().toLowerCase();
+                if (!descriptorImg) return;
+                if (descriptorUserId && !byUserId.has(descriptorUserId)) byUserId.set(descriptorUserId, descriptorImg);
+                if (descriptorStudentId && !byStudentKey.has(descriptorStudentId)) byStudentKey.set(descriptorStudentId, descriptorImg);
+              });
+
+              cachedDescriptorPhotoMaps = { byUserId, byStudentKey, fetchedAt: Date.now() };
+              // Fill in any missing photos without overwriting existing profile/registration photos
+              setFaces((prev) =>
+                prev.map((f) => {
+                  if (f.image_url) return f;
+                  const fallback =
+                    (f.user_id && byUserId.get(f.user_id)) ||
+                    (f.employee_id && byStudentKey.get(f.employee_id.toLowerCase())) ||
+                    '';
+                  return fallback ? { ...f, image_url: resolveStudentPhotoUrlSync(fallback) } : f;
+                })
+              );
+            }
+          }
+        } catch {
+          // Ignore optional descriptor photo enrichment errors
+        }
+
+        void fetchBatchAttendanceCounts(derived.faces);
+
+        if (!cachedEmotionStats || Date.now() - cachedEmotionStatsAt > 180_000) {
+          try {
+            const { data: emotionRows, error: emotionErr } = await supabase
+              .from('emotion_events')
+              .select('user_id, student_id, emotion_label, confidence_score')
+              .limit(100);
+
+            if (!emotionErr && emotionRows) {
+              const summary: Record<string, { label: string; confidence: number; samples: number }> = {};
+              derived.faces.forEach((face) => {
+                const matches = emotionRows.filter((row: any) =>
+                  (face.user_id && row.user_id === face.user_id) ||
+                  (row.student_id && [face.employee_id, face.user_id].filter(Boolean).includes(row.student_id))
+                );
+                if (!matches.length) {
+                  summary[face.employee_id] = { label: 'neutral', confidence: 0, samples: 0 };
+                  return;
+                }
+                const latest = matches.slice(0, 24);
+                const grouped = latest.reduce((acc: Record<string, { count: number; confidenceSum: number }>, row: any) => {
+                  const key = String(row.emotion_label || 'neutral').toLowerCase();
+                  if (!acc[key]) acc[key] = { count: 0, confidenceSum: 0 };
+                  acc[key].count += 1;
+                  acc[key].confidenceSum += Number(row.confidence_score || 0);
+                  return acc;
+                }, {});
+                let dominantLabel = 'neutral';
+                let dominant = { count: 0, confidenceSum: 0 };
+                for (const [label, stats] of Object.entries(grouped) as [string, { count: number; confidenceSum: number }][]) {
+                  if (stats.count > dominant.count) {
+                    dominantLabel = label;
+                    dominant = stats;
+                  }
+                }
+                summary[face.employee_id] = {
+                  label: dominantLabel,
+                  confidence: dominant.count ? Math.round((dominant.confidenceSum / dominant.count) * 100) : 0,
+                  samples: latest.length,
+                };
+              });
+              cachedEmotionStats = summary;
+              cachedEmotionStatsAt = Date.now();
+              setEmotionStatsByStudent(summary);
+            }
+          } catch {
+            // Safe fallback if emotion_events is unavailable
+          }
+        }
+      };
+
+      void enrichBackground();
+    } catch (error) {
+      console.error('Error fetching registered faces:', error);
+      toast({
+        title: "Error",
+        description: "Failed to load registered faces",
+        variant: "destructive"
+      });
+    } finally {
+      hasLoadedOnceRef.current = true;
+      setIsLoading(false);
+    }
+  }, [toast, setSelectedFaceId, fetchBatchAttendanceCounts]);
+
+  useEffect(() => {
+    fetchRegisteredFaces();
+
+    let updateTimeout: ReturnType<typeof setTimeout>;
+    
+    const attendanceChannel = supabase
+      .channel('attendance-changes')
+      .on('postgres_changes', 
+        { event: '*', schema: 'public', table: 'attendance_records' }, 
+        () => {
+          clearTimeout(updateTimeout);
+          updateTimeout = setTimeout(() => {
+            fetchRegisteredFaces(true);
+          }, 2500);
+        }
+      )
+      .subscribe();
+
+    return () => {
+      clearTimeout(updateTimeout);
+      supabase.removeChannel(attendanceChannel);
+    };
+  }, [fetchRegisteredFaces]);
 
   const handleConfirmDelete = async () => {
     if (!studentToDelete) return;
@@ -595,7 +521,7 @@ const AdminFacesList: React.FC<AdminFacesListProps> = ({
         if (studentToDelete.id === selectedFaceId) setSelectedFaceId(null);
         setFaces((prev) => prev.filter((f) => f.id !== studentToDelete.id && f.employee_id !== studentToDelete.employee_id));
         setStudentToDelete(null);
-        await fetchRegisteredFaces();
+        await fetchRegisteredFaces(true);
       } else {
         toast({
           title: "Partial Deletion Completed",
@@ -603,7 +529,7 @@ const AdminFacesList: React.FC<AdminFacesListProps> = ({
           variant: "destructive",
         });
         setStudentToDelete(null);
-        await fetchRegisteredFaces();
+        await fetchRegisteredFaces(true);
       }
     } catch (error: any) {
       console.error('Error deleting student:', error);
@@ -663,7 +589,7 @@ const AdminFacesList: React.FC<AdminFacesListProps> = ({
 
       toast({ title: 'Teacher updated', description: `${selectedTeacher.name} can now use teacher timetable and substitution features.` });
       setPromoteOpen(false);
-      await fetchRegisteredFaces();
+      await fetchRegisteredFaces(true);
     } catch (error: any) {
       toast({ title: 'Failed to update teacher access', description: error?.message || 'Please try again.', variant: 'destructive' });
     } finally {
@@ -720,8 +646,6 @@ const AdminFacesList: React.FC<AdminFacesListProps> = ({
 
   return (
     <>
-      <ExistingUserContactPopup />
-
       {isLoading ? (
         <div className="space-y-4">
           <div className="grid grid-cols-3 gap-2 sm:gap-3">

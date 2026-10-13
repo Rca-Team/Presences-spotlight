@@ -818,6 +818,17 @@ export class AppwriteQueryBuilder<T = any> implements PromiseLike<{ data: T | nu
             const cleanCol = mapColumnName(col);
             if (op === 'eq') subQueries.push(Query.equal(cleanCol, val));
             else if (op === 'neq') subQueries.push(Query.notEqual(cleanCol, val));
+            else if (op === 'is') {
+              if (val === 'null') subQueries.push(Query.isNull(cleanCol));
+              else if (val === 'true') subQueries.push(Query.equal(cleanCol, true));
+              else if (val === 'false') subQueries.push(Query.equal(cleanCol, false));
+            } else if (op === 'not') {
+              if (val === 'is.null' || val === 'eq.null') subQueries.push(Query.isNotNull(cleanCol));
+              else if (val.startsWith('eq.')) subQueries.push(Query.notEqual(cleanCol, val.slice(3)));
+            } else if (op === 'gt') subQueries.push(Query.greaterThan(cleanCol, val));
+            else if (op === 'gte') subQueries.push(Query.greaterThanEqual(cleanCol, val));
+            else if (op === 'lt') subQueries.push(Query.lessThan(cleanCol, val));
+            else if (op === 'lte') subQueries.push(Query.lessThanEqual(cleanCol, val));
             else if (op === 'like' || op === 'ilike') {
               if (val.includes('%')) subQueries.push(Query.search(cleanCol, val.replace(/%/g, '')));
               else subQueries.push(Query.equal(cleanCol, val));

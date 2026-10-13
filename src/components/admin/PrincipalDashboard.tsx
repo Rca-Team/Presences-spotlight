@@ -24,7 +24,11 @@ import { format, eachDayOfInterval, subDays } from 'date-fns';
 import { useRealtimeAttendance } from '@/hooks/useRealtimeAttendance';
 import { useIsMobile } from '@/hooks/use-mobile';
 import { cn } from '@/lib/utils';
-import { fetchUnifiedStudentSnapshot } from '@/utils/attendanceStatsHelper';
+import {
+  fetchUnifiedStudentSnapshot,
+  getCachedUnifiedStudentSnapshot,
+  type UnifiedStudentSnapshot,
+} from '@/utils/attendanceStatsHelper';
 import { filterWorkingDaysForSchool } from '@/utils/workingDays';
 import {
   BarChart, Bar, Cell, XAxis, YAxis, CartesianGrid, Tooltip,
@@ -38,7 +42,6 @@ import {
 } from '@/constants/schoolConfig';
 import { normalizeCategory } from '@/utils/teacherAccess';
 import {
-  prefetchStudentIdentities,
   resolveStudentAdmissionId,
   resolveStudentClass,
   registerStudentIdentity,
@@ -96,29 +99,164 @@ interface PrincipalDashboardProps {
   onNavigateTab?: (tab: string) => void;
 }
 
+let cachedWeeklyTrend: { data: { date: string; day: string; fullDate: string; count: number }[]; expiresAt: number } | null = null;
+let cachedGatePassStats: { data: { totalToday: number; active: number; pending: number }; expiresAt: number } | null = null;
+
+function deriveDashboardStateFromSnapshot(unified: UnifiedStudentSnapshot | null) {
+  if (!unified || !unified.roster) return null;
+
+  let teacherTotal = 0;
+  let teacherPresent = 0;
+
+  const studentList: StudentRecord[] = unified.roster.map((u) => {
+    const key = u.employee_id || u.name || u.id;
+    const snap =
+      unified.statusesByEmployeeId[key] ||
+      (u.user_id ? unified.statusesByEmployeeId[u.user_id] : undefined) ||
+      unified.statusesByEmployeeId[u.id];
+
+    const status: 'present' | 'late' | 'absent' = snap?.status || 'absent';
+    let time: string | undefined;
+    if (snap?.time) {
+      try {
+        time = format(new Date(snap.time), 'hh:mm a');
+      } catch {
+        time = undefined;
+      }
+    }
+
+    const isTeacher = u.category === 'Teacher' || u.role === 'teacher';
+    if (isTeacher) {
+      teacherTotal++;
+      if (status === 'present' || status === 'late') teacherPresent++;
+    }
+
+    return {
+      name: u.name,
+      employee_id: u.employee_id,
+      category: u.category || '6-A',
+      image_url: u.image_url || '',
+      status,
+      time,
+      user_id: u.user_id || undefined,
+    };
+  });
+
+  studentList.sort((a, b) => {
+    const order = { present: 0, late: 1, absent: 2 };
+    if (order[a.status] !== order[b.status]) {
+      return order[a.status] - order[b.status];
+    }
+    return a.name.localeCompare(b.name);
+  });
+
+  const classMap: Record<string, { total: number; present: number; late: number; absent: number }> = {};
+  CLASSES.forEach((cls) => {
+    classMap[`Class ${cls}`] = { total: 0, present: 0, late: 0, absent: 0 };
+  });
+  classMap['Teachers'] = { total: 0, present: 0, late: 0, absent: 0 };
+
+  studentList.forEach((s) => {
+    let targetGroup = 'Class 6';
+    if (s.category === 'Teacher') {
+      targetGroup = 'Teachers';
+    } else {
+      const parsed = parseCategory(s.category);
+      if (parsed && classMap[`Class ${parsed.class}`]) {
+        targetGroup = `Class ${parsed.class}`;
+      }
+    }
+
+    if (!classMap[targetGroup]) {
+      classMap[targetGroup] = { total: 0, present: 0, late: 0, absent: 0 };
+    }
+
+    classMap[targetGroup].total++;
+    if (s.status === 'present') classMap[targetGroup].present++;
+    else if (s.status === 'late') classMap[targetGroup].late++;
+    else classMap[targetGroup].absent++;
+  });
+
+  const breakdownList: ClassBreakdownItem[] = Object.entries(classMap).map(([label, counts]) => {
+    const attended = counts.present + counts.late;
+    const rate = counts.total > 0 ? Math.round((attended / counts.total) * 100) : 0;
+    return {
+      key: label,
+      label,
+      total: counts.total,
+      present: counts.present,
+      late: counts.late,
+      absent: counts.absent,
+      rate,
+    };
+  });
+
+  const entries: LiveEntry[] = (unified.recentCheckIns || []).map((c) => {
+    let formattedTime = '';
+    try {
+      formattedTime = format(new Date(c.timestamp), 'hh:mm a');
+    } catch {
+      formattedTime = '';
+    }
+    return {
+      id: c.id,
+      name: c.name,
+      studentId: c.studentId,
+      category: c.category && c.category !== '—' && c.category !== '?' ? c.category : '',
+      status: c.status,
+      time: formattedTime,
+      imageUrl: c.imageUrl || '',
+    };
+  });
+
+  return {
+    studentList,
+    breakdownList,
+    entries,
+    overallStats: {
+      totalRegistered: unified.totalRegistered,
+      presentToday: unified.presentToday,
+      lateToday: unified.lateToday,
+      absentToday: unified.absentToday,
+      attendanceRate: unified.attendanceRate,
+      teacherTotal,
+      teacherPresent,
+    },
+  };
+}
+
 const PrincipalDashboard: React.FC<PrincipalDashboardProps> = ({ onNavigateTab }) => {
   const { toast } = useToast();
   const isMobile = useIsMobile();
-  const [isLoading, setIsLoading] = useState(true);
-  const [allStudents, setAllStudents] = useState<StudentRecord[]>([]);
-  const [liveEntries, setLiveEntries] = useState<LiveEntry[]>([]);
+
+  // Instant 0ms hydration from cached unified snapshot so Dashboard opens with zero skeleton flash
+  const initialDerived = useMemo(() => deriveDashboardStateFromSnapshot(getCachedUnifiedStudentSnapshot()), []);
+  const [isLoading, setIsLoading] = useState<boolean>(!initialDerived);
+  const [allStudents, setAllStudents] = useState<StudentRecord[]>(initialDerived?.studentList || []);
+  const [liveEntries, setLiveEntries] = useState<LiveEntry[]>(initialDerived?.entries || []);
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('all');
   const [selectedStudentForDetail, setSelectedStudentForDetail] = useState<StudentRecord | null>(null);
 
-  const [overallStats, setOverallStats] = useState({
-    totalRegistered: 0,
-    presentToday: 0,
-    lateToday: 0,
-    absentToday: 0,
-    attendanceRate: 0,
-    teacherTotal: 0,
-    teacherPresent: 0,
-  });
+  const [overallStats, setOverallStats] = useState(
+    initialDerived?.overallStats || {
+      totalRegistered: 0,
+      presentToday: 0,
+      lateToday: 0,
+      absentToday: 0,
+      attendanceRate: 0,
+      teacherTotal: 0,
+      teacherPresent: 0,
+    }
+  );
 
-  const [weeklyTrend, setWeeklyTrend] = useState<{ date: string; day: string; fullDate: string; count: number }[]>([]);
-  const [classBreakdowns, setClassBreakdowns] = useState<ClassBreakdownItem[]>([]);
-  const [gatePassStats, setGatePassStats] = useState({ totalToday: 0, active: 0, pending: 0 });
+  const [weeklyTrend, setWeeklyTrend] = useState<{ date: string; day: string; fullDate: string; count: number }[]>(
+    cachedWeeklyTrend?.data || []
+  );
+  const [classBreakdowns, setClassBreakdowns] = useState<ClassBreakdownItem[]>(initialDerived?.breakdownList || []);
+  const [gatePassStats, setGatePassStats] = useState(
+    cachedGatePassStats?.data || { totalToday: 0, active: 0, pending: 0 }
+  );
   const [lastRefreshed, setLastRefreshed] = useState(new Date());
   const [cutoffTime, setCutoffTime] = useState<string>('08:00');
   const [isCutoffModalOpen, setIsCutoffModalOpen] = useState(false);
@@ -237,184 +375,45 @@ const PrincipalDashboard: React.FC<PrincipalDashboardProps> = ({ onNavigateTab }
     }
   });
 
-  useEffect(() => {
-    const handleIdentitiesLoaded = () => {
-      debouncedRefresh();
-    };
-    window.addEventListener('presence:student-identities-loaded', handleIdentitiesLoaded);
-    return () => window.removeEventListener('presence:student-identities-loaded', handleIdentitiesLoaded);
-  }, [debouncedRefresh]);
-
   const fetchAllData = useCallback(async (silent = false) => {
-    if (!silent) setIsLoading(true);
-    await prefetchStudentIdentities().catch(() => undefined);
+    if (!silent && !getCachedUnifiedStudentSnapshot()) setIsLoading(true);
     try {
-      const today = format(new Date(), 'yyyy-MM-dd');
-
-      // 1. Fetch unified roster & attendance snapshot
+      // 1. Fetch unified roster & attendance snapshot (shared in-flight promise across Admin tabs)
       const unified = await fetchUnifiedStudentSnapshot();
+      const derived = deriveDashboardStateFromSnapshot(unified);
 
-      const presentMap = new Map<string, string | undefined>();
-      const lateMap = new Map<string, string | undefined>();
-      const entries: LiveEntry[] = [];
-
-      Object.entries(unified.statusesByEmployeeId).forEach(([employeeId, snapshot]) => {
-        const time = snapshot.time ? format(new Date(snapshot.time), 'hh:mm a') : undefined;
-        const normKey = employeeId.toLowerCase().trim();
-        if (snapshot.status === 'present') presentMap.set(normKey, time);
-        else if (snapshot.status === 'late') lateMap.set(normKey, time);
-      });
-
-      // 2. Fetch Today's Live Attendance Records
-      const { data: todayData } = await supabase
-        .from('attendance_records')
-        .select('id, user_id, student_id, student_name, class, section, status, timestamp, category, image_url, device_info')
-        .in('status', ['present', 'late', 'unauthorized'])
-        .gte('timestamp', `${today}T00:00:00`)
-        .lte('timestamp', `${today}T23:59:59`)
-        .order('timestamp', { ascending: false })
-        .limit(30);
-
-      (todayData || []).forEach(r => {
-        const m = (r.device_info as any)?.metadata || {};
-        const normalized = (r.status || '').toLowerCase().includes('late') ? 'late' : 'present';
-        const studentId = resolveStudentAdmissionId(r);
-        const resolvedCls = resolveStudentClass(r) || r.category || '';
-        entries.push({
-          id: r.id,
-          name: r.student_name || m.name || (r.device_info as any)?.name || 'Student',
-          studentId: studentId || undefined,
-          category: resolvedCls && resolvedCls !== '—' && resolvedCls !== '?' ? resolvedCls : '',
-          status: normalized,
-          time: format(new Date(r.timestamp), 'hh:mm a'),
-          imageUrl: r.image_url || m.firebase_image_url || '',
-        });
-      });
-
-      entries.sort((a, b) => b.time.localeCompare(a.time));
-      setLiveEntries(entries.slice(0, 30));
-
-      let teacherTotal = 0;
-      let teacherPresent = 0;
-
-      const studentList: StudentRecord[] = (unified.roster || []).map(u => {
-        let status: 'present' | 'late' | 'absent' = 'absent';
-        let time: string | undefined;
-
-        const identifiers = [u.employee_id, u.user_id, u.id, u.name].filter(Boolean);
-        for (const identifier of identifiers) {
-          const norm = String(identifier).toLowerCase().trim();
-          if (presentMap.has(norm)) {
-            status = 'present';
-            time = presentMap.get(norm);
-            break;
-          } else if (lateMap.has(norm)) {
-            status = 'late';
-            time = lateMap.get(norm);
-            break;
-          }
+      if (derived) {
+        setAllStudents(derived.studentList);
+        setClassBreakdowns(derived.breakdownList);
+        setOverallStats(derived.overallStats);
+        if (derived.entries.length > 0) {
+          setLiveEntries(derived.entries);
         }
+      }
 
-        const isTeacher = u.category === 'Teacher' || u.role === 'teacher';
-        if (isTeacher) {
-          teacherTotal++;
-          if (status === 'present' || status === 'late') teacherPresent++;
+      // 2. Gate Pass Stats (cached for 60s across tab switches)
+      if (!cachedGatePassStats || cachedGatePassStats.expiresAt <= Date.now() || silent) {
+        try {
+          const { data: gateSetting } = await supabase
+            .from('attendance_settings')
+            .select('value')
+            .eq('key', 'school_gate_passes')
+            .maybeSingle();
+
+          const storedPasses: any[] = Array.isArray(gateSetting?.value) ? gateSetting.value : [];
+          const activeCount = storedPasses.filter(p => p.status === 'approved' || p.status === 'pending_teacher' || p.status === 'pending_principal').length;
+          const pendingCount = storedPasses.filter(p => p.status === 'pending_teacher' || p.status === 'pending_principal').length;
+
+          const nextGateStats = {
+            totalToday: storedPasses.length,
+            active: activeCount,
+            pending: pendingCount,
+          };
+          cachedGatePassStats = { data: nextGateStats, expiresAt: Date.now() + 60_000 };
+          setGatePassStats(nextGateStats);
+        } catch (err) {
+          console.warn('Gate pass fetch error:', err);
         }
-
-        return {
-          name: u.name,
-          employee_id: u.employee_id,
-          category: u.category || 'Class 10',
-          image_url: u.image_url || '',
-          status,
-          time,
-          user_id: u.user_id || undefined,
-        };
-      });
-
-      studentList.sort((a, b) => {
-        const order = { present: 0, late: 1, absent: 2 };
-        if (order[a.status] !== order[b.status]) {
-          return order[a.status] - order[b.status];
-        }
-        return a.name.localeCompare(b.name);
-      });
-
-      setAllStudents(studentList);
-
-      setOverallStats({
-        totalRegistered: unified.totalRegistered,
-        presentToday: unified.presentToday,
-        lateToday: unified.lateToday,
-        absentToday: unified.absentToday,
-        attendanceRate: unified.attendanceRate,
-        teacherTotal,
-        teacherPresent,
-      });
-
-      // 3. Class-by-Class Breakdown (Classes 6 to 12 + Teacher)
-      const classMap: Record<string, { total: number; present: number; late: number; absent: number }> = {};
-      CLASSES.forEach(cls => {
-        classMap[`Class ${cls}`] = { total: 0, present: 0, late: 0, absent: 0 };
-      });
-      classMap['Teachers'] = { total: 0, present: 0, late: 0, absent: 0 };
-
-      studentList.forEach(s => {
-        let targetGroup = 'Class 10';
-        if (s.category === 'Teacher') {
-          targetGroup = 'Teachers';
-        } else {
-          const parsed = parseCategory(s.category);
-          if (parsed && classMap[`Class ${parsed.class}`]) {
-            targetGroup = `Class ${parsed.class}`;
-          }
-        }
-
-        if (!classMap[targetGroup]) {
-          classMap[targetGroup] = { total: 0, present: 0, late: 0, absent: 0 };
-        }
-
-        classMap[targetGroup].total++;
-        if (s.status === 'present') classMap[targetGroup].present++;
-        else if (s.status === 'late') classMap[targetGroup].late++;
-        else classMap[targetGroup].absent++;
-      });
-
-      const breakdownList: ClassBreakdownItem[] = Object.entries(classMap).map(([label, counts]) => {
-        const attended = counts.present + counts.late;
-        const rate = counts.total > 0 ? Math.round((attended / counts.total) * 100) : 0;
-        return {
-          key: label,
-          label,
-          total: counts.total,
-          present: counts.present,
-          late: counts.late,
-          absent: counts.absent,
-          rate,
-        };
-      });
-
-      setClassBreakdowns(breakdownList);
-
-      // 4. Gate Pass Stats
-      try {
-        const { data: gateSetting } = await supabase
-          .from('attendance_settings')
-          .select('value')
-          .eq('key', 'school_gate_passes')
-          .maybeSingle();
-
-        const storedPasses: any[] = Array.isArray(gateSetting?.value) ? gateSetting.value : [];
-        const activeCount = storedPasses.filter(p => p.status === 'approved' || p.status === 'pending_teacher' || p.status === 'pending_principal').length;
-        const pendingCount = storedPasses.filter(p => p.status === 'pending_teacher' || p.status === 'pending_principal').length;
-
-        setGatePassStats({
-          totalToday: storedPasses.length,
-          active: activeCount,
-          pending: pendingCount,
-        });
-      } catch (err) {
-        console.warn('Gate pass fetch error:', err);
       }
 
       setLastRefreshed(new Date());
@@ -422,13 +421,17 @@ const PrincipalDashboard: React.FC<PrincipalDashboardProps> = ({ onNavigateTab }
       console.error('Dashboard fetch error:', err);
       if (!silent) toast({ title: 'Error', description: 'Failed to load school snapshot', variant: 'destructive' });
     } finally {
-      if (!silent) setIsLoading(false);
+      setIsLoading(false);
     }
   }, [toast]);
 
   fetchAllDataRef.current = fetchAllData;
 
   const fetchWeeklyTrend = useCallback(async () => {
+    if (cachedWeeklyTrend && cachedWeeklyTrend.expiresAt > Date.now()) {
+      setWeeklyTrend(cachedWeeklyTrend.data);
+      return;
+    }
     try {
       const todayDate = new Date();
       const lookbackStart = subDays(todayDate, 14);
@@ -445,13 +448,15 @@ const PrincipalDashboard: React.FC<PrincipalDashboardProps> = ({ onNavigateTab }
           .select('id, user_id, student_id, student_name, status, timestamp, device_info')
           .in('status', ['present', 'late', 'unauthorized'])
           .gte('timestamp', `${startDateStr}T00:00:00`)
-          .lte('timestamp', `${endDateStr}T23:59:59`),
+          .lte('timestamp', `${endDateStr}T23:59:59`)
+          .limit(1500),
         supabase
           .from('gate_entries')
           .select('student_id, entry_time')
           .gte('entry_time', `${startDateStr}T00:00:00`)
           .lte('entry_time', `${endDateStr}T23:59:59`)
-          .eq('is_recognized', true),
+          .eq('is_recognized', true)
+          .limit(1500),
       ]);
 
       const safeDateStr = (rawDate: any, fmt: string) => {
@@ -487,7 +492,7 @@ const PrincipalDashboard: React.FC<PrincipalDashboardProps> = ({ onNavigateTab }
 
       const trendData = workingDays.map(d => {
         const dateStr = format(d, 'yyyy-MM-dd');
-        let count = dailyPresent[dateStr]?.size || 0;
+        const count = dailyPresent[dateStr]?.size || 0;
         return {
           date: dateStr,
           day: format(d, 'EEE'),
@@ -496,6 +501,7 @@ const PrincipalDashboard: React.FC<PrincipalDashboardProps> = ({ onNavigateTab }
         };
       });
 
+      cachedWeeklyTrend = { data: trendData, expiresAt: Date.now() + 90_000 };
       setWeeklyTrend(trendData);
     } catch (err) {
       console.warn('Weekly trend fetch error:', err);
@@ -503,8 +509,8 @@ const PrincipalDashboard: React.FC<PrincipalDashboardProps> = ({ onNavigateTab }
   }, []);
 
   useEffect(() => {
-    fetchAllData();
-    fetchWeeklyTrend();
+    void fetchAllData();
+    void fetchWeeklyTrend();
   }, [fetchAllData, fetchWeeklyTrend]);
 
   useEffect(() => {

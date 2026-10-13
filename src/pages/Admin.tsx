@@ -63,7 +63,11 @@ import { useToast } from '@/hooks/use-toast';
 import { useUserRole } from '@/hooks/useUserRole';
 import { useIsMobile } from '@/hooks/use-mobile';
 import { cn } from '@/lib/utils';
-import { fetchUnifiedStudentSnapshot, invalidateUnifiedStatsCache } from '@/utils/attendanceStatsHelper';
+import {
+  fetchUnifiedStudentSnapshot,
+  getCachedUnifiedStudentSnapshot,
+  invalidateUnifiedStatsCache,
+} from '@/utils/attendanceStatsHelper';
 import AdminUpdatePusherDialog from '@/components/admin/AdminUpdatePusherDialog';
 import LiteModeToggle from '@/components/LiteModeToggle';
 
@@ -161,6 +165,7 @@ const Admin = () => {
   const isMobile = useIsMobile();
   const { trigger: haptic } = useHapticFeedback();
   const { role, isLoading: isRoleLoading, isAdminOrPrincipal, isTeacher } = useUserRole();
+  const initialSnapshot = React.useMemo(() => getCachedUnifiedStudentSnapshot(), []);
   const [selectedFaceId, setSelectedFaceId] = useState<string | null>(null);
   const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
   const [attendanceUpdated, setAttendanceUpdated] = useState(false);
@@ -168,15 +173,24 @@ const Admin = () => {
   const [availableFaces, setAvailableFaces] = useState<{id: string; user_id?: string; name: string; employee_id: string;}[]>([]);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [notificationCount, setNotificationCount] = useState(0);
-  const [isDataLoading, setIsDataLoading] = useState(true);
+  const [isDataLoading, setIsDataLoading] = useState(() => !initialSnapshot);
   const refreshTimerRef = useRef<number | null>(null);
-  const hasLoadedOnceRef = useRef(false);
-  const [stats, setStats] = useState({
-    totalFaces: 0,
-    todayAttendance: 0,
-    presentToday: 0,
-    lateToday: 0
-  });
+  const hasLoadedOnceRef = useRef(Boolean(initialSnapshot));
+  const [stats, setStats] = useState(() =>
+    initialSnapshot
+      ? {
+          totalFaces: initialSnapshot.totalRegistered,
+          todayAttendance: initialSnapshot.presentToday + initialSnapshot.lateToday,
+          presentToday: initialSnapshot.presentToday,
+          lateToday: initialSnapshot.lateToday,
+        }
+      : {
+          totalFaces: 0,
+          todayAttendance: 0,
+          presentToday: 0,
+          lateToday: 0,
+        }
+  );
   const [showUpdatePusher, setShowUpdatePusher] = useState(false);
   const [isSecretModalOpen, setIsSecretModalOpen] = useState(false);
   const [isTelemetryUnlocked, setIsTelemetryUnlocked] = useState(() => {
@@ -186,6 +200,17 @@ const Admin = () => {
       return false;
     }
   });
+
+  // Preload core Daily Operations chunks (Overview, Students, Classes & Sections) immediately after mount
+  // so switching between these 3 tabs is 0ms with zero Suspense skeleton flash.
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      void import('@/components/admin/PrincipalDashboard');
+      void import('@/components/admin/AdminFacesList');
+      void import('@/components/admin/CategoryBasedView');
+    }, 50);
+    return () => window.clearTimeout(timer);
+  }, []);
 
   // Secret Hotkey Listener: Ctrl+Shift+D or Cmd+Shift+D (Fleet Radar)
   useEffect(() => {
@@ -304,12 +329,13 @@ const Admin = () => {
         return next;
       });
 
-      // Unread notifications count
-      const { count } = await supabase
+      // Unread notifications count (non-blocking)
+      void supabase
         .from('notifications')
         .select('*', { count: 'exact', head: true })
-        .eq('is_read', false);
-      setNotificationCount(count || 0);
+        .eq('is_read', false)
+        .then(({ count }) => setNotificationCount(count || 0))
+        .catch(() => {});
     } catch (error) {
       console.error('Error fetching data:', error);
     } finally {
@@ -318,30 +344,20 @@ const Admin = () => {
     }
   }, [isAdminOrPrincipal]);
 
-  // Tab-scoped lazy loader: fetch available faces only when notification sender tab is opened
+  // Tab-scoped lazy loader: reuse unified snapshot for notification sender tab
   useEffect(() => {
     if (activeTab === 'notifications' && availableFaces.length === 0) {
-      supabase
-        .from('attendance_records')
-        .select('id, user_id, device_info, category')
-        .eq('status', 'registered')
-        .then(({ data: faceData }) => {
-          const processedFaces = (faceData || []).map(r => {
-            const m = (r.device_info as any)?.metadata || {};
-            const name = m.name || (r.device_info as any)?.name || '';
-            const employeeId = m.employee_id || (r.device_info as any)?.employee_id || '';
-            return { id: r.id, user_id: r.user_id || undefined, name, employee_id: employeeId, category: r.category || 'A' };
-          }).filter(u => u.name && u.name !== 'Unknown' && u.name !== 'User');
-
-          const seenIds = new Set<string>();
-          const uniqueFaces = processedFaces.filter(u => {
-            const key = u.employee_id || u.user_id || u.id;
-            if (!key || seenIds.has(key)) return false;
-            seenIds.add(key);
-            return true;
-          });
-
-          setAvailableFaces(uniqueFaces);
+      fetchUnifiedStudentSnapshot()
+        .then((unified) => {
+          setAvailableFaces(
+            unified.students.map((s) => ({
+              id: s.id,
+              user_id: s.user_id,
+              name: s.name,
+              employee_id: s.employee_id,
+              category: s.category || 'A',
+            }))
+          );
         })
         .catch(err => console.warn('[Admin] Failed to load available faces for notifications:', err));
     }
