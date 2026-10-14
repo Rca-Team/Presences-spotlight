@@ -1,183 +1,164 @@
-
 import { supabase } from '@/integrations/supabase/client';
 import { FaceInfo } from './types';
+import { getCachedUnifiedStudentSnapshot } from '@/utils/attendanceStatsHelper';
 
-// Fetch face details from Supabase
-export const fetchSelectedFace = async (faceId: string): Promise<FaceInfo> => {
+// Fetch face details from memory snapshot, profiles, and attendance_records
+export const fetchSelectedFace = async (
+  faceId: string,
+  fallbackStudent?: Partial<FaceInfo> | null
+): Promise<FaceInfo> => {
   try {
-    const { data, error } = await supabase
-      .from('attendance_records')
-      .select('device_info, user_id, image_url, category')
-      .eq('id', faceId)
-      .single();
-        
-    if (error) {
-      console.error('Error fetching face details from attendance_records:', error);
-      
-      const { data: userData, error: userError } = await supabase
-        .from('attendance_records')
-        .select('device_info, image_url, category')
-        .eq('user_id', faceId)
-        .single();
-        
-      if (userError) {
-        console.error('Error fetching face details by user_id:', userError);
-        
-        return {
-          recordId: faceId,
-          name: 'Unknown Student',
-          employee_id: faceId,
-          department: 'N/A',
-          position: 'Student'
-        };
-      }
-      
-      if (userData) {
-        const deviceInfo = userData.device_info as any;
-        const metadata = deviceInfo && typeof deviceInfo === 'object' && !Array.isArray(deviceInfo)
-          ? deviceInfo.metadata || deviceInfo
-          : {};
-
-        const deptStr = String(metadata.department || metadata.class_section || userData.category || '');
-        const deptMatch = deptStr.match(/^(\d{1,2})\s*[-/]?\s*([A-Za-z])$/);
-
-        const imgCandidate = metadata?.face_model?.id_card_photo_url ||
-          metadata?.id_card_photo_url ||
-          metadata?.firebase_image_url ||
-          metadata?.avatar_url ||
-          metadata?.photo_url ||
-          userData.image_url ||
-          undefined;
-        
-        return {
-          recordId: faceId,
-          user_id: faceId,
-          name: metadata.name || 'Unknown Student',
-          class: metadata.class || (deptMatch ? deptMatch[1] : ''),
-          section: metadata.section || (deptMatch ? deptMatch[2].toUpperCase() : ''),
-          employee_id: metadata.employee_id || faceId,
-          department: metadata.department || userData.category || 'N/A',
-          position: metadata.position || 'Student',
-          image_url: imgCandidate,
-          roll_number: metadata.roll_number || '',
-          blood_group: metadata.blood_group || '',
-          parent_name: metadata.parent_name || '',
-          parent_phone: metadata.parent_phone || metadata.phone || '',
-          parent_email: metadata.parent_email || '',
-          transport_mode: metadata.transport_mode || '',
-          address: metadata.address || '',
-        };
-      }
-      
+    if (!faceId) {
       return {
-        recordId: faceId,
-        name: 'Unknown Student',
-        employee_id: faceId,
+        recordId: '',
+        name: 'Student',
+        employee_id: '',
         department: 'N/A',
-        position: 'Student'
-      };
-    }
-
-    if (data) {
-      const deviceInfo = data.device_info as any;
-      const metadata = deviceInfo && typeof deviceInfo === 'object' && !Array.isArray(deviceInfo)
-        ? deviceInfo.metadata || deviceInfo
-        : {};
-
-      let profileData: any = null;
-      const profileKey = data?.user_id || faceId;
-      if (profileKey) {
-        const { data: profRow } = await supabase
-          .from('profiles')
-          .select('full_name, display_name, class, section, roll_number, admission_number, parent_name, parent_phone, parent_email, blood_group, address, date_of_birth, gender, avatar_url, photo_url, employee_id')
-          .or(`user_id.eq.${profileKey},id.eq.${profileKey},employee_id.eq.${profileKey},admission_number.eq.${profileKey}`)
-          .maybeSingle();
-        profileData = profRow;
-      }
-
-      const deptStr = String(metadata.department || metadata.class_section || data.category || profileData?.class || '');
-      const deptMatch = deptStr.match(/^(\d{1,2})\s*[-/]?\s*([A-Za-z])$/);
-
-      const resolvedPhoto = profileData?.avatar_url ||
-        profileData?.photo_url ||
-        metadata?.face_model?.id_card_photo_url ||
-        metadata?.id_card_photo_url ||
-        metadata?.firebase_image_url ||
-        metadata?.avatar_url ||
-        metadata?.photo_url ||
-        data.image_url ||
-        undefined;
-      
-      return {
-        recordId: faceId,
-        user_id: data.user_id || profileKey,
-        name: profileData?.full_name || profileData?.display_name || metadata.name || 'Unknown Student',
-        class: profileData?.class || metadata.class || (deptMatch ? deptMatch[1] : ''),
-        section: profileData?.section || metadata.section || (deptMatch ? deptMatch[2].toUpperCase() : ''),
-        employee_id: profileData?.admission_number || profileData?.employee_id || metadata.employee_id || data.user_id || faceId,
-        admission_number: profileData?.admission_number || metadata.admission_number || metadata.admission_no || '',
-        department: metadata.department || data.category || (profileData?.class ? `${profileData.class}-${profileData?.section || 'A'}` : 'N/A'),
-        position: metadata.position || 'Student',
-        image_url: resolvedPhoto,
-        roll_number: profileData?.roll_number || metadata.roll_number || '',
-        blood_group: profileData?.blood_group || metadata.blood_group || '',
-        parent_name: profileData?.parent_name || metadata.parent_name || '',
-        parent_phone: profileData?.parent_phone || metadata.parent_phone || metadata.phone || '',
-        parent_email: profileData?.parent_email || metadata.parent_email || '',
-        transport_mode: metadata.transport_mode || '',
-        address: profileData?.address || metadata.address || '',
-        date_of_birth: profileData?.date_of_birth || '',
-        gender: profileData?.gender || '',
-      };
-    }
-    
-    // Fallback: Check profiles table directly if attendance record wasn't found
-    const { data: directProfile } = await supabase
-      .from('profiles')
-      .select('id, user_id, full_name, display_name, class, section, roll_number, admission_number, parent_name, parent_phone, parent_email, blood_group, address, date_of_birth, gender, avatar_url, photo_url, employee_id')
-      .or(`id.eq.${faceId},user_id.eq.${faceId},admission_number.eq.${faceId},employee_id.eq.${faceId}`)
-      .maybeSingle();
-
-    if (directProfile) {
-      return {
-        recordId: directProfile.id || faceId,
-        user_id: directProfile.user_id || directProfile.id,
-        name: directProfile.full_name || directProfile.display_name || 'Student',
-        class: directProfile.class || '',
-        section: directProfile.section || '',
-        employee_id: directProfile.admission_number || directProfile.employee_id || faceId,
-        admission_number: directProfile.admission_number || directProfile.employee_id || '',
-        department: directProfile.class ? `${directProfile.class}-${directProfile.section || 'A'}` : 'N/A',
         position: 'Student',
-        image_url: directProfile.avatar_url || directProfile.photo_url || undefined,
-        roll_number: directProfile.roll_number || '',
-        blood_group: directProfile.blood_group || '',
-        parent_name: directProfile.parent_name || '',
-        parent_phone: directProfile.parent_phone || '',
-        parent_email: directProfile.parent_email || '',
-        transport_mode: '',
-        address: directProfile.address || '',
-        date_of_birth: directProfile.date_of_birth || '',
-        gender: directProfile.gender || '',
       };
     }
 
-    return {
-      recordId: faceId,
-      name: 'Unknown Student',
-      employee_id: faceId,
-      department: 'N/A',
-      position: 'Student'
+    // 1. Check in-memory unified snapshot first for instantaneous 0ms resolution
+    const snapshot = getCachedUnifiedStudentSnapshot();
+    const roster = snapshot?.roster || snapshot?.students || [];
+    const matched = roster.find(
+      (s) =>
+        s.id === faceId ||
+        s.employee_id === faceId ||
+        s.admission_number === faceId ||
+        s.user_id === faceId
+    );
+
+    let base: FaceInfo = {
+      recordId: matched?.id || fallbackStudent?.recordId || faceId,
+      user_id: matched?.user_id || fallbackStudent?.user_id || undefined,
+      name: matched?.name || fallbackStudent?.name || '',
+      employee_id: matched?.admission_number || matched?.employee_id || fallbackStudent?.employee_id || '',
+      admission_number: matched?.admission_number || matched?.employee_id || fallbackStudent?.admission_number || '',
+      class: matched?.class || fallbackStudent?.class || '',
+      section: matched?.section || fallbackStudent?.section || '',
+      department: matched?.category || matched?.department || fallbackStudent?.department || 'N/A',
+      position: matched?.role === 'teacher' ? 'Teacher' : 'Student',
+      image_url: matched?.image_url || fallbackStudent?.image_url || undefined,
+      roll_number: matched?.roll_number || fallbackStudent?.roll_number || '',
+      parent_name: matched?.parent_name || fallbackStudent?.parent_name || '',
+      parent_phone: matched?.parent_phone || matched?.phone || fallbackStudent?.parent_phone || '',
+      parent_email: matched?.parent_email || fallbackStudent?.parent_email || '',
+      address: fallbackStudent?.address || '',
+      blood_group: fallbackStudent?.blood_group || '',
+      date_of_birth: fallbackStudent?.date_of_birth || '',
+      gender: fallbackStudent?.gender || '',
+      transport_mode: fallbackStudent?.transport_mode || '',
     };
+
+    // 2. Query profiles collection directly (id maps to Appwrite $id)
+    let profileData: any = null;
+    try {
+      const { data: byId } = await supabase.from('profiles').select('*').eq('id', faceId).maybeSingle();
+      if (byId) {
+        profileData = byId;
+      } else {
+        const { data: byAdm } = await supabase.from('profiles').select('*').eq('admission_number', faceId).maybeSingle();
+        if (byAdm) {
+          profileData = byAdm;
+        } else {
+          const { data: byEmp } = await supabase.from('profiles').select('*').eq('employee_id', faceId).maybeSingle();
+          if (byEmp) {
+            profileData = byEmp;
+          } else {
+            const { data: byUid } = await supabase.from('profiles').select('*').eq('user_id', faceId).maybeSingle();
+            profileData = byUid;
+          }
+        }
+      }
+    } catch (e) {
+      console.warn('[faceDetailsUtils] profiles query error:', e);
+    }
+
+    // 3. Parse profile metadata JSON if present (stores mother_name, verified phones, etc.)
+    let meta: any = {};
+    if (profileData?.metadata) {
+      if (typeof profileData.metadata === 'string') {
+        try {
+          meta = JSON.parse(profileData.metadata);
+        } catch {}
+      } else if (typeof profileData.metadata === 'object') {
+        meta = profileData.metadata;
+      }
+    }
+
+    if (profileData) {
+      const cls = profileData.class || meta.class || base.class;
+      const sec = profileData.section || meta.section || base.section;
+      const adm = profileData.admission_number || profileData.employee_id || meta.admission_number || base.admission_number;
+      const name = profileData.full_name || profileData.display_name || meta.name || base.name || 'Student';
+
+      base = {
+        ...base,
+        recordId: profileData.id || profileData.$id || base.recordId,
+        user_id: profileData.user_id || base.user_id,
+        name,
+        employee_id: adm,
+        admission_number: adm,
+        class: cls,
+        section: sec ? sec.toUpperCase() : '',
+        department: profileData.category || (cls && sec ? `${cls}-${sec.toUpperCase()}` : cls) || base.department,
+        roll_number: profileData.roll_number || meta.roll_number || base.roll_number,
+        blood_group: profileData.blood_group || meta.blood_group || base.blood_group,
+        date_of_birth: profileData.date_of_birth || meta.date_of_birth || base.date_of_birth,
+        gender: profileData.gender || meta.gender || base.gender,
+        parent_name: profileData.parent_name || profileData.father_name || meta.parent_name || meta.father_name || base.parent_name,
+        parent_phone: profileData.parent_phone || profileData.phone || meta.parent_phone || meta.phone || base.parent_phone,
+        parent_email: profileData.parent_email || profileData.email || meta.parent_email || base.parent_email,
+        address: profileData.address || meta.address || base.address,
+        image_url: profileData.avatar_url || profileData.photo_url || meta.avatar_url || meta.photo_url || base.image_url,
+      };
+    }
+
+    // 4. Also check attendance_records for any extra details / device metadata
+    const targetAdm = base.admission_number || base.employee_id || faceId;
+    const targetUid = base.user_id || faceId;
+    try {
+      const { data: attList } = await supabase
+        .from('attendance_records')
+        .select('device_info, image_url, category, timestamp')
+        .or(`student_id.eq.${targetAdm},user_id.eq.${targetUid}`)
+        .order('timestamp', { ascending: false })
+        .limit(1);
+
+      if (attList && attList[0]) {
+        const att = attList[0];
+        const di = att.device_info as any;
+        const diMeta = di?.metadata || di;
+        if (!base.image_url && att.image_url) {
+          base.image_url = att.image_url;
+        }
+        if (!base.name && diMeta?.name) {
+          base.name = diMeta.name;
+        }
+      }
+    } catch {}
+
+    // Guarantee that employee_id & admission_number are never set to raw document id when admission is known
+    if (base.recordId && base.employee_id === base.recordId && base.admission_number && base.admission_number !== base.recordId) {
+      base.employee_id = base.admission_number;
+    }
+
+    if (!base.name) {
+      base.name = 'Student';
+    }
+
+    return base;
   } catch (error) {
     console.error('Error fetching face details:', error);
-    
     return {
       recordId: faceId,
-      name: 'Unknown Student',
-      employee_id: faceId,
-      department: 'N/A',
-      position: 'Student'
+      name: fallbackStudent?.name || 'Student',
+      employee_id: fallbackStudent?.employee_id || faceId,
+      admission_number: fallbackStudent?.admission_number || '',
+      department: fallbackStudent?.department || 'N/A',
+      position: 'Student',
+      ...fallbackStudent,
     };
   }
 };

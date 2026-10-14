@@ -46,7 +46,7 @@ const AttendanceCalendar: React.FC<AttendanceCalendarProps> = ({
     isDateInArray,
     attendanceRecords,
     refreshSelectedFace,
-  } = useAttendanceCalendar(selectedFaceId);
+  } = useAttendanceCalendar(selectedFaceId, availableFaces);
 
   const [showDetailsPanel, setShowDetailsPanel] = useState(false);
   const [savingDetails, setSavingDetails] = useState(false);

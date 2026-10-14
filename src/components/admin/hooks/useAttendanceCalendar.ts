@@ -41,7 +41,12 @@ function toMidnight(date: Date): Date {
   return d;
 }
 
-export const useAttendanceCalendar = (selectedFaceId: string | null) => {
+import { getCachedUnifiedStudentSnapshot } from '@/utils/attendanceStatsHelper';
+
+export const useAttendanceCalendar = (
+  selectedFaceId: string | null,
+  availableFaces?: Array<{ id: string; name: string; employee_id: string; department?: string; image_url?: string; user_id?: string; position?: string }>
+) => {
   const { toast } = useToast();
   
   const [attendanceDays, setAttendanceDays] = useState<Date[]>([]);
@@ -73,6 +78,16 @@ export const useAttendanceCalendar = (selectedFaceId: string | null) => {
     setAbsentDays(absent);
   }, [workingDays, attendanceDays, lateAttendanceDays]);
 
+  const fetchFaceDetails = useCallback(async (faceId: string) => {
+    try {
+      const fallback = availableFaces?.find(f => f.id === faceId || f.employee_id === faceId || f.user_id === faceId);
+      const faceInfo = await fetchSelectedFace(faceId, fallback);
+      setSelectedFace(faceInfo);
+    } catch (error) {
+      console.error('Error fetching face details:', error);
+    }
+  }, [availableFaces]);
+
   // Load data when face changes
   useEffect(() => {
     let channel: any = null;
@@ -83,6 +98,30 @@ export const useAttendanceCalendar = (selectedFaceId: string | null) => {
       setAbsentDays([]);
       setAttendanceRecords({});
       setVisibleMonth((prev) => selectedDate || prev);
+
+      // Instant 0ms hydration from memory snapshot or availableFaces so there's never 'Unknown Student'
+      const fallback = availableFaces?.find(f => f.id === selectedFaceId || f.employee_id === selectedFaceId || f.user_id === selectedFaceId);
+      const snapshot = getCachedUnifiedStudentSnapshot();
+      const matched = snapshot?.roster?.find(s => s.id === selectedFaceId || s.employee_id === selectedFaceId || s.admission_number === selectedFaceId || s.user_id === selectedFaceId);
+
+      if (matched || fallback) {
+        setSelectedFace({
+          recordId: matched?.id || fallback?.id || selectedFaceId,
+          user_id: matched?.user_id || fallback?.user_id || undefined,
+          name: matched?.name || fallback?.name || 'Student',
+          employee_id: matched?.admission_number || matched?.employee_id || fallback?.employee_id || '',
+          admission_number: matched?.admission_number || matched?.employee_id || fallback?.employee_id || '',
+          class: matched?.class || '',
+          section: matched?.section || '',
+          department: matched?.category || matched?.department || fallback?.department || 'N/A',
+          position: matched?.role === 'teacher' ? 'Teacher' : 'Student',
+          image_url: matched?.image_url || fallback?.image_url || undefined,
+          roll_number: matched?.roll_number || '',
+          parent_name: matched?.parent_name || '',
+          parent_phone: matched?.parent_phone || matched?.phone || '',
+          parent_email: matched?.parent_email || '',
+        });
+      }
       
       fetchFaceDetails(selectedFaceId);
       loadAttendanceRecords(selectedFaceId);
@@ -111,24 +150,7 @@ export const useAttendanceCalendar = (selectedFaceId: string | null) => {
     return () => {
       if (channel) supabase.removeChannel(channel);
     };
-  }, [selectedFaceId]);
-
-  useEffect(() => {
-    if (selectedFaceId && selectedDate) {
-      loadDailyAttendance(selectedFaceId, selectedDate);
-    } else {
-      setDailyAttendance([]);
-    }
-  }, [selectedFaceId, selectedDate]);
-
-  const fetchFaceDetails = async (faceId: string) => {
-    try {
-      const faceInfo = await fetchSelectedFace(faceId);
-      setSelectedFace(faceInfo);
-    } catch (error) {
-      console.error('Error fetching face details:', error);
-    }
-  };
+  }, [selectedFaceId, fetchFaceDetails, availableFaces]);
 
   const loadAttendanceRecords = async (faceId: string) => {
     try {

@@ -49,59 +49,86 @@ function normalizeGateMetadata(record: any) {
   };
 }
 
-// Get all identifiers for a registered face to match attendance records
-async function getFaceIdentifiers(faceId: string): Promise<{ userIds: string[]; employeeId: string | null }> {
-  let { data } = await supabase
-    .from('attendance_records')
-    .select('user_id, student_id, device_info')
-    .eq('id', faceId)
-    .maybeSingle();
+import { getCachedUnifiedStudentSnapshot } from '@/utils/attendanceStatsHelper';
 
-  if (!data) {
-    const { data: recByUid } = await supabase
+// Get all identifiers for a registered face to match attendance records
+export async function getFaceIdentifiers(faceId: string, knownEmployeeId?: string | null): Promise<{ userIds: string[]; employeeId: string | null }> {
+  const userIds: string[] = [faceId];
+  let employeeId: string | null = knownEmployeeId || null;
+
+  // 1. Check in-memory snapshot first
+  try {
+    const snapshot = getCachedUnifiedStudentSnapshot();
+    const roster = snapshot?.roster || snapshot?.students || [];
+    const matched = roster.find(
+      s => s.id === faceId || s.employee_id === faceId || s.admission_number === faceId || s.user_id === faceId
+    );
+
+    if (matched) {
+      const adm = matched.admission_number || matched.employee_id;
+      if (adm) {
+        employeeId = adm;
+        userIds.push(adm);
+      }
+      if (matched.user_id) userIds.push(matched.user_id);
+      if (matched.id) userIds.push(matched.id);
+    }
+  } catch {}
+
+  // 2. Query profiles directly by id (exact Appwrite $id match)
+  try {
+    const { data: prof } = await supabase
+      .from('profiles')
+      .select('id, user_id, employee_id, admission_number')
+      .eq('id', faceId)
+      .maybeSingle();
+
+    if (prof) {
+      if (prof.admission_number) {
+        userIds.push(prof.admission_number);
+        if (!employeeId) employeeId = prof.admission_number;
+      }
+      if (prof.employee_id) {
+        userIds.push(prof.employee_id);
+        if (!employeeId) employeeId = prof.employee_id;
+      }
+      if (prof.user_id) userIds.push(prof.user_id);
+      if (prof.id) userIds.push(prof.id);
+    }
+  } catch {}
+
+  // 3. Check attendance_records directly
+  try {
+    let { data } = await supabase
       .from('attendance_records')
       .select('user_id, student_id, device_info')
-      .or(`user_id.eq.${faceId},student_id.eq.${faceId}`)
-      .limit(1)
+      .eq('id', faceId)
       .maybeSingle();
-    data = recByUid;
-  }
 
-  const userIds: string[] = [faceId]; // Always include the faceId
-  let employeeId: string | null = null;
+    if (!data) {
+      const { data: recByUid } = await supabase
+        .from('attendance_records')
+        .select('user_id, student_id, device_info')
+        .or(`user_id.eq.${faceId},student_id.eq.${faceId}`)
+        .limit(1)
+        .maybeSingle();
+      data = recByUid;
+    }
 
-  if (data) {
-    if (data.user_id) userIds.push(data.user_id);
-    if ((data as any).student_id) {
-      userIds.push((data as any).student_id);
-      employeeId = (data as any).student_id;
+    if (data) {
+      if (data.user_id) userIds.push(data.user_id);
+      if ((data as any).student_id) {
+        userIds.push((data as any).student_id);
+        if (!employeeId) employeeId = (data as any).student_id;
+      }
+      const di = data.device_info as any;
+      const metaId = di?.metadata?.employee_id || di?.metadata?.admission_number || di?.employee_id;
+      if (metaId) {
+        if (!employeeId) employeeId = metaId;
+        userIds.push(metaId);
+      }
     }
-    const di = data.device_info as any;
-    const metaId = di?.metadata?.employee_id || di?.metadata?.admission_number || di?.employee_id;
-    if (metaId) {
-      employeeId = metaId;
-      userIds.push(metaId);
-    }
-  }
-
-  // Also query profiles for any additional identifiers (admission number, employee id, user id)
-  const { data: prof } = await supabase
-    .from('profiles')
-    .select('user_id, employee_id, admission_number')
-    .or(`user_id.eq.${faceId},id.eq.${faceId},admission_number.eq.${faceId},employee_id.eq.${faceId}`)
-    .maybeSingle();
-
-  if (prof) {
-    if (prof.user_id) userIds.push(prof.user_id);
-    if (prof.employee_id) {
-      userIds.push(prof.employee_id);
-      if (!employeeId) employeeId = prof.employee_id;
-    }
-    if (prof.admission_number) {
-      userIds.push(prof.admission_number);
-      if (!employeeId) employeeId = prof.admission_number;
-    }
-  }
+  } catch {}
 
   return { userIds: [...new Set(userIds.filter(Boolean))], employeeId };
 }
@@ -291,6 +318,3 @@ export const fetchDailyAttendance = async (
     throw error;
   }
 };
-
-// Export for reuse
-export { getFaceIdentifiers };

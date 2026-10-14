@@ -138,10 +138,10 @@ const StudentInfoCard: React.FC<StudentInfoCardProps> = ({
 
                 <div className="flex items-center gap-2 flex-wrap mt-1 text-xs text-muted-foreground">
                   <span className="font-mono bg-muted/60 px-2 py-0.5 rounded-md text-[11px] font-semibold text-foreground/80">
-                    Roll: {selectedFace?.roll_number || selectedFace?.position || 'N/A'}
+                    Roll: {selectedFace?.roll_number ? selectedFace.roll_number : 'N/A'}
                   </span>
                   <span className="font-mono bg-muted/60 px-2 py-0.5 rounded-md text-[11px] font-semibold text-foreground/80">
-                    Adm: {selectedFace?.admission_number || selectedFace?.employee_id || 'N/A'}
+                    Adm: {selectedFace?.admission_number || (selectedFace?.employee_id && selectedFace.employee_id !== selectedFace?.recordId ? selectedFace.employee_id : 'N/A')}
                   </span>
                   {selectedFace?.blood_group && (
                     <span className="bg-rose-500/10 text-rose-600 dark:text-rose-400 font-bold px-1.5 py-0.5 rounded-md text-[10px]">
