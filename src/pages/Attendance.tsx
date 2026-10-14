@@ -214,181 +214,200 @@ const Attendance: React.FC = () => {
         />
 
         <div className="relative max-w-7xl mx-auto px-3 sm:px-6 py-4 sm:py-6 space-y-6">
-          {/* 1. Top Title & School Branding */}
-          <div className="text-center space-y-1.5 py-1">
-            <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-blue-500/10 text-blue-600 dark:text-blue-400 border border-blue-500/20 text-xs font-bold">
-              <Scan className="w-3.5 h-3.5" />
-              <span>PM Shri KV NFC Vigyan Vihar</span>
-              <span className="opacity-40">•</span>
-              <span>Presences.AI</span>
-            </div>
-            <h1 className="text-xl sm:text-3xl font-black tracking-tight text-slate-900 dark:text-white flex items-center justify-center gap-2">
-              Daily Attendance {liteMode && <span className="text-amber-500 font-extrabold">(Fast Mode)</span>}
-            </h1>
-            <div className="flex items-center justify-center gap-2 text-xs sm:text-sm text-slate-500 dark:text-slate-400 font-medium">
-              <span>Biometric & QR Attendance System</span>
-              <span className="opacity-40">•</span>
-              <AppleLiveClock />
-            </div>
-          </div>
-
-          {/* 2. Unified Terminal Active Card (Matching Lite Mode Layout) */}
-          <div className="rounded-2xl border border-slate-200/80 dark:border-slate-800 bg-white/90 dark:bg-slate-900/90 p-3.5 sm:p-4 flex flex-col md:flex-row items-start md:items-center justify-between gap-3 shadow-sm">
-            <div className="flex items-center gap-3">
-              <div className={cn(
-                "w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0 border",
-                liteMode
-                  ? "bg-amber-500/10 text-amber-500 border-amber-500/25"
-                  : "bg-blue-600/10 text-blue-600 dark:text-blue-400 border-blue-600/25"
-              )}>
-                {liteMode ? <Zap className="w-5 h-5 fill-current" /> : <Scan className="w-5 h-5" />}
-              </div>
-              <div>
-                <div className="flex items-center gap-2 flex-wrap">
-                  <span className="font-extrabold text-slate-900 dark:text-white text-sm sm:text-base">
-                    {liteMode ? 'Lite Mode Terminal Active' : 'Daily Attendance Terminal Active'}
-                  </span>
-                  <span className="text-[10px] font-bold uppercase px-2 py-0.5 rounded-full bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border border-emerald-500/30 flex items-center gap-1">
-                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
-                    LIVE SYNC
-                  </span>
-                  <span className="inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-500/15 text-amber-700 dark:text-amber-300 border border-amber-500/30" title={`Arrivals after ${format12Hour(activeCutoffTime)} are marked Late`}>
-                    <Clock className="w-3 h-3 text-amber-600 dark:text-amber-400" />
-                    Cutoff: {format12Hour(activeCutoffTime)}
-                  </span>
-                  {scopedCategory && (
-                    <span className="inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full bg-blue-500/15 text-blue-700 dark:text-blue-300 border border-blue-500/30">
-                      <Users className="w-3 h-3" />
-                      Class {scopedCategory}
-                    </span>
-                  )}
+          {/* 1. Integrated Modern Terminal Executive Deck */}
+          <div className="rounded-3xl border border-slate-200/80 dark:border-white/10 bg-white/85 dark:bg-slate-900/80 backdrop-blur-2xl p-4 sm:p-5 shadow-xs">
+            {/* Meta Strip: School Breadcrumb + Live Status Pills + Live Clock */}
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 pb-3.5 mb-3.5 border-b border-slate-200/60 dark:border-white/5">
+              <div className="flex items-center gap-2 flex-wrap">
+                <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-blue-500/10 text-blue-600 dark:text-blue-400 border border-blue-500/20 text-xs font-bold">
+                  <ShieldCheck className="w-3.5 h-3.5" />
+                  <span>PM Shri KV NFC Vigyan Vihar</span>
                 </div>
-                <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
-                  {liteMode 
-                    ? `Optimized for smooth high-speed attendance${signals?.slowNetwork ? ` · Slow network (${signals.effectiveType})` : ''}${signals?.saveData ? ' · Data saver' : ''}`
-                    : 'High-speed biometric recognition active · Keep face visible in camera'}
-                </p>
+                <span className="text-slate-300 dark:text-slate-700 hidden sm:inline">•</span>
+                <span className="text-xs font-semibold text-slate-500 dark:text-slate-400">Presences AI Terminal</span>
+                {scopedCategory && (
+                  <span className="inline-flex items-center gap-1 text-[11px] font-bold px-2 py-0.5 rounded-full bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 border border-indigo-500/20">
+                    <Users className="w-3 h-3" />
+                    Class {scopedCategory}
+                  </span>
+                )}
+              </div>
+
+              <div className="flex items-center gap-2 flex-wrap">
+                <span className="inline-flex items-center gap-1.5 text-xs font-bold px-2.5 py-1 rounded-full bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20">
+                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                  LIVE SYNC
+                </span>
+                <span className="inline-flex items-center gap-1 text-xs font-semibold px-2.5 py-1 rounded-full bg-slate-100 dark:bg-white/5 text-slate-700 dark:text-slate-300 border border-slate-200/60 dark:border-white/10">
+                  <Clock className="w-3.5 h-3.5 text-slate-400" />
+                  <span>Cutoff: {format12Hour(activeCutoffTime)}</span>
+                </span>
+                <div className="pl-1">
+                  <AppleLiveClock />
+                </div>
               </div>
             </div>
 
-            <div className="flex flex-col sm:flex-row items-start sm:items-center gap-2 self-stretch sm:self-auto justify-end flex-wrap">
-              {/* Feedback Toggles */}
-              <div className="flex items-center gap-1.5 flex-wrap">
-                <button
-                  type="button"
-                  onClick={() => toggleFeedback('sound')}
-                  title={feedbackPrefs.sound ? 'Mute Arrival Sound' : 'Enable Arrival Sound'}
-                  className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-xl text-xs font-semibold border transition-all cursor-pointer ${
-                    feedbackPrefs.sound
-                      ? 'bg-blue-500/10 text-blue-600 dark:text-blue-400 border-blue-500/30'
-                      : 'bg-slate-100 dark:bg-slate-800/80 text-slate-400 border-slate-200 dark:border-slate-700'
-                  }`}
-                >
-                  {feedbackPrefs.sound ? <Volume2 className="w-3.5 h-3.5" /> : <VolumeX className="w-3.5 h-3.5" />}
-                  <span>Sound {feedbackPrefs.sound ? 'on' : 'off'}</span>
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => toggleFeedback('vibrate')}
-                  title={feedbackPrefs.vibrate ? 'Disable Vibration' : 'Enable Vibration'}
-                  className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-xl text-xs font-semibold border transition-all cursor-pointer ${
-                    feedbackPrefs.vibrate
-                      ? 'bg-blue-500/10 text-blue-600 dark:text-blue-400 border-blue-500/30'
-                      : 'bg-slate-100 dark:bg-slate-800/80 text-slate-400 border-slate-200 dark:border-slate-700'
-                  }`}
-                >
-                  {feedbackPrefs.vibrate ? <Vibrate className="w-3.5 h-3.5" /> : <VibrateOff className="w-3.5 h-3.5" />}
-                  <span>Vibrate {feedbackPrefs.vibrate ? 'on' : 'off'}</span>
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => toggleFeedback('flash')}
-                  title={feedbackPrefs.flash ? 'Disable Visual Flash' : 'Enable Visual Flash'}
-                  className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-xl text-xs font-semibold border transition-all cursor-pointer ${
-                    feedbackPrefs.flash
-                      ? 'bg-blue-500/10 text-blue-600 dark:text-blue-400 border-blue-500/30'
-                      : 'bg-slate-100 dark:bg-slate-800/80 text-slate-400 border-slate-200 dark:border-slate-700'
-                  }`}
-                >
-                  {feedbackPrefs.flash ? <Sun className="w-3.5 h-3.5" /> : <SunDim className="w-3.5 h-3.5" />}
-                  <span>Flash {feedbackPrefs.flash ? 'on' : 'off'}</span>
-                </button>
+            {/* Main Terminal Bar: Title & High-Speed Recognition Status on Left, Controls Deck on Right */}
+            <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
+              <div className="flex items-center gap-3">
+                <div className={cn(
+                  "w-11 h-11 rounded-2xl flex items-center justify-center flex-shrink-0 border shadow-xs",
+                  liteMode
+                    ? "bg-amber-500/10 text-amber-500 border-amber-500/25"
+                    : "bg-blue-600/10 text-blue-600 dark:text-blue-400 border-blue-600/25"
+                )}>
+                  {liteMode ? <Zap className="w-5 h-5 fill-current" /> : <Scan className="w-5 h-5" />}
+                </div>
+                <div>
+                  <h1 className="text-xl sm:text-2xl font-black tracking-tight text-slate-900 dark:text-white flex items-center gap-2">
+                    <span>Daily Attendance</span>
+                    {liteMode && (
+                      <span className="text-[11px] font-extrabold uppercase tracking-wider px-2 py-0.5 rounded-md bg-amber-500/15 text-amber-600 dark:text-amber-400 border border-amber-500/30">
+                        Fast Mode
+                      </span>
+                    )}
+                  </h1>
+                  <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+                    {liteMode 
+                      ? `Optimized for fast attendance${signals?.slowNetwork ? ` · Slow network (${signals.effectiveType})` : ''}${signals?.saveData ? ' · Data saver' : ''}`
+                      : 'High-speed biometric recognition active · Keep face visible in camera'}
+                  </p>
+                </div>
               </div>
 
-              {/* Mode Switcher */}
-              <LiteModeToggle variant="segmented" />
+              {/* Streamlined Right Controls: Unified Toolbar */}
+              <div className="flex items-center gap-2 flex-wrap sm:flex-nowrap justify-end">
+                {/* Feedback Quick Action Bar */}
+                <div className="inline-flex items-center p-1 rounded-xl bg-slate-100 dark:bg-white/5 border border-slate-200/80 dark:border-white/10 gap-0.5">
+                  <button
+                    type="button"
+                    onClick={() => toggleFeedback('sound')}
+                    title={feedbackPrefs.sound ? 'Mute Arrival Sound' : 'Enable Arrival Sound'}
+                    className={`p-2 rounded-lg text-xs font-semibold transition-all cursor-pointer flex items-center gap-1 ${
+                      feedbackPrefs.sound
+                        ? 'bg-white dark:bg-slate-800 text-blue-600 dark:text-blue-400 shadow-xs'
+                        : 'text-slate-400 hover:text-slate-600 dark:hover:text-slate-300'
+                    }`}
+                  >
+                    {feedbackPrefs.sound ? <Volume2 className="w-4 h-4" /> : <VolumeX className="w-4 h-4" />}
+                    <span className="hidden xl:inline text-[11px] font-medium">Sound</span>
+                  </button>
 
-              {/* Kiosk Fullscreen Focus Button */}
-              <button
-                type="button"
-                onClick={() => setIsKioskFocus(!isKioskFocus)}
-                title={isKioskFocus ? 'Exit Full Screen' : 'Open Full Screen Camera'}
-                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold transition-all border cursor-pointer ${
-                  isKioskFocus
-                    ? 'bg-blue-600 text-white border-blue-500 shadow-md shadow-blue-600/30'
-                    : 'bg-slate-100 dark:bg-slate-800/80 text-slate-700 dark:text-slate-300 border-slate-200 dark:border-slate-700 hover:bg-slate-200 dark:hover:bg-slate-700'
-                }`}
-              >
-                {isKioskFocus ? <Minimize2 className="h-3.5 w-3.5" /> : <Maximize2 className="h-3.5 w-3.5" />}
-                <span className="hidden sm:inline">{isKioskFocus ? 'Normal View' : 'Full Screen'}</span>
-              </button>
+                  <button
+                    type="button"
+                    onClick={() => toggleFeedback('vibrate')}
+                    title={feedbackPrefs.vibrate ? 'Disable Vibration' : 'Enable Vibration'}
+                    className={`p-2 rounded-lg text-xs font-semibold transition-all cursor-pointer flex items-center gap-1 ${
+                      feedbackPrefs.vibrate
+                        ? 'bg-white dark:bg-slate-800 text-blue-600 dark:text-blue-400 shadow-xs'
+                        : 'text-slate-400 hover:text-slate-600 dark:hover:text-slate-300'
+                    }`}
+                  >
+                    {feedbackPrefs.vibrate ? <Vibrate className="w-4 h-4" /> : <VibrateOff className="w-4 h-4" />}
+                    <span className="hidden xl:inline text-[11px] font-medium">Vibe</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => toggleFeedback('flash')}
+                    title={feedbackPrefs.flash ? 'Disable Visual Flash' : 'Enable Visual Flash'}
+                    className={`p-2 rounded-lg text-xs font-semibold transition-all cursor-pointer flex items-center gap-1 ${
+                      feedbackPrefs.flash
+                        ? 'bg-white dark:bg-slate-800 text-blue-600 dark:text-blue-400 shadow-xs'
+                        : 'text-slate-400 hover:text-slate-600 dark:hover:text-slate-300'
+                    }`}
+                  >
+                    {feedbackPrefs.flash ? <Sun className="w-4 h-4" /> : <SunDim className="w-4 h-4" />}
+                    <span className="hidden xl:inline text-[11px] font-medium">Flash</span>
+                  </button>
+                </div>
+
+                {/* Segmented Standard / Fast Mode Toggle */}
+                <LiteModeToggle variant="segmented" />
+
+                {/* Fullscreen Button */}
+                <button
+                  type="button"
+                  onClick={() => setIsKioskFocus(!isKioskFocus)}
+                  title={isKioskFocus ? 'Exit Full Screen' : 'Open Full Screen Camera'}
+                  className={`flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold transition-all border cursor-pointer shrink-0 min-h-[38px] sm:min-h-[36px] ${
+                    isKioskFocus
+                      ? 'bg-blue-600 text-white border-blue-500 shadow-sm'
+                      : 'bg-white dark:bg-white/5 text-slate-700 dark:text-slate-300 border-slate-200/80 dark:border-white/10 hover:bg-slate-100 dark:hover:bg-white/10'
+                  }`}
+                >
+                  {isKioskFocus ? <Minimize2 className="h-4 w-4" /> : <Maximize2 className="h-4 w-4" />}
+                  <span className="hidden sm:inline">{isKioskFocus ? 'Normal' : 'Full Screen'}</span>
+                </button>
+              </div>
             </div>
           </div>
 
-          {/* 3. The 4 Clean Metric Cards (Fluid Bento Grid, Auto-fit, Zero Clutter) */}
+          {/* 2. The 4 Clean Metric Cards (Fluid Bento Grid, Cohesive Glass Surface) */}
           {!isKioskFocus && (
             <div className="bento-grid-fluid">
-              <div className="rounded-2xl border border-slate-200/80 dark:border-slate-800 bg-white/90 dark:bg-slate-900/90 p-3.5 sm:p-4 shadow-xs hover:border-slate-300 dark:hover:border-slate-700 transition-colors">
-                <div className="flex items-center justify-between text-slate-500 dark:text-slate-400 text-xs font-bold uppercase tracking-wider">
-                  <span>ENROLLED</span>
-                  <Users className="w-4 h-4 text-indigo-500" />
+              <div className="rounded-2xl border border-slate-200/80 dark:border-white/10 bg-white/80 dark:bg-slate-900/80 backdrop-blur-xl p-4 sm:p-5 shadow-xs hover:border-slate-300 dark:hover:border-white/20 transition-all">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">ENROLLED</span>
+                  <div className="w-8 h-8 rounded-xl bg-indigo-500/10 text-indigo-500 dark:text-indigo-400 flex items-center justify-center">
+                    <Users className="w-4 h-4" />
+                  </div>
                 </div>
-                <div className="text-2xl sm:text-3xl font-black text-slate-900 dark:text-white font-mono mt-1.5">
+                <div className="text-3xl sm:text-4xl font-extrabold text-slate-900 dark:text-white font-mono mt-2">
                   {stats.totalRegistered}
                 </div>
-                <div className="text-[11px] text-muted-foreground font-medium truncate mt-0.5">
-                  Registered roster
+                <div className="text-xs text-slate-500 dark:text-slate-400 font-medium truncate mt-1 flex items-center gap-1.5">
+                  <span className="w-1.5 h-1.5 rounded-full bg-indigo-500 shrink-0" />
+                  <span>Registered roster</span>
                 </div>
               </div>
 
-              <div className="rounded-2xl border border-emerald-500/25 bg-emerald-500/5 dark:bg-emerald-500/10 p-3.5 sm:p-4 shadow-xs">
-                <div className="flex items-center justify-between text-emerald-600 dark:text-emerald-400 text-xs font-bold uppercase tracking-wider">
-                  <span>PRESENT</span>
-                  <CheckCircle2 className="w-4 h-4 text-emerald-500" />
+              <div className="rounded-2xl border border-slate-200/80 dark:border-white/10 bg-white/80 dark:bg-slate-900/80 backdrop-blur-xl p-4 sm:p-5 shadow-xs hover:border-slate-300 dark:hover:border-white/20 transition-all">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">PRESENT</span>
+                  <div className="w-8 h-8 rounded-xl bg-emerald-500/10 text-emerald-500 dark:text-emerald-400 flex items-center justify-center">
+                    <CheckCircle2 className="w-4 h-4" />
+                  </div>
                 </div>
-                <div className="text-2xl sm:text-3xl font-black text-emerald-600 dark:text-emerald-400 font-mono mt-1.5">
+                <div className="text-3xl sm:text-4xl font-extrabold text-emerald-600 dark:text-emerald-400 font-mono mt-2">
                   {stats.presentToday}
                 </div>
-                <div className="text-[11px] text-emerald-600/80 dark:text-emerald-400/80 font-medium truncate mt-0.5">
-                  Before {format12Hour(activeCutoffTime)}
+                <div className="text-xs text-slate-500 dark:text-slate-400 font-medium truncate mt-1 flex items-center gap-1.5">
+                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 shrink-0" />
+                  <span>Before {format12Hour(activeCutoffTime)}</span>
                 </div>
               </div>
 
-              <div className="rounded-2xl border border-amber-500/25 bg-amber-500/5 dark:bg-amber-500/10 p-3.5 sm:p-4 shadow-xs">
-                <div className="flex items-center justify-between text-amber-600 dark:text-amber-400 text-xs font-bold uppercase tracking-wider">
-                  <span>LATE</span>
-                  <Clock className="w-4 h-4 text-amber-500" />
+              <div className="rounded-2xl border border-slate-200/80 dark:border-white/10 bg-white/80 dark:bg-slate-900/80 backdrop-blur-xl p-4 sm:p-5 shadow-xs hover:border-slate-300 dark:hover:border-white/20 transition-all">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">LATE</span>
+                  <div className="w-8 h-8 rounded-xl bg-amber-500/10 text-amber-500 dark:text-amber-400 flex items-center justify-center">
+                    <Clock className="w-4 h-4" />
+                  </div>
                 </div>
-                <div className="text-2xl sm:text-3xl font-black text-amber-600 dark:text-amber-400 font-mono mt-1.5">
+                <div className="text-3xl sm:text-4xl font-extrabold text-amber-600 dark:text-amber-400 font-mono mt-2">
                   {stats.lateToday}
                 </div>
-                <div className="text-[11px] text-amber-600/80 dark:text-amber-400/80 font-medium truncate mt-0.5">
-                  After {format12Hour(activeCutoffTime)}
+                <div className="text-xs text-slate-500 dark:text-slate-400 font-medium truncate mt-1 flex items-center gap-1.5">
+                  <span className="w-1.5 h-1.5 rounded-full bg-amber-500 shrink-0" />
+                  <span>After {format12Hour(activeCutoffTime)}</span>
                 </div>
               </div>
 
-              <div className="rounded-2xl border border-blue-500/25 bg-blue-500/5 dark:bg-blue-500/10 p-3.5 sm:p-4 shadow-xs">
-                <div className="flex items-center justify-between text-blue-600 dark:text-blue-400 text-xs font-bold uppercase tracking-wider">
-                  <span>TURNOUT</span>
-                  <TrendingUp className="w-4 h-4 text-blue-500" />
+              <div className="rounded-2xl border border-slate-200/80 dark:border-white/10 bg-white/80 dark:bg-slate-900/80 backdrop-blur-xl p-4 sm:p-5 shadow-xs hover:border-slate-300 dark:hover:border-white/20 transition-all">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">TURNOUT</span>
+                  <div className="w-8 h-8 rounded-xl bg-blue-500/10 text-blue-500 dark:text-blue-400 flex items-center justify-center">
+                    <TrendingUp className="w-4 h-4" />
+                  </div>
                 </div>
-                <div className="text-2xl sm:text-3xl font-black text-blue-600 dark:text-blue-400 font-mono mt-1.5">
+                <div className="text-3xl sm:text-4xl font-extrabold text-blue-600 dark:text-blue-400 font-mono mt-2">
                   {stats.attendanceRate}%
                 </div>
-                <div className="text-[11px] text-blue-600/80 dark:text-blue-400/80 font-medium truncate mt-0.5">
-                  Attendance rate
+                <div className="text-xs text-slate-500 dark:text-slate-400 font-medium truncate mt-1 flex items-center gap-1.5">
+                  <span className="w-1.5 h-1.5 rounded-full bg-blue-500 shrink-0" />
+                  <span>Attendance rate</span>
                 </div>
               </div>
             </div>

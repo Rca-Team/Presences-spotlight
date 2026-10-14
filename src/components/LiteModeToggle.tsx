@@ -47,7 +47,7 @@ export const LiteModeToggle: React.FC<LiteModeToggleProps> = ({
           {!liteMode && (
             <motion.div
               layoutId="mode-segmented-active"
-              className="absolute inset-0 rounded-xl bg-gradient-to-r from-blue-600 via-indigo-600 to-violet-600 shadow-md shadow-blue-500/25 pointer-events-none"
+              className="absolute inset-0 rounded-xl bg-blue-600 shadow-sm pointer-events-none"
               transition={{ type: 'spring', stiffness: 480, damping: 32 }}
             />
           )}
@@ -62,7 +62,7 @@ export const LiteModeToggle: React.FC<LiteModeToggleProps> = ({
             setPreference('on');
           }}
           className={`relative z-10 flex items-center justify-center gap-1.5 px-3 sm:px-3.5 py-2 sm:py-1.5 min-h-[38px] sm:min-h-[32px] rounded-xl text-xs font-semibold transition-all cursor-pointer touch-manipulation active:scale-95 ${
-            liteMode ? 'text-amber-950 dark:text-amber-950 font-bold' : 'text-muted-foreground hover:text-foreground'
+            liteMode ? 'text-amber-950 font-bold' : 'text-muted-foreground hover:text-foreground'
           }`}
           aria-label="Switch to Fast Mode"
           title="Switch to Fast Mode"
@@ -70,7 +70,7 @@ export const LiteModeToggle: React.FC<LiteModeToggleProps> = ({
           {liteMode && (
             <motion.div
               layoutId="mode-segmented-active"
-              className="absolute inset-0 rounded-xl bg-gradient-to-r from-amber-400 to-amber-500 shadow-md shadow-amber-500/30 pointer-events-none"
+              className="absolute inset-0 rounded-xl bg-amber-400 shadow-sm pointer-events-none"
               transition={{ type: 'spring', stiffness: 480, damping: 32 }}
             />
           )}
