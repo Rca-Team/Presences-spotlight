@@ -96,7 +96,7 @@ let cachedDescriptorPhotoMaps: {
 } | null = null;
 
 function deriveFacesAndStatusesFromSnapshot(
-  snapshot: UnifiedStudentSnapshot,
+  snapshot: UnifiedStudentSnapshot | null | undefined,
   countsMap?: Record<string, number> | null,
   descriptorMaps?: { byUserId: Map<string, string>; byStudentKey: Map<string, string> } | null
 ): {
@@ -104,9 +104,19 @@ function deriveFacesAndStatusesFromSnapshot(
   statuses: Record<string, { status: TodayStatus; time?: string }>;
 } {
   const statusMap: Record<string, { status: TodayStatus; time?: string }> = {};
-  const faces: RegisteredFace[] = snapshot.students.map((student) => {
+  if (!snapshot) return { faces: [], statuses: {} };
+
+  const studentList: CanonicalStudent[] = Array.isArray(snapshot.roster)
+    ? snapshot.roster
+    : Array.isArray((snapshot as any).students)
+      ? (snapshot as any).students
+      : [];
+
+  const statusesById = snapshot.statusesByEmployeeId || {};
+
+  const faces: RegisteredFace[] = studentList.map((student) => {
     const empId = student.employee_id || student.admission_number || student.user_id || student.id;
-    const empKey = empId.toLowerCase();
+    const empKey = empId ? empId.toLowerCase() : '';
     const uid = student.user_id || '';
 
     const candidateImg = pickPreferredPhotoCandidate(
@@ -118,7 +128,7 @@ function deriveFacesAndStatusesFromSnapshot(
 
     const candidateKeys = [empId, student.admission_number, student.user_id, student.id].filter(Boolean) as string[];
     const matched = candidateKeys
-      .map((key) => snapshot.statusesByEmployeeId[key])
+      .map((key) => statusesById[key])
       .find(Boolean);
 
     statusMap[empId] = matched
@@ -156,10 +166,16 @@ const AdminFacesList: React.FC<AdminFacesListProps> = ({
   const { toast } = useToast();
   const navigate = useNavigate();
   const initialSnapshot = useMemo(() => getCachedUnifiedStudentSnapshot(), []);
-  const initialDerived = useMemo(
-    () => (initialSnapshot ? deriveFacesAndStatusesFromSnapshot(initialSnapshot, cachedAttendanceCounts, cachedDescriptorPhotoMaps) : null),
-    [initialSnapshot]
-  );
+  const initialDerived = useMemo(() => {
+    if (!initialSnapshot) return null;
+    try {
+      const derived = deriveFacesAndStatusesFromSnapshot(initialSnapshot, cachedAttendanceCounts, cachedDescriptorPhotoMaps);
+      return derived.faces.length > 0 ? derived : null;
+    } catch (e) {
+      console.warn('[AdminFacesList] Failed to derive initial faces:', e);
+      return null;
+    }
+  }, [initialSnapshot]);
 
   const [subTab, setSubTab] = useState<'roster' | 'calendar'>('roster');
   const [isLoading, setIsLoading] = useState(() => !initialDerived);

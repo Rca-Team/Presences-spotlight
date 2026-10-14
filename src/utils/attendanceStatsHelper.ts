@@ -53,6 +53,7 @@ export interface UnifiedStudentSnapshot {
   attendanceRate: number;
   statusesByEmployeeId: Record<string, UnifiedStudentStatus>;
   roster: CanonicalStudent[];
+  students: CanonicalStudent[];
   recentCheckIns?: UnifiedRecentCheckIn[];
 }
 
@@ -437,7 +438,10 @@ try {
     const raw = sessionStorage.getItem(SNAPSHOT_STORAGE_KEY);
     if (raw) {
       const parsed = JSON.parse(raw) as { data: UnifiedStudentSnapshot; savedAt: number };
-      if (parsed?.data && Array.isArray(parsed.data.roster) && Date.now() - parsed.savedAt < 5 * 60 * 1000) {
+      const rawRoster = parsed?.data?.roster || (parsed?.data as any)?.students;
+      if (parsed?.data && Array.isArray(rawRoster) && Date.now() - parsed.savedAt < 5 * 60 * 1000) {
+        parsed.data.roster = rawRoster;
+        parsed.data.students = rawRoster;
         cachedSnapshot = {
           data: parsed.data,
           expiresAt: parsed.savedAt + SNAPSHOT_TTL_MS,
@@ -450,7 +454,13 @@ try {
 }
 
 export function getCachedUnifiedStudentSnapshot(): UnifiedStudentSnapshot | null {
-  return cachedSnapshot?.data || null;
+  if (cachedSnapshot?.data) {
+    const d = cachedSnapshot.data;
+    if (!d.roster && (d as any).students) d.roster = (d as any).students;
+    if (!d.students && d.roster) d.students = d.roster;
+    return d;
+  }
+  return null;
 }
 
 export function invalidateUnifiedStatsCache() {
@@ -652,6 +662,7 @@ export async function fetchUnifiedStudentSnapshot(forceFresh = false): Promise<U
         attendanceRate,
         statusesByEmployeeId,
         roster,
+        students: roster,
         recentCheckIns,
       };
       cachedSnapshot = { data: result, expiresAt: Date.now() + SNAPSHOT_TTL_MS };

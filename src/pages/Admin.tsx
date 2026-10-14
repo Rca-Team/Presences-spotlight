@@ -349,10 +349,15 @@ const Admin = () => {
     if (activeTab === 'notifications' && availableFaces.length === 0) {
       fetchUnifiedStudentSnapshot()
         .then((unified) => {
+          const studentList = Array.isArray(unified?.roster)
+            ? unified.roster
+            : Array.isArray((unified as any)?.students)
+              ? (unified as any).students
+              : [];
           setAvailableFaces(
-            unified.students.map((s) => ({
+            studentList.map((s) => ({
               id: s.id,
-              user_id: s.user_id,
+              user_id: s.user_id || undefined,
               name: s.name,
               employee_id: s.employee_id,
               category: s.category || 'A',
