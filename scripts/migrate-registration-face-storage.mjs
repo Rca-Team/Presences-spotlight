@@ -4,7 +4,7 @@ import { Client, Storage, Query, Permission, Role } from 'node-appwrite';
 import { InputFile } from 'node-appwrite/file';
 const bucketId = 'student-registration-faces';
 const sourceUrl = 'https://cvdcbcsonlianbfeessy.supabase.co';
-const endpoint = 'https://sgp.cloud.appwrite.io/v1', project = '6abfd34f000604fcf074';
+const endpoint = 'https://sgp.cloud.appwrite.io/v1', project = '6accbd5d00053c5c1ac2';
 if (!process.env.SUPABASE_STORAGE_KEY || !process.env.APPWRITE_API_KEY) throw new Error('Provide storage credentials through environment variables.');
 const storage = new Storage(new Client().setEndpoint(endpoint).setProject(project).setKey(process.env.APPWRITE_API_KEY));
 const sourceHeaders = { apikey: process.env.SUPABASE_STORAGE_KEY, Authorization: 'Bearer ' + process.env.SUPABASE_STORAGE_KEY };

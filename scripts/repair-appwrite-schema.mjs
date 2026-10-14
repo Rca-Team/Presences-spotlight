@@ -43,7 +43,7 @@ schema.set('realtime_messages',new Map([
 ]));
 const key = process.env.APPWRITE_API_KEY;
 if (!key) throw new Error('APPWRITE_API_KEY must be provided through the environment.');
-const client = new Client().setEndpoint(process.env.APPWRITE_ENDPOINT || 'https://sgp.cloud.appwrite.io/v1').setProject(process.env.APPWRITE_PROJECT_ID || '6abfd34f000604fcf074').setKey(key);
+const client = new Client().setEndpoint(process.env.APPWRITE_ENDPOINT || 'https://sgp.cloud.appwrite.io/v1').setProject(process.env.APPWRITE_PROJECT_ID || process.env.VITE_APPWRITE_PROJECT_ID || '6accbd5d00053c5c1ac2').setKey(key);
 const db = new Databases(client);
 const databaseId = 'presences_db';
 const apply = process.argv.includes('--apply');

@@ -1587,53 +1587,53 @@ export const TeacherAdminWorkspace: React.FC<TeacherAdminWorkspaceProps> = ({ in
 
       {activeClass && (
         <div className="space-y-4">
-          {/* Quick Metrics Bar - Nano Card Bento Strip */}
-          <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
-            <div className="nano-card p-3.5 flex items-center justify-between">
+          {/* Quick Metrics Bar - Fluid Bento Grid Strip */}
+          <div className="bento-grid-fluid">
+            <div className="nano-card p-3.5 sm:p-4 flex items-center justify-between rounded-2xl">
               <div>
-                <p className="text-xs text-muted-foreground font-medium">Total Students</p>
-                <p className="text-2xl font-bold text-foreground mt-0.5">{stats.total}</p>
+                <p className="text-xs text-muted-foreground font-semibold">Total Students</p>
+                <p className="text-2xl font-black text-foreground mt-0.5">{stats.total}</p>
               </div>
-              <div className="h-9 w-9 rounded-xl bg-muted/60 flex items-center justify-center text-muted-foreground">
+              <div className="h-9 w-9 rounded-xl bg-muted/60 flex items-center justify-center text-muted-foreground shrink-0">
                 <Users className="h-4 w-4" />
               </div>
             </div>
 
-            <div className="nano-card p-3.5 flex items-center justify-between border-emerald-500/20 bg-emerald-500/5">
+            <div className="nano-card p-3.5 sm:p-4 flex items-center justify-between border-emerald-500/25 bg-emerald-500/5 rounded-2xl">
               <div>
-                <p className="text-xs text-emerald-600 dark:text-emerald-400 font-medium">Present Today</p>
-                <p className="text-2xl font-bold text-emerald-600 dark:text-emerald-400 mt-0.5">{stats.present}</p>
+                <p className="text-xs text-emerald-600 dark:text-emerald-400 font-semibold">Present Today</p>
+                <p className="text-2xl font-black text-emerald-600 dark:text-emerald-400 mt-0.5">{stats.present}</p>
               </div>
-              <div className="h-9 w-9 rounded-xl bg-emerald-500/10 flex items-center justify-center text-emerald-500">
+              <div className="h-9 w-9 rounded-xl bg-emerald-500/10 flex items-center justify-center text-emerald-500 shrink-0">
                 <CheckCircle2 className="h-4 w-4" />
               </div>
             </div>
 
-            <div className="nano-card p-3.5 flex items-center justify-between border-amber-500/20 bg-amber-500/5">
+            <div className="nano-card p-3.5 sm:p-4 flex items-center justify-between border-amber-500/25 bg-amber-500/5 rounded-2xl">
               <div>
-                <p className="text-xs text-amber-600 dark:text-amber-400 font-medium">Late Arrivals</p>
-                <p className="text-2xl font-bold text-amber-600 dark:text-amber-400 mt-0.5">{stats.late}</p>
+                <p className="text-xs text-amber-600 dark:text-amber-400 font-semibold">Late Arrivals</p>
+                <p className="text-2xl font-black text-amber-600 dark:text-amber-400 mt-0.5">{stats.late}</p>
               </div>
-              <div className="h-9 w-9 rounded-xl bg-amber-500/10 flex items-center justify-center text-amber-500">
+              <div className="h-9 w-9 rounded-xl bg-amber-500/10 flex items-center justify-center text-amber-500 shrink-0">
                 <Clock className="h-4 w-4" />
               </div>
             </div>
 
-            <div className="nano-card p-3.5 flex items-center justify-between border-rose-500/20 bg-rose-500/5">
+            <div className="nano-card p-3.5 sm:p-4 flex items-center justify-between border-rose-500/25 bg-rose-500/5 rounded-2xl">
               <div>
-                <p className="text-xs text-rose-600 dark:text-rose-400 font-medium">Absent Today</p>
-                <p className="text-2xl font-bold text-rose-600 dark:text-rose-400 mt-0.5">{stats.absent}</p>
+                <p className="text-xs text-rose-600 dark:text-rose-400 font-semibold">Absent Today</p>
+                <p className="text-2xl font-black text-rose-600 dark:text-rose-400 mt-0.5">{stats.absent}</p>
               </div>
-              <div className="h-9 w-9 rounded-xl bg-rose-500/10 flex items-center justify-center text-rose-500">
+              <div className="h-9 w-9 rounded-xl bg-rose-500/10 flex items-center justify-center text-rose-500 shrink-0">
                 <XCircle className="h-4 w-4" />
               </div>
             </div>
 
-            <div className="nano-card p-3.5 flex items-center justify-between col-span-2 sm:col-span-1 border-primary/20 bg-primary/5">
+            <div className="nano-card p-3.5 sm:p-4 flex items-center justify-between border-primary/25 bg-primary/5 rounded-2xl">
               <div className="min-w-0 flex-1">
                 <div className="flex items-center gap-1.5 flex-wrap">
-                  <p className="text-xs text-primary font-semibold">Attendance Rate</p>
-                  <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded-full font-mono shrink-0 ${stats.attendancePct >= 75 ? 'bg-emerald-500/15 text-emerald-600 dark:text-emerald-400' : 'bg-rose-500/15 text-rose-600 dark:text-rose-400'}`}>
+                  <p className="text-xs text-primary font-bold">Turnout Rate</p>
+                  <span className={`text-[9px] font-extrabold px-1.5 py-0.5 rounded-full font-mono shrink-0 ${stats.attendancePct >= 75 ? 'bg-emerald-500/15 text-emerald-600 dark:text-emerald-400' : 'bg-rose-500/15 text-rose-600 dark:text-rose-400'}`}>
                     {stats.attendancePct >= 75 ? 'CBSE Ok' : 'Defaulter'}
                   </span>
                 </div>
@@ -1651,57 +1651,57 @@ export const TeacherAdminWorkspace: React.FC<TeacherAdminWorkspaceProps> = ({ in
             </Button>
           </div>
 
-          {/* Main Navigation Tabs */}
+          {/* Main Navigation Tabs with Edge Masking */}
           <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full space-y-4">
-            <div className="overflow-x-auto pb-1 no-scrollbar">
-              <TabsList className="nano-glass-dock p-1.5 rounded-2xl inline-flex w-full sm:w-auto border border-slate-200/70 dark:border-white/10 shadow-xs">
-                <TabsTrigger value="overview" className="gap-1.5 rounded-xl text-xs sm:text-sm py-2 px-3.5 font-bold data-[state=active]:bg-gradient-to-r data-[state=active]:from-blue-600 data-[state=active]:to-indigo-600 data-[state=active]:text-white data-[state=active]:shadow-md">
-                  <LayoutDashboard className="h-4 w-4" /> Overview Dashboard
+            <div className="overflow-x-auto pb-1.5 no-scrollbar scroll-mask-edges">
+              <TabsList className="p-1 rounded-2xl inline-flex w-max min-w-full sm:min-w-0 border border-slate-200/80 dark:border-white/10 shadow-xs bg-slate-100/90 dark:bg-slate-900/80">
+                <TabsTrigger value="overview" className="gap-1.5 rounded-xl text-xs sm:text-sm py-2 px-3 font-bold">
+                  <LayoutDashboard className="h-4 w-4 text-blue-500" /> Overview
                 </TabsTrigger>
-                <TabsTrigger value="daily" className="gap-1.5 rounded-xl text-xs sm:text-sm py-2 px-3.5 font-bold data-[state=active]:bg-gradient-to-r data-[state=active]:from-blue-600 data-[state=active]:to-indigo-600 data-[state=active]:text-white data-[state=active]:shadow-md">
-                  <CheckSquare className="h-4 w-4" /> Daily Attendance
+                <TabsTrigger value="daily" className="gap-1.5 rounded-xl text-xs sm:text-sm py-2 px-3 font-bold">
+                  <CheckSquare className="h-4 w-4 text-emerald-500" /> Daily Roll Call
                   {stats.unmarked > 0 && (
-                    <span className="ml-1 px-1.5 py-0.5 text-[10px] bg-amber-500 text-white rounded-full font-extrabold leading-none">
+                    <span className="ml-1 px-1.5 py-0.5 text-[10px] bg-amber-500 text-white rounded-full font-black leading-none">
                       {stats.unmarked}
                     </span>
                   )}
                 </TabsTrigger>
-                <TabsTrigger value="absentees" className="gap-1.5 rounded-xl text-xs sm:text-sm py-2 px-3.5 font-bold data-[state=active]:bg-gradient-to-r data-[state=active]:from-rose-600 data-[state=active]:to-pink-600 data-[state=active]:text-white data-[state=active]:shadow-md">
-                  <UserX className="h-4 w-4" /> Absentee Radar
+                <TabsTrigger value="absentees" className="gap-1.5 rounded-xl text-xs sm:text-sm py-2 px-3 font-bold">
+                  <UserX className="h-4 w-4 text-rose-500" /> Absentee Radar
                   {stats.absent + stats.unmarked > 0 && (
-                    <span className="ml-1 px-1.5 py-0.5 text-[10px] bg-rose-500 text-white rounded-full font-extrabold leading-none animate-pulse">
+                    <span className="ml-1 px-1.5 py-0.5 text-[10px] bg-rose-500 text-white rounded-full font-black leading-none">
                       {stats.absent + stats.unmarked}
                     </span>
                   )}
                 </TabsTrigger>
-                <TabsTrigger value="register" className="gap-1.5 rounded-xl text-xs sm:text-sm py-2 px-3.5 font-bold data-[state=active]:bg-gradient-to-r data-[state=active]:from-blue-600 data-[state=active]:to-indigo-600 data-[state=active]:text-white data-[state=active]:shadow-md">
-                  <Calendar className="h-4 w-4" /> Monthly Register
+                <TabsTrigger value="register" className="gap-1.5 rounded-xl text-xs sm:text-sm py-2 px-3 font-bold">
+                  <Calendar className="h-4 w-4 text-indigo-500" /> Register
                 </TabsTrigger>
-                <TabsTrigger value="students" className="gap-1.5 rounded-xl text-xs sm:text-sm py-2 px-3.5 font-bold data-[state=active]:bg-gradient-to-r data-[state=active]:from-blue-600 data-[state=active]:to-indigo-600 data-[state=active]:text-white data-[state=active]:shadow-md">
-                  <Users className="h-4 w-4" /> Student Directory ({students.length})
+                <TabsTrigger value="students" className="gap-1.5 rounded-xl text-xs sm:text-sm py-2 px-3 font-bold">
+                  <Users className="h-4 w-4 text-purple-500" /> Students ({students.length})
                 </TabsTrigger>
-                <TabsTrigger value="assignments" className="gap-1.5 rounded-xl text-xs sm:text-sm py-2 px-3.5 font-bold data-[state=active]:bg-gradient-to-r data-[state=active]:from-indigo-600 data-[state=active]:to-purple-600 data-[state=active]:text-white data-[state=active]:shadow-md">
-                  <BookOpen className="h-4 w-4" /> Assignments & Tests
+                <TabsTrigger value="assignments" className="gap-1.5 rounded-xl text-xs sm:text-sm py-2 px-3 font-bold">
+                  <BookOpen className="h-4 w-4 text-cyan-500" /> Assignments
                 </TabsTrigger>
-                <TabsTrigger value="notifications" className="gap-1.5 rounded-xl text-xs sm:text-sm py-2 px-3.5 font-bold data-[state=active]:bg-gradient-to-r data-[state=active]:from-blue-600 data-[state=active]:to-indigo-600 data-[state=active]:text-white data-[state=active]:shadow-md">
-                  <Send className="h-4 w-4" /> Parent Notices
+                <TabsTrigger value="notifications" className="gap-1.5 rounded-xl text-xs sm:text-sm py-2 px-3 font-bold">
+                  <Send className="h-4 w-4 text-blue-500" /> Parent Notices
                 </TabsTrigger>
-                <TabsTrigger value="reports" className="gap-1.5 rounded-xl text-xs sm:text-sm py-2 px-3.5 font-bold data-[state=active]:bg-gradient-to-r data-[state=active]:from-blue-600 data-[state=active]:to-indigo-600 data-[state=active]:text-white data-[state=active]:shadow-md">
-                  <FileDown className="h-4 w-4" /> Class Reports
+                <TabsTrigger value="reports" className="gap-1.5 rounded-xl text-xs sm:text-sm py-2 px-3 font-bold">
+                  <FileDown className="h-4 w-4 text-emerald-500" /> Reports
                 </TabsTrigger>
-                <TabsTrigger value="timetable" className="gap-1.5 rounded-xl text-xs sm:text-sm py-2 px-3.5 font-bold data-[state=active]:bg-gradient-to-r data-[state=active]:from-blue-600 data-[state=active]:to-indigo-600 data-[state=active]:text-white data-[state=active]:shadow-md">
-                  <Calendar className="h-4 w-4" /> Timetable
+                <TabsTrigger value="timetable" className="gap-1.5 rounded-xl text-xs sm:text-sm py-2 px-3 font-bold">
+                  <Calendar className="h-4 w-4 text-orange-500" /> Timetable
                 </TabsTrigger>
-                <TabsTrigger value="gate_passes" className="gap-1.5 rounded-xl text-xs sm:text-sm py-2 px-3.5 font-bold data-[state=active]:bg-gradient-to-r data-[state=active]:from-blue-600 data-[state=active]:to-indigo-600 data-[state=active]:text-white data-[state=active]:shadow-md">
+                <TabsTrigger value="gate_passes" className="gap-1.5 rounded-xl text-xs sm:text-sm py-2 px-3 font-bold">
                   <QrCode className="h-4 w-4 text-amber-500" /> Gate Passes
                   {pendingGatePassesCount > 0 && (
-                    <span className="ml-1 px-1.5 py-0.5 text-[10px] bg-amber-500 text-white rounded-full font-extrabold leading-none animate-pulse">
+                    <span className="ml-1 px-1.5 py-0.5 text-[10px] bg-amber-500 text-white rounded-full font-black leading-none">
                       {pendingGatePassesCount}
                     </span>
                   )}
                 </TabsTrigger>
-                <TabsTrigger value="widgets" className="gap-1.5 rounded-xl text-xs sm:text-sm py-2 px-3.5 font-bold data-[state=active]:bg-gradient-to-r data-[state=active]:from-amber-500 data-[state=active]:to-orange-500 data-[state=active]:text-white data-[state=active]:shadow-md">
-                  <Smartphone className="h-4 w-4 text-amber-500 data-[state=active]:text-white" /> Android Widgets
+                <TabsTrigger value="widgets" className="gap-1.5 rounded-xl text-xs sm:text-sm py-2 px-3 font-bold">
+                  <Smartphone className="h-4 w-4 text-amber-500" /> Widgets
                 </TabsTrigger>
               </TabsList>
             </div>

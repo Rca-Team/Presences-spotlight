@@ -457,7 +457,7 @@ export function aiEnhanceFaceCanvas(canvas: HTMLCanvasElement): string {
     avgLum = count > 0 ? avgLum / count : 128;
 
     const exposureGain = avgLum < 105 ? (128 - avgLum) * 0.38 : avgLum > 175 ? (128 - avgLum) * 0.28 : 0;
-    const contrastFactor = 1.06;
+    const contrastFactor: number = 1.06;
 
     if (Math.abs(exposureGain) > 2 || contrastFactor !== 1) {
       // Precompute 256-entry lookup table (LUT) so pixel pass is just array indexing

@@ -55,6 +55,7 @@ import {
   getCachedUnifiedStudentSnapshot,
   invalidateUnifiedStatsCache,
   type UnifiedStudentSnapshot,
+  type CanonicalStudent,
 } from '@/utils/attendanceStatsHelper';
 import { pickPreferredPhotoCandidate, resolveStudentPhotoUrlSync } from '@/utils/studentPhotoResolver';
 import { CLASSES, SECTIONS, parseCategory } from '@/constants/schoolConfig';
@@ -226,7 +227,7 @@ const AdminFacesList: React.FC<AdminFacesListProps> = ({
   const extractClass = (department: string): string => {
     if (!department) return '';
     const parsed = parseCategory(department);
-    if (parsed?.classNum) return parsed.classNum;
+    if (parsed?.class) return String(parsed.class);
     const match = department.match(/(?:Class|Grade)\s*(\d+)/i) || department.match(/(\d+)\s*-[A-Da-d]/);
     return match ? match[1] : '';
   };

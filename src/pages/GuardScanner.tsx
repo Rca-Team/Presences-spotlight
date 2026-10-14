@@ -490,36 +490,39 @@ export const GuardScanner: React.FC = () => {
         {/* Left Side: Scanner & Search Viewport (7 Cols) */}
         <div className="lg:col-span-7 space-y-3 flex flex-col">
           {/* Navigation Mode Switcher */}
-          <div className="grid grid-cols-3 gap-1.5 bg-slate-900 p-1 rounded-2xl border border-slate-800">
+          <div className="grid grid-cols-3 gap-1.5 bg-slate-900/90 p-1 rounded-2xl border border-slate-800">
             <button
               onClick={() => setActiveTab('camera')}
-              className={`py-2 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-1.5 ${
+              className={`py-2.5 px-2 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-1.5 min-h-[40px] cursor-pointer ${
                 activeTab === 'camera'
                   ? 'bg-blue-600 text-white shadow-md'
                   : 'text-slate-400 hover:text-white'
               }`}
             >
-              <Camera className="h-3.5 w-3.5" /> QR Scanner
+              <Camera className="h-3.5 w-3.5 shrink-0" />
+              <span>QR Scanner</span>
             </button>
             <button
               onClick={() => setActiveTab('search')}
-              className={`py-2 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-1.5 ${
+              className={`py-2.5 px-2 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-1.5 min-h-[40px] cursor-pointer ${
                 activeTab === 'search'
                   ? 'bg-blue-600 text-white shadow-md'
                   : 'text-slate-400 hover:text-white'
               }`}
             >
-              <Search className="h-3.5 w-3.5" /> Search Student
+              <Search className="h-3.5 w-3.5 shrink-0" />
+              <span>Search</span>
             </button>
             <button
               onClick={() => setActiveTab('log')}
-              className={`py-2 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-1.5 ${
+              className={`py-2.5 px-2 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-1.5 min-h-[40px] cursor-pointer ${
                 activeTab === 'log'
                   ? 'bg-blue-600 text-white shadow-md'
                   : 'text-slate-400 hover:text-white'
               }`}
             >
-              <Clock className="h-3.5 w-3.5" /> Exit History ({exitedTodayPasses.length})
+              <Clock className="h-3.5 w-3.5 shrink-0" />
+              <span>Log ({exitedTodayPasses.length})</span>
             </button>
           </div>
 

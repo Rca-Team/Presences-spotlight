@@ -14,7 +14,7 @@ After explicit approval, apply with `node scripts/repair-appwrite-schema.mjs --a
 
 ## Prepared backend deployment
 
-`node scripts/deploy-presences-backend.mjs` prints the plan without deploying. After explicit approval, use `--apply` to deploy `presences-backend` to project `6abfd34f000604fcf074`. The function uses Node 22, signed-in execution, and documents.read, documents.write, and users.read scopes. Server-side verified account labels gate actions.
+`node scripts/deploy-presences-backend.mjs` prints the plan without deploying. After explicit approval, use `--apply` to deploy `presences-backend` to project `6accbd5d00053c5c1ac2`. The function uses Node 22, signed-in execution, and documents.read, documents.write, and users.read scopes. Server-side verified account labels gate actions.
 
 Implemented actions are attendance event upsert, admin auth-user listing, and staff realtime broadcasts. Check deployment build status in Appwrite before treating it as operational. The existing 37 function registrations have no deployed code; notifications, email/SMS, AI, imports, and remaining original server functions still require migration and live verification.
 

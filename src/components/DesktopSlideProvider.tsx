@@ -123,9 +123,15 @@ export const DesktopSlideProvider: React.FC<DesktopSlideProviderProps> = ({ chil
       const dx = e.clientX - state.startX;
       const dy = e.clientY - state.startY;
 
-      // Initiation threshold: 4px horizontal movement with horizontal intent
+      // Initiation threshold: 8px horizontal movement with clear horizontal intent
       if (!state.isDragging) {
-        if (Math.abs(dx) > 4 && Math.abs(dx) > Math.abs(dy)) {
+        if (Math.abs(dy) > 10 && Math.abs(dy) > Math.abs(dx)) {
+          // User is scrolling vertically - cancel horizontal drag tracking immediately
+          activeDragRef.current = null;
+          return;
+        }
+
+        if (Math.abs(dx) > 8 && Math.abs(dx) > Math.abs(dy) * 1.5) {
           state.isDragging = true;
           state.hasMoved = true;
           state.element.classList.add('is-sliding');
@@ -200,9 +206,10 @@ export const DesktopSlideProvider: React.FC<DesktopSlideProviderProps> = ({ chil
     };
 
     // 4. Mouse Wheel Horizontal Scroll Redirection
-    // Allows desktop users with vertical scroll wheels to slide horizontal containers effortlessly
+    // NEVER hijack normal vertical page scrolling! Only redirect wheel events if the container
+    // explicitly requests horizontal mouse-wheel handling (e.g. data-wheel-horizontal="true")
+    // or when the user holds Shift.
     const onWheel = (e: WheelEvent) => {
-      // Don't intercept if user holds Shift (native horizontal scroll) or scrolling is purely horizontal
       if (e.shiftKey || Math.abs(e.deltaX) >= Math.abs(e.deltaY)) {
         return;
       }
@@ -210,23 +217,19 @@ export const DesktopSlideProvider: React.FC<DesktopSlideProviderProps> = ({ chil
       const target = e.target as HTMLElement | null;
       if (!target) return;
 
-      // Ignore textareas, canvas, or elements marked no-wheel
-      if (target.closest('textarea, canvas, .no-wheel')) {
+      // Only engage for elements explicitly opt-in to horizontal wheel scroll
+      const explicitHorizontal = target.closest('[data-wheel-horizontal="true"]') as HTMLElement | null;
+      if (!explicitHorizontal) {
         return;
       }
 
-      const scrollContainer = findHorizontallyScrollableParent(target);
-      if (!scrollContainer) return;
+      const canScrollRight = explicitHorizontal.scrollLeft < explicitHorizontal.scrollWidth - explicitHorizontal.clientWidth - 1;
+      const canScrollLeft = explicitHorizontal.scrollLeft > 1;
 
-      const canScrollRight = scrollContainer.scrollLeft < scrollContainer.scrollWidth - scrollContainer.clientWidth - 1;
-      const canScrollLeft = scrollContainer.scrollLeft > 1;
-
-      // If scrolling down and can scroll right, or scrolling up and can scroll left
       if ((e.deltaY > 0 && canScrollRight) || (e.deltaY < 0 && canScrollLeft)) {
-        scrollContainer.scrollLeft += e.deltaY * 0.85;
+        explicitHorizontal.scrollLeft += e.deltaY * 0.85;
         e.preventDefault();
       }
-      // If already at boundary, event passes through naturally to scroll the parent page vertically!
     };
 
     window.addEventListener('pointerdown', onPointerDown, { passive: true });

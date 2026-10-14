@@ -662,8 +662,8 @@ const GateMode = () => {
                 onClick={() => setActiveGateMode('classroom')}
               >
                 <GraduationCap className="h-3.5 w-3.5 text-primary" />
-                <span className="hidden xs:inline">Classroom Seated</span>
-                <Badge variant="secondary" className="text-[9px] py-0 px-1 ml-0.5 uppercase bg-primary/20 text-primary font-black">Primary</Badge>
+                <span>Classroom</span>
+                <Badge variant="secondary" className="text-[9px] py-0 px-1 ml-0.5 uppercase bg-primary/20 text-primary font-black hidden sm:inline-flex">Primary</Badge>
               </Button>
               <Button
                 variant="default"
@@ -671,7 +671,7 @@ const GateMode = () => {
                 className="h-7 px-2.5 sm:px-3 text-xs font-black gap-1.5 rounded-lg bg-primary text-primary-foreground shadow-sm"
               >
                 <DoorOpen className="h-3.5 w-3.5" />
-                <span className="hidden xs:inline">Gate Entry Flow</span>
+                <span>Gate Flow</span>
               </Button>
             </div>
 

@@ -433,7 +433,25 @@
   will-change: auto;
 }
 
-@media (max-width: 767px), (prefers-reduced-transparency: reduce) {
+/* Fluid Bento Grids for Data Without Clustering */
+.bento-grid-fluid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 130px), 1fr));
+  gap: 0.625rem;
+}
+
+/* Horizontal Scroll Edge Fade Indicators */
+.scroll-mask-edges {
+  mask-image: linear-gradient(to right, transparent, black 16px, black calc(100% - 16px), transparent);
+  -webkit-mask-image: linear-gradient(to right, transparent, black 16px, black calc(100% - 16px), transparent);
+}
+
+.scroll-mask-right {
+  mask-image: linear-gradient(to right, black calc(100% - 24px), transparent);
+  -webkit-mask-image: linear-gradient(to right, black calc(100% - 24px), transparent);
+}
+
+@media (prefers-reduced-transparency: reduce) {
   .nano-glass,
   .nano-glass-hero,
   .nano-glass-dock,
@@ -453,7 +471,7 @@
   .nano-card,
   .nano-glass-bento,
   .liquid-glass-surface {
-    background-color: rgba(255, 255, 255, 0.94);
+    background-color: rgba(255, 255, 255, 0.96);
   }
 
   .dark .nano-glass,
@@ -461,7 +479,7 @@
   .dark .nano-card,
   .dark .nano-glass-bento,
   .dark .liquid-glass-surface {
-    background-color: rgba(15, 23, 42, 0.94);
+    background-color: rgba(15, 23, 42, 0.96);
   }
 }
 

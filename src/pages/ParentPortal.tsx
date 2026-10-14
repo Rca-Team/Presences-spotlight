@@ -160,49 +160,49 @@ export default function ParentPortal() {
                 onValueChange={(val) => setActiveTab(val as any)}
                 className="w-full space-y-4"
               >
-                {/* Horizontal Tab Navigation Bar */}
-                <div className="overflow-x-auto pb-1 no-scrollbar scrollbar-none -mx-2 px-2 sm:mx-0 sm:px-0">
-                  <TabsList className="nano-glass-dock border border-slate-200/70 dark:border-white/10 p-1 rounded-2xl h-11 inline-flex w-max min-w-full sm:min-w-0 justify-start hardware-layer shadow-xs">
+                {/* Horizontal Tab Navigation Bar with Edge Masking */}
+                <div className="overflow-x-auto pb-1.5 no-scrollbar scroll-mask-edges -mx-2 px-2 sm:mx-0 sm:px-0">
+                  <TabsList className="p-1 rounded-2xl h-11 inline-flex w-max min-w-full sm:min-w-0 justify-start shadow-xs bg-slate-100/90 dark:bg-slate-900/80 border border-slate-200/80 dark:border-white/10">
                     <TabsTrigger
                       value="attendance"
-                      className="rounded-xl text-xs font-bold gap-1.5 data-[state=active]:bg-primary data-[state=active]:text-white data-[state=active]:shadow-sm px-3.5 shrink-0"
+                      className="rounded-xl text-xs font-bold gap-1.5 px-3.5 shrink-0"
                     >
-                      <Calendar className="h-3.5 w-3.5" /> Attendance
+                      <Calendar className="h-3.5 w-3.5 text-emerald-500" /> Attendance
                     </TabsTrigger>
                     <TabsTrigger
                       value="timetable"
-                      className="rounded-xl text-xs font-bold gap-1.5 data-[state=active]:bg-primary data-[state=active]:text-white data-[state=active]:shadow-sm px-3.5"
+                      className="rounded-xl text-xs font-bold gap-1.5 px-3.5"
                     >
-                      <Clock className="h-3.5 w-3.5" /> Timetable
+                      <Clock className="h-3.5 w-3.5 text-blue-500" /> Timetable
                     </TabsTrigger>
                     <TabsTrigger
                       value="leaves"
-                      className="rounded-xl text-xs font-bold gap-1.5 data-[state=active]:bg-primary data-[state=active]:text-white data-[state=active]:shadow-sm px-3.5"
+                      className="rounded-xl text-xs font-bold gap-1.5 px-3.5"
                     >
-                      <FileText className="h-3.5 w-3.5" /> Apply Leave
+                      <FileText className="h-3.5 w-3.5 text-indigo-500" /> Apply Leave
                       {leaves.length > 0 && (
-                        <span className="ml-1 px-1.5 py-0.2 rounded-full bg-background/30 text-[10px]">
+                        <span className="ml-1 px-1.5 py-0.5 rounded-full bg-indigo-500/15 text-indigo-700 dark:text-indigo-300 text-[10px] font-black">
                           {leaves.length}
                         </span>
                       )}
                     </TabsTrigger>
                     <TabsTrigger
                       value="gate"
-                      className="rounded-xl text-xs font-bold gap-1.5 data-[state=active]:bg-primary data-[state=active]:text-white data-[state=active]:shadow-sm px-3.5"
+                      className="rounded-xl text-xs font-bold gap-1.5 px-3.5"
                     >
-                      <DoorOpen className="h-3.5 w-3.5" /> Gate Activity
+                      <DoorOpen className="h-3.5 w-3.5 text-amber-500" /> Gate Activity
                     </TabsTrigger>
                     <TabsTrigger
                       value="teachers"
-                      className="rounded-xl text-xs font-bold gap-1.5 data-[state=active]:bg-primary data-[state=active]:text-white data-[state=active]:shadow-sm px-3.5"
+                      className="rounded-xl text-xs font-bold gap-1.5 px-3.5"
                     >
-                      <Users className="h-3.5 w-3.5" /> Teachers
+                      <Users className="h-3.5 w-3.5 text-purple-500" /> Teachers
                     </TabsTrigger>
                     <TabsTrigger
                       value="achievements"
-                      className="rounded-xl text-xs font-bold gap-1.5 data-[state=active]:bg-primary data-[state=active]:text-white data-[state=active]:shadow-sm px-3.5"
+                      className="rounded-xl text-xs font-bold gap-1.5 px-3.5"
                     >
-                      <Trophy className="h-3.5 w-3.5 text-amber-300" /> Badges
+                      <Trophy className="h-3.5 w-3.5 text-amber-500" /> Badges
                     </TabsTrigger>
                   </TabsList>
                 </div>

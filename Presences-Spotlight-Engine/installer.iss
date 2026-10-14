@@ -1,7 +1,7 @@
 ; Inno Setup Script for Presences Spotlight AI
 ; Enterprise Windows Installer Package
 
-#define MyAppName "Presences Spotlight AI"
+#define MyAppName "Presences School Attendance Terminal"
 #define MyAppVersion "2.5.0"
 #define MyAppPublisher "Presences AI"
 #define MyAppURL "https://presences.app"
@@ -18,7 +18,7 @@ AppUpdatesURL={#MyAppURL}
 DefaultDirName={autopf}\{#MyAppName}
 DisableProgramGroupPage=yes
 OutputDir=dist_installer
-OutputBaseFilename=Presences-Spotlight-Setup
+OutputBaseFilename=Presences-Attendance-Setup
 SetupIconFile=app_icon.ico
 Compression=lzma2/max
 SolidCompression=yes

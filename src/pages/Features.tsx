@@ -73,8 +73,8 @@ const Features = () => {
       </div>
 
       <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-        <ScrollArea className="w-full whitespace-nowrap">
-          <TabsList className="inline-flex mb-6">
+        <ScrollArea className="w-full whitespace-nowrap scroll-mask-edges">
+          <TabsList className="inline-flex mb-6 p-1">
             <TabsTrigger value="heatmap" className="gap-2">
               <CalendarDays className="h-4 w-4" /> Attendance Trends
             </TabsTrigger>

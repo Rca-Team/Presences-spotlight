@@ -76,20 +76,18 @@ export const RoyalScrollProvider: React.FC<RoyalScrollProviderProps> = ({ childr
 
   return (
     <RoyalScrollContext.Provider value={{ lenis: null, scrollTo }}>
-      {/* Royal Top Scroll Luminescence Bar */}
+      {/* Top Scroll Indicator - Clean GPU Compositor Layer */}
       <div
-        className="pointer-events-none fixed top-0 left-0 right-0 z-[9999] h-[3px] bg-transparent overflow-hidden"
+        className="pointer-events-none fixed top-0 left-0 right-0 z-[9999] h-[2.5px] bg-transparent overflow-hidden"
         aria-hidden="true"
       >
         <div
           ref={progressBarRef}
-          className="h-full w-full origin-left transition-opacity duration-300 ease-out"
+          className="h-full w-full origin-left transition-opacity duration-200 ease-out will-change-transform"
           style={{
             transform: 'scaleX(0)',
             opacity: 0,
-            background:
-              'linear-gradient(90deg, hsl(var(--primary)) 0%, hsl(var(--neon-cyan, 191 82% 60%)) 40%, hsl(var(--neon-pink, 318 70% 64%)) 75%, hsl(38 96% 58%) 100%)',
-            boxShadow: '0 0 12px hsl(var(--primary) / 0.8), 0 0 24px hsl(var(--neon-cyan, 191 82% 60%) / 0.5)',
+            background: 'linear-gradient(90deg, hsl(var(--primary)) 0%, #3b82f6 50%, #6366f1 100%)',
           }}
         />
       </div>

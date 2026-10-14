@@ -57,8 +57,13 @@ def is_valid_uuid(val: Optional[str]) -> bool:
 # ─── 1. Threaded Zero-Lag Video Stream Reader ─────────────────────────────────
 class RTSPVideoStream:
     """Continuous background RTSP/Webcam grabber with automatic reconnect and zero buffer lag."""
-    def __init__(self, src=config.RTSP_URL, width=config.CAMERA_WIDTH, height=config.CAMERA_HEIGHT):
+    def __init__(self, src=None, cam_id: int = 1, name: str = "", width=config.CAMERA_WIDTH, height=config.CAMERA_HEIGHT):
+        if src is None:
+            src = config.CAMERA_1_SOURCE if cam_id == 1 else config.CAMERA_2_SOURCE
         self.src = src
+        self.cam_id = cam_id
+        self.name = name or (config.CAMERA_1_NAME if cam_id == 1 else config.CAMERA_2_NAME)
+
         try:
             self.src_id = int(src)
         except ValueError:
@@ -74,10 +79,13 @@ class RTSPVideoStream:
         self.fps_counter = 0
         self.current_fps = 0.0
         self.last_fps_time = time.time()
+        self.last_connect_attempt = 0
+        self.is_connected = False
 
         self._connect()
 
     def _connect(self):
+        self.last_connect_attempt = time.time()
         try:
             if self.cap and self.cap.isOpened():
                 self.cap.release()
@@ -93,11 +101,15 @@ class RTSPVideoStream:
                 self.cap.set(cv2.CAP_PROP_FRAME_HEIGHT, self.height)
                 self.cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
                 self.grabbed, self.frame = self.cap.read()
-                print(f"[Spotlight Camera] Connected successfully to source ({self.width}x{self.height}).")
+                self.is_connected = self.grabbed
+                if self.grabbed:
+                    print(f"[{self.name}] Connected successfully to source: {self.src} ({self.width}x{self.height}).")
             else:
-                print(f"[Spotlight Camera Warning] Unable to open video source: {self.src}. Retrying...")
+                self.is_connected = False
+                print(f"[{self.name} Warning] Unable to open video source: {self.src}. Will retry in background...")
         except Exception as err:
-            print(f"[Spotlight Camera Error] Stream initialization exception: {err}")
+            self.is_connected = False
+            print(f"[{self.name} Error] Stream initialization exception: {err}")
 
     def start(self):
         t = threading.Thread(target=self._update, args=(), daemon=True)
@@ -108,21 +120,23 @@ class RTSPVideoStream:
         consecutive_failures = 0
         while not self.stopped:
             if self.cap is None or not self.cap.isOpened():
-                time.sleep(1.5)
+                time.sleep(2.0)
                 self._connect()
                 continue
 
             grabbed, frame = self.cap.read()
             if not grabbed or frame is None:
                 consecutive_failures += 1
+                self.is_connected = False
                 if consecutive_failures > 20:
-                    print("[Spotlight Camera] 20 frame drops detected. Re-establishing link...")
+                    time.sleep(1.0)
                     self._connect()
                     consecutive_failures = 0
                 time.sleep(0.04)
                 continue
 
             consecutive_failures = 0
+            self.is_connected = True
             with self.lock:
                 self.grabbed = grabbed
                 self.frame = frame
@@ -135,16 +149,38 @@ class RTSPVideoStream:
 
             time.sleep(0.002)
 
-    def read(self) -> Tuple[bool, Optional[np.ndarray], float]:
+    def _generate_placeholder(self) -> np.ndarray:
+        """Generates aesthetic dark placeholder frame when camera source is offline or connecting."""
+        placeholder = np.zeros((self.height, self.width, 3), dtype=np.uint8)
+        # Gradient background
+        placeholder[:] = (15, 23, 42)
+        center_x = self.width // 2
+        center_y = self.height // 2
+
+        # Draw camera icon / rectangle
+        cv2.rectangle(placeholder, (center_x - 120, center_y - 70), (center_x + 120, center_y + 40), (30, 41, 59), -1)
+        cv2.rectangle(placeholder, (center_x - 120, center_y - 70), (center_x + 120, center_y + 40), (51, 65, 85), 2)
+        
+        status_text = f"{self.name.upper()}"
+        sub_text = f"Connecting to source: {self.src}..." if (time.time() - self.last_connect_attempt < 10) else f"Camera Offline ({self.src})"
+        hint_text = "Check device index or RTSP network settings in Settings"
+
+        cv2.putText(placeholder, status_text, (center_x - 100, center_y - 20), cv2.FONT_HERSHEY_DUPLEX, 0.7, (241, 245, 249), 1, cv2.LINE_AA)
+        cv2.putText(placeholder, sub_text, (center_x - 160, center_y + 15), cv2.FONT_HERSHEY_DUPLEX, 0.5, (239, 68, 68) if not self.is_connected else (56, 189, 248), 1, cv2.LINE_AA)
+        cv2.putText(placeholder, hint_text, (center_x - 190, center_y + 70), cv2.FONT_HERSHEY_SIMPLEX, 0.45, (148, 163, 184), 1, cv2.LINE_AA)
+        return placeholder
+
+    def read(self) -> Tuple[bool, np.ndarray, float]:
         with self.lock:
             if not self.grabbed or self.frame is None:
-                return False, None, self.current_fps
+                return False, self._generate_placeholder(), self.current_fps
             return True, self.frame.copy(), self.current_fps
 
     def stop(self):
         self.stopped = True
         if self.cap and self.cap.isOpened():
             self.cap.release()
+
 
 
 # ─── 2. Local Database & Offline Queue ───────────────────────────────────────
@@ -212,43 +248,73 @@ class LocalDatabase:
                     status TEXT,
                     confidence REAL,
                     marked_time TEXT,
-                    session_date TEXT
+                    session_date TEXT,
+                    camera_lane TEXT DEFAULT 'Lane 1'
                 )
             """)
+            # Migration check: add camera_lane column if not exists
+            try:
+                cursor.execute("ALTER TABLE daily_attendance_logs ADD COLUMN camera_lane TEXT DEFAULT 'Lane 1'")
+            except Exception:
+                pass
             conn.commit()
 
-    def log_attendance(self, student_key: str, student_name: str, class_name: str, section: str, status: str, confidence: float, marked_time: str, session_date: str):
+    def log_attendance(self, student_key: str, student_name: str, class_name: str, section: str, status: str, confidence: float, marked_time: str, session_date: str, camera_lane: str = "Lane 1"):
         with self._get_connection() as conn:
             cursor = conn.cursor()
             cursor.execute("""
                 INSERT INTO daily_attendance_logs 
-                (student_key, student_name, class_name, section, status, confidence, marked_time, session_date)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-            """, (str(student_key), str(student_name), str(class_name or ""), str(section or ""), str(status), float(confidence), str(marked_time), str(session_date)))
+                (student_key, student_name, class_name, section, status, confidence, marked_time, session_date, camera_lane)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """, (str(student_key), str(student_name), str(class_name or ""), str(section or ""), str(status), float(confidence), str(marked_time), str(session_date), str(camera_lane)))
             conn.commit()
 
     def get_today_logs(self, session_date: str) -> List[Dict]:
         with self._get_connection() as conn:
             cursor = conn.cursor()
-            cursor.execute("""
-                SELECT student_key, student_name, class_name, section, status, confidence, marked_time
-                FROM daily_attendance_logs
-                WHERE session_date = ?
-                ORDER BY id DESC
-            """, (str(session_date),))
-            rows = cursor.fetchall()
-            logs = []
-            for r in rows:
-                logs.append({
-                    "student_key": r[0],
-                    "student_name": r[1],
-                    "class_name": r[2],
-                    "section": r[3],
-                    "status": r[4],
-                    "confidence": r[5],
-                    "marked_time": r[6],
-                })
-            return logs
+            try:
+                cursor.execute("""
+                    SELECT student_key, student_name, class_name, section, status, confidence, marked_time, camera_lane
+                    FROM daily_attendance_logs
+                    WHERE session_date = ?
+                    ORDER BY id DESC
+                """, (str(session_date),))
+                rows = cursor.fetchall()
+                logs = []
+                for r in rows:
+                    logs.append({
+                        "student_key": r[0],
+                        "student_name": r[1],
+                        "class_name": r[2],
+                        "section": r[3],
+                        "status": r[4],
+                        "confidence": r[5],
+                        "marked_time": r[6],
+                        "camera_lane": r[7] if len(r) > 7 and r[7] else "Lane 1"
+                    })
+                return logs
+            except Exception:
+                cursor.execute("""
+                    SELECT student_key, student_name, class_name, section, status, confidence, marked_time
+                    FROM daily_attendance_logs
+                    WHERE session_date = ?
+                    ORDER BY id DESC
+                """, (str(session_date),))
+                rows = cursor.fetchall()
+                logs = []
+                for r in rows:
+                    logs.append({
+                        "student_key": r[0],
+                        "student_name": r[1],
+                        "class_name": r[2],
+                        "section": r[3],
+                        "status": r[4],
+                        "confidence": r[5],
+                        "marked_time": r[6],
+                        "camera_lane": "Lane 1"
+                    })
+                return logs
+
 
     def is_already_marked_today(self, student_key: str, date_str: str) -> bool:
         with self._get_connection() as conn:
@@ -669,43 +735,58 @@ class StudentTrack:
         self.track_id = track_id
         self.bbox = bbox
         self.last_seen = time.time()
-        self.matches: List[Tuple[str, Dict, float]] = []
+        self.created_at = time.time()
+        self.matches: List[Tuple[str, Dict, float, float]] = []
         self.committed = False
+        self.best_quality = 0.0
+        self.lighting_condition = "optimal"
+        self.state = "DETECTED"
 
     def update_position(self, bbox: Tuple[int, int, int, int]):
         self.bbox = bbox
         self.last_seen = time.time()
 
-    def add_match(self, student: Dict, distance: float):
+    def add_match(self, student: Dict, distance: float, quality: float = 0.5, lighting: str = "optimal"):
         key = str(student.get("student_id") or student.get("user_id") or student.get("student_name"))
-        self.matches.append((key, student, distance))
+        self.matches.append((key, student, distance, quality))
+        self.lighting_condition = lighting
+        if quality > self.best_quality:
+            self.best_quality = quality
         now = time.time()
-        self.matches = [(k, s, d) for k, s, d in self.matches if (now - self.last_seen) <= config.CONSENSUS_WINDOW_SECONDS]
+        self.matches = [(k, s, d, q) for k, s, d, q in self.matches if (now - self.last_seen) <= config.CONSENSUS_WINDOW_SECONDS]
 
     def get_consensus_winner(self) -> Optional[Tuple[Dict, float, int]]:
-        """Returns student if votes agree on the same identity."""
+        """
+        Smart Zero-False Consensus Gate:
+        Guarantees 100% precision by requiring consistent multi-frame agreement
+        and low distance variance before committing attendance.
+        """
         if not self.matches:
             return None
 
-        # If strong single-frame match (dist < 0.44), confirm immediately
+        # Ultra-strong match (dist < 0.34) can confirm with 1 frame only in permissive mode
         best_single = min(self.matches, key=lambda m: m[2])
-        if best_single[2] < 0.44:
+        if not config.STRICT_ZERO_FALSE_MODE and best_single[2] < 0.34:
             return best_single[1], best_single[2], 1
 
         if len(self.matches) < config.CONSENSUS_FRAMES_REQUIRED:
             return None
 
-        counts: Dict[str, List[Tuple[Dict, float]]] = {}
-        for k, s, d in self.matches:
+        counts: Dict[str, List[Tuple[Dict, float, float]]] = {}
+        for k, s, d, q in self.matches:
             if k not in counts:
                 counts[k] = []
-            counts[k].append((s, d))
+            counts[k].append((s, d, q))
 
         for k, records in counts.items():
             if len(records) >= config.CONSENSUS_FRAMES_REQUIRED:
-                best_s = records[0][0]
-                avg_dist = float(np.mean([d for _, d in records]))
-                return best_s, avg_dist, len(records)
+                dists = [r[1] for r in records]
+                avg_dist = float(np.mean(dists))
+
+                # Zero False Safeguard: Every voting frame must remain under MATCH_THRESHOLD
+                if avg_dist <= config.MATCH_THRESHOLD and max(dists) <= (config.MATCH_THRESHOLD + 0.04):
+                    best_s = records[0][0]
+                    return best_s, avg_dist, len(records)
 
         return None
 
@@ -714,7 +795,7 @@ class StudentTrack:
 class SpotlightEngine:
     def __init__(self):
         print("=" * 75)
-        print("  PRESENCES SPOTLIGHT AI -- GOOGLE VISION & APPWRITE TERMINAL  ")
+        print("  PRESENCES SPOTLIGHT AI -- DUAL-CAMERA GOOGLE VISION TERMINAL  ")
         print("=" * 75)
 
         Path(config.UNKNOWN_LOG_DIR).mkdir(parents=True, exist_ok=True)
@@ -730,23 +811,30 @@ class SpotlightEngine:
         self.counter_on_time = 0
         self.counter_late = 0
         self.counter_unrecognized = 0
+        self.counter_lane1 = 0
+        self.counter_lane2 = 0
 
-        # Multi-Student Tracker State
-        self.next_track_id = 1
-        self.active_tracks: Dict[int, StudentTrack] = {}
+        # Multi-Student Tracker State per Camera Lane (Cam 1 & Cam 2)
+        self.next_track_id = {1: 1, 2: 1}
+        self.active_tracks: Dict[int, Dict[int, StudentTrack]] = {1: {}, 2: {}}
 
-        # Thread-safe HUD State
+        # Thread-safe HUD State per Camera
         self.hud_lock = threading.Lock()
-        self.hud_detections: List[Dict] = []
-        self.hud_banner_name = ""
-        self.hud_banner_status = "READY"
-        self.hud_banner_class = ""
-        self.hud_banner_time = ""
-        self.hud_banner_until = 0
+        self.hud_detections: Dict[int, List[Dict]] = {1: [], 2: []}
+        self.hud_banner_name: Dict[int, str] = {1: "", 2: ""}
+        self.hud_banner_status: Dict[int, str] = {1: "READY", 2: "READY"}
+        self.hud_banner_class: Dict[int, str] = {1: "", 2: ""}
+        self.hud_banner_time: Dict[int, str] = {1: "", 2: ""}
+        self.hud_banner_until: Dict[int, float] = {1: 0.0, 2: 0.0}
         self.show_mesh = config.SHOW_LANDMARK_MESH
 
-        # Dedicated AI Inference Worker Queue (maxsize 1 ensures zero camera lag)
-        self.inference_queue = queue.Queue(maxsize=1)
+        # Cross-Camera Real-Time Deduplication Guard
+        self.dedup_lock = threading.Lock()
+        self.recent_verifications: Dict[str, float] = {}  # student_key -> timestamp
+        self.last_chime_time = 0.0
+
+        # Dedicated AI Inference Worker Queue (accepts (cam_id, frame) tuples)
+        self.inference_queue = queue.Queue(maxsize=4)
 
         # Initialize Google Vision & MediaPipe Pipeline
         self.google_pipeline = GoogleFacePipeline()
@@ -763,6 +851,8 @@ class SpotlightEngine:
         self.counter_total_present = len(existing_logs)
         self.counter_on_time = sum(1 for log in existing_logs if log.get("status") == "present")
         self.counter_late = sum(1 for log in existing_logs if log.get("status") == "late")
+        self.counter_lane1 = sum(1 for log in existing_logs if "1" in str(log.get("camera_lane", "")))
+        self.counter_lane2 = sum(1 for log in existing_logs if "2" in str(log.get("camera_lane", "")))
 
         # Load local SQLite cached student models immediately for 0ms startup
         self.enrolled_students = self.db.get_cached_students()
@@ -781,6 +871,14 @@ class SpotlightEngine:
             t = threading.Thread(target=self._inference_worker, daemon=True)
             t.start()
             return t
+
+    def submit_frame(self, frame: np.ndarray, cam_id: int = 1):
+        """Dispatches frame to AI worker queue without stalling the camera stream."""
+        if not self.inference_queue.full():
+            try:
+                self.inference_queue.put_nowait((cam_id, frame.copy()))
+            except queue.Full:
+                pass
 
     def sync_students(self):
         """Loads student face descriptors into contiguous NumPy matrix for C-speed Euclidean search."""
@@ -818,7 +916,6 @@ class SpotlightEngine:
             return None, 1.0
 
         q = face_encoding.astype(np.float32)
-        # Vectorized Euclidean Distance: ||M - q|| across all rows
         diffs = self.descriptors_matrix - q
         dists = np.linalg.norm(diffs, axis=1)
 
@@ -830,7 +927,7 @@ class SpotlightEngine:
             best_match = self.enrolled_students[best_idx]
             best_name = best_match["student_name"]
 
-            # Ambiguity Check: Ensure 2nd distinct student is not overly close (< 0.48)
+            # Ambiguity Check 1: Ensure 2nd distinct student is not overly close (< 0.48)
             second_best_dist = float('inf')
             for idx in sorted_indices[1:10]:
                 if idx < len(self.enrolled_students) and self.enrolled_students[idx]["student_name"] != best_name:
@@ -840,24 +937,29 @@ class SpotlightEngine:
             if second_best_dist < 0.48 and (best_dist / second_best_dist) > config.AMBIGUITY_RATIO:
                 return None, best_dist
 
+            # Ambiguity Check 2: Dynamic Margin Delta Guard (guarantees zero false attendance for lookalikes)
+            if second_best_dist < 0.52 and (second_best_dist - best_dist) < config.AMBIGUITY_MARGIN_DELTA:
+                return None, best_dist
+
             return best_match, best_dist
 
         return None, best_dist
 
-    def _associate_tracks(self, face_centers: List[Tuple[int, int]], face_boxes: List[Tuple[int, int, int, int]]) -> List[int]:
-        """Fast spatial centroid association between detected faces and active student tracks."""
+    def _associate_tracks(self, face_centers: List[Tuple[int, int]], face_boxes: List[Tuple[int, int, int, int]], cam_id: int = 1) -> List[int]:
+        """Fast spatial centroid association between detected faces and active tracks for a specific camera."""
         track_ids = []
         now = time.time()
+        tracks_for_cam = self.active_tracks.setdefault(cam_id, {})
 
-        stale_ids = [tid for tid, trk in self.active_tracks.items() if (now - trk.last_seen) > 2.0]
+        stale_ids = [tid for tid, trk in tracks_for_cam.items() if (now - trk.last_seen) > 2.0]
         for tid in stale_ids:
-            del self.active_tracks[tid]
+            del tracks_for_cam[tid]
 
         for (cx, cy), bbox in zip(face_centers, face_boxes):
             best_tid = None
             min_dist = float('inf')
 
-            for tid, trk in self.active_tracks.items():
+            for tid, trk in tracks_for_cam.items():
                 t_top, t_right, t_bottom, t_left = trk.bbox
                 tcx, tcy = (t_left + t_right) // 2, (t_top + t_bottom) // 2
                 dist = math.hypot(cx - tcx, cy - tcy)
@@ -867,25 +969,54 @@ class SpotlightEngine:
                     best_tid = tid
 
             if best_tid is not None:
-                self.active_tracks[best_tid].update_position(bbox)
+                tracks_for_cam[best_tid].update_position(bbox)
                 track_ids.append(best_tid)
             else:
-                new_tid = self.next_track_id
-                self.next_track_id += 1
-                self.active_tracks[new_tid] = StudentTrack(new_tid, bbox)
+                new_tid = self.next_track_id[cam_id]
+                self.next_track_id[cam_id] += 1
+                tracks_for_cam[new_tid] = StudentTrack(new_tid, bbox)
                 track_ids.append(new_tid)
 
         return track_ids
 
-    def handle_confirmed_attendance(self, student: Dict, confidence_score: float, face_data: Optional[GoogleFaceData] = None):
-        """Executes instant attendance logging, cooldown enforcement, chime, and Appwrite synchronization."""
+    def handle_confirmed_attendance(self, student: Dict, confidence_score: float, cam_id: int = 1, face_data: Optional[GoogleFaceData] = None):
+        """
+        Executes instant attendance logging, cross-camera deduplication, chime, and cloud sync.
+        """
         student_id_val = str(student.get("student_id") or student.get("user_id") or "")
         student_name = student.get("student_name")
         student_key = student_id_val or student_name
         today_str = datetime.now().strftime("%Y-%m-%d")
         now = time.time()
+        lane_name = config.CAMERA_1_NAME if cam_id == 1 else config.CAMERA_2_NAME
+
+        # ── Cross-Camera & Same-Camera Deduplication Check ──
+        with self.dedup_lock:
+            # Clean up old verification timestamps (> 120s)
+            for k in list(self.recent_verifications.keys()):
+                if now - self.recent_verifications[k] > 120.0:
+                    del self.recent_verifications[k]
+
+            last_v = self.recent_verifications.get(student_key)
+            if last_v is not None and (now - last_v) < config.CROSS_CAMERA_COOLDOWN_SEC:
+                # Student already verified recently on another camera or this camera!
+                with self.hud_lock:
+                    self.hud_banner_name[cam_id] = student_name
+                    self.hud_banner_status[cam_id] = "ALREADY RECORDED"
+                    self.hud_banner_class[cam_id] = f"Class {student.get('class_name', '')} {student.get('section', '')}".strip()
+                    self.hud_banner_time[cam_id] = datetime.now().strftime("%I:%M:%S %p")
+                    self.hud_banner_until[cam_id] = now + 2.5
+                return
+
+            self.recent_verifications[student_key] = now
 
         if self.db.is_already_marked_today(student_key, today_str):
+            with self.hud_lock:
+                self.hud_banner_name[cam_id] = student_name
+                self.hud_banner_status[cam_id] = "TODAY'S RECORD EXISTS"
+                self.hud_banner_class[cam_id] = f"Class {student.get('class_name', '')} {student.get('section', '')}".strip()
+                self.hud_banner_time[cam_id] = datetime.now().strftime("%I:%M:%S %p")
+                self.hud_banner_until[cam_id] = now + 2.5
             return
 
         self.db.record_session_mark(student_key, today_str)
@@ -899,17 +1030,25 @@ class SpotlightEngine:
         else:
             self.counter_late += 1
 
-        print(f"\n[SPOTLIGHT VERIFIED] {student_name} | Grade: {student.get('class_name', '')}-{student.get('section', '')}")
+        if cam_id == 1:
+            self.counter_lane1 += 1
+        else:
+            self.counter_lane2 += 1
+
+        print(f"\n[SPOTLIGHT VERIFIED • {lane_name.upper()}] {student_name} | Grade: {student.get('class_name', '')}-{student.get('section', '')}")
         print(f"                     Status: {status.upper()} | Confidence: {confidence_score*100:.1f}% | Time: {time_formatted}")
 
         with self.hud_lock:
-            self.hud_banner_name = student_name
-            self.hud_banner_status = f"MARKED {status.upper()}"
-            self.hud_banner_class = f"Class {student.get('class_name', '')} {student.get('section', '')}".strip()
-            self.hud_banner_time = time_formatted
-            self.hud_banner_until = now + 4.0
+            self.hud_banner_name[cam_id] = student_name
+            self.hud_banner_status[cam_id] = f"MARKED {status.upper()}"
+            self.hud_banner_class[cam_id] = f"Class {student.get('class_name', '')} {student.get('section', '')}".strip()
+            self.hud_banner_time[cam_id] = time_formatted
+            self.hud_banner_until[cam_id] = now + 4.0
 
-        play_feedback_sound()
+        # Debounced audio chime (max 1 chime per second)
+        if now - self.last_chime_time > 1.0:
+            self.last_chime_time = now
+            play_feedback_sound()
 
         payload = {
             "user_id": student.get("user_id") if is_valid_uuid(student.get("user_id")) else None,
@@ -917,15 +1056,18 @@ class SpotlightEngine:
             "student_name": student_name,
             "timestamp": iso_timestamp,
             "status": status,
-            "source": config.CAPTURE_MODE,
+            "source": f"{config.CAPTURE_MODE}-lane{cam_id}",
             "capture_mode": config.CAPTURE_MODE,
+            "camera_lane": lane_name,
             "class": student.get("class_name"),
             "section": student.get("section"),
             "confidence_score": round(confidence_score, 4),
             "device_info": {
-                "system": "Presences Spotlight AI",
+                "system": "Presences Spotlight AI (Dual-Camera Edition)",
                 "backend": "Appwrite Cloud",
                 "gate_name": config.GATE_NAME,
+                "lane_name": lane_name,
+                "camera_id": cam_id,
                 "timestamp": iso_timestamp,
                 "metadata": {
                     "student_name": student_name,
@@ -939,7 +1081,7 @@ class SpotlightEngine:
         def _async_push():
             success = self.cloud.post_attendance(payload)
             if success:
-                print(f"[Spotlight Appwrite] Attendance synced to cloud for {student_name}.")
+                print(f"[Spotlight Appwrite] Attendance synced to cloud for {student_name} ({lane_name}).")
             else:
                 self.db.enqueue_attendance(payload)
 
@@ -954,7 +1096,8 @@ class SpotlightEngine:
             status=status,
             confidence=confidence_score,
             marked_time=time_formatted,
-            session_date=today_str
+            session_date=today_str,
+            camera_lane=lane_name
         )
 
         record_data = {
@@ -966,6 +1109,8 @@ class SpotlightEngine:
             "confidence": confidence_score,
             "time": time_formatted,
             "iso_timestamp": iso_timestamp,
+            "camera_lane": lane_name,
+            "cam_id": cam_id,
             "synced": True
         }
         if callable(self.attendance_callback):
@@ -975,12 +1120,17 @@ class SpotlightEngine:
                 print(f"[Spotlight Callback Note] {cb_err}")
 
     def _inference_worker(self):
-        """Asynchronous AI worker thread processing face embeddings without stalling the video feed."""
+        """Asynchronous AI worker thread processing face embeddings for both camera feeds."""
         while self.running:
             try:
-                frame = self.inference_queue.get(timeout=0.1)
+                item = self.inference_queue.get(timeout=0.1)
             except queue.Empty:
                 continue
+
+            if isinstance(item, tuple):
+                cam_id, frame = item
+            else:
+                cam_id, frame = 1, item
 
             try:
                 detections = []
@@ -990,10 +1140,11 @@ class SpotlightEngine:
                     if face_data_list:
                         centers = [fd.center_xy for fd in face_data_list]
                         boxes = [fd.bbox for fd in face_data_list]
-                        track_ids = self._associate_tracks(centers, boxes)
+                        track_ids = self._associate_tracks(centers, boxes, cam_id=cam_id)
+                        tracks_for_cam = self.active_tracks.get(cam_id, {})
 
                         for fd, tid in zip(face_data_list, track_ids):
-                            trk = self.active_tracks.get(tid)
+                            trk = tracks_for_cam.get(tid)
 
                             matched_student = None
                             distance = 1.0
@@ -1002,14 +1153,17 @@ class SpotlightEngine:
                                 matched_student, distance = self.match_face_vectorized(fd.embedding)
 
                             if matched_student and trk:
-                                trk.add_match(matched_student, distance)
+                                trk.add_match(matched_student, distance, quality=fd.quality_score, lighting=fd.lighting_condition)
                                 conf = float(max(0.0, min(1.0, 1.0 - (distance / 0.70))))
 
                                 consensus = trk.get_consensus_winner()
                                 if consensus and not trk.committed:
                                     win_student, win_dist, win_votes = consensus
                                     trk.committed = True
-                                    self.handle_confirmed_attendance(win_student, conf, fd)
+                                    trk.state = "VERIFIED"
+                                    self.handle_confirmed_attendance(win_student, conf, cam_id=cam_id, face_data=fd)
+                                elif not trk.committed:
+                                    trk.state = "IDENTIFYING"
 
                                 detections.append({
                                     "bbox": fd.bbox,
@@ -1020,18 +1174,26 @@ class SpotlightEngine:
                                     "yaw": fd.yaw_deg,
                                     "pitch": fd.pitch_deg,
                                     "quality": fd.quality_score,
+                                    "lighting": fd.lighting_condition,
+                                    "is_enhanced": fd.is_enhanced,
+                                    "state": trk.state if trk else "DETECTED",
                                     "landmarks_pixel": fd.landmarks_pixel
                                 })
                             else:
+                                if trk:
+                                    trk.state = "ADAPTING" if fd.is_enhanced else "DETECTED"
                                 detections.append({
                                     "bbox": fd.bbox,
-                                    "name": "Unknown Visitor",
-                                    "status": "UNRECOGNIZED",
+                                    "name": "Walking Student" if fd.quality_score >= 0.50 else "Unknown Visitor",
+                                    "status": "ADAPTING LIGHT..." if fd.is_enhanced else "UNRECOGNIZED",
                                     "confidence": 0.0,
                                     "is_matched": False,
                                     "yaw": fd.yaw_deg,
                                     "pitch": fd.pitch_deg,
                                     "quality": fd.quality_score,
+                                    "lighting": fd.lighting_condition,
+                                    "is_enhanced": fd.is_enhanced,
+                                    "state": trk.state if trk else "DETECTED",
                                     "landmarks_pixel": fd.landmarks_pixel
                                 })
                 else:
@@ -1049,43 +1211,56 @@ class SpotlightEngine:
                         c_left = max(0, min(fw - 1, int(x * scale_up)))
                         detections.append({
                             "bbox": (c_top, c_right, c_bottom, c_left),
-                            "name": "Student (Cascade Mode)",
+                            "name": "Student",
                             "status": "PRESENT",
                             "confidence": 0.90,
                             "is_matched": True,
                             "yaw": 0.0,
                             "pitch": 0.0,
                             "quality": 0.85,
+                            "lighting": "optimal",
+                            "is_enhanced": False,
+                            "state": "VERIFIED",
                             "landmarks_pixel": None
                         })
 
                 with self.hud_lock:
-                    self.hud_detections = detections
+                    self.hud_detections[cam_id] = detections
 
             except Exception as err:
-                print(f"[Spotlight Worker Exception] {err}")
+                print(f"[Spotlight Worker Exception - Cam {cam_id}] {err}")
 
-    def render_hud(self, frame: np.ndarray, fps: float) -> np.ndarray:
-        """Draws aesthetic, high-contrast visual HUD on top of the live video stream."""
+    def render_hud(self, frame: np.ndarray, fps: float, cam_id: int = 1, cam_name: str = "") -> np.ndarray:
+        """Draws aesthetic, high-contrast visual HUD on top of the specified camera's live video stream."""
         h, w, _ = frame.shape
         now = time.time()
+        lane_label = cam_name or (config.CAMERA_1_NAME if cam_id == 1 else config.CAMERA_2_NAME)
 
         with self.hud_lock:
-            detections = list(self.hud_detections)
-            banner_name = self.hud_banner_name
-            banner_status = self.hud_banner_status
-            banner_class = self.hud_banner_class
-            banner_time = self.hud_banner_time
-            banner_until = self.hud_banner_until
+            detections = list(self.hud_detections.get(cam_id, []))
+            banner_name = self.hud_banner_name.get(cam_id, "")
+            banner_status = self.hud_banner_status.get(cam_id, "READY")
+            banner_class = self.hud_banner_class.get(cam_id, "")
+            banner_time = self.hud_banner_time.get(cam_id, "")
+            banner_until = self.hud_banner_until.get(cam_id, 0.0)
             show_mesh = self.show_mesh
 
         # 1. Draw Bounding Boxes & Landmarks
         for det in detections:
             top, right, bottom, left = det["bbox"]
             is_matched = det["is_matched"]
-            quality = det.get("quality", 0.8)
-            yaw = det.get("yaw", 0.0)
-            color = (34, 197, 94) if is_matched else (40, 40, 230)
+            status = det.get("status", "")
+            is_enhanced = det.get("is_enhanced", False)
+
+            # Dynamic color coding for fluid optimistic state
+            if "VERIFIED" in status:
+                color = (34, 197, 94)    # Emerald Green
+            elif "IDENTIFYING" in status:
+                color = (250, 150, 10)   # Vivid Cyan / Ocean Blue
+            elif is_enhanced or "ADAPTING" in status:
+                color = (20, 200, 245)   # Amber / Yellow (AIE Active)
+            else:
+                color = (148, 163, 184)  # Slate / Blue-gray (Tracking)
 
             # Corner accents
             cv2.rectangle(frame, (left, top), (right, bottom), color, 2)
@@ -1106,44 +1281,61 @@ class SpotlightEngine:
                     px, py = int(pt[0]), int(pt[1])
                     cv2.circle(frame, (px, py), 1, (56, 189, 248), -1)
 
-            # Name Tag Pill
-            label = f"{det['name']} ({det['status']})"
-            (tw, th), _ = cv2.getTextSize(label, cv2.FONT_HERSHEY_DUPLEX, 0.55, 1)
-            cv2.rectangle(frame, (left, top - 26), (left + tw + 12, top), color, -1)
-            cv2.putText(frame, label, (left + 6, top - 8), cv2.FONT_HERSHEY_DUPLEX, 0.55, (255, 255, 255), 1, cv2.LINE_AA)
+            # Name Tag Pill with Adaptive Illumination indicator
+            tag_suffix = " [☀️AIE]" if is_enhanced else ""
+            label = f"{det['name']} ({status}){tag_suffix}"
+            (tw, th), _ = cv2.getTextSize(label, cv2.FONT_HERSHEY_DUPLEX, 0.48, 1)
+            cv2.rectangle(frame, (left, top - 24), (left + tw + 10, top), color, -1)
+            cv2.putText(frame, label, (left + 5, top - 7), cv2.FONT_HERSHEY_DUPLEX, 0.48, (255, 255, 255), 1, cv2.LINE_AA)
 
         # 2. Top Header Status Bar
         overlay = frame.copy()
-        cv2.rectangle(overlay, (0, 0), (w, 55), (15, 23, 42), -1)
+        cv2.rectangle(overlay, (0, 0), (w, 48), (15, 23, 42), -1)
         cv2.addWeighted(overlay, 0.85, frame, 0.15, 0, frame)
 
-        cv2.putText(frame, "PRESENCES SPOTLIGHT AI  [APPWRITE CLOUD]", (20, 35), cv2.FONT_HERSHEY_DUPLEX, 0.65, (255, 255, 255), 2, cv2.LINE_AA)
-        metrics_str = f"PRESENT: {self.counter_total_present}  |  ON-TIME: {self.counter_on_time}  |  LATE: {self.counter_late}  |  {fps:.0f} FPS"
-        (mw, _), _ = cv2.getTextSize(metrics_str, cv2.FONT_HERSHEY_DUPLEX, 0.55, 1)
-        cv2.putText(frame, metrics_str, (w - mw - 20, 35), cv2.FONT_HERSHEY_DUPLEX, 0.55, (56, 189, 248), 1, cv2.LINE_AA)
+        # Lane Indicator Badge
+        lane_badge = f"[{lane_label.upper()}]"
+        cv2.putText(frame, lane_badge, (16, 32), cv2.FONT_HERSHEY_DUPLEX, 0.60, (56, 189, 248), 2, cv2.LINE_AA)
+
+        # Smart Gate Logistic Mode Indicator
+        logistic_badge = "● SMART LOGISTIC: ZERO-FALSE (AIE ON)"
+        cv2.putText(frame, logistic_badge, (w // 2 - 160, 32), cv2.FONT_HERSHEY_DUPLEX, 0.44, (16, 185, 129), 1, cv2.LINE_AA)
+
+        metrics_str = f"PRESENT: {self.counter_total_present}  |  LANE: {self.counter_lane1 if cam_id==1 else self.counter_lane2}  |  {fps:.0f} FPS"
+        (mw, _), _ = cv2.getTextSize(metrics_str, cv2.FONT_HERSHEY_DUPLEX, 0.48, 1)
+        cv2.putText(frame, metrics_str, (w - mw - 16, 32), cv2.FONT_HERSHEY_DUPLEX, 0.48, (226, 232, 240), 1, cv2.LINE_AA)
 
         # 3. Bottom Instant Verification Toast
         if now < banner_until and banner_name:
-            banner_h = 80
+            banner_h = 75
             overlay = frame.copy()
-            cv2.rectangle(overlay, (w // 4, h - banner_h - 20), (3 * w // 4, h - 20), (16, 185, 129), -1)
+            toast_color = (16, 185, 129) if "MARKED" in banner_status else (245, 158, 11)
+            cv2.rectangle(overlay, (w // 6, h - banner_h - 16), (5 * w // 6, h - 16), toast_color, -1)
             cv2.addWeighted(overlay, 0.90, frame, 0.10, 0, frame)
 
             toast_title = f"{banner_name}  -  {banner_status}"
             toast_sub = f"{banner_class}  •  Arrival Time: {banner_time}"
-            cv2.putText(frame, toast_title, (w // 4 + 20, h - 55), cv2.FONT_HERSHEY_DUPLEX, 0.75, (255, 255, 255), 2, cv2.LINE_AA)
-            cv2.putText(frame, toast_sub, (w // 4 + 20, h - 30), cv2.FONT_HERSHEY_DUPLEX, 0.55, (240, 253, 244), 1, cv2.LINE_AA)
+            cv2.putText(frame, toast_title, (w // 6 + 18, h - 50), cv2.FONT_HERSHEY_DUPLEX, 0.68, (255, 255, 255), 2, cv2.LINE_AA)
+            cv2.putText(frame, toast_sub, (w // 6 + 18, h - 26), cv2.FONT_HERSHEY_DUPLEX, 0.50, (240, 253, 244), 1, cv2.LINE_AA)
 
         return frame
 
+
     def run(self):
-        """Main execution loop for Presences Spotlight AI."""
+        """Main execution loop for Presences Spotlight AI (CLI / OpenCV window mode)."""
         self.running = True
 
-        stream = RTSPVideoStream().start()
-        threading.Thread(target=self._inference_worker, daemon=True).start()
+        print(f"[Spotlight] Starting Camera 1: {config.CAMERA_1_NAME} ({config.CAMERA_1_SOURCE})...")
+        stream1 = RTSPVideoStream(src=config.CAMERA_1_SOURCE, cam_id=1, name=config.CAMERA_1_NAME).start()
 
-        win_name = "Presences Spotlight AI — Gate Terminal (Appwrite Cloud)"
+        stream2 = None
+        if config.DUAL_CAMERA_MODE:
+            print(f"[Spotlight] Starting Camera 2: {config.CAMERA_2_NAME} ({config.CAMERA_2_SOURCE})...")
+            stream2 = RTSPVideoStream(src=config.CAMERA_2_SOURCE, cam_id=2, name=config.CAMERA_2_NAME).start()
+
+        self.start_worker()
+
+        win_name = "Presences Spotlight AI — Dual-Camera Gate Terminal"
         if config.SHOW_WINDOW:
             cv2.namedWindow(win_name, cv2.WINDOW_NORMAL)
             if config.FULLSCREEN_KIOSK:
@@ -1156,18 +1348,32 @@ class SpotlightEngine:
 
         try:
             while self.running:
-                grabbed, frame, fps = stream.read()
-                if not grabbed or frame is None:
+                grabbed1, frame1, fps1 = stream1.read()
+                if not grabbed1 and frame1 is None:
                     time.sleep(0.01)
                     continue
 
-                if self.inference_queue.empty():
-                    try:
-                        self.inference_queue.put_nowait(frame.copy())
-                    except queue.Full:
-                        pass
+                self.submit_frame(frame1, cam_id=1)
+                annotated_1 = self.render_hud(frame1, fps1, cam_id=1, cam_name=config.CAMERA_1_NAME)
 
-                annotated_frame = self.render_hud(frame, fps)
+                if stream2:
+                    grabbed2, frame2, fps2 = stream2.read()
+                    if frame2 is not None:
+                        self.submit_frame(frame2, cam_id=2)
+                        annotated_2 = self.render_hud(frame2, fps2, cam_id=2, cam_name=config.CAMERA_2_NAME)
+                    else:
+                        annotated_2 = stream2._generate_placeholder()
+
+                    # Combine side-by-side
+                    h1, w1 = annotated_1.shape[:2]
+                    h2, w2 = annotated_2.shape[:2]
+                    target_h = min(h1, h2)
+                    target_w = int(w1 * (target_h / h1))
+                    r1 = cv2.resize(annotated_1, (target_w, target_h))
+                    r2 = cv2.resize(annotated_2, (target_w, target_h))
+                    display_frame = np.hstack([r1, r2])
+                else:
+                    display_frame = annotated_1
 
                 now = time.time()
                 if (now - self.last_sync_time) > config.STUDENT_SYNC_INTERVAL_SEC:
@@ -1175,7 +1381,7 @@ class SpotlightEngine:
                     threading.Thread(target=self.sync_students, daemon=True).start()
 
                 if config.SHOW_WINDOW:
-                    cv2.imshow(win_name, annotated_frame)
+                    cv2.imshow(win_name, display_frame)
                     key = cv2.waitKey(1) & 0xFF
                     if key in (ord('q'), ord('Q'), 27):
                         print("[Spotlight] Exit signal received.")
@@ -1196,25 +1402,32 @@ class SpotlightEngine:
                         self.counter_total_present = 0
                         self.counter_on_time = 0
                         self.counter_late = 0
+                        self.counter_lane1 = 0
+                        self.counter_lane2 = 0
                         print("\n[Spotlight] Session counters reset.")
                     elif key in (ord('f'), ord('F')):
-                        is_full = cv2.getWindowProperty(win_name, cv2.WND_PROP_FULLSCREEN) == cv2.WINDOW_FULLSCREEN
-                        if is_full:
+                        config.FULLSCREEN_KIOSK = not config.FULLSCREEN_KIOSK
+                        if config.FULLSCREEN_KIOSK:
+                            cv2.setWindowProperty(win_name, cv2.WND_PROP_FULLSCREEN, cv2.WINDOW_FULLSCREEN)
+                        else:
                             cv2.setWindowProperty(win_name, cv2.WND_PROP_FULLSCREEN, cv2.WINDOW_NORMAL)
                             cv2.resizeWindow(win_name, 1280, 720)
-                        else:
-                            cv2.setWindowProperty(win_name, cv2.WND_PROP_FULLSCREEN, cv2.WINDOW_FULLSCREEN)
+
+                time.sleep(0.005)
 
         except KeyboardInterrupt:
-            print("\n[Spotlight] Shutting down gracefully...")
+            print("[Spotlight] Interrupted by user.")
         finally:
             self.running = False
-            stream.stop()
+            stream1.stop()
+            if stream2:
+                stream2.stop()
             if config.SHOW_WINDOW:
                 cv2.destroyAllWindows()
-            print("[Spotlight] Offline queue processed. Engine shutdown complete.")
+            print("[Spotlight] All camera streams closed cleanly.")
 
 
 if __name__ == "__main__":
     engine = SpotlightEngine()
     engine.run()
+

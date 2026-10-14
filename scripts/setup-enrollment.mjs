@@ -15,7 +15,7 @@ if (!process.env.APPWRITE_API_KEY && fs.existsSync('.env.local')) {
   if (match) process.env.APPWRITE_API_KEY = match[1].trim();
 }
 if (!process.env.APPWRITE_API_KEY) throw new Error('Provide APPWRITE_API_KEY through the environment.');
-const client = new Client().setEndpoint(process.env.APPWRITE_ENDPOINT || 'https://sgp.cloud.appwrite.io/v1').setProject(process.env.APPWRITE_PROJECT_ID || '6abfd34f000604fcf074').setKey(process.env.APPWRITE_API_KEY);
+const client = new Client().setEndpoint(process.env.APPWRITE_ENDPOINT || 'https://sgp.cloud.appwrite.io/v1').setProject(process.env.APPWRITE_PROJECT_ID || '6accbd5d00053c5c1ac2').setKey(process.env.APPWRITE_API_KEY);
 const db = new Databases(client), storage = new Storage(client), functions = new Functions(client);
 const databaseId = process.env.APPWRITE_DATABASE_ID || 'presences_db';
 try { await db.getCollection(databaseId, 'student_enrollment'); }

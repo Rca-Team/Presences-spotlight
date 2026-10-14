@@ -6,7 +6,7 @@ const keyMatch = env.match(/APPWRITE_API_KEY=(.+)/);
 const apiKey = keyMatch[1].trim();
 
 const endpoint = 'https://sgp.cloud.appwrite.io/v1';
-const projectId = '6abfd34f000604fcf074';
+const projectId = '6accbd5d00053c5c1ac2';
 
 function request(p) {
   return new Promise((resolve, reject) => {

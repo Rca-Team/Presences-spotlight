@@ -652,7 +652,7 @@ const Register = () => {
     <PageTransition>
       <div className="min-h-screen flex flex-col lg:flex-row neon-liquid-bg overflow-x-hidden">
         {/* Left Panel - Branding */}
-        <div className="hidden lg:flex lg:w-1/2 relative overflow-hidden" style={{ background: 'linear-gradient(135deg, hsl(var(--neon-orange)), hsl(var(--neon-pink)), hsl(var(--neon-violet)))' }}>
+        <div className="hidden lg:flex lg:w-1/2 relative overflow-hidden" style={{ background: 'linear-gradient(135deg, #1e3a8a 0%, #1e1b4b 50%, #0f172a 100%)' }}>
           <div className="absolute inset-0">
             <div className="absolute top-0 left-0 w-full h-full opacity-10" style={{
               backgroundImage: `radial-gradient(circle at 2px 2px, white 1px, transparent 0)`,

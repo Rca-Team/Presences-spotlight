@@ -133,6 +133,8 @@ class GoogleFaceData:
     sharpness_score: float                       # Laplacian sharpness variance
     illumination_score: float                    # Mean luminance (0-255)
     quality_score: float                         # Composite quality score (0.0 to 1.0)
+    lighting_condition: str = "optimal"          # "optimal", "backlit_enhanced", "shadow_enhanced", "glare_normalized"
+    is_enhanced: bool = False                    # True if CLAHE or gamma correction was applied
     aligned_face: Optional[np.ndarray] = None    # 112x112 canonical affine-aligned crop
     face_crop: Optional[np.ndarray] = None       # Bounding box crop
     embedding: Optional[np.ndarray] = None       # 128-D or 512-D normalized vector
@@ -319,16 +321,72 @@ class GoogleFacePipeline:
         except Exception:
             return 0.5
 
-    def extract_face_embedding(self, aligned_face: Optional[np.ndarray], raw_crop: np.ndarray, full_frame: np.ndarray, bbox: Tuple[int, int, int, int]) -> Optional[np.ndarray]:
+    @staticmethod
+    def enhance_face_illumination(face_crop: np.ndarray) -> Tuple[np.ndarray, str, bool]:
+        """
+        Adaptive Illumination Normalizer (AIE):
+        - Backlight / Shadow: Applies CLAHE in LAB space to rescue dark faces.
+        - Glare / Sunlight: Applies adaptive gamma compression to recover washed-out highlights.
+        Returns: (enhanced_bgr_crop, condition_label, was_enhanced)
+        """
+        if face_crop is None or face_crop.size == 0 or not config.ENABLE_ADAPTIVE_ILLUMINATION:
+            return face_crop, "optimal", False
+
+        h, w = face_crop.shape[:2]
+        if h < 24 or w < 24:
+            return face_crop, "optimal", False
+
+        try:
+            lab = cv2.cvtColor(face_crop, cv2.COLOR_BGR2LAB)
+            l_chan, a_chan, b_chan = cv2.split(lab)
+            mean_lum = float(np.mean(l_chan))
+            std_lum = float(np.std(l_chan))
+
+            # 1. Sunlight Glare / Overexposure: High luminance
+            if mean_lum > 200:
+                inv_gamma = 1.35
+                table = np.array([((i / 255.0) ** inv_gamma) * 255 for i in range(256)]).astype("uint8")
+                l_enhanced = cv2.LUT(l_chan, table)
+                enhanced_bgr = cv2.cvtColor(cv2.merge([l_enhanced, a_chan, b_chan]), cv2.COLOR_LAB2BGR)
+                return enhanced_bgr, "glare_normalized", True
+
+            # 2. Backlight or Deep Shadow: Low luminance or flat dark contrast
+            elif mean_lum < 95 or (mean_lum < 115 and std_lum < 25):
+                clahe = cv2.createCLAHE(clipLimit=2.5, tileGridSize=(8, 8))
+                l_enhanced = clahe.apply(l_chan)
+                enhanced_bgr = cv2.cvtColor(cv2.merge([l_enhanced, a_chan, b_chan]), cv2.COLOR_LAB2BGR)
+                condition = "backlit_enhanced" if mean_lum < 85 else "shadow_enhanced"
+                return enhanced_bgr, condition, True
+
+            return face_crop, "optimal", False
+        except Exception:
+            return face_crop, "optimal", False
+
+    @staticmethod
+    def enhance_sharpness_for_motion(face_crop: np.ndarray, sharpness: float) -> np.ndarray:
+        """Applies gentle unsharp masking on walking faces with mild motion blur (15 <= sharpness <= 75)."""
+        if face_crop is None or face_crop.size == 0 or not config.ENABLE_MOTION_BLUR_FILTER:
+            return face_crop
+
+        if 15.0 <= sharpness <= 75.0:
+            try:
+                blurred = cv2.GaussianBlur(face_crop, (0, 0), 2.0)
+                sharpened = cv2.addWeighted(face_crop, 1.25, blurred, -0.25, 0)
+                return sharpened
+            except Exception:
+                return face_crop
+        return face_crop
+
+    def extract_face_embedding(self, aligned_face: Optional[np.ndarray], raw_crop: np.ndarray, full_frame: np.ndarray, bbox: Tuple[int, int, int, int], rgb_full: Optional[np.ndarray] = None) -> Optional[np.ndarray]:
         """
         Extracts high-dimensional face descriptor matching Appwrite / Face-API.js database representations.
-        Extracts directly from full-resolution RGB frame at the detected face bounding box.
+        Extracts directly from full-resolution RGB frame at detected bbox with fallback to enhanced crops.
         """
         if DLIB_AVAILABLE:
             try:
                 top, right, bottom, left = bbox
                 h, w, _ = full_frame.shape
-                
+
                 # Ensure bounding box is clamped within frame
                 c_top = max(0, min(h - 1, top))
                 c_bottom = max(0, min(h - 1, bottom))
@@ -336,7 +394,9 @@ class GoogleFacePipeline:
                 c_right = max(0, min(w - 1, right))
 
                 if (c_bottom - c_top) >= 30 and (c_right - c_left) >= 30:
-                    rgb_full = cv2.cvtColor(full_frame, cv2.COLOR_BGR2RGB)
+                    if rgb_full is None:
+                        rgb_full = cv2.cvtColor(full_frame, cv2.COLOR_BGR2RGB)
+
                     # 1. Primary: Extract from full frame at detected location
                     encs = face_recognition.face_encodings(rgb_full, [(c_top, c_right, c_bottom, c_left)], num_jitters=1)
                     if encs and len(encs) > 0:
@@ -349,18 +409,26 @@ class GoogleFacePipeline:
                     e_bottom = min(h - 1, int(c_bottom + bh * 0.15))
                     e_left = max(0, int(c_left - bw * 0.15))
                     e_right = min(w - 1, int(c_right + bw * 0.15))
-                    
+
                     encs_exp = face_recognition.face_encodings(rgb_full, [(e_top, e_right, e_bottom, e_left)], num_jitters=1)
                     if encs_exp and len(encs_exp) > 0:
                         return np.array(encs_exp[0], dtype=np.float32)
 
-                # 3. Fallback: On cropped face if full frame lookup failed
+                # 3. Fallback: On enhanced/illuminated crop if full frame lookup failed
                 if raw_crop is not None and raw_crop.shape[0] >= 40 and raw_crop.shape[1] >= 40:
                     rgb_crop = cv2.cvtColor(raw_crop, cv2.COLOR_BGR2RGB)
                     ch, cw, _ = rgb_crop.shape
                     encs_crop = face_recognition.face_encodings(rgb_crop, [(0, cw, ch, 0)], num_jitters=1)
                     if encs_crop and len(encs_crop) > 0:
                         return np.array(encs_crop[0], dtype=np.float32)
+
+                # 4. Fallback: On 112x112 canonical aligned face
+                if aligned_face is not None and aligned_face.shape[0] >= 50:
+                    rgb_aligned = cv2.cvtColor(aligned_face, cv2.COLOR_BGR2RGB)
+                    ah, aw, _ = rgb_aligned.shape
+                    encs_align = face_recognition.face_encodings(rgb_aligned, [(0, aw, ah, 0)], num_jitters=1)
+                    if encs_align and len(encs_align) > 0:
+                        return np.array(encs_align[0], dtype=np.float32)
 
             except Exception:
                 pass
@@ -419,11 +487,6 @@ class GoogleFacePipeline:
                 center_xy = ((x1 + x2) // 2, (y1 + y2) // 2)
 
                 # 3. Extract 5 Canonical Anchor Points
-                # Left eye center: Landmark 468 (iris) or average of (33, 133)
-                # Right eye center: Landmark 473 (iris) or average of (362, 263)
-                # Nose tip: Landmark 1
-                # Left mouth corner: Landmark 61
-                # Right mouth corner: Landmark 291
                 if len(pixel_pts) >= 478:
                     p_leye = pixel_pts[468]
                     p_reye = pixel_pts[473]
@@ -445,22 +508,30 @@ class GoogleFacePipeline:
                 ear_l, ear_r, ear_avg = self.compute_ear(pixel_pts)
                 is_live = (ear_avg >= config.MIN_EYE_ASPECT_RATIO) if config.ENABLE_LIVENESS_GUARD else True
 
-                # 6. Face Quality Metrics
+                # 6. Face Quality Metrics & Adaptive Illumination Normalizer
                 face_crop = frame[y1:y2, x1:x2].copy()
                 gray_crop = cv2.cvtColor(face_crop, cv2.COLOR_BGR2GRAY)
                 sharpness = float(cv2.Laplacian(gray_crop, cv2.CV_64F).var())
                 illum = float(np.mean(gray_crop))
                 quality = self.compute_quality_score(face_crop, sharpness, yaw, pitch, (x2 - x1))
 
+                # Apply Adaptive Illumination Normalization (CLAHE / Gamma) & Motion Blur Recovery
+                enhanced_crop, lighting_cond, was_enhanced = self.enhance_face_illumination(face_crop)
+                enhanced_crop = self.enhance_sharpness_for_motion(enhanced_crop, sharpness)
+
                 # 7. 5-Point Canonical Affine Face Alignment
                 aligned_crop = None
                 if config.ENABLE_CANONICAL_ALIGNMENT:
                     aligned_crop = self.align_face_5pt(frame, pts5, output_size=(112, 112))
+                    if aligned_crop is not None and was_enhanced:
+                        aligned_crop, _, _ = self.enhance_face_illumination(aligned_crop)
 
-                # 8. Face Embedding Vector
+                # 8. Face Embedding Vector (Extracts with quality guard)
                 embedding = None
                 if extract_embeddings:
-                    embedding = self.extract_face_embedding(aligned_crop, face_crop, frame, bbox)
+                    # Only compute embedding if quality meets threshold or face is frontal
+                    if quality >= config.MIN_QUALITY_FOR_ENCODING or is_frontal:
+                        embedding = self.extract_face_embedding(aligned_crop, enhanced_crop, frame, bbox, rgb_full=rgb_frame)
 
                 results.append(GoogleFaceData(
                     bbox=bbox,
@@ -480,8 +551,10 @@ class GoogleFacePipeline:
                     sharpness_score=round(sharpness, 1),
                     illumination_score=round(illum, 1),
                     quality_score=round(quality, 3),
+                    lighting_condition=lighting_cond,
+                    is_enhanced=was_enhanced,
                     aligned_face=aligned_crop,
-                    face_crop=face_crop,
+                    face_crop=enhanced_crop if was_enhanced else face_crop,
                     embedding=embedding
                 ))
 

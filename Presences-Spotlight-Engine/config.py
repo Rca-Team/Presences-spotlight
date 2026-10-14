@@ -26,6 +26,11 @@ MAX_FACES_TO_DETECT = int(os.getenv("MAX_FACES_TO_DETECT", "10"))
 # Canonical 5-Point Affine Face Alignment (Standardizes scale, tilt, rotation to 112x112)
 ENABLE_CANONICAL_ALIGNMENT = os.getenv("ENABLE_CANONICAL_ALIGNMENT", "true").lower() in ("true", "1", "yes")
 
+# Adaptive Illumination & Quality Normalization (AIE - Backlight, Shadow & Glare Fix)
+ENABLE_ADAPTIVE_ILLUMINATION = os.getenv("ENABLE_ADAPTIVE_ILLUMINATION", "true").lower() in ("true", "1", "yes")
+ENABLE_MOTION_BLUR_FILTER = os.getenv("ENABLE_MOTION_BLUR_FILTER", "true").lower() in ("true", "1", "yes")
+MIN_QUALITY_FOR_ENCODING = float(os.getenv("MIN_QUALITY_FOR_ENCODING", "0.45"))
+
 # 3D Head Pose Filtering (Tolerates normal walk-through head turns)
 ENABLE_POSE_FILTER = os.getenv("ENABLE_POSE_FILTER", "false").lower() in ("true", "1", "yes")
 MAX_POSE_YAW_DEG = float(os.getenv("MAX_POSE_YAW_DEG", "45.0"))
@@ -50,7 +55,7 @@ BACKEND_TYPE = os.getenv("BACKEND_TYPE", "appwrite").lower()
 
 # Appwrite Official Cloud Backend Configuration
 APPWRITE_ENDPOINT = os.getenv("APPWRITE_ENDPOINT", os.getenv("VITE_APPWRITE_ENDPOINT", "https://sgp.cloud.appwrite.io/v1")).rstrip('/')
-APPWRITE_PROJECT_ID = os.getenv("APPWRITE_PROJECT_ID", os.getenv("VITE_APPWRITE_PROJECT_ID", "6abfd34f000604fcf074"))
+APPWRITE_PROJECT_ID = os.getenv("APPWRITE_PROJECT_ID", os.getenv("VITE_APPWRITE_PROJECT_ID", "6accbd5d00053c5c1ac2"))
 APPWRITE_API_KEY = os.getenv("APPWRITE_API_KEY", "")
 APPWRITE_DATABASE_ID = os.getenv("APPWRITE_DATABASE_ID", os.getenv("VITE_APPWRITE_DATABASE_ID", "presences_db"))
 APPWRITE_BUCKET_ID = os.getenv("APPWRITE_BUCKET_ID", "face-images")
@@ -64,15 +69,30 @@ SUPABASE_KEY = os.getenv("SUPABASE_KEY", "")
 
 
 # ─── 3. Camera & Video Stream Settings ────────────────────────────────────────
-# RTSP URL from IP camera (e.g., rtsp://admin:pass@192.168.1.50:554/Streaming/Channels/101)
-# Or an integer device index (e.g., 0) for a local USB/integrated webcam
-RTSP_URL = os.getenv("RTSP_URL", "0")
+# Dual Camera Configuration for simultaneous real-time monitoring
+DUAL_CAMERA_MODE = os.getenv("DUAL_CAMERA_MODE", "true").lower() in ("true", "1", "yes")
+
+# Camera 1 (Default: Primary Gate / Lane 1, USB index 0 or RTSP URL)
+CAMERA_1_SOURCE = os.getenv("CAMERA_1_SOURCE", os.getenv("RTSP_URL", "0"))
+CAMERA_1_NAME = os.getenv("CAMERA_1_NAME", "Lane 1 - Gate A")
+
+# Camera 2 (Default: Secondary Gate / Lane 2, USB index 1 or RTSP URL)
+CAMERA_2_SOURCE = os.getenv("CAMERA_2_SOURCE", "1")
+CAMERA_2_NAME = os.getenv("CAMERA_2_NAME", "Lane 2 - Gate B")
+
+# Fallback alias for backward compatibility
+RTSP_URL = CAMERA_1_SOURCE
+
 CAMERA_WIDTH = int(os.getenv("CAMERA_WIDTH", "1280"))
 CAMERA_HEIGHT = int(os.getenv("CAMERA_HEIGHT", "720"))
 TARGET_FPS = int(os.getenv("TARGET_FPS", "30"))
 
 # Downscale factor for real-time face detection on CPU/GPU (0.5 = 640x360 for detection, then full res for embedding)
 FRAME_SCALE = float(os.getenv("FRAME_SCALE", "0.5"))
+
+# Cross-camera deduplication cooldown in seconds (prevents double marks when student crosses both camera angles)
+CROSS_CAMERA_COOLDOWN_SEC = int(os.getenv("CROSS_CAMERA_COOLDOWN_SEC", "45"))
+
 
 
 # ─── 4. Recognition & Anti-False Attendance Safeguards ───────────────────────
@@ -82,7 +102,13 @@ MATCH_THRESHOLD = float(os.getenv("MATCH_THRESHOLD", "0.50"))
 # Ambiguity Ratio: If best_distance / second_best_distance > 0.88, flag as ambiguous to prevent misidentifying similar students
 AMBIGUITY_RATIO = float(os.getenv("AMBIGUITY_RATIO", "0.88"))
 
-# Multi-Frame Consensus: 2 frames (or 1 frame if confidence is high < 0.44)
+# Ambiguity Margin Delta: Absolute separation required between top candidate and runner-up candidate
+AMBIGUITY_MARGIN_DELTA = float(os.getenv("AMBIGUITY_MARGIN_DELTA", "0.08"))
+
+# Strict Zero False Mode: Enforces mandatory multi-frame consensus and margin checks
+STRICT_ZERO_FALSE_MODE = os.getenv("STRICT_ZERO_FALSE_MODE", "true").lower() in ("true", "1", "yes")
+
+# Multi-Frame Consensus: 2 frames minimum across walking trajectory
 CONSENSUS_FRAMES_REQUIRED = int(os.getenv("CONSENSUS_FRAMES_REQUIRED", "2"))
 CONSENSUS_WINDOW_SECONDS = float(os.getenv("CONSENSUS_WINDOW_SECONDS", "2.0"))
 

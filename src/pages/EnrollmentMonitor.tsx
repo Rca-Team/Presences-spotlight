@@ -937,7 +937,7 @@ export default function EnrollmentMonitor() {
     try {
       setLaunchingCaptureAdm(student.admission_number);
 
-      const challenges: ('left' | 'right' | 'up')[] = ['left', 'right', 'up'];
+      const challenges: ('left' | 'right')[] = ['left', 'right'];
       const cls = student.class || (student.category ? student.category.split('-')[0] : '');
       const sec =
         student.section ||
@@ -959,6 +959,7 @@ export default function EnrollmentMonitor() {
           mother_name: student.mother_name || '',
           date_of_birth: student.date_of_birth || '',
           parent_phone: student.parent_phone_full || student.parent_phone || '',
+          email: student.email || '',
           blood_group: student.blood_group || '',
           address: student.address || '',
         },

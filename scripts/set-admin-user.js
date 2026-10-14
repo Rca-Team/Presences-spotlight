@@ -1,7 +1,7 @@
 const https = require('https');
 
 const endpoint = 'https://sgp.cloud.appwrite.io/v1';
-const projectId = '6abfd34f000604fcf074';
+const projectId = '6accbd5d00053c5c1ac2';
 const apiKey = process.env.APPWRITE_API_KEY;
 const userId = '07c295a7-384a-494c-853c-3c0db74fdef4';
 

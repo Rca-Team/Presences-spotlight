@@ -1,9 +1,27 @@
+import fs from 'node:fs';
+import path from 'node:path';
 import { Client, Databases, Users } from 'node-appwrite';
 
-const APPWRITE_ENDPOINT = 'https://sgp.cloud.appwrite.io/v1';
-const APPWRITE_PROJECT_ID = '6abfd34f000604fcf074';
+try {
+  const envPath = path.resolve(process.cwd(), '.env');
+  if (fs.existsSync(envPath)) {
+    for (const line of fs.readFileSync(envPath, 'utf8').split('\n')) {
+      const t = line.trim();
+      if (!t || t.startsWith('#')) continue;
+      const i = t.indexOf('=');
+      if (i > 0) {
+        const k = t.slice(0, i).trim();
+        const v = t.slice(i + 1).trim().replace(/^["']|["']$/g, '');
+        if (!process.env[k]) process.env[k] = v;
+      }
+    }
+  }
+} catch {}
+
+const APPWRITE_ENDPOINT = process.env.VITE_APPWRITE_ENDPOINT || 'https://sgp.cloud.appwrite.io/v1';
+const APPWRITE_PROJECT_ID = process.env.VITE_APPWRITE_PROJECT_ID || '6accbd5d00053c5c1ac2';
 const APPWRITE_API_KEY = process.env.APPWRITE_API_KEY;
-const DATABASE_ID = 'presences_db';
+const DATABASE_ID = process.env.VITE_APPWRITE_DATABASE_ID || 'presences_db';
 
 const appwrite = new Client()
   .setEndpoint(APPWRITE_ENDPOINT)

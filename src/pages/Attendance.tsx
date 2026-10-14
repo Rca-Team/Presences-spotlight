@@ -64,7 +64,7 @@ const AppleLiveClock: React.FC = () => {
   return (
     <div className="flex items-center gap-2 text-xs sm:text-sm font-medium tracking-tight text-slate-800 dark:text-slate-200">
       <div className="flex items-center gap-1.5 font-mono font-semibold tracking-normal text-slate-900 dark:text-white">
-        <Clock className="w-3 h-3 sm:w-3.5 sm:h-3.5 text-blue-500 animate-pulse" />
+        <Clock className="w-3.5 h-3.5 text-blue-500 shrink-0" />
         <span className="hidden sm:inline">{timeStr}</span>
         <span className="sm:hidden">{timeStrShort}</span>
       </div>
@@ -337,65 +337,65 @@ const Attendance: React.FC = () => {
             </div>
           </div>
 
-          {/* 3. The 4 Clean Metric Cards (Zero-Lag Direct Render, High-Contrast) */}
+          {/* 3. The 4 Clean Metric Cards (Fluid Bento Grid, Auto-fit, Zero Clutter) */}
           {!isKioskFocus && (
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 sm:gap-3">
-              <div className="rounded-xl border border-slate-200/80 dark:border-slate-800 bg-white/90 dark:bg-slate-900/90 p-3 sm:p-3.5 shadow-xs">
+            <div className="bento-grid-fluid">
+              <div className="rounded-2xl border border-slate-200/80 dark:border-slate-800 bg-white/90 dark:bg-slate-900/90 p-3.5 sm:p-4 shadow-xs hover:border-slate-300 dark:hover:border-slate-700 transition-colors">
                 <div className="flex items-center justify-between text-slate-500 dark:text-slate-400 text-xs font-bold uppercase tracking-wider">
                   <span>ENROLLED</span>
-                  <Users className="w-3.5 h-3.5 text-purple-500" />
+                  <Users className="w-4 h-4 text-indigo-500" />
                 </div>
-                <div className="text-xl sm:text-2xl font-black text-slate-900 dark:text-white font-mono mt-1">
+                <div className="text-2xl sm:text-3xl font-black text-slate-900 dark:text-white font-mono mt-1.5">
                   {stats.totalRegistered}
                 </div>
-                <div className="text-[10px] text-muted-foreground font-medium truncate mt-0.5">
-                  Total registered roster
+                <div className="text-[11px] text-muted-foreground font-medium truncate mt-0.5">
+                  Registered roster
                 </div>
               </div>
 
-              <div className="rounded-xl border border-emerald-500/30 bg-emerald-500/5 p-3 sm:p-3.5 shadow-xs">
+              <div className="rounded-2xl border border-emerald-500/25 bg-emerald-500/5 dark:bg-emerald-500/10 p-3.5 sm:p-4 shadow-xs">
                 <div className="flex items-center justify-between text-emerald-600 dark:text-emerald-400 text-xs font-bold uppercase tracking-wider">
                   <span>PRESENT</span>
-                  <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500" />
+                  <CheckCircle2 className="w-4 h-4 text-emerald-500" />
                 </div>
-                <div className="text-xl sm:text-2xl font-black text-emerald-600 dark:text-emerald-400 font-mono mt-1">
+                <div className="text-2xl sm:text-3xl font-black text-emerald-600 dark:text-emerald-400 font-mono mt-1.5">
                   {stats.presentToday}
                 </div>
-                <div className="text-[10px] text-emerald-600/80 font-medium truncate mt-0.5">
+                <div className="text-[11px] text-emerald-600/80 dark:text-emerald-400/80 font-medium truncate mt-0.5">
                   Before {format12Hour(activeCutoffTime)}
                 </div>
               </div>
 
-              <div className="rounded-xl border border-amber-500/30 bg-amber-500/5 p-3 sm:p-3.5 shadow-xs">
+              <div className="rounded-2xl border border-amber-500/25 bg-amber-500/5 dark:bg-amber-500/10 p-3.5 sm:p-4 shadow-xs">
                 <div className="flex items-center justify-between text-amber-600 dark:text-amber-400 text-xs font-bold uppercase tracking-wider">
                   <span>LATE</span>
-                  <Clock className="w-3.5 h-3.5 text-amber-500" />
+                  <Clock className="w-4 h-4 text-amber-500" />
                 </div>
-                <div className="text-xl sm:text-2xl font-black text-amber-600 dark:text-amber-400 font-mono mt-1">
+                <div className="text-2xl sm:text-3xl font-black text-amber-600 dark:text-amber-400 font-mono mt-1.5">
                   {stats.lateToday}
                 </div>
-                <div className="text-[10px] text-amber-600/80 font-medium truncate mt-0.5">
+                <div className="text-[11px] text-amber-600/80 dark:text-amber-400/80 font-medium truncate mt-0.5">
                   After {format12Hour(activeCutoffTime)}
                 </div>
               </div>
 
-              <div className="rounded-xl border border-blue-500/30 bg-blue-500/5 p-3 sm:p-3.5 shadow-xs">
+              <div className="rounded-2xl border border-blue-500/25 bg-blue-500/5 dark:bg-blue-500/10 p-3.5 sm:p-4 shadow-xs">
                 <div className="flex items-center justify-between text-blue-600 dark:text-blue-400 text-xs font-bold uppercase tracking-wider">
-                  <span>RATE</span>
-                  <TrendingUp className="w-3.5 h-3.5 text-blue-500" />
+                  <span>TURNOUT</span>
+                  <TrendingUp className="w-4 h-4 text-blue-500" />
                 </div>
-                <div className="text-xl sm:text-2xl font-black text-blue-600 dark:text-blue-400 font-mono mt-1">
+                <div className="text-2xl sm:text-3xl font-black text-blue-600 dark:text-blue-400 font-mono mt-1.5">
                   {stats.attendanceRate}%
                 </div>
-                <div className="text-[10px] text-blue-600/80 font-medium truncate mt-0.5">
-                  Turnout percentage
+                <div className="text-[11px] text-blue-600/80 dark:text-blue-400/80 font-medium truncate mt-0.5">
+                  Attendance rate
                 </div>
               </div>
             </div>
           )}
 
-          {/* 4. Snappy Segmented Method Switcher (Lag-free, Unified Across All Modes) */}
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-2 bg-slate-100 dark:bg-slate-900/80 p-1.5 rounded-2xl border border-slate-200 dark:border-slate-800">
+          {/* 4. Snappy Segmented Method Switcher (Lag-free, Touch Ergonomics) */}
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-1.5 bg-slate-100/90 dark:bg-slate-900/80 p-1.5 rounded-2xl border border-slate-200/80 dark:border-slate-800">
             {tabs.map((tab) => {
               const isActive = activeTab === tab.id;
               return (
@@ -403,22 +403,20 @@ const Attendance: React.FC = () => {
                   key={tab.id}
                   type="button"
                   onClick={() => setActiveTab(tab.id as any)}
-                  className={`flex items-center justify-center gap-2 py-2.5 px-3 rounded-xl text-xs sm:text-sm font-bold transition-all cursor-pointer ${
+                  className={`flex items-center justify-center gap-2 py-2.5 px-3 rounded-xl text-xs sm:text-sm font-bold min-h-[42px] transition-all cursor-pointer ${
                     isActive
-                      ? liteMode 
-                        ? 'bg-cyan-500 text-slate-950 shadow-md shadow-cyan-500/20' 
-                        : 'bg-blue-600 text-white shadow-md shadow-blue-600/25'
-                      : 'text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
+                      ? 'bg-white dark:bg-slate-800 text-slate-950 dark:text-white shadow-sm border border-slate-200/80 dark:border-white/10'
+                      : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-black/5 dark:hover:bg-white/5'
                   }`}
                 >
-                  <tab.icon className="w-4 h-4 shrink-0" />
+                  <tab.icon className="w-4 h-4 shrink-0 text-primary" />
                   <span className="hidden sm:inline">{tab.label}</span>
                   <span className="sm:hidden">{tab.shortLabel}</span>
                   {tab.badge && (
-                    <span className={`text-[9px] uppercase px-1.5 py-0.2 rounded font-extrabold hidden lg:inline ${
+                    <span className={`text-[9px] uppercase px-1.5 py-0.5 rounded font-extrabold hidden lg:inline ${
                       isActive 
-                        ? 'bg-white/20 text-white' 
-                        : 'bg-blue-500/10 text-blue-600 dark:text-blue-400'
+                        ? 'bg-primary/10 text-primary' 
+                        : 'bg-muted text-muted-foreground'
                     }`}>
                       {tab.badge}
                     </span>

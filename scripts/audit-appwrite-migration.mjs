@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import { Client, Databases, Functions, Query } from 'node-appwrite';
 const key = process.env.APPWRITE_API_KEY;
-const client = new Client().setEndpoint('https://sgp.cloud.appwrite.io/v1').setProject('6abfd34f000604fcf074').setKey(key);
+const client = new Client().setEndpoint('https://sgp.cloud.appwrite.io/v1').setProject('6accbd5d00053c5c1ac2').setKey(key);
 const db = new Databases(client);
 const functions = new Functions(client);
 const list = await db.listCollections('presences_db', [Query.limit(100)]);

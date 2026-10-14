@@ -1,6 +1,6 @@
 import fs from 'node:fs';
 import { Client, Databases, Query } from 'node-appwrite';
-const db = new Databases(new Client().setEndpoint('https://sgp.cloud.appwrite.io/v1').setProject('6abfd34f000604fcf074').setKey(process.env.APPWRITE_API_KEY));
+const db = new Databases(new Client().setEndpoint('https://sgp.cloud.appwrite.io/v1').setProject('6accbd5d00053c5c1ac2').setKey(process.env.APPWRITE_API_KEY));
 const response = await fetch('https://cvdcbcsonlianbfeessy.supabase.co/rest/v1/attendance_records?status=eq.registered&select=id,device_info&limit=1000', { headers: { apikey: process.env.SUPABASE_STORAGE_KEY, Authorization: 'Bearer ' + process.env.SUPABASE_STORAGE_KEY } });
 if (!response.ok) throw new Error('Source metadata HTTP ' + response.status);
 const source = new Map((await response.json()).map(row => [row.id, row]));

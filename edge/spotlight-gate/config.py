@@ -15,7 +15,7 @@ BACKEND_TYPE = os.getenv("BACKEND_TYPE", "auto").lower()  # "appwrite", "supabas
 
 # Appwrite Official Cloud / Self-Hosted Configuration
 APPWRITE_ENDPOINT = os.getenv("APPWRITE_ENDPOINT", os.getenv("VITE_APPWRITE_ENDPOINT", "https://sgp.cloud.appwrite.io/v1")).rstrip('/')
-APPWRITE_PROJECT_ID = os.getenv("APPWRITE_PROJECT_ID", os.getenv("VITE_APPWRITE_PROJECT_ID", "6abfd34f000604fcf074"))
+APPWRITE_PROJECT_ID = os.getenv("APPWRITE_PROJECT_ID", os.getenv("VITE_APPWRITE_PROJECT_ID", "6accbd5d00053c5c1ac2"))
 APPWRITE_API_KEY = os.getenv("APPWRITE_API_KEY", "")
 APPWRITE_DATABASE_ID = os.getenv("APPWRITE_DATABASE_ID", os.getenv("VITE_APPWRITE_DATABASE_ID", "presences_db"))
 APPWRITE_BUCKET_ID = os.getenv("APPWRITE_BUCKET_ID", "face-images")

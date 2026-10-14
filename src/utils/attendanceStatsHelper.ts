@@ -692,6 +692,7 @@ export async function fetchUnifiedStudentSnapshot(forceFresh = false): Promise<U
         attendanceRate: 0,
         statusesByEmployeeId: {},
         roster: [],
+        students: [],
         recentCheckIns: [],
       };
     } finally {

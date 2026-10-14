@@ -777,11 +777,11 @@ const Admin = () => {
               </div>
             </div>
 
-            {/* Mobile feature navigation - Apple Nano-Glass Segmented Capsule */}
+            {/* Mobile feature navigation - Modern Segmented Capsule with Edge Masking */}
             {isMobile && (
-              <div className="border-b border-slate-200/70 dark:border-white/10 nano-glass px-2.5 py-2 sticky top-0 z-20 backdrop-blur-xl bg-slate-50/85 dark:bg-slate-950/85">
+              <div className="border-b border-slate-200/70 dark:border-white/10 nano-glass px-2 py-2 sticky top-0 z-20 backdrop-blur-xl bg-slate-50/90 dark:bg-slate-950/90">
                 <div className="flex items-center gap-1.5">
-                  <div className="flex gap-1.5 overflow-x-auto no-scrollbar py-0.5 flex-1 min-w-0">
+                  <div className="flex gap-1.5 overflow-x-auto no-scrollbar scroll-mask-edges py-0.5 flex-1 min-w-0">
                     {navItems.map((item) => {
                       const isActive = activeTab === item.id;
                       return (
@@ -789,20 +789,13 @@ const Admin = () => {
                           key={item.id}
                           onClick={() => handleTabChange(item.id)}
                           className={cn(
-                            "relative shrink-0 h-8 px-3 rounded-full flex items-center gap-1.5 text-xs font-semibold select-none transition-all duration-200 active:scale-95",
+                            "relative shrink-0 min-h-[36px] px-3.5 rounded-full flex items-center gap-1.5 text-xs font-semibold select-none transition-all duration-150 active:scale-95 cursor-pointer",
                             isActive
-                              ? "text-white font-bold"
-                              : "text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white"
+                              ? "text-white font-bold bg-gradient-to-r from-blue-600 to-indigo-600 shadow-sm"
+                              : "text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white bg-slate-100/80 dark:bg-white/5"
                           )}
                         >
-                          {isActive && (
-                            <motion.span
-                              layoutId="admin-mobile-nav-active"
-                              className="absolute inset-0 rounded-full bg-gradient-to-r from-blue-600 via-indigo-600 to-purple-600 shadow-md shadow-blue-600/30 border border-white/20"
-                              transition={{ type: 'spring', stiffness: 420, damping: 32, mass: 0.7 }}
-                            />
-                          )}
-                          <item.icon className="relative z-10 w-3.5 h-3.5" />
+                          <item.icon className="relative z-10 w-3.5 h-3.5 shrink-0" />
                           <span className="relative z-10 text-[11px] whitespace-nowrap">{item.label}</span>
                           {item.count !== undefined && item.count > 0 && (
                             <Badge variant="destructive" className="relative z-10 text-[8px] h-4 min-w-[14px] px-1 rounded-full">
@@ -836,7 +829,7 @@ const Admin = () => {
               )}
               style={!isMobile ? { WebkitOverflowScrolling: 'touch' } : undefined}
             >
-              <div className="p-2.5 sm:p-4 md:p-6 pb-32 sm:pb-12 max-w-full">
+              <div className="p-2.5 sm:p-4 md:p-6 pb-20 sm:pb-12 max-w-full">
                 <AnimatePresence mode="wait" initial={false}>
                   <motion.div
                     key={isDataLoading ? 'loading' : activeTab}

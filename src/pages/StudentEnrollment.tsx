@@ -211,7 +211,7 @@ export default function StudentEnrollment() {
 
   // Helper to build an instant local session from StudentDetails so camera launches in 0ms when redirected from Student Management
   const launchInstantStudentCapture = useCallback((student: StudentDetails) => {
-    const challenges: ('left' | 'right' | 'up')[] = ['left', 'right', 'up'];
+    const challenges: ('left' | 'right')[] = ['left', 'right'];
     const fastSession: EnrollmentSession = {
       session: `fast_${student.admission_number}_${Date.now()}`,
       expires: Date.now() + 30 * 60 * 1000,
@@ -274,6 +274,7 @@ export default function StudentEnrollment() {
           mother_name: found.mother_name || '',
           date_of_birth: found.date_of_birth || '',
           parent_phone: found.parent_phone_full || found.parent_phone || '',
+          email: found.email || '',
           blood_group: found.blood_group || '',
           address: found.address || '',
         });

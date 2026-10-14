@@ -3,7 +3,7 @@ import fs from 'fs';
 import path from 'path';
 
 const APPWRITE_ENDPOINT = 'https://sgp.cloud.appwrite.io/v1';
-const APPWRITE_PROJECT_ID = '6abfd34f000604fcf074';
+const APPWRITE_PROJECT_ID = '6accbd5d00053c5c1ac2';
 const APPWRITE_API_KEY = 'YOUR_KEY';
 const DATABASE_ID = 'presences_db';
 

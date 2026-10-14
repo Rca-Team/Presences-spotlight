@@ -521,8 +521,8 @@ const WidgetsPage: React.FC = () => {
                 Live interactive glanceable widgets, automated attendance rings, timetable countdown, noise decibel monitor, and quick actions accessible to all users.
               </p>
 
-              {/* Class Selector Pill Bar */}
-              <div className="flex items-center gap-2 pt-2 overflow-x-auto no-scrollbar pb-1">
+              {/* Class Selector Pill Bar with Edge Masking */}
+              <div className="flex items-center gap-2 pt-2 overflow-x-auto no-scrollbar scroll-mask-edges pb-1">
                 <span className="text-xs font-bold text-muted-foreground shrink-0 flex items-center gap-1">
                   <BookOpen className="h-3.5 w-3.5 text-primary" /> Active Class:
                 </span>

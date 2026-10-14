@@ -2,7 +2,7 @@ import { Client, Databases, Query } from 'node-appwrite';
 
 const client = new Client()
   .setEndpoint('https://sgp.cloud.appwrite.io/v1')
-  .setProject('6abfd34f000604fcf074');
+  .setProject('6accbd5d00053c5c1ac2');
 
 const db = new Databases(client);
 

@@ -15,7 +15,7 @@ if (!process.env.APPWRITE_API_KEY && fs.existsSync('.env')) {
   }
 }
 if (!process.env.APPWRITE_API_KEY) throw new Error('APPWRITE_API_KEY required.');
-const functions = new Functions(new Client().setEndpoint('https://sgp.cloud.appwrite.io/v1').setProject('6abfd34f000604fcf074').setKey(process.env.APPWRITE_API_KEY));
+const functions = new Functions(new Client().setEndpoint('https://sgp.cloud.appwrite.io/v1').setProject(process.env.APPWRITE_PROJECT_ID || '6accbd5d00053c5c1ac2').setKey(process.env.APPWRITE_API_KEY));
 const functionId = 'presences-enrollment';
 await functions.get(functionId); // Update an existing function without changing scopes or storage.
 const stage = path.resolve('.vercel/enrollment-function-release');

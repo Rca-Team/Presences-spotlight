@@ -255,7 +255,7 @@ export const TeacherMobileAppView: React.FC<TeacherMobileAppViewProps> = ({
 
         {/* Horizontal Capsule Tabs (Matching User Design) */}
         <div className="pt-2 border-t border-border/60">
-          <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar p-1 rounded-full bg-slate-950/85 dark:bg-black/90 backdrop-blur-xl border border-white/10 shadow-inner">
+          <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar scroll-mask-edges p-1 rounded-full bg-slate-900/90 dark:bg-black/90 backdrop-blur-xl border border-white/10 shadow-inner">
             {[
               { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
               { id: 'rollcall', label: 'Roll Call', icon: CheckSquare, badge: stats.unmarked > 0 ? stats.unmarked : undefined },
@@ -272,13 +272,13 @@ export const TeacherMobileAppView: React.FC<TeacherMobileAppViewProps> = ({
                     haptic('selection');
                     setMobileTab(item.id as any);
                   }}
-                  className={`relative flex items-center gap-1.5 rounded-full px-3.5 py-1.5 text-xs font-semibold whitespace-nowrap transition-all duration-200 shrink-0 select-none ${
+                  className={`relative flex items-center gap-1.5 rounded-full px-3.5 py-2 text-xs font-semibold whitespace-nowrap min-h-[38px] transition-all duration-150 shrink-0 select-none cursor-pointer ${
                     isActive
-                      ? 'bg-gradient-to-r from-blue-600 via-indigo-600 to-purple-600 text-white shadow-md shadow-indigo-500/25 ring-1 ring-white/20'
+                      ? 'bg-gradient-to-r from-blue-600 to-indigo-600 text-white shadow-sm ring-1 ring-white/20 font-bold'
                       : 'text-slate-300 hover:text-white hover:bg-white/5 active:scale-95'
                   }`}
                 >
-                  <Icon className="h-3.5 w-3.5" />
+                  <Icon className="h-3.5 w-3.5 shrink-0" />
                   <span>{item.label}</span>
                   {item.badge !== undefined && item.badge > 0 && (
                     <span className="h-4 min-w-[16px] px-1 rounded-full bg-rose-500 text-white text-[9px] font-black flex items-center justify-center">
@@ -308,7 +308,7 @@ export const TeacherMobileAppView: React.FC<TeacherMobileAppViewProps> = ({
               <CardContent className="p-4 space-y-4">
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-2">
-                    <span className="h-2.5 w-2.5 rounded-full bg-emerald-500 animate-ping" />
+                    <span className="h-2 w-2 rounded-full bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.7)]" />
                     <span className="text-xs font-black uppercase tracking-wider text-foreground">
                       Today's Live Attendance
                     </span>
