@@ -20,6 +20,9 @@ const NotificationSettings = lazyWithRetry(() => import('@/components/admin/Noti
 const RealtimeSettingsHeader = lazyWithRetry(() => import('@/components/admin/RealtimeSettingsHeader'), 'admin-realtime-settings-header');
 const CategoryBasedView = lazyWithRetry(() => import('@/components/admin/CategoryBasedView'), 'admin-sections');
 const PrincipalDashboard = lazyWithRetry(() => import('@/components/admin/PrincipalDashboard'), 'admin-dashboard');
+if (typeof window !== 'undefined') {
+  void import('@/components/admin/PrincipalDashboard');
+}
 const TeacherDashboard = lazyWithRetry(() => import('@/components/admin/TeacherDashboard'), 'admin-teacher-dashboard');
 const AdminNotificationSender = lazyWithRetry(() => import('@/components/admin/AdminNotificationSender'), 'admin-notif-sender');
 const UserAccessManager = lazyWithRetry(() => import('@/components/admin/UserAccessManager'), 'admin-access');
