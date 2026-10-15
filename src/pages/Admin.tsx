@@ -59,7 +59,8 @@ import {
   User, Calendar, Clock, FolderKanban, School,
   LayoutDashboard, Settings, Bell, Users, BarChart3,
   Shield, Activity, TrendingUp, ChevronRight, Send, UserCog,
-  CreditCard, Image, Download, RefreshCw, MessageSquareText, Mail, Siren, CalendarDays, DatabaseBackup, ScanLine, QrCode, Smartphone, Radio, Zap } from
+  CreditCard, Image, Download, RefreshCw, MessageSquareText, Mail, Siren, CalendarDays, DatabaseBackup, ScanLine, QrCode, Smartphone, Radio, Zap,
+  Loader2 } from
 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
@@ -83,15 +84,13 @@ interface NavItem {
   count?: number;
 }
 
-const AdminContentSkeleton = () => (
-  <div className="space-y-4 animate-fade-in">
-    <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-      {Array.from({ length: 4 }).map((_, i) => (
-        <div key={i} className="premium-skeleton h-16 rounded-xl" />
-      ))}
+// Calm, non-flashing fallback for section loading
+const AdminSectionFallback = () => (
+  <div className="w-full space-y-4 py-3">
+    <div className="rounded-2xl border border-slate-200/60 dark:border-white/10 bg-white/40 dark:bg-slate-900/40 backdrop-blur-md p-8 min-h-[360px] flex flex-col items-center justify-center gap-3 text-slate-400">
+      <Loader2 className="w-5 h-5 animate-spin text-blue-500" />
+      <p className="text-xs font-medium">Loading section...</p>
     </div>
-    <div className="premium-skeleton h-12 rounded-xl" />
-    <div className="premium-skeleton h-[360px] md:h-[460px] rounded-2xl" />
   </div>
 );
 
@@ -204,15 +203,64 @@ const Admin = () => {
     }
   });
 
-  // Preload core Daily Operations chunks (Overview, Students, Classes & Sections) immediately after mount
-  // so switching between these 3 tabs is 0ms with zero Suspense skeleton flash.
+  // Comprehensive Tab Pre-loader Map
+  const tabPreloaders: Record<string, () => void> = {
+    dashboard: () => { void import('@/components/admin/PrincipalDashboard'); },
+    students: () => { void import('@/components/admin/AdminFacesList'); },
+    sections: () => { void import('@/components/admin/CategoryBasedView'); },
+    timetable: () => { void import('@/components/admin/TimetableManager'); },
+    reports: () => {
+      void import('@/components/admin/AttendanceReportGenerator');
+      void import('@/components/admin/ClassSectionReport');
+      void import('@/components/admin/SubstitutionReport');
+    },
+    gatepass: () => { void import('@/components/admin/GatePassManager'); },
+    access: () => { void import('@/components/admin/UserAccessManager'); },
+    notifications: () => { void import('@/components/admin/AdminNotificationSender'); },
+    inbox: () => { void import('@/components/admin/AdminInbox'); },
+    emergency: () => { void import('@/components/admin/EmergencyAlertPanel'); },
+    samples: () => {
+      void import('@/components/admin/StudentFaceSamplesManager');
+      void import('@/components/admin/FaceSamplesDiagnosticsPanel');
+    },
+    settings: () => {
+      void import('@/components/admin/RealtimeSettingsHeader');
+      void import('@/components/admin/AttendanceCutoffSetting');
+      void import('@/components/admin/PilotModeSettings');
+    },
+    telemetry: () => { void import('@/components/admin/telemetry/DeviceFleetConsole'); },
+  };
+
+  const preloadTab = (tabId: string) => {
+    try {
+      tabPreloaders[tabId]?.();
+    } catch {}
+  };
+
+  // Pre-warm admin section chunks in the background so switching between tabs is 0ms instantaneous with zero loading flicker
   useEffect(() => {
     const timer = window.setTimeout(() => {
-      void import('@/components/admin/PrincipalDashboard');
-      void import('@/components/admin/AdminFacesList');
-      void import('@/components/admin/CategoryBasedView');
-    }, 50);
-    return () => window.clearTimeout(timer);
+      preloadTab('dashboard');
+      preloadTab('students');
+      preloadTab('sections');
+      preloadTab('timetable');
+      preloadTab('reports');
+    }, 60);
+
+    const idleTimer = window.setTimeout(() => {
+      preloadTab('gatepass');
+      preloadTab('notifications');
+      preloadTab('access');
+      preloadTab('settings');
+      preloadTab('emergency');
+      preloadTab('samples');
+      preloadTab('inbox');
+    }, 800);
+
+    return () => {
+      window.clearTimeout(timer);
+      window.clearTimeout(idleTimer);
+    };
   }, []);
 
   // Secret Hotkey Listener: Ctrl+Shift+D or Cmd+Shift+D (Fleet Radar)
@@ -416,17 +464,19 @@ const Admin = () => {
   }, [attendanceUpdated]);
 
   const handleTabChange = useCallback((tab: string) => {
+    if (tab === activeTab) return;
     haptic('selection');
     setActiveTab(tab);
     try {
       sessionStorage.setItem('presences_admin_active_tab', tab);
     } catch {}
     setSearchParams((prev) => {
+      if (prev.get('tab') === tab) return prev;
       const next = new URLSearchParams(prev);
       next.set('tab', tab);
       return next;
     }, { replace: true });
-  }, [haptic, setSearchParams]);
+  }, [activeTab, haptic, setSearchParams]);
 
   const handleRefresh = async () => {
     invalidateUnifiedStatsCache();
@@ -451,7 +501,7 @@ const Admin = () => {
     return (
       <PageTransition>
         <PageLayout className="min-h-screen bg-background">
-          <Suspense fallback={<div className="p-6"><AdminContentSkeleton /></div>}>
+          <Suspense fallback={<div className="p-6"><AdminSectionFallback /></div>}>
             <TeacherDashboard />
           </Suspense>
         </PageLayout>
@@ -614,7 +664,7 @@ const Admin = () => {
 
   if (liteMode) {
     return (
-      <Suspense fallback={<div className="p-6"><AdminContentSkeleton /></div>}>
+      <Suspense fallback={<div className="p-6"><AdminSectionFallback /></div>}>
         <LiteAdmin stats={stats} />
       </Suspense>
     );
@@ -669,6 +719,8 @@ const Admin = () => {
                           key={item.id}
                           data-nav-id={item.id}
                           onClick={() => handleTabChange(item.id)}
+                          onMouseEnter={() => preloadTab(item.id)}
+                          onFocus={() => preloadTab(item.id)}
                           className={cn(
                             "relative w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs font-semibold transition-all duration-200",
                             isActive
@@ -788,6 +840,8 @@ const Admin = () => {
                         <button
                           key={item.id}
                           onClick={() => handleTabChange(item.id)}
+                          onTouchStart={() => preloadTab(item.id)}
+                          onMouseEnter={() => preloadTab(item.id)}
                           className={cn(
                             "relative shrink-0 min-h-[36px] px-3.5 rounded-full flex items-center gap-1.5 text-xs font-semibold select-none transition-all duration-150 active:scale-95 cursor-pointer",
                             isActive
@@ -819,7 +873,7 @@ const Admin = () => {
               </div>
             )}
 
-            {/* Content Area - Fluid Native Scrolling */}
+            {/* Content Area - Fluid Native Scrolling with Smooth 0ms Tab Transitions */}
             <div 
               className={cn(
                 "w-full",
@@ -830,23 +884,19 @@ const Admin = () => {
               style={!isMobile ? { WebkitOverflowScrolling: 'touch' } : undefined}
             >
               <div className="p-2.5 sm:p-4 md:p-6 pb-20 sm:pb-12 max-w-full">
-                <AnimatePresence mode="wait" initial={false}>
-                  <motion.div
-                    key={isDataLoading ? 'loading' : activeTab}
-                    initial={{ opacity: 0, y: 6 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    exit={{ opacity: 0, y: -4 }}
-                    transition={{ duration: 0.18 }}
-                  >
-                    {isDataLoading ? (
-                      <AdminContentSkeleton />
-                    ) : (
-                      <SectionErrorBoundary tabName={activeTab || 'dashboard'} key={activeTab}>
-                        <Suspense fallback={<AdminContentSkeleton />}>{renderContent()}</Suspense>
-                      </SectionErrorBoundary>
-                    )}
-                  </motion.div>
-                </AnimatePresence>
+                <SectionErrorBoundary tabName={activeTab || 'dashboard'} key={activeTab}>
+                  <Suspense fallback={<AdminSectionFallback />}>
+                    <motion.div
+                      key={activeTab}
+                      initial={{ opacity: 0.88 }}
+                      animate={{ opacity: 1 }}
+                      transition={{ duration: 0.12, ease: 'easeOut' }}
+                      className="w-full"
+                    >
+                      {renderContent()}
+                    </motion.div>
+                  </Suspense>
+                </SectionErrorBoundary>
               </div>
             </div>
 
