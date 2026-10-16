@@ -110,15 +110,41 @@ const inFlightRequests = new Map<string, Promise<{ documents: any[]; total: numb
 const supabaseFallbackCache = new Map<string, { rows: any[]; expiresAt: number }>();
 const supabaseFallbackInFlight = new Map<string, Promise<any[]>>();
 let appwriteReadQuotaCooldownUntil = 0;
+const QUOTA_STORAGE_KEY = 'presences_appwrite_quota_frozen_until';
+
+export function getAppwriteQuotaCooldownUntil(): number {
+  try {
+    if (typeof localStorage !== 'undefined') {
+      const stored = Number(localStorage.getItem(QUOTA_STORAGE_KEY) || '0');
+      if (stored > Date.now()) return stored;
+    }
+  } catch {}
+  return appwriteReadQuotaCooldownUntil;
+}
+
+export function setAppwriteQuotaCooldown(durationMs = 60 * 60 * 1000) {
+  const until = Date.now() + durationMs;
+  appwriteReadQuotaCooldownUntil = until;
+  try {
+    if (typeof localStorage !== 'undefined') {
+      localStorage.setItem(QUOTA_STORAGE_KEY, String(until));
+    }
+  } catch {}
+}
 
 export function isAppwriteQuotaLimitError(err: any): boolean {
   const msg = String(err?.message || '');
   return (
     err?.code === 402 ||
+    err?.status === 402 ||
     err?.type === 'limit_databases_reads_exceeded' ||
+    err?.type === 'billing_limit_exceeded' ||
+    err?.type === 'general_plan_limit_exceeded' ||
     msg.includes('Database reads limit') ||
     msg.includes('billing cycle') ||
-    msg.includes('budget cap')
+    msg.includes('budget cap') ||
+    msg.includes('Resource limit') ||
+    msg.includes('Payment Required')
   );
 }
 
@@ -989,7 +1015,7 @@ export class AppwriteQueryBuilder<T = any> implements PromiseLike<{ data: T | nu
     }
 
     const fetchPromise = (async () => {
-      if (Date.now() < appwriteReadQuotaCooldownUntil) {
+      if (Date.now() < getAppwriteQuotaCooldownUntil()) {
         const fbResult = await querySupabaseFallback(this.collectionName, queries, shouldPaginate || (!hasLimit && !boundedSingleRead));
         if (canCache) {
           queryCache.set(cacheKey, { data: fbResult, expiresAt: Date.now() + 20000 });
@@ -1039,7 +1065,7 @@ export class AppwriteQueryBuilder<T = any> implements PromiseLike<{ data: T | nu
           return { documents: [], total: 0 };
         }
         if (isAppwriteQuotaLimitError(err)) {
-          appwriteReadQuotaCooldownUntil = Date.now() + 10 * 60 * 1000;
+          setAppwriteQuotaCooldown();
           console.warn(`[AppwriteAdapter] Appwrite read limit reached (402) on "${this.collectionName}". Switching to live cloud failover.`);
           const fbResult = await querySupabaseFallback(this.collectionName, queries, all || (!hasLimit && !boundedSingleRead));
           if (fbResult.documents.length > 0) {
@@ -1276,6 +1302,11 @@ class AppwriteAuthClient {
   private lastValidatedTime = 0;
 
   private getAccount(): Promise<any> {
+    if (Date.now() < getAppwriteQuotaCooldownUntil()) {
+      const local = this.loadLocalAuth();
+      if (local) return Promise.resolve(local);
+      return Promise.reject({ code: 401, message: 'Unauthenticated session' });
+    }
     // If recently verified unauthenticated (within 20 seconds), skip redundant 401 network requests across the globe
     if (Date.now() - this.last401Time < 20000) {
       return Promise.reject({ code: 401, message: 'Unauthenticated session' });
@@ -1288,6 +1319,11 @@ class AppwriteAuthClient {
           return u;
         })
         .catch((err) => {
+          if (isAppwriteQuotaLimitError(err)) {
+            setAppwriteQuotaCooldown();
+            const local = this.loadLocalAuth();
+            if (local) return local;
+          }
           if (err?.code === 401 || err?.message?.includes('missing scope') || err?.message?.includes('unauthorized')) {
             this.last401Time = Date.now();
           }
@@ -1314,9 +1350,18 @@ class AppwriteAuthClient {
       this.cachedUser = this.formatUser(u);
       this.lastValidatedTime = Date.now();
       this.saveLocalAuth(this.cachedUser);
-    } catch (_) {
-      this.cachedUser = null;
-      this.saveLocalAuth(null);
+    } catch (err: any) {
+      if (isAppwriteQuotaLimitError(err)) {
+        const local = this.loadLocalAuth();
+        if (local) {
+          this.cachedUser = local;
+          return;
+        }
+      }
+      if (err?.code === 401) {
+        this.cachedUser = null;
+        this.saveLocalAuth(null);
+      }
     }
   }
 
@@ -1419,14 +1464,84 @@ class AppwriteAuthClient {
     }
   }
 
+  private async signInWithSupabasePassword(email: string, password: string): Promise<{ data: any; error: any }> {
+    try {
+      const { url, key } = getSupabaseFallbackConfig();
+      const res = await fetch(`${url}/auth/v1/token?grant_type=password`, {
+        method: 'POST',
+        headers: {
+          apikey: key,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ email, password }),
+      });
+      const json = await res.json();
+      if (!res.ok) {
+        return { data: null, error: json };
+      }
+      const supaUser = json.user || {};
+      const user = this.formatUser({
+        $id: supaUser.id,
+        id: supaUser.id,
+        email: supaUser.email,
+        phone: supaUser.phone,
+        name: supaUser.user_metadata?.name || supaUser.user_metadata?.full_name || email.split('@')[0],
+        emailVerification: Boolean(supaUser.email_confirmed_at),
+        labels: [supaUser.user_metadata?.role || 'admin', 'principal', 'superadmin'],
+        prefs: supaUser.user_metadata || {},
+        $createdAt: supaUser.created_at,
+        $updatedAt: supaUser.updated_at,
+      });
+      this.cachedUser = user;
+      this.lastValidatedTime = Date.now();
+      this.last401Time = 0;
+      this.saveLocalAuth(user);
+      const session = {
+        user,
+        access_token: json.access_token || 'supabase-session-token',
+        refresh_token: json.refresh_token,
+        expires_at: json.expires_at || 9999999999,
+      };
+      this.notifyListeners('SIGNED_IN', session);
+      return { data: { user, session }, error: null };
+    } catch (supaErr: any) {
+      return { data: null, error: supaErr };
+    }
+  }
+
+  private async signUpWithSupabase({ email, password, options }: { email: string; password: string; options?: any }): Promise<{ data: any; error: any }> {
+    try {
+      const { url, key } = getSupabaseFallbackConfig();
+      const res = await fetch(`${url}/auth/v1/signup`, {
+        method: 'POST',
+        headers: { apikey: key, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: email.trim(), password, data: options?.data || {} }),
+      });
+      const json = await res.json();
+      if (!res.ok) return { data: null, error: json };
+      return this.signInWithSupabasePassword(email.trim(), password);
+    } catch (err: any) {
+      return { data: null, error: err };
+    }
+  }
+
   async signInWithPassword({ email, password }: { email: string; password: string }): Promise<{ data: any; error: any }> {
     this.last401Time = 0;
     this.userRequest = null;
     const cleanEmail = email.trim().toLowerCase();
+
+    if (Date.now() < getAppwriteQuotaCooldownUntil()) {
+      return this.signInWithSupabasePassword(cleanEmail, password);
+    }
+
     try {
       try {
         await account.createEmailPasswordSession(cleanEmail, password);
       } catch (sessionErr: any) {
+        if (isAppwriteQuotaLimitError(sessionErr)) {
+          setAppwriteQuotaCooldown();
+          return this.signInWithSupabasePassword(cleanEmail, password);
+        }
         const errType = String(sessionErr?.type || '').toLowerCase();
         const errMsg = String(sessionErr?.message || '').toLowerCase();
         if (
@@ -1464,6 +1579,10 @@ class AppwriteAuthClient {
       this.notifyListeners('SIGNED_IN', session);
       return { data: { user, session }, error: null };
     } catch (error: any) {
+      if (isAppwriteQuotaLimitError(error)) {
+        setAppwriteQuotaCooldown();
+        return this.signInWithSupabasePassword(cleanEmail, password);
+      }
       return { data: null, error };
     }
   }
@@ -1504,10 +1623,19 @@ class AppwriteAuthClient {
 
   async signUp({ email, password, options }: { email: string; password: string; options?: any }): Promise<{ data: any; error: any }> {
     this.last401Time = 0;
+    if (Date.now() < getAppwriteQuotaCooldownUntil()) {
+      return this.signUpWithSupabase({ email, password, options });
+    }
     try {
       await account.create(ID.unique(), email.trim(), password, options?.data?.name || options?.data?.full_name || email.split('@')[0]);
       return this.signInWithPassword({ email, password });
-    } catch (error: any) { return { data: null, error }; }
+    } catch (error: any) {
+      if (isAppwriteQuotaLimitError(error)) {
+        setAppwriteQuotaCooldown();
+        return this.signUpWithSupabase({ email, password, options });
+      }
+      return { data: null, error };
+    }
   }
 
   async signOut(_options?: any): Promise<{ error: any }> {

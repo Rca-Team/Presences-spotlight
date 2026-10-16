@@ -100,6 +100,13 @@ if (typeof window !== 'undefined' && typeof window.fetch === 'function') {
         const directUrl = rawUrl.replace(/^https?:\/\/[^/]+\/api\/appwrite\/v1/, APPWRITE_ENDPOINT).replace(/^\/api\/appwrite\/v1/, APPWRITE_ENDPOINT);
         return originalFetch(directUrl, init);
       }
+      if (res.status === 402) {
+        try {
+          if (typeof localStorage !== 'undefined') {
+            localStorage.setItem('presences_appwrite_quota_frozen_until', String(Date.now() + 60 * 60 * 1000));
+          }
+        } catch {}
+      }
       return res;
     }
 
@@ -115,15 +122,30 @@ if (typeof window !== 'undefined' && typeof window.fetch === 'function') {
           proxyUnavailable = true;
           return originalFetch(input, init);
         }
+        if (res.status === 402) {
+          try {
+            if (typeof localStorage !== 'undefined') {
+              localStorage.setItem('presences_appwrite_quota_frozen_until', String(Date.now() + 60 * 60 * 1000));
+            }
+          } catch {}
+        }
         return res;
       }
     }
 
-    return originalFetch(input, init);
+    const res = await originalFetch(input, init);
+    if (res.status === 402) {
+      try {
+        if (typeof localStorage !== 'undefined') {
+          localStorage.setItem('presences_appwrite_quota_frozen_until', String(Date.now() + 60 * 60 * 1000));
+        }
+      } catch {}
+    }
+    return res;
   };
 
-  // Prevent browser console spam ("WebSocket is already in CLOSING or CLOSED state")
-  // when Appwrite's heartbeat timer fires while a socket is reconnecting or offline
+  // Prevent any client connections to legacy/deprecated Supabase Realtime WebSockets,
+  // and prevent browser console spam ("WebSocket is already in CLOSING or CLOSED state")
   if (typeof window.WebSocket === 'function') {
     const NativeWebSocket = window.WebSocket;
     const origSend = NativeWebSocket.prototype.send;
@@ -137,6 +159,31 @@ if (typeof window !== 'undefined' && typeof window.fetch === 'function') {
         // Ignore transient send errors on closing sockets
       }
     };
+
+    // Intercept WebSocket creation to ensure no connection to supabase.co is ever established
+    const WebSocketInterceptor = function (this: any, url: string | URL, protocols?: string | string[]) {
+      const urlStr = String(url || '');
+      if (urlStr.includes('supabase.co')) {
+        // Return dummy dead socket to immediately drop legacy Supabase realtime requests
+        const dummy = new EventTarget() as any;
+        dummy.readyState = NativeWebSocket.CLOSED;
+        dummy.close = () => {};
+        dummy.send = () => {};
+        dummy.url = urlStr;
+        return dummy;
+      }
+      if (protocols !== undefined) {
+        return new NativeWebSocket(url, protocols);
+      }
+      return new NativeWebSocket(url);
+    } as any;
+
+    WebSocketInterceptor.prototype = NativeWebSocket.prototype;
+    WebSocketInterceptor.CONNECTING = NativeWebSocket.CONNECTING;
+    WebSocketInterceptor.OPEN = NativeWebSocket.OPEN;
+    WebSocketInterceptor.CLOSING = NativeWebSocket.CLOSING;
+    WebSocketInterceptor.CLOSED = NativeWebSocket.CLOSED;
+    window.WebSocket = WebSocketInterceptor;
   }
 }
 

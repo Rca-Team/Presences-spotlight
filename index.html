@@ -32,6 +32,29 @@
           document.documentElement.classList.add('dark');
         }
 
+        // Block deprecated Supabase Realtime WebSockets to protect project connection quota
+        try {
+          if (typeof window !== 'undefined' && typeof window.WebSocket === 'function') {
+            var NativeWS = window.WebSocket;
+            var SafeWS = function(url, protocols) {
+              if (String(url || '').indexOf('supabase.co') !== -1) {
+                var dummy = new EventTarget();
+                dummy.readyState = NativeWS.CLOSED;
+                dummy.close = function() {};
+                dummy.send = function() {};
+                return dummy;
+              }
+              return protocols !== undefined ? new NativeWS(url, protocols) : new NativeWS(url);
+            };
+            SafeWS.prototype = NativeWS.prototype;
+            SafeWS.CONNECTING = NativeWS.CONNECTING;
+            SafeWS.OPEN = NativeWS.OPEN;
+            SafeWS.CLOSING = NativeWS.CLOSING;
+            SafeWS.CLOSED = NativeWS.CLOSED;
+            window.WebSocket = SafeWS;
+          }
+        } catch (_) {}
+
         // Automatic recovery when new deployment replaces dynamic chunk hashes
         function recoverStaleBundle() {
           var lastReload = Number(sessionStorage.getItem('presence:chunk_reload_ts') || '0');
