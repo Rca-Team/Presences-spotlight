@@ -12,7 +12,6 @@ import {
   User, 
   UserPlus, 
   ScanLine, 
-  DoorOpen, 
   LayoutDashboard, 
   GraduationCap, 
   BookOpen,
@@ -28,6 +27,7 @@ import ProfileDropdown from './ProfileDropdown';
 import { useUserRole } from '@/hooks/useUserRole';
 import { useHapticFeedback } from '@/hooks/useHapticFeedback';
 import LiteModeToggle from './LiteModeToggle';
+import { preloadRoute } from '@/lib/preloadRoute';
 
 const Navbar = () => {
   const [isScrolled, setIsScrolled] = useState(false);
@@ -94,7 +94,6 @@ const Navbar = () => {
         { text: 'Teacher Portal', path: '/teacher', icon: BookOpen, show: isAuthenticated && isTeacher && !isAdminOrPrincipal },
         { text: 'Guard Scanner', path: '/guard', icon: QrCode, show: isAuthenticated && isGuard && !isAdminOrPrincipal },
         { text: 'Add Student', path: '/register', icon: UserPlus, show: true },
-        { text: 'Gate & Campus', path: '/gate', icon: DoorOpen, show: isAdminOrPrincipal || isTeacher },
         { text: 'Admin', path: '/admin', icon: LayoutDashboard, show: isAdminOrPrincipal },
       ].filter((item) => item.show);
 
@@ -116,14 +115,14 @@ const Navbar = () => {
           <Logo />
         </Link>
         
-        {/* Desktop Navigation Dock with Apple Floating Capsule */}
+        {/* Desktop Navigation Dock with Liquid Glass Floating Capsule */}
         <LayoutGroup id="navbar-dock-tabs">
           <nav
             onMouseLeave={() => setHoveredPath(null)}
-            className="nano-glass-dock hidden md:flex items-center gap-1 rounded-full p-1.5 relative"
+            className="liquid-glass-dock hidden md:flex items-center gap-1 rounded-full p-1.5 relative shadow-2xl"
           >
             {/* Soft inner top specular highlight */}
-            <span className="pointer-events-none absolute inset-x-6 top-0 h-[1px] bg-gradient-to-r from-transparent via-white/70 dark:via-white/20 to-transparent" />
+            <span className="pointer-events-none absolute inset-x-6 top-0 h-[1px] bg-gradient-to-r from-transparent via-white/80 dark:via-white/50 to-transparent" />
 
             {navLinks.map((item) => {
               const active = isActive(item.path);
@@ -135,11 +134,14 @@ const Navbar = () => {
                   key={item.path}
                   onMouseEnter={() => {
                     setHoveredPath(item.path);
-                    import('@/lib/preloadRoute').then((m) => m.preloadRoute(item.path)).catch(() => undefined);
+                    preloadRoute(item.path);
                   }}
                   onFocus={() => {
                     setHoveredPath(item.path);
-                    import('@/lib/preloadRoute').then((m) => m.preloadRoute(item.path)).catch(() => undefined);
+                    preloadRoute(item.path);
+                  }}
+                  onPointerDown={() => {
+                    preloadRoute(item.path);
                   }}
                   whileHover={{ y: -1, scale: 1.02 }}
                   whileTap={{ scale: 0.96 }}
@@ -152,38 +154,38 @@ const Navbar = () => {
                     className={cn(
                       "relative flex items-center gap-2 px-4 py-2 rounded-full text-[13.5px] font-medium transition-colors duration-200",
                       active
-                        ? "text-white font-semibold"
-                        : "text-slate-600 hover:text-slate-950 dark:text-slate-300 dark:hover:text-white"
+                        ? "text-slate-900 dark:text-white font-semibold shadow-sm"
+                        : "text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white"
                     )}
                   >
                     {/* Hover ghost highlight */}
                     {hovered && !active && (
                       <motion.div
                         layoutId="navbar-hover-pill"
-                        className="absolute inset-0 rounded-full bg-slate-900/[0.05] dark:bg-white/[0.08] border border-slate-900/[0.04] dark:border-white/[0.06]"
+                        className="absolute inset-0 rounded-full bg-white/[0.08] dark:bg-white/[0.06] border border-white/[0.08]"
                         transition={{ type: "spring", stiffness: 500, damping: 35, mass: 0.5 }}
                       />
                     )}
 
-                    {/* Apple iOS Fluid Active Sliding Pill */}
+                    {/* Liquid Glass Fluid Active Sliding Pill */}
                     {active && (
                       <motion.div
                         layoutId="navbar-active-pill"
-                        className="absolute inset-0 rounded-full bg-gradient-to-r from-blue-600 via-indigo-600 to-purple-600 shadow-md shadow-indigo-600/30 border border-white/25 dark:border-white/20"
+                        className="liquid-glass-pill absolute inset-0"
                         transition={{
                           type: "spring",
-                          stiffness: 450,
+                          stiffness: 460,
                           damping: 32,
                           mass: 0.6,
                         }}
                       >
-                        {/* Soft inner specular reflection */}
-                        <span className="pointer-events-none absolute inset-x-3 top-0 h-[1px] rounded-full bg-gradient-to-r from-transparent via-white/80 to-transparent" />
+                        {/* Top specular reflection hairline */}
+                        <span className="pointer-events-none absolute inset-x-3 top-0 h-[1px] rounded-full bg-white/70 dark:bg-white/40" />
                       </motion.div>
                     )}
 
                     <span className="relative z-10 flex items-center gap-1.5">
-                      <Icon className={cn("w-3.5 h-3.5 transition-transform duration-200", active ? "opacity-100" : "opacity-70")} />
+                      <Icon className={cn("w-3.5 h-3.5 transition-transform duration-200", active ? "opacity-100" : "opacity-75")} />
                       <span>{item.text === 'Admin' && isTeacher && !isAdminOrPrincipal ? 'Teacher' : item.text}</span>
                     </span>
                   </Link>

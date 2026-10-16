@@ -360,6 +360,14 @@ body {
   .desktop-slidable:active,
   .is-sliding {
     cursor: grabbing !important;
+    scroll-behavior: auto !important;
+    will-change: scroll-position;
+  }
+
+  [data-slidable="true"],
+  .desktop-slidable {
+    transform: translateZ(0);
+    -webkit-overflow-scrolling: touch;
   }
 
   /* Enforce grabbing cursor and prevent text selection while actively dragging */
@@ -417,55 +425,79 @@ body {
   }
 
   .premium-glass-main {
-    @apply relative rounded-3xl border backdrop-blur-md;
-    background:
-      linear-gradient(135deg, hsl(var(--card) / 0.94), hsl(var(--card) / 0.84)),
-      linear-gradient(120deg, hsl(var(--neon-orange) / 0.16), transparent 58%),
-      linear-gradient(310deg, hsl(var(--neon-violet) / 0.18), transparent 62%);
-    border-color: hsl(var(--border) / 0.9);
+    @apply relative rounded-3xl border backdrop-blur-2xl;
+    background: linear-gradient(145deg, rgba(255, 255, 255, 0.52) 0%, rgba(246, 249, 255, 0.35) 100%);
+    border-color: rgba(255, 255, 255, 0.72);
     box-shadow:
-      0 30px 72px -34px hsl(var(--background) / 0.75),
-      0 14px 40px -20px hsl(var(--neon-pink) / 0.36),
-      inset 0 1px 0 hsl(var(--foreground) / 0.28),
-      inset 0 -1px 0 hsl(var(--neon-orange) / 0.28);
+      inset 0 1.5px 0 0 rgba(255, 255, 255, 0.95),
+      inset 0 -1px 0 0 rgba(0, 0, 0, 0.04),
+      inset 0 0 28px 0 rgba(255, 255, 255, 0.16),
+      0 24px 60px -18px rgba(15, 23, 42, 0.10),
+      0 4px 16px -2px rgba(15, 23, 42, 0.03);
+    transform: translateZ(0);
+    transition: box-shadow 0.3s ease, border-color 0.3s ease;
   }
 
+  .dark .premium-glass-main {
+    background: linear-gradient(145deg, rgba(14, 21, 39, 0.52) 0%, rgba(18, 27, 49, 0.38) 100%);
+    border-color: rgba(255, 255, 255, 0.16);
+    box-shadow:
+      inset 0 1.5px 0 0 rgba(255, 255, 255, 0.35),
+      inset 0 -1px 0 0 rgba(0, 0, 0, 0.4),
+      inset 0 0 28px 0 rgba(255, 255, 255, 0.05),
+      0 32px 76px -20px rgba(0, 0, 0, 0.70),
+      0 4px 20px 0 rgba(0, 0, 0, 0.35);
+  }
+
+  /* Liquid Glass Specular Top Highlight */
   .premium-glass-main::before {
     content: "";
-    @apply absolute inset-0 rounded-3xl pointer-events-none;
-    background:
-      linear-gradient(125deg, hsl(var(--foreground) / 0.22), transparent 48%),
-      radial-gradient(130% 90% at 85% 6%, hsl(var(--neon-pink) / 0.26), transparent 64%);
+    @apply absolute inset-x-8 top-0 h-[1.5px] rounded-t-3xl pointer-events-none;
+    background: linear-gradient(90deg, transparent 0%, rgba(255, 255, 255, 0.85) 30%, rgba(255, 255, 255, 0.85) 70%, transparent 100%);
+    z-index: 1;
   }
 
+  .dark .premium-glass-main::before {
+    background: linear-gradient(90deg, transparent 0%, rgba(255, 255, 255, 0.32) 30%, rgba(255, 255, 255, 0.32) 70%, transparent 100%);
+  }
+
+  /* Nano-Texture Optical Diffusion Layer */
   .premium-glass-main::after {
     content: '';
     @apply absolute inset-0 rounded-3xl pointer-events-none;
     background-image: repeating-linear-gradient(
-      128deg,
+      135deg,
       transparent 0,
-      transparent 15px,
-      hsl(var(--foreground) / 0.03) 15px,
-      hsl(var(--foreground) / 0.03) 16px
+      transparent 5px,
+      rgba(255, 255, 255, 0.02) 5px,
+      rgba(255, 255, 255, 0.02) 6px
     );
     opacity: 0.6;
+    z-index: 0;
   }
 
   .premium-glass-navbar {
-    background: linear-gradient(150deg, hsl(var(--card) / 0.94), hsl(var(--card) / 0.82));
-    border-color: hsl(var(--border) / 0.9);
+    background: linear-gradient(150deg, rgba(255, 255, 255, 0.90), rgba(245, 248, 255, 0.82));
+    border-color: rgba(255, 255, 255, 0.78);
     box-shadow:
-      0 22px 48px -28px hsl(var(--background) / 0.85),
-      0 8px 24px -14px hsl(var(--neon-violet) / 0.35),
-      inset 0 1px 0 hsl(var(--foreground) / 0.26);
+      0 20px 48px -24px rgba(15, 23, 42, 0.08),
+      inset 0 1px 0 rgba(255, 255, 255, 0.9);
+  }
+
+  .dark .premium-glass-navbar {
+    background: linear-gradient(150deg, rgba(12, 18, 34, 0.88), rgba(18, 26, 47, 0.80));
+    border-color: rgba(255, 255, 255, 0.12);
+    box-shadow:
+      0 20px 48px -24px rgba(0, 0, 0, 0.65),
+      inset 0 1px 0 rgba(255, 255, 255, 0.2);
   }
 
   .liquid-glass-surface {
     @apply border rounded-3xl backdrop-blur-xl;
-    background: linear-gradient(135deg, rgba(255, 255, 255, 0.84) 0%, rgba(245, 248, 255, 0.76) 100%);
-    border-color: rgba(255, 255, 255, 0.75);
+    background: linear-gradient(135deg, rgba(255, 255, 255, 0.88) 0%, rgba(245, 248, 255, 0.80) 100%);
+    border-color: rgba(255, 255, 255, 0.78);
     box-shadow:
-      inset 0 1.5px 0 0 rgba(255, 255, 255, 0.90),
+      inset 0 1.5px 0 0 rgba(255, 255, 255, 0.92),
       inset 0 -1px 0 0 rgba(0, 0, 0, 0.04),
       0 16px 36px -12px rgba(15, 23, 42, 0.08),
       0 2px 6px -1px rgba(15, 23, 42, 0.03);
@@ -474,7 +506,7 @@ body {
   }
 
   .dark .liquid-glass-surface {
-    background: linear-gradient(135deg, rgba(15, 23, 42, 0.82) 0%, rgba(30, 41, 59, 0.74) 100%);
+    background: linear-gradient(135deg, rgba(15, 23, 42, 0.84) 0%, rgba(24, 34, 53, 0.76) 100%);
     border-color: rgba(255, 255, 255, 0.12);
     box-shadow:
       inset 0 1.5px 0 0 rgba(255, 255, 255, 0.22),
@@ -670,6 +702,131 @@ body {
       linear-gradient(150deg, hsl(var(--card) / 0.74), hsl(var(--card) / 0.36)),
       radial-gradient(90% 120% at 50% 100%, hsl(var(--neon-violet) / 0.28), transparent 72%);
     border-color: hsl(var(--neon-violet) / 0.28);
+  }
+
+  /* ========================================================================= */
+  /* APPLE iOS 26 LIQUID GLASS DOCK & ACTIVE PILL (Visual match: reference photo) */
+  /* ========================================================================= */
+  .liquid-glass-dock {
+    position: relative;
+    background: rgba(255, 255, 255, 0.42);
+    backdrop-filter: blur(14px) saturate(160%);
+    -webkit-backdrop-filter: blur(14px) saturate(160%);
+    border: 1px solid rgba(255, 255, 255, 0.70);
+    box-shadow:
+      0 16px 40px -12px rgba(15, 23, 42, 0.12),
+      0 4px 16px -4px rgba(15, 23, 42, 0.05),
+      inset 0 1.5px 1.5px 0 rgba(255, 255, 255, 0.95),
+      inset 0 -1.5px 1.5px 0 rgba(255, 255, 255, 0.4),
+      inset 0 0 20px 0 rgba(255, 255, 255, 0.15);
+    border-radius: 9999px;
+    overflow: hidden;
+    transform: translate3d(0, 0, 0);
+  }
+
+  .dark .liquid-glass-dock {
+    background: rgba(15, 23, 42, 0.52);
+    backdrop-filter: blur(16px) saturate(160%);
+    -webkit-backdrop-filter: blur(16px) saturate(160%);
+    border: 1px solid rgba(255, 255, 255, 0.22);
+    box-shadow:
+      0 20px 48px -12px rgba(0, 0, 0, 0.60),
+      0 6px 18px -4px rgba(79, 70, 229, 0.20),
+      inset 0 1.5px 1.5px 0 rgba(255, 255, 255, 0.45),
+      inset 0 -1px 1px 0 rgba(255, 255, 255, 0.15),
+      inset 0 0 20px 0 rgba(255, 255, 255, 0.08);
+  }
+
+  @media (max-width: 768px) {
+    .liquid-glass-dock,
+    .dark .liquid-glass-dock {
+      backdrop-filter: blur(8px) saturate(135%);
+      -webkit-backdrop-filter: blur(8px) saturate(135%);
+    }
+  }
+
+  .liquid-glass-dock::after {
+    content: "";
+    position: absolute;
+    inset-x: 16px;
+    top: 0;
+    height: 1.5px;
+    background: linear-gradient(90deg, transparent 0%, rgba(255, 255, 255, 0.95) 50%, transparent 100%);
+    pointer-events: none;
+    z-index: 2;
+  }
+
+  .liquid-glass-pill {
+    position: relative;
+    background: rgba(255, 255, 255, 0.55);
+    backdrop-filter: blur(16px) saturate(180%) contrast(105%);
+    -webkit-backdrop-filter: blur(16px) saturate(180%) contrast(105%);
+    border: 1px solid rgba(255, 255, 255, 0.85);
+    border-radius: 9999px;
+    box-shadow:
+      0 4px 16px -2px rgba(15, 23, 42, 0.08),
+      inset 0 1.5px 1px 0 rgba(255, 255, 255, 0.95),
+      inset 0 -1px 1px 0 rgba(0, 0, 0, 0.06);
+    overflow: hidden;
+  }
+
+  .dark .liquid-glass-pill {
+    background: linear-gradient(135deg, rgba(255, 255, 255, 0.16) 0%, rgba(255, 255, 255, 0.06) 100%);
+    backdrop-filter: blur(20px) saturate(190%) contrast(110%);
+    -webkit-backdrop-filter: blur(20px) saturate(190%) contrast(110%);
+    border: 1px solid rgba(255, 255, 255, 0.24);
+    box-shadow:
+      0 8px 24px -4px rgba(0, 0, 0, 0.35),
+      inset 0 1.5px 1.5px 0 rgba(255, 255, 255, 0.55),
+      inset 0 -1px 1px 0 rgba(0, 0, 0, 0.25),
+      inset 0 0 12px 0 rgba(255, 255, 255, 0.08);
+  }
+
+  .liquid-glass-pill::before {
+    content: '';
+    position: absolute;
+    top: 1px;
+    left: 8%;
+    right: 8%;
+    height: 45%;
+    background: linear-gradient(180deg, rgba(255, 255, 255, 0.45) 0%, rgba(255, 255, 255, 0.02) 100%);
+    border-radius: 9999px 9999px 100% 100%;
+    pointer-events: none;
+  }
+
+  .liquid-glass-card {
+    background: rgba(255, 255, 255, 0.45);
+    backdrop-filter: blur(28px) saturate(190%) contrast(104%);
+    -webkit-backdrop-filter: blur(28px) saturate(190%) contrast(104%);
+    border: 1px solid rgba(255, 255, 255, 0.65);
+    box-shadow:
+      0 16px 36px -12px rgba(15, 23, 42, 0.10),
+      inset 0 1.5px 1px 0 rgba(255, 255, 255, 0.95),
+      inset 0 0 20px 0 rgba(255, 255, 255, 0.12);
+    border-radius: 1.5rem;
+    position: relative;
+    overflow: hidden;
+    transition: all 0.25s cubic-bezier(0.2, 0.8, 0.2, 1);
+  }
+
+  .dark .liquid-glass-card {
+    background: rgba(18, 26, 48, 0.48);
+    backdrop-filter: blur(32px) saturate(200%) contrast(108%);
+    -webkit-backdrop-filter: blur(32px) saturate(200%) contrast(108%);
+    border: 1px solid rgba(255, 255, 255, 0.18);
+    box-shadow:
+      0 20px 44px -12px rgba(0, 0, 0, 0.55),
+      inset 0 1.5px 1px 0 rgba(255, 255, 255, 0.35),
+      inset 0 0 20px 0 rgba(255, 255, 255, 0.05);
+  }
+
+  .liquid-glass-card:hover {
+    border-color: rgba(99, 102, 241, 0.55);
+    box-shadow:
+      0 20px 48px -10px rgba(79, 70, 229, 0.25),
+      0 0 20px -2px rgba(59, 130, 246, 0.22),
+      inset 0 1px 1.5px 0 rgba(255, 255, 255, 0.5);
+    transform: translateY(-2px);
   }
 
   /* iOS Glass Panel */
@@ -1767,13 +1924,13 @@ body {
 
 /* Route mount — silky smooth, crystal-clear fade transition */
 .route-mount {
-  animation: route-fade-in 240ms cubic-bezier(0.16, 1, 0.3, 1) both;
+  animation: route-fade-in 200ms cubic-bezier(0.16, 1, 0.3, 1) both;
 }
 
 @keyframes route-fade-in {
   0% {
-    opacity: 0;
-    transform: translateY(6px);
+    opacity: 0.90;
+    transform: translateY(8px);
   }
   100% {
     opacity: 1;
@@ -1781,11 +1938,30 @@ body {
   }
 }
 
-/* Zero-blink tab content transition — starts at 88% opacity so there is never a blank shutter flash */
+/* Zero-blink, zero-buffering elements-coming transition for all tabs and inner sections */
+@keyframes element-coming {
+  0% {
+    opacity: 0.90;
+    transform: translateY(8px);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.animate-element-coming {
+  animation: element-coming 220ms cubic-bezier(0.16, 1, 0.3, 1) both;
+  will-change: opacity, transform;
+  transform: translateZ(0);
+  backface-visibility: hidden;
+}
+
+/* Zero-blink tab content transition — starts at 90% opacity so there is never a blank shutter flash */
 @keyframes tab-content-in {
   0% {
-    opacity: 0.88;
-    transform: translateY(4px);
+    opacity: 0.90;
+    transform: translateY(8px);
   }
   100% {
     opacity: 1;
@@ -1794,8 +1970,10 @@ body {
 }
 
 .animate-tab-content-in {
-  animation: tab-content-in 200ms cubic-bezier(0.16, 1, 0.3, 1) both;
+  animation: tab-content-in 220ms cubic-bezier(0.16, 1, 0.3, 1) both;
   will-change: opacity, transform;
+  transform: translateZ(0);
+  backface-visibility: hidden;
 }
 
 /* Global site-wide element pop-out & micro-spring utilities */
@@ -2073,3 +2251,39 @@ html.lumina .lumina-glow {
 
 /* Cap runaway blurs so scrolling stays at 60fps on mid-range hardware. */
 html.lumina [class*="blur-["] { filter: blur(56px) !important; }
+
+/* ==========================================================================
+   Mobile Touch & Performance Optimizations (Zero Tap Lag, Smooth Momentum)
+   ========================================================================== */
+
+/* Eliminate 300ms mobile tap delay across entire touch surface */
+html, body {
+  touch-action: manipulation;
+  -webkit-overflow-scrolling: touch;
+}
+
+/* Ensure all buttons, links, inputs, and interactive badges respond instantly without tap delay */
+a,
+button,
+input,
+select,
+textarea,
+[role="button"],
+.clickable {
+  touch-action: manipulation;
+}
+
+/* Prevent unwanted browser bounce from interfering with in-app swipe/pull interactions */
+body {
+  overscroll-behavior-y: contain;
+}
+
+/* Prevent disruptive iOS Safari auto-zoom when tapping inputs */
+@media screen and (max-width: 767px) {
+  input:not([type="checkbox"]):not([type="radio"]),
+  select,
+  textarea {
+    font-size: 16px !important;
+  }
+}
+
