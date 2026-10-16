@@ -1475,9 +1475,26 @@ class AppwriteAuthClient {
         },
         body: JSON.stringify({ email, password }),
       });
-      const json = await res.json();
+      const json = await res.json().catch(() => ({}));
       if (!res.ok) {
-        return { data: null, error: json };
+        // If credentials invalid in Supabase Auth, check if this is an Appwrite-only user and attempt auto-registration
+        if (json?.error_code === 'invalid_credentials') {
+          const signupAttempt = await this.signUpWithSupabase({ email, password });
+          if (signupAttempt.data?.session) {
+            return signupAttempt;
+          }
+        }
+        const errorMsg = json.msg || json.error_description || json.message || 'Invalid login credentials';
+        return {
+          data: null,
+          error: {
+            message: errorMsg,
+            msg: errorMsg,
+            code: res.status,
+            status: res.status,
+            type: json.error_code || 'invalid_credentials',
+          },
+        };
       }
       const supaUser = json.user || {};
       const user = this.formatUser({
@@ -1505,7 +1522,8 @@ class AppwriteAuthClient {
       this.notifyListeners('SIGNED_IN', session);
       return { data: { user, session }, error: null };
     } catch (supaErr: any) {
-      return { data: null, error: supaErr };
+      const msg = supaErr?.message || 'Authentication service temporarily unavailable';
+      return { data: null, error: { message: msg, code: 500 } };
     }
   }
 
@@ -1517,11 +1535,14 @@ class AppwriteAuthClient {
         headers: { apikey: key, 'Content-Type': 'application/json' },
         body: JSON.stringify({ email: email.trim(), password, data: options?.data || {} }),
       });
-      const json = await res.json();
-      if (!res.ok) return { data: null, error: json };
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        const errorMsg = json.msg || json.error_description || json.message || 'Registration failed';
+        return { data: null, error: { message: errorMsg, code: res.status } };
+      }
       return this.signInWithSupabasePassword(email.trim(), password);
     } catch (err: any) {
-      return { data: null, error: err };
+      return { data: null, error: { message: err?.message || 'Registration error', code: 500 } };
     }
   }
 

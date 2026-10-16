@@ -136,6 +136,49 @@ export default async function handler(req, res) {
       redirect: 'manual',
     });
 
+    // Gracefully handle upstream Appwrite Cloud 402 billing limit freeze
+    if (upstreamRes.status === 402) {
+      res.setHeader('X-Appwrite-Proxy', '1');
+      res.setHeader('Access-Control-Expose-Headers', 'X-Fallback-Cookies, X-Appwrite-Warning, X-Appwrite-Proxy');
+
+      // 1. Session check on /v1/account -> return 401 unauthenticated (guest) rather than 402 billing crash
+      if (normalizedPath === '/v1/account' || normalizedPath === '/v1/account/') {
+        res.setHeader('Content-Type', 'application/json; charset=UTF-8');
+        return res.status(401).json({
+          message: 'User (role: guests) missing scopes (["account"])',
+          code: 401,
+          type: 'general_unauthorized_scope',
+          version: '2.5.0',
+        });
+      }
+
+      // 2. Database reads -> return live fallback from Supabase REST with HTTP 200
+      const dbMatch = normalizedPath.match(/\/databases\/[^/]+\/collections\/([^/]+)\/documents/);
+      if (dbMatch && methodUpper === 'GET') {
+        const collection = dbMatch[1];
+        try {
+          const supaUrl = 'https://cvdcbcsonlianbfeessy.supabase.co';
+          const supaKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImN2ZGNiY3NvbmxpYW5iZmVlc3N5Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODc2NDQ5MDcsImV4cCI6MjEwMzIyMDkwN30.fzJfZKKTw2Y3oFgk6fxVkfhdnIXNzXDeNa0CP84RxDg';
+          const supaRes = await fetch(`${supaUrl}/rest/v1/${collection}?select=*&limit=100`, {
+            headers: { apikey: supaKey, Authorization: `Bearer ${supaKey}` },
+          });
+          if (supaRes.ok) {
+            const rows = await supaRes.json();
+            const documents = (Array.isArray(rows) ? rows : []).map((r) => ({
+              ...r,
+              $id: r.id || r.user_id,
+              $createdAt: r.created_at || new Date().toISOString(),
+              $updatedAt: r.updated_at || r.created_at || new Date().toISOString(),
+            }));
+            res.setHeader('Content-Type', 'application/json; charset=UTF-8');
+            return res.status(200).json({ total: documents.length, documents });
+          }
+        } catch {
+          // Fall through to standard 402 forwarding
+        }
+      }
+    }
+
     const passthroughHeaders = [
       'content-type',
       'x-fallback-cookies',
