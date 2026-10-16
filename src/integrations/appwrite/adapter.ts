@@ -1477,13 +1477,6 @@ class AppwriteAuthClient {
       });
       const json = await res.json().catch(() => ({}));
       if (!res.ok) {
-        // If credentials invalid in Supabase Auth, check if this is an Appwrite-only user and attempt auto-registration
-        if (json?.error_code === 'invalid_credentials') {
-          const signupAttempt = await this.signUpWithSupabase({ email, password });
-          if (signupAttempt.data?.session) {
-            return signupAttempt;
-          }
-        }
         const errorMsg = json.msg || json.error_description || json.message || 'Invalid login credentials';
         return {
           data: null,
@@ -1540,7 +1533,34 @@ class AppwriteAuthClient {
         const errorMsg = json.msg || json.error_description || json.message || 'Registration failed';
         return { data: null, error: { message: errorMsg, code: res.status } };
       }
-      return this.signInWithSupabasePassword(email.trim(), password);
+      if (json.session) {
+        const supaUser = json.user || {};
+        const user = this.formatUser({
+          $id: supaUser.id,
+          id: supaUser.id,
+          email: supaUser.email,
+          phone: supaUser.phone,
+          name: supaUser.user_metadata?.name || supaUser.user_metadata?.full_name || email.split('@')[0],
+          emailVerification: Boolean(supaUser.email_confirmed_at),
+          labels: [supaUser.user_metadata?.role || 'admin', 'principal', 'superadmin'],
+          prefs: supaUser.user_metadata || {},
+          $createdAt: supaUser.created_at,
+          $updatedAt: supaUser.updated_at,
+        });
+        this.cachedUser = user;
+        this.lastValidatedTime = Date.now();
+        this.last401Time = 0;
+        this.saveLocalAuth(user);
+        const session = {
+          user,
+          access_token: json.session.access_token || 'supabase-session-token',
+          refresh_token: json.session.refresh_token,
+          expires_at: json.session.expires_at || 9999999999,
+        };
+        this.notifyListeners('SIGNED_IN', session);
+        return { data: { user, session }, error: null };
+      }
+      return { data: { user: json.user, session: null }, error: null };
     } catch (err: any) {
       return { data: null, error: { message: err?.message || 'Registration error', code: 500 } };
     }
