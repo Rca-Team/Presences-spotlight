@@ -394,6 +394,23 @@ export async function universalDeleteStudent(
     invalidateCollectionCache('user_roles');
     invalidateUnifiedStatsCache();
     await syncDescriptorCache().catch(() => {});
+
+    // Ensure student is immediately purged from enrollment monitor memory and cache
+    try {
+      const { recordDeletedStudent, removeStudentFromMonitorCache } = await import('@/services/enrollment/monitor');
+      for (const k of candidateStudentKeys) {
+        recordDeletedStudent(k);
+        removeStudentFromMonitorCache(k);
+      }
+      for (const uid of candidateUserIds) {
+        recordDeletedStudent(uid);
+        removeStudentFromMonitorCache(uid);
+      }
+      for (const pid of candidateProfileIds) {
+        recordDeletedStudent(pid);
+        removeStudentFromMonitorCache(pid);
+      }
+    } catch {}
   } catch (cacheErr: any) {
     console.warn('[universalDeleteStudent] Cache synchronization warning:', cacheErr?.message);
   }

@@ -4,6 +4,7 @@ import { supabase } from '@/integrations/supabase/client';
 import { invalidateCollectionCache } from '@/integrations/appwrite/adapter';
 import { normalizeClassSection } from '@/utils/studentIdentityResolver';
 import { resolveStudentPhotoUrl } from '@/utils/studentPhotoResolver';
+import { CLASSES, SECTIONS } from '@/constants/schoolConfig';
 
 export type MonitorStatus = 'not_started' | 'failed' | 'verified' | 'capturing' | 'completed';
 
@@ -117,9 +118,41 @@ export function saveCachedMonitorOverview(data: MonitorOverview) {
   } catch {}
 }
 
+const DELETED_STUDENTS_STORAGE_KEY = 'presences_deleted_students_set';
+
+export function getDeletedStudentKeys(): Set<string> {
+  const set = new Set<string>();
+  try {
+    const raw =
+      (typeof sessionStorage !== 'undefined' ? sessionStorage.getItem(DELETED_STUDENTS_STORAGE_KEY) : null) ||
+      (typeof localStorage !== 'undefined' ? localStorage.getItem(DELETED_STUDENTS_STORAGE_KEY) : null);
+    if (raw) {
+      const list = JSON.parse(raw);
+      if (Array.isArray(list)) {
+        for (const k of list) if (k) set.add(String(k).trim().toLowerCase());
+      }
+    }
+  } catch {}
+  return set;
+}
+
+export function recordDeletedStudent(admissionNumber: string) {
+  const clean = String(admissionNumber || '').trim().toLowerCase();
+  if (!clean) return;
+  const set = getDeletedStudentKeys();
+  set.add(clean);
+  try {
+    const serialized = JSON.stringify(Array.from(set));
+    if (typeof sessionStorage !== 'undefined') sessionStorage.setItem(DELETED_STUDENTS_STORAGE_KEY, serialized);
+    if (typeof localStorage !== 'undefined') localStorage.setItem(DELETED_STUDENTS_STORAGE_KEY, serialized);
+  } catch {}
+}
+
 export function removeStudentFromMonitorCache(admissionNumber: string) {
   const clean = String(admissionNumber || '').trim().toLowerCase();
   if (!clean) return;
+
+  recordDeletedStudent(clean);
 
   if (inMemoryOverviewCache) {
     inMemoryOverviewCache = {
@@ -217,6 +250,19 @@ export const fetchMonitor = async (force = false): Promise<MonitorOverview> => {
       }
     };
 
+    const fetchRegisteredAttendance = async () => {
+      try {
+        const { data } = await supabase
+          .from('attendance_records')
+          .select('id, student_id, student_name, user_id, device_info, class, section, category, status, image_url, created_at')
+          .eq('status', 'registered')
+          .limit(2000);
+        return (data || []) as any[];
+      } catch (err) {
+        return [] as any[];
+      }
+    };
+
     const triggerBackgroundBackendSync = () => {
       if (typeof navigator !== 'undefined' && !navigator.onLine) return;
       if (Date.now() < backendUnavailableCooldownUntil) return;
@@ -238,9 +284,10 @@ export const fetchMonitor = async (force = false): Promise<MonitorOverview> => {
     // Trigger non-blocking cloud function sync for corrections/activity while resolving profiles + descriptors immediately (~200ms)
     triggerBackgroundBackendSync();
 
-    const [rawProfiles, rawDescriptors] = await Promise.all([
+    const [rawProfiles, rawDescriptors, rawRegistrations] = await Promise.all([
       fetchProfiles(),
       fetchDescriptors(),
+      fetchRegisteredAttendance(),
     ]);
 
     // Index descriptors by student_id and user_id
@@ -303,6 +350,7 @@ export const fetchMonitor = async (force = false): Promise<MonitorOverview> => {
     };
 
     const studentMap = new Map<string, MonitorStudent>();
+    const deletedStudentKeys = getDeletedStudentKeys();
 
     for (const p of rawProfiles) {
       if (p.role && p.role !== 'student') continue;
@@ -333,6 +381,15 @@ export const fetchMonitor = async (force = false): Promise<MonitorOverview> => {
       const lowerAdm = admission.toLowerCase();
       const lowerUid = String(p.user_id || p.id || '').trim().toLowerCase();
       const lowerKvId = String(meta.student_id_kv || '').trim().toLowerCase();
+
+      // Skip if marked as deleted
+      if (
+        deletedStudentKeys.has(lowerAdm) ||
+        (lowerUid && deletedStudentKeys.has(lowerUid)) ||
+        (lowerKvId && deletedStudentKeys.has(lowerKvId))
+      ) {
+        continue;
+      }
 
       const existing = studentMap.get(lowerAdm);
       const rawClass = String(p.class || meta.class || '').trim();
@@ -504,6 +561,8 @@ export const fetchMonitor = async (force = false): Promise<MonitorOverview> => {
       const uId = String(d.user_id || '').trim().toLowerCase();
       if (!sId || sId.length > 36 || sId.startsWith('unknown')) continue;
       const lower = sId.toLowerCase();
+      if (deletedStudentKeys.has(lower) || (uId && deletedStudentKeys.has(uId))) continue;
+
       if (studentMap.has(lower) || (uId && knownUserIds.has(uId))) {
         const student = studentMap.get(lower);
         if (student) {
@@ -549,6 +608,215 @@ export const fetchMonitor = async (force = false): Promise<MonitorOverview> => {
       }
     }
 
+    // Merge students registered via attendance_records (enrollment monitor registrations)
+    for (const r of rawRegistrations) {
+      const admission = String(r.student_id || r.user_id || '').trim();
+      if (!admission || admission.length > 36 || admission.toLowerCase().startsWith('unknown')) continue;
+      const lowerAdm = admission.toLowerCase();
+      const lowerUid = String(r.user_id || '').trim().toLowerCase();
+
+      if (deletedStudentKeys.has(lowerAdm) || (lowerUid && deletedStudentKeys.has(lowerUid))) {
+        continue;
+      }
+
+      let meta: any = {};
+      try {
+        if (typeof r.device_info === 'string' && r.device_info.startsWith('{')) {
+          const parsed = JSON.parse(r.device_info);
+          meta = parsed?.metadata || parsed || {};
+        }
+      } catch {}
+
+      const studentName = String(
+        r.student_name ||
+        meta.name ||
+        meta.display_name ||
+        meta.full_name ||
+        ''
+      ).trim();
+
+      const rawClass = String(r.class || meta.class || meta.department?.split('-')[0] || '').trim();
+      const rawSection = String(r.section || meta.section || meta.department?.split('-')[1] || '').trim();
+      const rawCategory = String(r.category || meta.class_section || meta.department || '').trim();
+      const category = normalizeClassSection(rawClass, rawSection, rawCategory) || 'Unassigned';
+
+      const fullPhone = String(
+        meta.parent_phone ||
+        meta.phone ||
+        meta.verified_parent_phone ||
+        ''
+      ).trim();
+
+      const fatherName = String(meta.father_name || meta.parent_name || '').trim();
+      const motherName = String(meta.mother_name || '').trim();
+      const dob = String(meta.date_of_birth || meta.dob || '').trim();
+      const address = String(meta.address || '').trim();
+      const rollNo = String(meta.roll_number || meta.position || '').trim();
+      const bloodGroup = String(meta.blood_group || '').trim();
+      const penNumber = String(meta.pen_number || '').trim();
+      const studentIdKv = String(meta.student_id_kv || meta.employee_id || '').trim();
+      const email = String(meta.student_email || meta.parent_email || meta.email || '').trim();
+      const avatar = r.image_url || meta.firebase_image_url || meta.face_model?.id_card_photo_url || meta.photo_url || descriptorPhotos.get(lowerAdm);
+
+      const existing = studentMap.get(lowerAdm) || (lowerUid ? studentMap.get(lowerUid) : undefined);
+
+      if (existing) {
+        if (!existing.name || existing.name === existing.admission_number) {
+          if (studentName) existing.name = studentName;
+        }
+        if (!existing.class && rawClass) existing.class = rawClass;
+        if (!existing.section && rawSection) existing.section = rawSection;
+        if ((!existing.category || existing.category === 'Unassigned') && category !== 'Unassigned') {
+          existing.category = category;
+        }
+        if (!existing.parent_phone && fullPhone) {
+          existing.parent_phone = fullPhone;
+          existing.parent_phone_full = fullPhone;
+          existing.hasPhone = true;
+        }
+        if (!existing.father_name && fatherName) {
+          existing.father_name = fatherName;
+          existing.hasFather = true;
+        }
+        if (!existing.mother_name && motherName) {
+          existing.mother_name = motherName;
+          existing.hasMother = true;
+        }
+        if (!existing.date_of_birth && dob) {
+          existing.date_of_birth = dob;
+          existing.hasDob = true;
+        }
+        if (!existing.address && address) {
+          existing.address = address;
+          existing.hasAddress = true;
+        }
+        if (!existing.roll_number && rollNo) existing.roll_number = rollNo;
+        if (!existing.blood_group && bloodGroup) existing.blood_group = bloodGroup;
+        if (!existing.pen_number && penNumber) existing.pen_number = penNumber;
+        if (!existing.student_id_kv && studentIdKv) existing.student_id_kv = studentIdKv;
+        if (!existing.email && email) existing.email = email;
+        if (!existing.avatarUrl && avatar) existing.avatarUrl = avatar;
+        if (avatar) existing.portrait = true;
+        if (existing.status === 'not_started') existing.status = 'completed';
+        existing.faceOnFile = true;
+      } else {
+        const fallbackSamples = descriptorSamplesMap.get(lowerAdm) || (lowerUid ? descriptorSamplesMap.get(lowerUid) : []) || [];
+        const newStudent: MonitorStudent = {
+          id: r.id,
+          userId: r.user_id || undefined,
+          admission_number: admission,
+          student_id_kv: studentIdKv,
+          roll_number: rollNo,
+          pen_number: penNumber,
+          blood_group: bloodGroup,
+          name: studentName || admission,
+          class: rawClass || (category !== 'Unassigned' ? category.split('-')[0] || '' : ''),
+          section: rawSection || (category.includes('-') ? category.split('-')[1] || '' : ''),
+          category,
+          father_name: fatherName,
+          mother_name: motherName,
+          date_of_birth: dob,
+          address,
+          parent_phone: fullPhone,
+          parent_phone_full: fullPhone,
+          email,
+          hasPhone: Boolean(fullPhone),
+          hasDob: Boolean(dob),
+          hasFather: Boolean(fatherName),
+          hasMother: Boolean(motherName),
+          hasAddress: Boolean(address),
+          status: 'completed',
+          imported: false,
+          portrait: Boolean(avatar),
+          faceOnFile: true,
+          vectorCount: Math.max(
+            descriptorCountMap.get(lowerAdm) || (lowerUid ? descriptorCountMap.get(lowerUid) || 0 : 0) || 1,
+            fallbackSamples.length
+          ),
+          samples: fallbackSamples,
+          method: 'staff',
+          verifiedAt: Date.parse(r.created_at || '') || 0,
+          completedAt: Date.parse(r.created_at || '') || 0,
+          failures: 0,
+          correction: null,
+          lastActivity: Date.parse(r.created_at || '') || 0,
+          avatarUrl: avatar,
+        };
+        studentMap.set(lowerAdm, newStudent);
+        if (lowerUid) studentMap.set(lowerUid, newStudent);
+        baseOverview.students.push(newStudent);
+      }
+    }
+
+    // School Roster Expansion to ~1,400 students across the 28 classes
+    // Classes 6 through 12, Sections A through D (28 sections, 50 students per section)
+    const TARGET_STUDENTS_PER_SECTION = 50;
+    const classOccupiedRolls = new Map<string, Set<number>>();
+    const classStudentCount = new Map<string, number>();
+
+    // Index existing students and their roll numbers per section
+    for (const student of baseOverview.students) {
+      const cat = student.category || 'Unassigned';
+      if (!classOccupiedRolls.has(cat)) classOccupiedRolls.set(cat, new Set<number>());
+      if (!classStudentCount.has(cat)) classStudentCount.set(cat, 0);
+
+      classStudentCount.set(cat, (classStudentCount.get(cat) || 0) + 1);
+
+      const roll = parseInt(student.roll_number || '', 10);
+      if (!isNaN(roll) && roll >= 1 && roll <= 200) {
+        classOccupiedRolls.get(cat)!.add(roll);
+      }
+    }
+
+    // Populate remaining slots up to TARGET_STUDENTS_PER_SECTION for all 28 sections
+    for (const cls of CLASSES) {
+      for (const sec of SECTIONS) {
+        const cat = `${cls}-${sec}`;
+        const occupied = classOccupiedRolls.get(cat) || new Set<number>();
+        const currentCount = classStudentCount.get(cat) || 0;
+        const targetCount = Math.max(TARGET_STUDENTS_PER_SECTION, currentCount);
+
+        let nextRoll = 1;
+        while ((classStudentCount.get(cat) || 0) < targetCount && nextRoll <= 200) {
+          if (!occupied.has(nextRoll)) {
+            const adm = `KV-${cls}${sec}-${String(nextRoll).padStart(2, '0')}`;
+            const lowerAdm = adm.toLowerCase();
+            if (!studentMap.has(lowerAdm) && !deletedStudentKeys.has(lowerAdm)) {
+              const pendingStudent: MonitorStudent = {
+                admission_number: adm,
+                name: `Student ${nextRoll}`,
+                class: String(cls),
+                section: sec,
+                category: cat,
+                roll_number: String(nextRoll),
+                parent_phone: '',
+                hasPhone: false,
+                hasDob: false,
+                hasFather: false,
+                status: 'not_started',
+                imported: false,
+                portrait: false,
+                faceOnFile: false,
+                vectorCount: 0,
+                samples: [],
+                method: '',
+                verifiedAt: 0,
+                completedAt: 0,
+                failures: 0,
+                correction: null,
+                lastActivity: 0,
+              };
+              studentMap.set(lowerAdm, pendingStudent);
+              baseOverview.students.push(pendingStudent);
+              occupied.add(nextRoll);
+              classStudentCount.set(cat, (classStudentCount.get(cat) || 0) + 1);
+            }
+          }
+          nextRoll++;
+        }
+      }
+    }
+
     // Resolve any relative storage paths to full URLs
     await Promise.all(
       baseOverview.students.map(async (student) => {
@@ -561,8 +829,12 @@ export const fetchMonitor = async (force = false): Promise<MonitorOverview> => {
       })
     );
 
+    const standardSections = CLASSES.flatMap((cls) => SECTIONS.map((sec) => `${cls}-${sec}`));
     const allDiscoveredCategories = Array.from(
-      new Set(baseOverview.students.map((s) => s.category).filter(Boolean))
+      new Set([
+        ...standardSections,
+        ...baseOverview.students.map((s) => s.category).filter(Boolean),
+      ])
     ).sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
 
     if (baseOverview.scope.all || baseOverview.scope.classes.length === 0) {
