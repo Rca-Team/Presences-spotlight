@@ -183,15 +183,15 @@ export function parseStudentClassSectionRole(input: {
   tryExtract(catStr);
   tryExtract(deptStr);
 
-  if (!detectedClass) detectedClass = '6';
-  if (!detectedSec) detectedSec = 'A';
+  const category = (detectedClass && detectedSec)
+    ? `${detectedClass}-${detectedSec}`
+    : (detectedClass || detectedSec || 'Unassigned');
 
-  const category = `${detectedClass}-${detectedSec}`;
   return {
-    cls: detectedClass,
-    sec: detectedSec,
+    cls: detectedClass || 'Unassigned',
+    sec: detectedSec || '',
     category,
-    department: `Class ${category}`,
+    department: detectedClass ? `Class ${category}` : 'Unassigned',
     role: 'student',
   };
 }
@@ -511,11 +511,11 @@ export async function fetchUnifiedStudentSnapshot(forceFresh = false): Promise<U
           .from('attendance_records')
           .select('id, user_id, device_info, category, class, section, student_id, student_name, image_url')
           .eq('status', 'registered')
-          .limit(2000),
+          .limit(5000),
         supabase
           .from('profiles')
           .select('id, user_id, display_name, full_name, role, employee_id, admission_number, roll_number, class, section, category, department, avatar_url, photo_url, parent_name, father_name, parent_phone, phone, parent_email, email, metadata')
-          .limit(2000),
+          .limit(5000),
         supabase
           .from('attendance_records')
           .select('id, user_id, status, timestamp, device_info, category, class, section, student_id, student_name, image_url')

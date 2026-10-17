@@ -1447,16 +1447,18 @@ const Index = () => {
         {/* FEATURE CATEGORIES (Desktop Grid with Neon Glow)                         */}
         {/* ========================================================================= */}
         {featureCategories.map((cat, idx) => (
-          <RoyalReveal key={cat.category} effect="fade-up" delay={0.05 * (idx % 2)} className="pb-14">
-            <div className="mb-6 flex items-center gap-3">
-              <div className="inline-flex rounded-2xl bg-primary/15 p-3 text-primary shadow-sm shadow-primary/20">
-                <cat.icon className="h-5 w-5" />
+          <section key={cat.category} className="pb-14">
+            <RoyalReveal effect="fade-up" delay={0.04 * (idx % 2)}>
+              <div className="mb-6 flex items-center gap-3">
+                <div className="inline-flex rounded-2xl bg-primary/15 p-3 text-primary shadow-sm shadow-primary/20">
+                  <cat.icon className="h-5 w-5" />
+                </div>
+                <h2 className="text-2xl sm:text-3xl md:text-4xl font-extrabold text-slate-900 dark:text-foreground tracking-tight" style={{ fontFamily: 'Sora, sans-serif' }}>
+                  {cat.category}
+                </h2>
               </div>
-              <h2 className="text-2xl sm:text-3xl md:text-4xl font-extrabold text-slate-900 dark:text-foreground tracking-tight" style={{ fontFamily: 'Sora, sans-serif' }}>
-                {cat.category}
-              </h2>
-            </div>
-            <RoyalStaggerGroup className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 md:gap-6" stagger={0.05}>
+            </RoyalReveal>
+            <RoyalStaggerGroup className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 md:gap-6" stagger={0.06}>
               {cat.features.map((feature) => (
                 <RoyalStaggerItem key={feature.title}>
                   <div className="nano-glass-bento nano-card-interactive group relative overflow-hidden rounded-3xl p-6 h-full transition-all duration-300 hover:-translate-y-1.5 hover:shadow-2xl hover:shadow-primary/15 border border-white/80 dark:border-white/10 flex flex-col justify-between">
@@ -1472,7 +1474,7 @@ const Index = () => {
                 </RoyalStaggerItem>
               ))}
             </RoyalStaggerGroup>
-          </RoyalReveal>
+          </section>
         ))}
 
         {/* ========================================================================= */}

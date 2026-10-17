@@ -11,13 +11,14 @@ import {
 import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from '@/components/ui/table';
-import { Search, Users, Phone, Heart, Bus, MapPin, User as UserIcon, IdCard, Download, Camera, Trash2, Loader2 } from 'lucide-react';
+import { Search, Users, Phone, Heart, Bus, MapPin, User as UserIcon, IdCard, Download, Camera, Trash2, Loader2, FolderInput } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { supabase } from '@/integrations/supabase/client';
 import { CLASSES, SECTIONS, getCategoryLabel } from '@/constants/schoolConfig';
 import StudentIDCardGenerator from './StudentIDCardGenerator';
 import StudentCSVImporter from './StudentCSVImporter';
 import CaptureFaceDialog from './CaptureFaceDialog';
+import ChangeCategoryDialog from './ChangeCategoryDialog';
 import { pickPreferredPhotoCandidate, resolveStudentPhotoUrl } from '@/utils/studentPhotoResolver';
 import { universalDeleteStudent } from '@/services/student/studentDeletionService';
 import {
@@ -79,7 +80,7 @@ const StudentDetailsTable: React.FC = () => {
         supabase
           .from('profiles')
           .select('id, user_id, full_name, display_name, admission_number, employee_id, roll_number, class, section, category, department, avatar_url, photo_url, role, parent_phone, phone, email, parent_email, father_name, mother_name, blood_group, address, metadata')
-          .limit(2000),
+          .limit(5000),
       ]);
 
       if (attendanceRes.error) throw attendanceRes.error;
@@ -211,7 +212,7 @@ const StudentDetailsTable: React.FC = () => {
         } else {
           const newKey = empKey && empKey !== 'null' && empKey !== 'n/a'
             ? `emp:${empKey}`
-            : `${nameKey}#${catKey || 'A'}#${candidate.id}`;
+            : `${nameKey}#${catKey || 'unassigned'}#${candidate.id}`;
           map.set(newKey, candidate);
           existingKey = newKey;
         }
@@ -262,7 +263,7 @@ const StudentDetailsTable: React.FC = () => {
           name: name || matchingProfile?.full_name || matchingProfile?.display_name || 'Student',
           employee_id: meta.employee_id || deviceInfo.employee_id || r.student_id || matchingProfile?.admission_number || matchingProfile?.employee_id || '—',
           roll_number: meta.roll_number || meta.employee_id || deviceInfo.employee_id || matchingProfile?.roll_number || '—',
-          category: r.category || matchingProfile?.category || (matchingProfile?.class && matchingProfile?.section ? `${matchingProfile.class}-${matchingProfile.section}` : 'A'),
+          category: r.category || matchingProfile?.category || (matchingProfile?.class && matchingProfile?.section ? `${matchingProfile.class}-${matchingProfile.section}` : 'Unassigned'),
           blood_group: meta.blood_group || matchingProfile?.blood_group || '—',
           parent_name: meta.parent_name || matchingProfile?.father_name || matchingProfile?.mother_name || '—',
           parent_phone: meta.parent_phone || meta.phone || matchingProfile?.parent_phone || matchingProfile?.phone || '—',
@@ -302,7 +303,7 @@ const StudentDetailsTable: React.FC = () => {
           name: descriptorName || matchingProfile?.full_name || matchingProfile?.display_name || 'Student',
           employee_id: descriptorStudentId || matchingProfile?.admission_number || matchingProfile?.employee_id || '—',
           roll_number: descriptorStudentId || matchingProfile?.roll_number || '—',
-          category: descriptor?.category || matchingProfile?.category || (matchingProfile?.class && matchingProfile?.section ? `${matchingProfile.class}-${matchingProfile.section}` : 'A'),
+          category: descriptor?.category || matchingProfile?.category || (matchingProfile?.class && matchingProfile?.section ? `${matchingProfile.class}-${matchingProfile.section}` : 'Unassigned'),
           blood_group: matchingProfile?.blood_group || '—',
           parent_name: matchingProfile?.father_name || matchingProfile?.mother_name || '—',
           parent_phone: matchingProfile?.parent_phone || matchingProfile?.phone || '—',
@@ -339,7 +340,7 @@ const StudentDetailsTable: React.FC = () => {
           profile?.class ||
           profile?.metadata?.category ||
           (profile?.metadata?.class && profile?.metadata?.section ? `${profile.metadata.class}-${profile.metadata.section}` : '') ||
-          'A';
+          'Unassigned';
 
         upsertStudent({
           id: profileKey,
@@ -697,7 +698,26 @@ const StudentDetailsTable: React.FC = () => {
                   </div>
 
                   {/* Actions */}
-                  <div className="flex items-center justify-end gap-2 pt-1 border-t border-border/50">
+                  <div className="flex flex-wrap items-center justify-end gap-1.5 pt-1 border-t border-border/50">
+                    <ChangeCategoryDialog
+                      userId={s.user_id}
+                      employeeId={s.employee_id}
+                      studentId={s.id}
+                      userName={s.name}
+                      currentCategory={s.category}
+                      onCategoryChanged={fetchStudents}
+                      trigger={
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          className="h-8 text-xs flex-1 text-primary hover:text-primary hover:bg-primary/10 border-primary/20"
+                          title="Change Class / Section"
+                        >
+                          <FolderInput className="h-3.5 w-3.5 mr-1" />
+                          Class
+                        </Button>
+                      }
+                    />
                     <Button
                       size="sm"
                       variant="outline"
@@ -705,7 +725,7 @@ const StudentDetailsTable: React.FC = () => {
                       onClick={() => setCaptureFor(s)}
                     >
                       <Camera className="h-3.5 w-3.5 mr-1" />
-                      Face Scan
+                      Face
                     </Button>
                     <Button
                       size="sm"
@@ -795,6 +815,25 @@ const StudentDetailsTable: React.FC = () => {
                       </TableCell>
                       <TableCell className="text-right">
                         <div className="flex justify-end gap-1">
+                          <ChangeCategoryDialog
+                            userId={s.user_id}
+                            employeeId={s.employee_id}
+                            studentId={s.id}
+                            userName={s.name}
+                            currentCategory={s.category}
+                            onCategoryChanged={fetchStudents}
+                            trigger={
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                className="h-8 text-xs text-primary hover:text-primary hover:bg-primary/10 border-primary/20"
+                                title="Change Class / Section"
+                              >
+                                <FolderInput className="h-3.5 w-3.5 mr-1" />
+                                Class
+                              </Button>
+                            }
+                          />
                           <Button
                             size="sm"
                             variant="outline"

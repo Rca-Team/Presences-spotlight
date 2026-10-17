@@ -1687,7 +1687,33 @@ export default function EnrollmentMonitor() {
 
   useEffect(() => setLimit(PAGE), [query, category, filter]);
 
-  const students = data?.students ?? [];
+  const students = useMemo(() => {
+    const raw = data?.students ?? [];
+    const seen = new Set<string>();
+    const deduped: MonitorStudent[] = [];
+    for (const s of raw) {
+      if (!s) continue;
+      const cat = (s.category || 'Unassigned').trim().toLowerCase();
+      const normAdm = (s.admission_number || '').trim().replace(/^0+/, '').toLowerCase();
+      const normKv = (s.student_id_kv || '').trim().replace(/^0+/, '').toLowerCase();
+      const normName = (s.name || '').trim().toLowerCase().replace(/[^a-z0-9]/g, '');
+      const normFather = (s.father_name || '').trim().toLowerCase().replace(/[^a-z0-9]/g, '');
+
+      const admKey = normAdm ? `${cat}::adm::${normAdm}` : null;
+      const kvKey = normKv ? `${cat}::kv::${normKv}` : null;
+      const nameFatherKey = (normName && normFather) ? `${cat}::name::${normName}::${normFather}` : null;
+
+      if (admKey && seen.has(admKey)) continue;
+      if (kvKey && seen.has(kvKey)) continue;
+      if (nameFatherKey && seen.has(nameFatherKey)) continue;
+
+      if (admKey) seen.add(admKey);
+      if (kvKey) seen.add(kvKey);
+      if (nameFatherKey) seen.add(nameFatherKey);
+      deduped.push(s);
+    }
+    return deduped;
+  }, [data?.students]);
 
   // Accurate, Comprehensive Summary Statistics
   const stats = useMemo(() => {

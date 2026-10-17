@@ -5,6 +5,7 @@ import { invalidateCollectionCache } from '@/integrations/appwrite/adapter';
 import { normalizeClassSection } from '@/utils/studentIdentityResolver';
 import { resolveStudentPhotoUrl } from '@/utils/studentPhotoResolver';
 import { CLASSES, SECTIONS } from '@/constants/schoolConfig';
+import { universalUpdateStudentClassSection } from '@/services/student/studentUpdateService';
 
 export type MonitorStatus = 'not_started' | 'failed' | 'verified' | 'capturing' | 'completed';
 
@@ -90,23 +91,53 @@ export interface MonitorOverview {
 }
 
 let inMemoryOverviewCache: MonitorOverview | null = null;
-const CACHE_STORAGE_KEY = 'presences:enrollment_monitor_cache_v4';
+const CACHE_STORAGE_KEY = 'presences:enrollment_monitor_cache_v7';
+
+// Clear legacy stale cache versions immediately
+try {
+  if (typeof window !== 'undefined') {
+    for (const oldKey of [
+      'presences:enrollment_monitor_cache',
+      'presences:enrollment_monitor_cache_v2',
+      'presences:enrollment_monitor_cache_v3',
+      'presences:enrollment_monitor_cache_v4',
+      'presences:enrollment_monitor_cache_v5',
+      'presences:enrollment_monitor_cache_v6',
+    ]) {
+      sessionStorage.removeItem(oldKey);
+      localStorage.removeItem(oldKey);
+    }
+  }
+} catch {}
 
 export function getCachedMonitorOverview(): MonitorOverview | null {
-  if (inMemoryOverviewCache) return inMemoryOverviewCache;
+  if (inMemoryOverviewCache && inMemoryOverviewCache.students.length >= 1000) {
+    return inMemoryOverviewCache;
+  }
   try {
     const raw =
       sessionStorage.getItem(CACHE_STORAGE_KEY) ||
       localStorage.getItem(CACHE_STORAGE_KEY);
     if (raw) {
       const parsed = JSON.parse(raw) as MonitorOverview;
-      if (parsed && Array.isArray(parsed.students) && parsed.students.length > 0) {
-        parsed.students = parsed.students.filter(
-          (s) =>
-            s &&
-            !s.name?.match(/^Student\s+\d+$/i) &&
-            !s.admission_number?.match(/^KV-\d+[A-Z]-\d+$/i)
-        );
+      // Must be a complete school roster (at least 1000 students), otherwise force fresh cloud fetch
+      if (parsed && Array.isArray(parsed.students) && parsed.students.length >= 1000) {
+        const seen = new Set<string>();
+        parsed.students = parsed.students.filter((s) => {
+          if (!s || s.name?.match(/^Student\s+\d+$/i) || s.admission_number?.match(/^KV-\d+[A-Z]-\d+$/i)) {
+            return false;
+          }
+          const cat = (s.category || 'Unassigned').trim().toLowerCase();
+          const normAdm = (s.admission_number || '').trim().replace(/^0+/, '').toLowerCase();
+          const normKv = (s.student_id_kv || '').trim().replace(/^0+/, '').toLowerCase();
+          const admKey = normAdm ? `${cat}::adm::${normAdm}` : '';
+          const kvKey = normKv ? `${cat}::kv::${normKv}` : '';
+          if (admKey && seen.has(admKey)) return false;
+          if (kvKey && seen.has(kvKey)) return false;
+          if (admKey) seen.add(admKey);
+          if (kvKey) seen.add(kvKey);
+          return true;
+        });
         inMemoryOverviewCache = parsed;
         return parsed;
       }
@@ -116,6 +147,9 @@ export function getCachedMonitorOverview(): MonitorOverview | null {
 }
 
 export function saveCachedMonitorOverview(data: MonitorOverview) {
+  if (!data || !Array.isArray(data.students) || data.students.length < 500) {
+    return;
+  }
   inMemoryOverviewCache = data;
   try {
     const serialized = JSON.stringify(data);
@@ -192,9 +226,13 @@ export function clearMonitorCache() {
   invalidateCollectionCache('attendance_records');
   for (const k of [
     CACHE_STORAGE_KEY,
+    'presences:enrollment_monitor_cache_v6',
+    'presences:enrollment_monitor_cache_v5',
+    'presences:enrollment_monitor_cache_v4',
     'presences:enrollment_monitor_cache_v3',
     'presences:enrollment_monitor_cache_v2',
     'presences:enrollment_monitor_cache',
+    'presences_unified_snapshot_v3',
   ]) {
     try {
       sessionStorage.removeItem(k);
@@ -393,28 +431,51 @@ export const fetchMonitor = async (force = false): Promise<MonitorOverview> => {
       if (!admission) continue;
 
       const lowerAdm = admission.toLowerCase();
+      const normAdm = lowerAdm.replace(/^0+/, '');
       const lowerUid = String(p.user_id || p.id || '').trim().toLowerCase();
       const lowerKvId = String(meta.student_id_kv || '').trim().toLowerCase();
+      const normKvId = lowerKvId.replace(/^0+/, '');
 
       // Skip if marked as deleted
       if (
         deletedStudentKeys.has(lowerAdm) ||
+        (normAdm && deletedStudentKeys.has(normAdm)) ||
         (lowerUid && deletedStudentKeys.has(lowerUid)) ||
-        (lowerKvId && deletedStudentKeys.has(lowerKvId))
+        (lowerKvId && deletedStudentKeys.has(lowerKvId)) ||
+        (normKvId && deletedStudentKeys.has(normKvId))
       ) {
         continue;
       }
 
-      const existing = studentMap.get(lowerAdm);
       const rawClass = String(p.class || meta.class || '').trim();
       const rawSection = String(p.section || meta.section || '').trim();
       const rawCategory = String(p.category || meta.class_section || meta.category || '').trim();
       const category = normalizeClassSection(rawClass, rawSection, rawCategory) || 'Unassigned';
 
+      const normName = studentName.toLowerCase().replace(/[^a-z0-9]/g, '');
+      const fatherName = String(p.father_name || p.parent_name || meta.father_name || meta.parent_name || '').trim();
+      const normFather = fatherName.toLowerCase().replace(/[^a-z0-9]/g, '');
+      const nameKey = (normName && normFather) ? `${category}::${normName}::${normFather}` : '';
+
+      const existing =
+        studentMap.get(lowerAdm) ||
+        (normAdm ? studentMap.get(normAdm) : undefined) ||
+        (lowerUid ? studentMap.get(lowerUid) : undefined) ||
+        (lowerKvId ? studentMap.get(lowerKvId) : undefined) ||
+        (normKvId ? studentMap.get(normKvId) : undefined) ||
+        (nameKey ? studentMap.get(nameKey) : undefined);
+
+      const registerAliases = (target: MonitorStudent) => {
+        if (lowerAdm) studentMap.set(lowerAdm, target);
+        if (normAdm) studentMap.set(normAdm, target);
+        if (lowerUid) studentMap.set(lowerUid, target);
+        if (lowerKvId) studentMap.set(lowerKvId, target);
+        if (normKvId) studentMap.set(normKvId, target);
+        if (nameKey) studentMap.set(nameKey, target);
+      };
       const fullPhone = String(
         p.parent_phone || p.phone || meta.verified_parent_phone || meta.parent_phone || meta.phone || ''
       ).trim();
-      const fatherName = String(p.father_name || p.parent_name || meta.father_name || meta.parent_name || '').trim();
       const motherName = String(meta.mother_name || p.mother_name || '').trim();
       const dob = String(p.date_of_birth || meta.date_of_birth || meta.dob || '').trim();
       const address = String(p.address || meta.address || '').trim();
@@ -465,6 +526,7 @@ export const fetchMonitor = async (force = false): Promise<MonitorOverview> => {
       );
 
       if (existing) {
+        registerAliases(existing);
         existing.id = p.id || p.$id || existing.id;
         existing.userId = p.user_id || existing.userId;
         existing.name = p.full_name || p.display_name || meta.name || existing.name || admission;
@@ -561,7 +623,7 @@ export const fetchMonitor = async (force = false): Promise<MonitorOverview> => {
           avatarUrl: avatar || backendAux?.avatarUrl,
           profilePhotoUrl: p.photo_url || p.avatar_url || undefined,
         };
-        studentMap.set(lowerAdm, newStudent);
+        registerAliases(newStudent);
         baseOverview.students.push(newStudent);
       }
     }
@@ -762,13 +824,34 @@ export const fetchMonitor = async (force = false): Promise<MonitorOverview> => {
       }
     }
 
-    // Filter baseOverview.students to only real students (remove any dummy/placeholder students)
-    baseOverview.students = baseOverview.students.filter(
-      (s) =>
-        s &&
-        !s.name?.match(/^Student\s+\d+$/i) &&
-        !s.admission_number?.match(/^KV-\d+[A-Z]-\d+$/i)
-    );
+    // Comprehensive deduplication pass: ensures zero duplicate students in baseOverview.students
+    const seenStudentKeys = new Set<string>();
+    const uniqueStudents: MonitorStudent[] = [];
+    for (const s of baseOverview.students) {
+      if (!s) continue;
+      if (s.name?.match(/^Student\s+\d+$/i) || s.admission_number?.match(/^KV-\d+[A-Z]-\d+$/i)) continue;
+
+      const sCat = (s.category || 'Unassigned').trim().toLowerCase();
+      const sAdm = (s.admission_number || '').trim().toLowerCase().replace(/^0+/, '');
+      const sKv = (s.student_id_kv || '').trim().toLowerCase().replace(/^0+/, '');
+      const sName = (s.name || '').trim().toLowerCase().replace(/[^a-z0-9]/g, '');
+      const sFather = (s.father_name || '').trim().toLowerCase().replace(/[^a-z0-9]/g, '');
+
+      const keyAdm = sAdm ? `${sCat}::adm::${sAdm}` : '';
+      const keyKv = sKv ? `${sCat}::kv::${sKv}` : '';
+      const keyName = (sName && sFather) ? `${sCat}::name::${sName}::${sFather}` : '';
+
+      if (keyAdm && seenStudentKeys.has(keyAdm)) continue;
+      if (keyKv && seenStudentKeys.has(keyKv)) continue;
+      if (keyName && seenStudentKeys.has(keyName)) continue;
+
+      if (keyAdm) seenStudentKeys.add(keyAdm);
+      if (keyKv) seenStudentKeys.add(keyKv);
+      if (keyName) seenStudentKeys.add(keyName);
+
+      uniqueStudents.push(s);
+    }
+    baseOverview.students = uniqueStudents;
 
     // Resolve any relative storage paths to full URLs
     await Promise.all(
@@ -838,66 +921,28 @@ export async function updateStudentProfileDetails(
   }
 ): Promise<void> {
   const adm = admissionNumber.trim();
-  const { data: existingRows } = await supabase
-    .from('profiles')
-    .select('id, metadata')
-    .or(`admission_number.eq.${adm},employee_id.eq.${adm}`)
-    .limit(1);
-
-  const existingRow = existingRows?.[0];
-  const prevMeta = parseMetadataObject(existingRow?.metadata);
-
-  const cleanClass = (updates.class ?? '').trim();
-  const cleanSection = (updates.section ?? '').trim().toUpperCase();
-  const category = [cleanClass, cleanSection].filter(Boolean).join('-') || null;
-  const rawPhone = String(updates.parent_phone ?? '').replace(/\D/g, '');
-  const cleanPhone = rawPhone.length >= 10 ? rawPhone.slice(-10) : rawPhone;
-
-  const mergedMeta: Record<string, any> = {
-    ...prevMeta,
-    father_name: updates.father_name?.trim() ?? prevMeta.father_name ?? '',
-    mother_name: updates.mother_name?.trim() ?? prevMeta.mother_name ?? '',
-    date_of_birth: updates.date_of_birth?.trim() ?? prevMeta.date_of_birth ?? '',
-    blood_group: updates.blood_group?.trim() ?? prevMeta.blood_group ?? '',
-    pen_number: updates.pen_number?.trim() ?? prevMeta.pen_number ?? '',
-    student_id_kv: updates.student_id_kv?.trim() ?? prevMeta.student_id_kv ?? '',
-    roll_number: updates.roll_number?.trim() ?? prevMeta.roll_number ?? '',
-    address: updates.address?.trim() ?? prevMeta.address ?? '',
-    verified_parent_phone: cleanPhone || prevMeta.verified_parent_phone || '',
-  };
-
-  for (const k of Object.keys(mergedMeta)) {
-    if (mergedMeta[k] === '' || mergedMeta[k] == null) delete mergedMeta[k];
-  }
-
-  const payload: Record<string, any> = {
-    full_name: updates.name?.trim() || undefined,
-    display_name: updates.name?.trim() || undefined,
-    admission_number: adm,
-    employee_id: adm,
-    class: cleanClass || null,
-    section: cleanSection || null,
-    category,
-    roll_number: updates.roll_number?.trim() || null,
-    father_name: updates.father_name?.trim() || null,
-    parent_name: updates.father_name?.trim() || updates.mother_name?.trim() || null,
-    parent_phone: cleanPhone || null,
-    phone: cleanPhone || null,
-    blood_group: updates.blood_group?.trim() || null,
-    address: updates.address?.trim() || null,
-    role: 'student',
-    metadata: JSON.stringify(mergedMeta),
-    updated_at: new Date().toISOString(),
-  };
-
-  if (existingRow?.id) {
-    const { error } = await supabase.from('profiles').update(payload).eq('id', existingRow.id);
-    if (error) throw error;
-  } else {
-    const { error } = await supabase.from('profiles').upsert([payload], { onConflict: 'admission_number' });
-    if (error) throw error;
-  }
-
+  await universalUpdateStudentClassSection(
+    {
+      id: adm,
+      admission_number: adm,
+      employee_id: adm,
+      name: updates.name,
+    },
+    {
+      class: updates.class || '',
+      section: updates.section || '',
+      name: updates.name,
+      roll_number: updates.roll_number,
+      father_name: updates.father_name,
+      mother_name: updates.mother_name,
+      date_of_birth: updates.date_of_birth,
+      parent_phone: updates.parent_phone,
+      blood_group: updates.blood_group,
+      pen_number: updates.pen_number,
+      student_id_kv: updates.student_id_kv,
+      address: updates.address,
+    }
+  );
   clearMonitorCache();
 }
 

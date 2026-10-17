@@ -114,24 +114,21 @@ const supabaseFallbackInFlight = new Map<string, Promise<any[]>>();
 let appwriteReadQuotaCooldownUntil = 0;
 const QUOTA_STORAGE_KEY = 'presences_appwrite_quota_frozen_until';
 
+// Clear legacy quota locks on startup to ensure active Appwrite Cloud Education plan is used directly
+try {
+  if (typeof localStorage !== 'undefined') {
+    localStorage.removeItem(QUOTA_STORAGE_KEY);
+    sessionStorage.removeItem(QUOTA_STORAGE_KEY);
+  }
+} catch {}
+
 export function getAppwriteQuotaCooldownUntil(): number {
-  try {
-    if (typeof localStorage !== 'undefined') {
-      const stored = Number(localStorage.getItem(QUOTA_STORAGE_KEY) || '0');
-      if (stored > Date.now()) return stored;
-    }
-  } catch {}
   return appwriteReadQuotaCooldownUntil;
 }
 
-export function setAppwriteQuotaCooldown(durationMs = 24 * 60 * 60 * 1000) {
+export function setAppwriteQuotaCooldown(durationMs = 60 * 1000) {
   const until = Date.now() + durationMs;
   appwriteReadQuotaCooldownUntil = until;
-  try {
-    if (typeof localStorage !== 'undefined') {
-      localStorage.setItem(QUOTA_STORAGE_KEY, String(until));
-    }
-  } catch {}
 }
 
 export function isAppwriteQuotaLimitError(err: any): boolean {
@@ -1059,8 +1056,8 @@ export class AppwriteQueryBuilder<T = any> implements PromiseLike<{ data: T | nu
         if (canCache && (!boundedSingleRead || documents.length <= 1)) {
           const fastChanging = ['attendance_records', 'gate_entries', 'notifications', 'emergency_events'];
           const ttl = fastChanging.includes(this.collectionName)
-            ? 45000
-            : (['profiles', 'face_descriptors'].includes(this.collectionName) ? 600000 : 900000);
+            ? 15000
+            : (['profiles', 'face_descriptors'].includes(this.collectionName) ? 25000 : 45000);
           queryCache.set(cacheKey, { data: result, expiresAt: Date.now() + ttl });
         }
         return result;

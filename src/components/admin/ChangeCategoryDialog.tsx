@@ -1,8 +1,7 @@
 import React, { useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
-import { FolderInput } from 'lucide-react';
-import { supabase } from '@/integrations/supabase/client';
+import { FolderInput, Loader2 } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger,
@@ -10,10 +9,13 @@ import {
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from '@/components/ui/select';
-import { CLASSES, SECTIONS, getCategoryLabel, type Category } from '@/constants/schoolConfig';
+import { CLASSES, SECTIONS, getCategoryLabel } from '@/constants/schoolConfig';
+import { universalUpdateStudentClassSection } from '@/services/student/studentUpdateService';
 
 interface ChangeCategoryDialogProps {
-  userId: string;
+  userId?: string;
+  employeeId?: string;
+  studentId?: string;
   userName: string;
   currentCategory: string;
   onCategoryChanged?: () => void;
@@ -21,7 +23,13 @@ interface ChangeCategoryDialogProps {
 }
 
 const ChangeCategoryDialog: React.FC<ChangeCategoryDialogProps> = ({
-  userId, userName, currentCategory, onCategoryChanged, trigger,
+  userId,
+  employeeId,
+  studentId,
+  userName,
+  currentCategory,
+  onCategoryChanged,
+  trigger,
 }) => {
   const { toast } = useToast();
   const [open, setOpen] = useState(false);
@@ -39,44 +47,52 @@ const ChangeCategoryDialog: React.FC<ChangeCategoryDialogProps> = ({
   const newCategory = isTeacher ? 'Teacher' : `${selectedClass}-${selectedSection}`;
 
   const handleUpdate = async () => {
-    if (newCategory === currentCategory) { setOpen(false); return; }
+    if (newCategory === currentCategory) {
+      setOpen(false);
+      return;
+    }
     setIsUpdating(true);
     try {
-      const { error } = await supabase
-        .from('attendance_records')
-        .update({ category: newCategory })
-        .eq('id', userId);
-      if (error) throw error;
+      const target = {
+        id: studentId || userId,
+        user_id: userId,
+        employee_id: employeeId,
+        admission_number: employeeId,
+        name: userName,
+      };
 
-      // Also sync to profiles table
-      try {
-        const [cls, sec] = isTeacher ? ['Teacher', ''] : [selectedClass, selectedSection];
-        await (supabase as any)
-          .from('profiles')
-          .update({
-            class: cls,
-            section: sec,
-            category: newCategory,
-            role: isTeacher ? 'teacher' : 'student'
-          })
-          .eq('user_id', userId);
-      } catch (_) {}
+      await universalUpdateStudentClassSection(target, {
+        class: isTeacher ? 'Teacher' : selectedClass,
+        section: isTeacher ? '' : selectedSection,
+        category: newCategory,
+        role: isTeacher ? 'teacher' : 'student',
+      });
 
-      toast({ title: 'Category Updated', description: `${userName} moved to ${getCategoryLabel(newCategory)}` });
+      toast({
+        title: 'Class & Section Updated',
+        description: `${userName} successfully moved to ${getCategoryLabel(newCategory)}`,
+      });
       onCategoryChanged?.();
       setOpen(false);
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error updating category:', error);
-      toast({ title: 'Error', description: 'Failed to update category', variant: 'destructive' });
-    } finally { setIsUpdating(false); }
+      toast({
+        title: 'Update Failed',
+        description: error?.message || 'Failed to update student class/section.',
+        variant: 'destructive',
+      });
+    } finally {
+      setIsUpdating(false);
+    }
   };
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger asChild>
         {trigger || (
-          <Button variant="outline" size="sm" className="gap-1">
-            <FolderInput className="h-3 w-3" />Change
+          <Button variant="outline" size="sm" className="gap-1 h-8 text-xs">
+            <FolderInput className="h-3.5 w-3.5" />
+            Class / Sec
           </Button>
         )}
       </DialogTrigger>
@@ -86,39 +102,57 @@ const ChangeCategoryDialog: React.FC<ChangeCategoryDialogProps> = ({
         </DialogHeader>
         <div className="space-y-4">
           <div>
-            <Label className="text-muted-foreground">Student</Label>
-            <p className="font-medium">{userName}</p>
+            <Label className="text-xs text-muted-foreground">Student</Label>
+            <p className="font-semibold text-sm">{userName}</p>
+            {employeeId && employeeId !== '—' && (
+              <p className="text-xs text-muted-foreground font-mono">ID / Adm: {employeeId}</p>
+            )}
           </div>
           <div>
-            <Label className="text-muted-foreground">Current</Label>
-            <p className="font-medium">{getCategoryLabel(currentCategory)}</p>
+            <Label className="text-xs text-muted-foreground">Current Assignment</Label>
+            <p className="font-medium text-xs bg-muted px-2 py-1 rounded inline-block mt-0.5">
+              {getCategoryLabel(currentCategory)}
+            </p>
           </div>
 
-          <label className="flex items-center gap-2 cursor-pointer">
-            <input type="checkbox" checked={isTeacher} onChange={(e) => setIsTeacher(e.target.checked)} className="rounded" />
-            <span className="text-sm font-medium">Teacher</span>
+          <label className="flex items-center gap-2 cursor-pointer pt-1">
+            <input
+              type="checkbox"
+              checked={isTeacher}
+              onChange={(e) => setIsTeacher(e.target.checked)}
+              className="rounded"
+            />
+            <span className="text-xs font-medium">Designate as Teacher / Staff</span>
           </label>
 
           {!isTeacher && (
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-2 gap-3 pt-1">
               <div>
-                <Label>Class</Label>
+                <Label className="text-xs">Class</Label>
                 <Select value={selectedClass} onValueChange={setSelectedClass}>
-                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectTrigger className="h-9 text-xs">
+                    <SelectValue />
+                  </SelectTrigger>
                   <SelectContent>
-                    {CLASSES.map(cls => (
-                      <SelectItem key={cls} value={String(cls)}>Class {cls}</SelectItem>
+                    {CLASSES.map((cls) => (
+                      <SelectItem key={cls} value={String(cls)} className="text-xs">
+                        Class {cls}
+                      </SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
               </div>
               <div>
-                <Label>Section</Label>
+                <Label className="text-xs">Section</Label>
                 <Select value={selectedSection} onValueChange={setSelectedSection}>
-                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectTrigger className="h-9 text-xs">
+                    <SelectValue />
+                  </SelectTrigger>
                   <SelectContent>
-                    {SECTIONS.map(sec => (
-                      <SelectItem key={sec} value={sec}>Section {sec}</SelectItem>
+                    {SECTIONS.map((sec) => (
+                      <SelectItem key={sec} value={sec} className="text-xs">
+                        Section {sec}
+                      </SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
@@ -126,10 +160,18 @@ const ChangeCategoryDialog: React.FC<ChangeCategoryDialogProps> = ({
             </div>
           )}
 
-          <div className="flex gap-2 justify-end">
-            <Button variant="outline" onClick={() => setOpen(false)}>Cancel</Button>
-            <Button onClick={handleUpdate} disabled={isUpdating || newCategory === currentCategory}>
-              {isUpdating ? 'Updating...' : 'Update'}
+          <div className="flex gap-2 justify-end pt-2">
+            <Button variant="outline" size="sm" onClick={() => setOpen(false)} disabled={isUpdating}>
+              Cancel
+            </Button>
+            <Button
+              size="sm"
+              onClick={handleUpdate}
+              disabled={isUpdating || newCategory === currentCategory}
+              className="gap-1.5"
+            >
+              {isUpdating && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
+              {isUpdating ? 'Saving...' : 'Save Changes'}
             </Button>
           </div>
         </div>

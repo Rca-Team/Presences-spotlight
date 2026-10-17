@@ -8,10 +8,11 @@ import { Label } from '@/components/ui/label';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useToast } from '@/hooks/use-toast';
 import { supabase } from '@/integrations/supabase/client';
-import { Search, User, Users, UserCheck, UserX, Calendar, MoreVertical, Phone, Filter, ArrowUpDown, Clock, CheckCircle2, XCircle, SortAsc, SortDesc, Trash2, BellRing, X, BrainCircuit, ScanFace, FileText, Download, LayoutList, LayoutGrid } from 'lucide-react';
+import { Search, User, Users, UserCheck, UserX, Calendar, MoreVertical, Phone, Filter, ArrowUpDown, Clock, CheckCircle2, XCircle, SortAsc, SortDesc, Trash2, BellRing, X, BrainCircuit, ScanFace, FileText, Download, LayoutList, LayoutGrid, FolderInput } from 'lucide-react';
 import NotificationService from './NotificationService';
 import AttendanceCalendar from './AttendanceCalendar';
 import CaptureFaceDialog from './CaptureFaceDialog';
+import ChangeCategoryDialog from './ChangeCategoryDialog';
 import {
   Table,
   TableBody,
@@ -979,6 +980,19 @@ const AdminFacesList: React.FC<AdminFacesListProps> = ({
                                       >
                                         <ScanFace className="h-3.5 w-3.5 text-primary" /> Recapture 3D Face
                                       </DropdownMenuItem>
+                                      <ChangeCategoryDialog
+                                        userId={face.user_id}
+                                        employeeId={face.employee_id}
+                                        studentId={face.id}
+                                        userName={face.name}
+                                        currentCategory={face.department}
+                                        onCategoryChanged={() => void fetchFaces(true)}
+                                        trigger={
+                                          <DropdownMenuItem onSelect={(e) => e.preventDefault()} className="text-xs gap-2">
+                                            <FolderInput className="h-3.5 w-3.5" /> Change Class / Section
+                                          </DropdownMenuItem>
+                                        }
+                                      />
                                       <DropdownMenuItem
                                         onClick={() => openPromoteDialog(face)}
                                         className="text-xs gap-2"
@@ -1100,6 +1114,19 @@ const AdminFacesList: React.FC<AdminFacesListProps> = ({
                                   }} className="text-xs gap-2 text-primary font-medium">
                                     <ScanFace className="h-3.5 w-3.5 text-primary" /> Recapture 3D Face
                                   </DropdownMenuItem>
+                                  <ChangeCategoryDialog
+                                    userId={face.user_id}
+                                    employeeId={face.employee_id}
+                                    studentId={face.id}
+                                    userName={face.name}
+                                    currentCategory={face.department}
+                                    onCategoryChanged={() => void fetchFaces(true)}
+                                    trigger={
+                                      <DropdownMenuItem onSelect={(e) => e.preventDefault()} className="text-xs gap-2">
+                                        <FolderInput className="h-3.5 w-3.5" /> Change Class / Section
+                                      </DropdownMenuItem>
+                                    }
+                                  />
                                   <DropdownMenuItem onClick={(e) => { e.stopPropagation(); openPromoteDialog(face); }} className="text-xs gap-2">
                                     <UserCheck className="h-3.5 w-3.5" /> Make Teacher
                                   </DropdownMenuItem>

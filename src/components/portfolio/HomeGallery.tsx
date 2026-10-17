@@ -360,7 +360,6 @@ export function HomeGallery({
             return (
               <motion.div
                 key={item.id}
-                layout
                 whileHover={{ y: -5, scale: 1.015 }}
                 transition={{ type: 'spring', stiffness: 350, damping: 25 }}
                 onClick={() => {

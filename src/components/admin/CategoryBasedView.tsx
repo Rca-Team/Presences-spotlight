@@ -68,9 +68,9 @@ function mapSnapshotToCategoryUsers(snapshot: UnifiedStudentSnapshot | null): Ca
       { status: 'absent' as const };
 
     const isTeacher = s.role === 'teacher' || s.category === 'Teacher';
-    const cls = isTeacher ? 'Teacher' : (s.class || '6');
-    const sec = isTeacher ? '' : (s.section || 'A');
-    const cat = isTeacher ? 'Teacher' : (s.category || `${cls}-${sec}`);
+    const cls = isTeacher ? 'Teacher' : (s.class || (s.category && s.category.includes('-') ? s.category.split('-')[0] : 'Unassigned'));
+    const sec = isTeacher ? '' : (s.section || (s.category && s.category.includes('-') ? s.category.split('-')[1] : ''));
+    const cat = isTeacher ? 'Teacher' : (s.category || (cls && sec ? `${cls}-${sec}` : cls || 'Unassigned'));
     const isPresent = statusObj.status === 'present' || statusObj.status === 'late';
 
     return {
@@ -592,7 +592,9 @@ const CategoryBasedView: React.FC = () => {
                           </DropdownMenuItem>
                         )}
                         <ChangeCategoryDialog
-                          userId={user.user_id || user.id}
+                          userId={user.user_id}
+                          employeeId={user.employee_id}
+                          studentId={user.id}
                           userName={user.name}
                           currentCategory={user.category}
                           onCategoryChanged={() => void fetchUsers(true)}
