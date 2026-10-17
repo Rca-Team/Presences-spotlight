@@ -90,7 +90,7 @@ export interface MonitorOverview {
 }
 
 let inMemoryOverviewCache: MonitorOverview | null = null;
-const CACHE_STORAGE_KEY = 'presences:enrollment_monitor_cache_v3';
+const CACHE_STORAGE_KEY = 'presences:enrollment_monitor_cache_v4';
 
 export function getCachedMonitorOverview(): MonitorOverview | null {
   if (inMemoryOverviewCache) return inMemoryOverviewCache;
@@ -101,6 +101,12 @@ export function getCachedMonitorOverview(): MonitorOverview | null {
     if (raw) {
       const parsed = JSON.parse(raw) as MonitorOverview;
       if (parsed && Array.isArray(parsed.students) && parsed.students.length > 0) {
+        parsed.students = parsed.students.filter(
+          (s) =>
+            s &&
+            !s.name?.match(/^Student\s+\d+$/i) &&
+            !s.admission_number?.match(/^KV-\d+[A-Z]-\d+$/i)
+        );
         inMemoryOverviewCache = parsed;
         return parsed;
       }
@@ -183,10 +189,18 @@ export function clearMonitorCache() {
   inMemoryOverviewCache = null;
   invalidateCollectionCache('profiles');
   invalidateCollectionCache('face_descriptors');
-  try {
-    sessionStorage.removeItem(CACHE_STORAGE_KEY);
-    localStorage.removeItem(CACHE_STORAGE_KEY);
-  } catch {}
+  invalidateCollectionCache('attendance_records');
+  for (const k of [
+    CACHE_STORAGE_KEY,
+    'presences:enrollment_monitor_cache_v3',
+    'presences:enrollment_monitor_cache_v2',
+    'presences:enrollment_monitor_cache',
+  ]) {
+    try {
+      sessionStorage.removeItem(k);
+      localStorage.removeItem(k);
+    } catch {}
+  }
 }
 
 let backendUnavailableCooldownUntil = 0;
@@ -748,74 +762,13 @@ export const fetchMonitor = async (force = false): Promise<MonitorOverview> => {
       }
     }
 
-    // School Roster Expansion to ~1,400 students across the 28 classes
-    // Classes 6 through 12, Sections A through D (28 sections, 50 students per section)
-    const TARGET_STUDENTS_PER_SECTION = 50;
-    const classOccupiedRolls = new Map<string, Set<number>>();
-    const classStudentCount = new Map<string, number>();
-
-    // Index existing students and their roll numbers per section
-    for (const student of baseOverview.students) {
-      const cat = student.category || 'Unassigned';
-      if (!classOccupiedRolls.has(cat)) classOccupiedRolls.set(cat, new Set<number>());
-      if (!classStudentCount.has(cat)) classStudentCount.set(cat, 0);
-
-      classStudentCount.set(cat, (classStudentCount.get(cat) || 0) + 1);
-
-      const roll = parseInt(student.roll_number || '', 10);
-      if (!isNaN(roll) && roll >= 1 && roll <= 200) {
-        classOccupiedRolls.get(cat)!.add(roll);
-      }
-    }
-
-    // Populate remaining slots up to TARGET_STUDENTS_PER_SECTION for all 28 sections
-    for (const cls of CLASSES) {
-      for (const sec of SECTIONS) {
-        const cat = `${cls}-${sec}`;
-        const occupied = classOccupiedRolls.get(cat) || new Set<number>();
-        const currentCount = classStudentCount.get(cat) || 0;
-        const targetCount = Math.max(TARGET_STUDENTS_PER_SECTION, currentCount);
-
-        let nextRoll = 1;
-        while ((classStudentCount.get(cat) || 0) < targetCount && nextRoll <= 200) {
-          if (!occupied.has(nextRoll)) {
-            const adm = `KV-${cls}${sec}-${String(nextRoll).padStart(2, '0')}`;
-            const lowerAdm = adm.toLowerCase();
-            if (!studentMap.has(lowerAdm) && !deletedStudentKeys.has(lowerAdm)) {
-              const pendingStudent: MonitorStudent = {
-                admission_number: adm,
-                name: `Student ${nextRoll}`,
-                class: String(cls),
-                section: sec,
-                category: cat,
-                roll_number: String(nextRoll),
-                parent_phone: '',
-                hasPhone: false,
-                hasDob: false,
-                hasFather: false,
-                status: 'not_started',
-                imported: false,
-                portrait: false,
-                faceOnFile: false,
-                vectorCount: 0,
-                samples: [],
-                method: '',
-                verifiedAt: 0,
-                completedAt: 0,
-                failures: 0,
-                correction: null,
-                lastActivity: 0,
-              };
-              studentMap.set(lowerAdm, pendingStudent);
-              baseOverview.students.push(pendingStudent);
-              occupied.add(nextRoll);
-              classStudentCount.set(cat, (classStudentCount.get(cat) || 0) + 1);
-            }
-          }
-          nextRoll++;
-        }
-      }
-    }
+    // Filter baseOverview.students to only real students (remove any dummy/placeholder students)
+    baseOverview.students = baseOverview.students.filter(
+      (s) =>
+        s &&
+        !s.name?.match(/^Student\s+\d+$/i) &&
+        !s.admission_number?.match(/^KV-\d+[A-Z]-\d+$/i)
+    );
 
     // Resolve any relative storage paths to full URLs
     await Promise.all(
