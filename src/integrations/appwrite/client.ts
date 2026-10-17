@@ -16,15 +16,21 @@ const isLocalOrNativeOrigin = () =>
   window.location.protocol === 'file:';
 
 if (typeof window !== 'undefined') {
-  // Sanitize any stale or legacy project session keys in cookieFallback
+  // Sanitize any stale or legacy project session keys in cookieFallback and purge legacy quota lock
   try {
+    window.localStorage?.removeItem('presences_appwrite_quota_frozen_until');
     const rawFallback = window.localStorage?.getItem('cookieFallback');
     if (rawFallback) {
       const parsed = JSON.parse(rawFallback);
       if (parsed && typeof parsed === 'object') {
         let modified = false;
         for (const k of Object.keys(parsed)) {
-          if (k.includes('6abfd34f000604fcf074') || !parsed[k] || parsed[k] === 'deleted') {
+          if (
+            k.includes('6abfd34f000604fcf074') ||
+            k.includes('6accbd5d00053c5c1ac2') ||
+            !parsed[k] ||
+            parsed[k] === 'deleted'
+          ) {
             delete parsed[k];
             modified = true;
           }

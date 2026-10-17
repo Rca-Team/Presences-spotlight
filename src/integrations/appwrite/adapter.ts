@@ -1575,9 +1575,13 @@ class AppwriteAuthClient {
     this.userRequest = null;
     const cleanEmail = email.trim().toLowerCase();
 
-    if (Date.now() < getAppwriteQuotaCooldownUntil()) {
-      return this.signInWithSupabasePassword(cleanEmail, password);
-    }
+    // Clear any stale quota freeze flag on intentional sign-in
+    try {
+      if (typeof localStorage !== 'undefined') {
+        localStorage.removeItem(QUOTA_STORAGE_KEY);
+      }
+    } catch {}
+    appwriteReadQuotaCooldownUntil = 0;
 
     try {
       try {
@@ -1595,17 +1599,17 @@ class AppwriteAuthClient {
           errMsg.includes('already exists')
         ) {
           try {
-            await account.deleteSession('current');
+            await account.deleteSessions();
           } catch {
-            // Ignore deleteSession failure
+            try {
+              await account.deleteSession('current');
+            } catch {}
           }
           try {
             if (typeof localStorage !== 'undefined') {
               localStorage.removeItem('cookieFallback');
             }
-          } catch {
-            // Ignore localStorage error
-          }
+          } catch {}
           await account.createEmailPasswordSession(cleanEmail, password);
         } else {
           throw sessionErr;
