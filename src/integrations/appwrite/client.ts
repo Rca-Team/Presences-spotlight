@@ -4,9 +4,9 @@ export { OAuthProvider };
 const APPWRITE_ENDPOINT = import.meta.env.VITE_APPWRITE_ENDPOINT || 'https://sgp.cloud.appwrite.io/v1';
 const rawProjectId = import.meta.env.VITE_APPWRITE_PROJECT_ID;
 const APPWRITE_PROJECT_ID =
-  rawProjectId && rawProjectId !== '6abfd34f000604fcf074'
+  rawProjectId && rawProjectId !== '6abfd34f000604fcf074' && rawProjectId !== '6accbd5d00053c5c1ac2'
     ? rawProjectId
-    : '6accbd5d00053c5c1ac2';
+    : '6ad309e200176195d398';
 
 const isLocalOrNativeOrigin = () =>
   typeof window === 'undefined' ||
