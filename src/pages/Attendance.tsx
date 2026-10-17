@@ -278,7 +278,7 @@ const Attendance: React.FC = () => {
           {/* 2. The 4 Clean Metric Cards (Fluid Bento Grid, Cohesive Glass Surface) */}
           {!isKioskFocus && (
             <div className="bento-grid-fluid">
-              <div className="liquid-glass-card p-4 sm:p-5">
+              <div className="rounded-2xl border border-slate-200/80 dark:border-white/10 bg-white/80 dark:bg-slate-900/80 backdrop-blur-xl p-4 sm:p-5 shadow-xs hover:border-slate-300 dark:hover:border-white/20 transition-all">
                 <div className="flex items-center justify-between">
                   <span className="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">ENROLLED</span>
                   <div className="w-8 h-8 rounded-xl bg-indigo-500/10 text-indigo-500 dark:text-indigo-400 flex items-center justify-center">
@@ -294,7 +294,7 @@ const Attendance: React.FC = () => {
                 </div>
               </div>
 
-              <div className="liquid-glass-card p-4 sm:p-5">
+              <div className="rounded-2xl border border-slate-200/80 dark:border-white/10 bg-white/80 dark:bg-slate-900/80 backdrop-blur-xl p-4 sm:p-5 shadow-xs hover:border-slate-300 dark:hover:border-white/20 transition-all">
                 <div className="flex items-center justify-between">
                   <span className="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">PRESENT</span>
                   <div className="w-8 h-8 rounded-xl bg-emerald-500/10 text-emerald-500 dark:text-emerald-400 flex items-center justify-center">
@@ -310,7 +310,7 @@ const Attendance: React.FC = () => {
                 </div>
               </div>
 
-              <div className="liquid-glass-card p-4 sm:p-5">
+              <div className="rounded-2xl border border-slate-200/80 dark:border-white/10 bg-white/80 dark:bg-slate-900/80 backdrop-blur-xl p-4 sm:p-5 shadow-xs hover:border-slate-300 dark:hover:border-white/20 transition-all">
                 <div className="flex items-center justify-between">
                   <span className="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">LATE</span>
                   <div className="w-8 h-8 rounded-xl bg-amber-500/10 text-amber-500 dark:text-amber-400 flex items-center justify-center">
@@ -326,7 +326,7 @@ const Attendance: React.FC = () => {
                 </div>
               </div>
 
-              <div className="liquid-glass-card p-4 sm:p-5">
+              <div className="rounded-2xl border border-slate-200/80 dark:border-white/10 bg-white/80 dark:bg-slate-900/80 backdrop-blur-xl p-4 sm:p-5 shadow-xs hover:border-slate-300 dark:hover:border-white/20 transition-all">
                 <div className="flex items-center justify-between">
                   <span className="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">TURNOUT</span>
                   <div className="w-8 h-8 rounded-xl bg-blue-500/10 text-blue-500 dark:text-blue-400 flex items-center justify-center">
@@ -344,8 +344,8 @@ const Attendance: React.FC = () => {
             </div>
           )}
 
-          {/* 4. Snappy Segmented Method Switcher (Liquid Glass Dock) */}
-          <div className="liquid-glass-dock grid grid-cols-2 md:grid-cols-4 gap-1 p-1.5 shadow-xl">
+          {/* 4. Snappy Segmented Method Switcher (Royal Neon Dock) */}
+          <div className="royal-neon-dock grid grid-cols-2 md:grid-cols-4 gap-1 p-1.5 rounded-2xl shadow-xl">
             {tabs.map((tab) => {
               const isActive = activeTab === tab.id;
               return (
@@ -353,7 +353,7 @@ const Attendance: React.FC = () => {
                   key={tab.id}
                   type="button"
                   onClick={() => setActiveTab(tab.id as any)}
-                  className={`relative flex items-center justify-center gap-2 py-2.5 px-3 rounded-full text-xs sm:text-sm font-bold min-h-[42px] transition-colors duration-200 cursor-pointer select-none ${
+                  className={`relative flex items-center justify-center gap-2 py-2.5 px-3 rounded-xl text-xs sm:text-sm font-bold min-h-[42px] transition-colors duration-200 cursor-pointer select-none ${
                     isActive
                       ? 'text-slate-900 dark:text-white font-bold'
                       : 'text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white'
@@ -362,8 +362,8 @@ const Attendance: React.FC = () => {
                   {isActive && (
                     <motion.div
                       layoutId="attendance-method-pill"
-                      className="liquid-glass-pill absolute inset-0 shadow-md"
-                      transition={{ type: 'spring', stiffness: 460, damping: 32 }}
+                      className="royal-neon-active-pill absolute inset-0 rounded-xl shadow-md"
+                      transition={{ type: 'spring', stiffness: 420, damping: 30, mass: 0.6 }}
                     />
                   )}
                   <tab.icon className={`relative z-10 w-4 h-4 shrink-0 ${isActive ? 'text-slate-900 dark:text-white' : 'text-primary'}`} />

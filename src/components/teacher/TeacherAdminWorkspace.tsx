@@ -1423,7 +1423,7 @@ export const TeacherAdminWorkspace: React.FC<TeacherAdminWorkspaceProps> = ({ in
 
   if (assignments.length === 0) {
     return (
-      <Card className="max-w-2xl mx-auto my-8 border-slate-200 dark:border-white/10 shadow-xl rounded-3xl overflow-hidden liquid-glass-surface">
+      <Card className="max-w-2xl mx-auto my-8 border-slate-200 dark:border-white/10 shadow-xl rounded-3xl overflow-hidden bg-card/90 backdrop-blur-xl">
         <CardHeader className="text-center pb-2 bg-gradient-to-b from-blue-500/10 to-transparent">
           <div className="mx-auto w-14 h-14 rounded-2xl bg-gradient-to-br from-blue-600 to-indigo-600 flex items-center justify-center text-white mb-3 shadow-lg shadow-blue-500/20">
             <GraduationCap className="h-7 w-7" />

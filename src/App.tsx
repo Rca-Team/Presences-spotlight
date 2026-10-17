@@ -46,7 +46,7 @@ import { ThemeProvider } from './hooks/use-theme';
 import { PerformanceModeProvider } from './hooks/usePerformanceMode';
 import SharedMediaGateway from './components/share/SharedMediaGateway';
 
-import AndroidAppShell from "./components/mobile/AndroidAppShell";
+import MobileAppShell from "./components/mobile/MobileAppShell";
 import { ProtectedRoute } from './components/ProtectedRoute';
 import PWAInstallPrompt from './components/PWAInstallPrompt';
 import EmergencyAlertListener from './components/EmergencyAlertListener';
@@ -472,11 +472,11 @@ function App() {
                   <RoyalScrollProvider>
                     <DesktopSlideProvider>
                       <NotificationPermissionGate>
-                        <AndroidAppShell>
+                        <MobileAppShell>
                           <SeoHead />
                           <LuminaScope />
                           <AppErrorBoundary><AnimatedRoutes /></AppErrorBoundary>
-                        </AndroidAppShell>
+                        </MobileAppShell>
                         {mountNonCritical && (
                           <AppExperienceLayer />
                         )}

@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { Link, useLocation } from "react-router-dom";
+import { motion } from "framer-motion";
 import {
   BookOpen,
   User,
@@ -184,11 +185,18 @@ const MobileAppShell: React.FC<MobileAppShellProps> = ({ children }) => {
                   onTouchStart={() => preloadRoute(tab.to)}
                   onMouseEnter={() => preloadRoute(tab.to)}
                   className={cn(
-                    "macbook-dock-item dock-item-pop group flex min-h-[56px] flex-col items-center justify-center rounded-2xl px-1 active:scale-90 transition-transform duration-200",
+                    "macbook-dock-item dock-item-pop group flex min-h-[56px] flex-col items-center justify-center rounded-2xl px-1 active:scale-90 transition-transform duration-200 relative",
                     active ? "macbook-dock-item-active text-foreground" : "text-muted-foreground"
                   )}
                   aria-current={active ? "page" : undefined}
                 >
+                  {active && (
+                    <motion.div
+                      layoutId="mobile-dock-active-pill"
+                      className="absolute inset-0 bg-primary/10 dark:bg-primary/20 rounded-2xl -z-10 border border-primary/30"
+                      transition={{ type: "spring", stiffness: 450, damping: 32 }}
+                    />
+                  )}
                   <tab.icon
                     className={cn(
                       "h-5 w-5 transition-all duration-300 ease-out",

@@ -69,7 +69,7 @@ const HomeInstallCard: React.FC = () => {
 
   return (
     <section className="pb-14">
-      <div className="liquid-glass-surface rounded-3xl p-6 md:p-8">
+      <div className="rounded-3xl border border-border/80 bg-card/70 backdrop-blur-xl shadow-xl p-6 md:p-8">
         <div className="flex items-start gap-4">
           <div className="flex h-12 w-12 flex-shrink-0 items-center justify-center rounded-2xl bg-primary/15 text-primary">
             <Download className="h-6 w-6" />

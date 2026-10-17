@@ -650,7 +650,7 @@ const Register = () => {
 
   return (
     <PageTransition>
-      <div className="min-h-screen flex flex-col lg:flex-row neon-liquid-bg overflow-x-hidden">
+      <div className="min-h-screen flex flex-col lg:flex-row overflow-x-hidden">
         {/* Left Panel - Branding */}
         <div className="hidden lg:flex lg:w-1/2 relative overflow-hidden" style={{ background: 'linear-gradient(135deg, #1e3a8a 0%, #1e1b4b 50%, #0f172a 100%)' }}>
           <div className="absolute inset-0">

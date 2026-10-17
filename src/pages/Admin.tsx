@@ -732,7 +732,7 @@ const Admin = () => {
                           {isActive && (
                             <motion.span
                               layoutId="admin-nav-active"
-                              className="liquid-glass-pill absolute inset-0 shadow-md"
+                              className="royal-neon-active-pill absolute inset-0 rounded-xl shadow-md"
                               transition={{ type: 'spring', stiffness: 420, damping: 32, mass: 0.7 }}
                             />
                           )}
@@ -829,11 +829,11 @@ const Admin = () => {
               </div>
             </div>
 
-            {/* Mobile feature navigation - Liquid Glass Dock with sliding pill */}
+            {/* Mobile feature navigation - Royal Neon Dock with sliding pill */}
             {isMobile && (
               <div className="border-b border-slate-200/70 dark:border-white/10 px-2 py-2 sticky top-0 z-20 backdrop-blur-xl bg-slate-900/90">
                 <div className="flex items-center gap-1.5">
-                  <div className="liquid-glass-dock flex gap-1 overflow-x-auto no-scrollbar scroll-mask-edges p-1 flex-1 min-w-0">
+                  <div className="royal-neon-dock flex gap-1 overflow-x-auto no-scrollbar scroll-mask-edges p-1 flex-1 min-w-0 rounded-full">
                     {navItems.map((item) => {
                       const isActive = activeTab === item.id;
                       return (
@@ -852,7 +852,7 @@ const Admin = () => {
                           {isActive && (
                             <motion.div
                               layoutId="admin-mobile-active-pill"
-                              className="liquid-glass-pill absolute inset-0 shadow-md"
+                              className="royal-neon-active-pill absolute inset-0 rounded-full shadow-md"
                               transition={{ type: "spring", stiffness: 460, damping: 32 }}
                             />
                           )}

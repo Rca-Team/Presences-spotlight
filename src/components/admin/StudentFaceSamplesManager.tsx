@@ -1783,8 +1783,8 @@ const StudentFaceSamplesManager: React.FC = () => {
 
   return (
     <div className="space-y-6">
-      {/* Studio Header Card — Apple Nano-Textured Liquid Glass */}
-      <Card className="rounded-3xl liquid-glass-surface shadow-2xl overflow-hidden">
+      {/* Studio Header Card */}
+      <Card className="rounded-3xl bg-card/80 backdrop-blur-xl border-border/80 shadow-2xl overflow-hidden">
         <CardContent className="p-6">
           <div className="flex flex-col md:flex-row md:items-center justify-between gap-6">
             <div className="space-y-1">
@@ -1934,8 +1934,8 @@ const StudentFaceSamplesManager: React.FC = () => {
       {/* Main Studio Dual-Panel Workspace */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
         
-        {/* LEFT COLUMN: Student Navigation List — Liquid Glass Chassis */}
-        <Card className="lg:col-span-4 rounded-3xl liquid-glass-surface shadow-xl overflow-hidden">
+        {/* LEFT COLUMN: Student Navigation List */}
+        <Card className="lg:col-span-4 rounded-3xl bg-card/80 backdrop-blur-xl border-border/80 shadow-xl overflow-hidden">
           <CardHeader className="p-4 pb-3 border-b border-border/40 space-y-3">
             <div className="relative">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
@@ -2081,8 +2081,8 @@ const StudentFaceSamplesManager: React.FC = () => {
           </CardContent>
         </Card>
 
-        {/* RIGHT COLUMN: Calibration & Face Training Canvas — Liquid Glass Chassis */}
-        <Card className="lg:col-span-8 rounded-3xl liquid-glass-surface shadow-xl overflow-hidden">
+        {/* RIGHT COLUMN: Calibration & Face Training Canvas */}
+        <Card className="lg:col-span-8 rounded-3xl bg-card/80 backdrop-blur-xl border-border/80 shadow-xl overflow-hidden">
           {selectedGroup ? (
             <div className="divide-y divide-border/40">
               

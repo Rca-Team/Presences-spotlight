@@ -81,8 +81,8 @@ const Unsubscribe = () => {
   };
 
   return (
-    <main className="min-h-screen bg-background neon-liquid-bg flex items-center justify-center px-4 py-10">
-      <Card className="w-full max-w-md liquid-glass-surface liquid-glass-highlight">
+    <main className="min-h-screen bg-background flex items-center justify-center px-4 py-10">
+      <Card className="w-full max-w-md bg-card/80 backdrop-blur-xl border border-border/70 shadow-xl">
         <CardHeader>
           <CardTitle>Email Preferences</CardTitle>
           <CardDescription>Manage your app email subscription.</CardDescription>

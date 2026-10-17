@@ -138,7 +138,7 @@ const Signup = () => {
   };
 
   return (
-    <div className="min-h-[100dvh] bg-background relative flex flex-col lg:flex-row overflow-x-hidden neon-liquid-bg">
+    <div className="min-h-[100dvh] bg-background relative flex flex-col lg:flex-row overflow-x-hidden">
       {/* Background */}
       <div className="absolute inset-0 overflow-hidden pointer-events-none">
         <motion.div animate={{ scale: [1, 1.3, 1], opacity: [0.15, 0.3, 0.15] }} transition={{ duration: 8, repeat: Infinity }}
@@ -199,7 +199,7 @@ const Signup = () => {
             </p>
           </div>
 
-          <Card className="p-5 sm:p-7 space-y-4 liquid-glass-surface liquid-glass-highlight border-border/70 shadow-xl rounded-2xl">
+          <Card className="p-5 sm:p-7 space-y-4 bg-card/80 backdrop-blur-xl border-border/70 shadow-xl rounded-2xl">
             {/* Account Type Selector */}
             <div className="grid grid-cols-2 gap-2 p-1 bg-muted/60 dark:bg-black/30 rounded-xl border border-border/50">
               <button

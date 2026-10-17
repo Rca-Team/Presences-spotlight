@@ -8,8 +8,8 @@ const NotFound = () => {
   const location = useLocation();
 
   return (
-    <div className="min-h-screen neon-liquid-bg flex flex-col items-center justify-center p-6 text-center">
-      <div className="max-w-md mx-auto animate-fade-in liquid-glass-surface liquid-glass-highlight p-8">
+    <div className="min-h-screen bg-background flex flex-col items-center justify-center p-6 text-center">
+      <div className="max-w-md mx-auto animate-fade-in bg-card/80 backdrop-blur-xl border border-border/70 rounded-3xl shadow-xl p-8">
         <Logo className="mx-auto mb-6" />
         
         <div className="space-y-4">

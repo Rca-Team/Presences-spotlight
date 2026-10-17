@@ -4,7 +4,6 @@ import {
   Sparkles,
   LayoutGrid,
   Layers,
-  Droplets,
   ChevronLeft,
   ChevronRight,
   Maximize2,
@@ -14,6 +13,8 @@ import {
   X,
   ExternalLink,
   Plus,
+  Play,
+  Pause,
   ZoomIn,
   ZoomOut,
   RotateCcw,
@@ -69,7 +70,7 @@ const filterCss: Record<LightboxFilter, string> = {
 
 interface HomeGalleryProps {
   items: PortfolioGalleryItem[];
-  defaultLayout?: 'bento' | 'grid' | 'liquid' | 'carousel';
+  defaultLayout?: 'bento' | 'grid' | 'carousel';
   title?: string;
   subtitle?: string;
   allowManage?: boolean;
@@ -84,13 +85,14 @@ export function HomeGallery({
   allowManage = true,
   className,
 }: HomeGalleryProps) {
-  const initialLayout = defaultLayout === 'carousel' ? 'liquid' : defaultLayout;
-  const [layout, setLayout] = useState<'bento' | 'grid' | 'liquid'>(initialLayout as any);
+  const [layout, setLayout] = useState<'bento' | 'grid' | 'carousel'>(defaultLayout);
   const [theme, setTheme] = useState<GalleryVisualTheme>('cyber');
   const [activeCategory, setActiveCategory] = useState<string>('All');
   const [lightboxIndex, setLightboxIndex] = useState<number | null>(null);
   const [lightboxFilter, setLightboxFilter] = useState<LightboxFilter>('normal');
   const [copied, setCopied] = useState(false);
+  const [carouselIndex, setCarouselIndex] = useState(0);
+  const [isPlaying, setIsPlaying] = useState(false);
   const [zoomLevel, setZoomLevel] = useState(1);
   const { toast } = useToast();
   const navigate = useNavigate();
@@ -136,6 +138,15 @@ export function HomeGallery({
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [lightboxIndex, nextLightbox, prevLightbox]);
+
+  // Autoplay for carousel mode
+  useEffect(() => {
+    if (layout !== 'carousel' || !isPlaying || filteredItems.length <= 1) return;
+    const interval = setInterval(() => {
+      setCarouselIndex((prev) => (prev + 1) % filteredItems.length);
+    }, 3800);
+    return () => clearInterval(interval);
+  }, [layout, isPlaying, filteredItems.length]);
 
   const handleCopyUrl = (url: string) => {
     void navigator.clipboard.writeText(url);
@@ -232,66 +243,50 @@ export function HomeGallery({
             ))}
           </div>
 
-          {/* View Mode Switcher: Liquid Glass Dock & Active Pill */}
-          <div className="liquid-glass-dock p-1 flex items-center gap-1 shadow-lg">
+          <div className="flex items-center rounded-2xl border border-border/70 bg-card/60 p-1 backdrop-blur-md shadow-xs">
             <button
               type="button"
               onClick={() => setLayout('bento')}
               className={cn(
-                'relative flex items-center gap-1.5 rounded-full px-3.5 py-1.5 text-xs font-semibold transition-colors duration-200 cursor-pointer',
-                layout === 'bento' ? 'text-white' : 'text-slate-400 hover:text-white'
+                'flex items-center gap-1.5 rounded-xl px-3 py-1.5 text-xs font-bold transition',
+                layout === 'bento'
+                  ? 'bg-primary text-primary-foreground shadow-sm'
+                  : 'text-muted-foreground hover:text-foreground',
               )}
               title="Bento Masonry View"
             >
-              {layout === 'bento' && (
-                <motion.div
-                  layoutId="home-gallery-active-pill"
-                  className="liquid-glass-pill absolute inset-0"
-                  transition={{ type: 'spring', stiffness: 460, damping: 32 }}
-                />
-              )}
-              <LayoutGrid className="relative z-10 h-3.5 w-3.5" />
-              <span className="relative z-10 font-bold">Bento</span>
+              <LayoutGrid className="h-3.5 w-3.5" />
+              <span>Bento</span>
             </button>
 
             <button
               type="button"
               onClick={() => setLayout('grid')}
               className={cn(
-                'relative flex items-center gap-1.5 rounded-full px-3.5 py-1.5 text-xs font-semibold transition-colors duration-200 cursor-pointer',
-                layout === 'grid' ? 'text-white' : 'text-slate-400 hover:text-white'
+                'flex items-center gap-1.5 rounded-xl px-3 py-1.5 text-xs font-bold transition',
+                layout === 'grid'
+                  ? 'bg-primary text-primary-foreground shadow-sm'
+                  : 'text-muted-foreground hover:text-foreground',
               )}
               title="Uniform Grid View"
             >
-              {layout === 'grid' && (
-                <motion.div
-                  layoutId="home-gallery-active-pill"
-                  className="liquid-glass-pill absolute inset-0"
-                  transition={{ type: 'spring', stiffness: 460, damping: 32 }}
-                />
-              )}
-              <Layers className="relative z-10 h-3.5 w-3.5" />
-              <span className="relative z-10 font-bold">Grid</span>
+              <Layers className="h-3.5 w-3.5" />
+              <span>Grid</span>
             </button>
 
             <button
               type="button"
-              onClick={() => setLayout('liquid')}
+              onClick={() => setLayout('carousel')}
               className={cn(
-                'relative flex items-center gap-1.5 rounded-full px-3.5 py-1.5 text-xs font-semibold transition-colors duration-200 cursor-pointer',
-                layout === 'liquid' ? 'text-white' : 'text-slate-400 hover:text-white'
+                'flex items-center gap-1.5 rounded-xl px-3 py-1.5 text-xs font-bold transition',
+                layout === 'carousel'
+                  ? 'bg-primary text-primary-foreground shadow-sm'
+                  : 'text-muted-foreground hover:text-foreground',
               )}
-              title="Liquid Glass Showcase"
+              title="Cinematic Carousel View"
             >
-              {layout === 'liquid' && (
-                <motion.div
-                  layoutId="home-gallery-active-pill"
-                  className="liquid-glass-pill absolute inset-0"
-                  transition={{ type: 'spring', stiffness: 460, damping: 32 }}
-                />
-              )}
-              <Droplets className="relative z-10 h-3.5 w-3.5 text-cyan-300" />
-              <span className="relative z-10 font-bold">Liquid Glass</span>
+              <Play className="h-3.5 w-3.5" />
+              <span>Cinematic</span>
             </button>
           </div>
 
@@ -468,114 +463,125 @@ export function HomeGallery({
         </div>
       ) : (
         /* ------------------------------------------------------------------ */
-        /* LIQUID GLASS SHOWCASE (Replaces legacy slider carousel)           */
+        /* CINEMATIC CAROUSEL VIEW                                            */
         /* ------------------------------------------------------------------ */
-        <div className="space-y-6">
-          {/* Featured Panoramic Hero Card */}
-          {filteredItems[0] && (
-            <motion.div
-              layout
-              initial={{ opacity: 0.9, y: 12 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ type: 'spring', stiffness: 380, damping: 28 }}
-              className="liquid-glass-card group relative aspect-[16/9] md:aspect-[21/9] w-full overflow-hidden cursor-pointer"
-              onClick={() => {
-                setZoomLevel(1);
-                setLightboxIndex(0);
-              }}
-            >
-              <img
-                src={filteredItems[0].url}
-                alt={filteredItems[0].title || 'Featured'}
-                className="h-full w-full object-cover transition-transform duration-700 ease-out group-hover:scale-105"
-                loading="eager"
-              />
+        <div className="space-y-4">
+          {filteredItems[carouselIndex] && (
+            <div className="relative overflow-hidden rounded-3xl border border-white/15 bg-card/70 shadow-2xl backdrop-blur-2xl">
+              <motion.div
+                key={carouselIndex}
+                initial={{ opacity: 0.85, x: 20 }}
+                animate={{ opacity: 1, x: 0 }}
+                exit={{ opacity: 0.85, x: -20 }}
+                transition={{ duration: 0.25 }}
+                drag="x"
+                dragConstraints={{ left: 0, right: 0 }}
+                dragElastic={0.25}
+                onDragEnd={(_e, { offset, velocity }) => {
+                  const swipeThreshold = 40;
+                  if (offset.x < -swipeThreshold || velocity.x < -300) {
+                    setCarouselIndex((prev) => (prev + 1) % filteredItems.length);
+                  } else if (offset.x > swipeThreshold || velocity.x > 300) {
+                    setCarouselIndex((prev) => (prev - 1 + filteredItems.length) % filteredItems.length);
+                  }
+                }}
+                className="relative aspect-video sm:aspect-[21/9] w-full overflow-hidden cursor-grab active:cursor-grabbing bg-black/40 touch-pan-y select-none"
+                onClick={() => {
+                  setZoomLevel(1);
+                  setLightboxIndex(carouselIndex);
+                }}
+              >
+                <img
+                  src={filteredItems[carouselIndex].url}
+                  alt={filteredItems[carouselIndex].title || 'Slide'}
+                  className="h-full w-full object-cover transition-all duration-700 pointer-events-none select-none"
+                  draggable={false}
+                />
 
-              {/* Dynamic Theme Gradient Overlay & Liquid Caustic Ambient */}
-              <div className={cn('pointer-events-none absolute inset-0 bg-gradient-to-t opacity-85 group-hover:opacity-95 transition-opacity', themeStyles[theme].overlay)} />
-              
-              {/* Sweeping Light Sheen */}
-              <div className="pointer-events-none absolute -inset-full bg-gradient-to-r from-transparent via-white/20 to-transparent -rotate-45 translate-x-[-150%] group-hover:translate-x-[150%] transition-transform duration-1000 ease-in-out" />
+                <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-black via-black/40 to-transparent" />
 
-              {/* Top Liquid Glass Badges */}
-              <div className="absolute left-4 top-4 right-4 flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  <span className="liquid-glass-pill px-3 py-1 text-[11px] font-black uppercase tracking-wider text-white flex items-center gap-1.5 shadow-md">
-                    <Sparkles className="w-3.5 h-3.5" /> Featured Moment
-                  </span>
-                  {filteredItems[0].category && (
-                    <span className={cn('rounded-full border px-3 py-0.5 text-[10px] font-black uppercase tracking-wider backdrop-blur-md shadow-xs', themeStyles[theme].badge)}>
-                      {filteredItems[0].category}
-                    </span>
-                  )}
-                </div>
-                <span className="rounded-full bg-black/60 p-2.5 text-white/90 group-hover:text-white backdrop-blur-md shadow-md border border-white/10">
-                  <Maximize2 className="h-4 w-4" />
-                </span>
-              </div>
-
-              {/* Bottom Content Bar */}
-              <div className="absolute inset-x-0 bottom-0 p-6 md:p-8">
-                <h3 className="font-extrabold text-xl md:text-3xl text-white tracking-tight group-hover:text-blue-300 transition-colors">
-                  {filteredItems[0].title || 'Presences Campus Life'}
-                </h3>
-                {filteredItems[0].caption && (
-                  <p className="mt-2 text-xs md:text-sm text-white/85 max-w-2xl font-medium leading-relaxed line-clamp-2">
-                    {filteredItems[0].caption}
-                  </p>
-                )}
-              </div>
-            </motion.div>
-          )}
-
-          {/* Secondary Liquid Glass Cards Grid */}
-          {filteredItems.length > 1 && (
-            <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
-              {filteredItems.slice(1).map((item, idx) => {
-                const actualIndex = idx + 1;
-                return (
-                  <motion.div
-                    key={item.id}
-                    layout
-                    whileHover={{ y: -4, scale: 1.02 }}
-                    transition={{ type: 'spring', stiffness: 380, damping: 26 }}
-                    onClick={() => {
-                      setZoomLevel(1);
-                      setLightboxIndex(actualIndex);
-                    }}
-                    className={cn(
-                      'liquid-glass-card group relative aspect-[4/3] overflow-hidden cursor-pointer',
-                      themeStyles[theme].card
+                {/* Slide Caption Overlay */}
+                <div className="absolute inset-x-0 bottom-0 p-6 sm:p-8 flex items-end justify-between gap-4 pointer-events-none">
+                  <div className="max-w-2xl">
+                    {filteredItems[carouselIndex].category && (
+                      <span className="inline-flex items-center gap-1.5 rounded-full border border-amber-300/40 bg-black/60 px-3 py-1 text-xs font-black uppercase tracking-wider text-amber-300 backdrop-blur-md">
+                        {filteredItems[carouselIndex].category}
+                      </span>
                     )}
-                  >
-                    <img
-                      src={item.url}
-                      alt={item.title || 'Campus Moment'}
-                      className="h-full w-full object-cover transition-transform duration-500 ease-out group-hover:scale-110"
-                      loading="lazy"
-                    />
-
-                    <div className={cn('pointer-events-none absolute inset-0 bg-gradient-to-t opacity-75 group-hover:opacity-95 transition-opacity', themeStyles[theme].overlay)} />
-                    
-                    <div className="absolute top-2.5 right-2.5 rounded-full bg-black/60 p-1.5 text-white/90 opacity-0 group-hover:opacity-100 transition-opacity backdrop-blur-md shadow-md">
-                      <Maximize2 className="h-3 w-3" />
-                    </div>
-
-                    <div className="absolute inset-x-0 bottom-0 p-3.5">
-                      {item.category && (
-                        <span className={cn('inline-block text-[9px] font-extrabold uppercase tracking-wider rounded-md px-1.5 py-0.5 mb-1', themeStyles[theme].badge)}>
-                          {item.category}
-                        </span>
-                      )}
-                      <p className="truncate text-xs font-bold text-white group-hover:text-blue-300 transition-colors">
-                        {item.title || 'Campus Moment'}
+                    <h3
+                      className="mt-2 text-xl sm:text-2xl md:text-3xl font-extrabold text-white"
+                      style={{ fontFamily: 'Sora, sans-serif' }}
+                    >
+                      {filteredItems[carouselIndex].title || 'Presences Campus Life'}
+                    </h3>
+                    {filteredItems[carouselIndex].caption && (
+                      <p className="mt-1.5 text-xs sm:text-sm text-white/80 leading-relaxed line-clamp-2">
+                        {filteredItems[carouselIndex].caption}
                       </p>
-                    </div>
-                  </motion.div>
-                );
-              })}
+                    )}
+                  </div>
+
+                  <span className="rounded-full bg-black/60 px-3.5 py-1 text-xs font-mono font-bold text-white backdrop-blur-md">
+                    {carouselIndex + 1} / {filteredItems.length}
+                  </span>
+                </div>
+              </motion.div>
+
+              {/* Slide Navigation Buttons */}
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setCarouselIndex((prev) => (prev - 1 + filteredItems.length) % filteredItems.length);
+                }}
+                className="absolute left-4 top-1/2 -translate-y-1/2 rounded-2xl bg-black/60 p-3 text-white hover:bg-black/80 hover:text-primary transition backdrop-blur-md shadow-lg z-10"
+                aria-label="Previous Slide"
+              >
+                <ChevronLeft className="h-5 w-5" />
+              </button>
+
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setCarouselIndex((prev) => (prev + 1) % filteredItems.length);
+                }}
+                className="absolute right-4 top-1/2 -translate-y-1/2 rounded-2xl bg-black/60 p-3 text-white hover:bg-black/80 hover:text-primary transition backdrop-blur-md shadow-lg z-10"
+                aria-label="Next Slide"
+              >
+                <ChevronRight className="h-5 w-5" />
+              </button>
+
+              {/* Autoplay play/pause toggle */}
+              <button
+                type="button"
+                onClick={() => setIsPlaying(!isPlaying)}
+                className="absolute top-4 right-4 rounded-xl bg-black/60 p-2 text-white/90 hover:text-white transition backdrop-blur-md z-10"
+                title={isPlaying ? 'Pause slideshow' : 'Play slideshow'}
+              >
+                {isPlaying ? <Pause className="h-4 w-4" /> : <Play className="h-4 w-4" />}
+              </button>
             </div>
           )}
+
+          {/* Thumbnail Carousel Strip */}
+          <div className="flex gap-2.5 overflow-x-auto pb-2 scrollbar-none desktop-slidable select-none" data-slidable="true">
+            {filteredItems.map((item, idx) => (
+              <button
+                key={item.id}
+                type="button"
+                onClick={() => setCarouselIndex(idx)}
+                className={cn(
+                  'relative h-16 w-24 shrink-0 overflow-hidden rounded-xl border-2 transition-all',
+                  carouselIndex === idx
+                    ? 'border-primary ring-2 ring-primary/40 scale-105 opacity-100'
+                    : 'border-transparent opacity-60 hover:opacity-100',
+                )}
+              >
+                <img src={item.url} alt="thumbnail" className="h-full w-full object-cover pointer-events-none" draggable={false} />
+              </button>
+            ))}
+          </div>
         </div>
       )}
 

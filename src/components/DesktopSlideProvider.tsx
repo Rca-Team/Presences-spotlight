@@ -61,8 +61,8 @@ export const DesktopSlideProvider: React.FC<DesktopSlideProviderProps> = ({ chil
           cur.getAttribute('role') === 'slider' ||
           cur.classList.contains('no-drag') ||
           cur.classList.contains('no-slide') ||
-          cur.classList.contains('liquid-glass-dock') ||
-          cur.classList.contains('liquid-glass-pill')
+          cur.classList.contains('royal-neon-dock') ||
+          cur.classList.contains('royal-neon-active-pill')
         ) {
           return null;
         }
@@ -93,7 +93,7 @@ export const DesktopSlideProvider: React.FC<DesktopSlideProviderProps> = ({ chil
 
       // Do not initiate drag on interactive text fields or native sliders
       if (
-        target.closest('input, textarea, select, [contenteditable="true"], [role="slider"], canvas, video, .no-drag, .liquid-glass-dock, .liquid-glass-pill')
+        target.closest('input, textarea, select, [contenteditable="true"], [role="slider"], canvas, video, .no-drag, .royal-neon-dock, .royal-neon-active-pill')
       ) {
         return;
       }

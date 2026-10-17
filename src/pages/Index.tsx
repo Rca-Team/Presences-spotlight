@@ -493,7 +493,7 @@ const Index = () => {
 
   return (
     <PageTransition>
-      <PageLayout className="neon-liquid-bg has-bottom-nav md:pb-0">
+      <PageLayout className="has-bottom-nav md:pb-0">
         
         {/* ========================================================================= */}
         {/* HERO SECTION — Optimized for Desktop & Mobile Balance                     */}
@@ -1522,7 +1522,7 @@ const Index = () => {
         {/* ========================================================================= */}
         <RoyalReveal effect="card-lift" className="pb-10">
           <section>
-            <div className="liquid-glass-surface relative overflow-hidden rounded-3xl p-8 sm:p-12 md:p-16 border border-border/80 dark:border-white/15 shadow-2xl backdrop-blur-2xl text-center bg-white/90 dark:bg-card/75">
+            <div className="relative overflow-hidden rounded-3xl p-8 sm:p-12 md:p-16 border border-border/80 dark:border-white/15 shadow-2xl backdrop-blur-2xl text-center bg-white/90 dark:bg-card/75">
               <div className="relative z-10 max-w-3xl mx-auto">
                 <p className="mb-4 inline-flex items-center gap-2 rounded-full bg-primary/15 px-4 py-2 text-xs font-bold uppercase tracking-wider text-primary">
                   <Smartphone className="h-4 w-4" /> Smart School Platform

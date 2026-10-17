@@ -128,7 +128,7 @@ export const ModeSwitchTransitionHUD: React.FC<ModeSwitchTransitionHUDProps> = (
                 <p className="text-xs text-zinc-300 line-clamp-1 mt-0.5">
                   {isLite
                     ? 'Battery & GPU optimized · 60 FPS · Zero blur lag'
-                    : 'Full visual effects · 3D Neural Orbs & Liquid Glass'}
+                    : 'Full visual effects · 3D Neural Orbs & Frosted Glass'}
                 </p>
               </div>
 

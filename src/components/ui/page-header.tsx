@@ -18,7 +18,7 @@ export function PageHeader({
   icon
 }: PageHeaderProps) {
   return (
-    <div className={cn("mb-8 liquid-glass-surface liquid-glass-highlight p-5 md:p-7", className)}>
+    <div className={cn("mb-8 rounded-2xl border border-border/80 bg-card/70 backdrop-blur-xl shadow-sm p-5 md:p-7", className)}>
       <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
         <div className="flex items-center gap-3">
           {icon && (

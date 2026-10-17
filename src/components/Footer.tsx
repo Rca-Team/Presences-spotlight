@@ -57,7 +57,7 @@ const Footer = () => {
       </div>
 
       <div className="max-w-7xl mx-auto grid grid-cols-1 md:grid-cols-4 gap-8">
-        <div className="space-y-4 liquid-glass-surface liquid-glass-highlight p-5">
+        <div className="space-y-4">
           <Logo />
           <p className="text-sm text-muted-foreground max-w-xs">
             Official Smart School AI automation platform deployed at PM Shri Kendriya Vidyalaya NFC Vigyan Vihar.
@@ -67,7 +67,7 @@ const Footer = () => {
           </p>
         </div>
         
-        <div className="liquid-glass-surface liquid-glass-highlight p-5">
+        <div>
           <h4 className="font-medium text-sm mb-4">Product</h4>
           <ul className="space-y-2">
             {[
@@ -85,7 +85,7 @@ const Footer = () => {
           </ul>
         </div>
         
-        <div className="liquid-glass-surface liquid-glass-highlight p-5">
+        <div>
           <h4 className="font-medium text-sm mb-4">Institutional Portal</h4>
           <ul className="space-y-2">
             {[
@@ -103,7 +103,7 @@ const Footer = () => {
           </ul>
         </div>
         
-        <div className="liquid-glass-surface liquid-glass-highlight p-5">
+        <div>
           <h4 className="font-medium text-sm mb-4">Security &amp; Compliance</h4>
           <ul className="space-y-2">
             {[

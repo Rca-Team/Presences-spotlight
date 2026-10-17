@@ -54,7 +54,7 @@ export type PortfolioGalleryItem = {
 export type PortfolioCustomSettings = {
   showOnHome?: boolean;
   showGalleryOnHome?: boolean;
-  homeGalleryLayout?: 'bento' | 'grid' | 'liquid' | 'carousel';
+  homeGalleryLayout?: 'bento' | 'grid' | 'carousel';
   customBadge?: string;
   statusMessage?: string;
   heroGradient?: string;

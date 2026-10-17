@@ -509,7 +509,7 @@ const StudentDetailsTable: React.FC = () => {
   }
 
   return (
-    <Card className="overflow-hidden liquid-glass-surface border-border/80 shadow-xl">
+    <Card className="overflow-hidden bg-card/80 backdrop-blur-xl border-border/80 shadow-xl">
       <CardHeader className="border-b border-border/50 bg-white/40 dark:bg-slate-900/40 backdrop-blur-md">
         <CardTitle className="flex items-center gap-2 text-base font-semibold">
           <Users className="h-4 w-4 text-primary" />

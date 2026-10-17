@@ -115,11 +115,11 @@ const Navbar = () => {
           <Logo />
         </Link>
         
-        {/* Desktop Navigation Dock with Liquid Glass Floating Capsule */}
+        {/* Desktop Navigation Dock with Royal Neon Sliding Tabs */}
         <LayoutGroup id="navbar-dock-tabs">
           <nav
             onMouseLeave={() => setHoveredPath(null)}
-            className="liquid-glass-dock hidden md:flex items-center gap-1 rounded-full p-1.5 relative shadow-2xl"
+            className="royal-neon-dock hidden md:flex items-center gap-1 rounded-full p-1.5 relative shadow-2xl"
           >
             {/* Soft inner top specular highlight */}
             <span className="pointer-events-none absolute inset-x-6 top-0 h-[1px] bg-gradient-to-r from-transparent via-white/80 dark:via-white/50 to-transparent" />
@@ -162,25 +162,25 @@ const Navbar = () => {
                     {hovered && !active && (
                       <motion.div
                         layoutId="navbar-hover-pill"
-                        className="absolute inset-0 rounded-full bg-white/[0.08] dark:bg-white/[0.06] border border-white/[0.08]"
-                        transition={{ type: "spring", stiffness: 500, damping: 35, mass: 0.5 }}
+                        className="absolute inset-0 rounded-full bg-slate-900/[0.05] dark:bg-white/[0.06] backdrop-blur-md border border-slate-900/[0.06] dark:border-white/[0.08]"
+                        transition={{ type: "spring", stiffness: 420, damping: 30, mass: 0.5 }}
                       />
                     )}
 
-                    {/* Liquid Glass Fluid Active Sliding Pill */}
+                    {/* Royal Neon Fluid Active Sliding Pill */}
                     {active && (
                       <motion.div
                         layoutId="navbar-active-pill"
-                        className="liquid-glass-pill absolute inset-0"
+                        className="royal-neon-active-pill absolute inset-0 rounded-full"
                         transition={{
                           type: "spring",
-                          stiffness: 460,
-                          damping: 32,
+                          stiffness: 420,
+                          damping: 30,
                           mass: 0.6,
                         }}
                       >
-                        {/* Top specular reflection hairline */}
-                        <span className="pointer-events-none absolute inset-x-3 top-0 h-[1px] rounded-full bg-white/70 dark:bg-white/40" />
+                        {/* Soft inner top reflection */}
+                        <span className="pointer-events-none absolute inset-x-2.5 top-0 h-[1px] rounded-full bg-gradient-to-r from-transparent via-white/80 dark:via-white/50 to-transparent" />
                       </motion.div>
                     )}
 
@@ -202,7 +202,7 @@ const Navbar = () => {
             pressed={theme === 'dark'} 
             onPressedChange={toggleTheme}
             aria-label="Toggle theme"
-            className="relative w-10 h-10 rounded-full liquid-glass-surface hover:bg-accent/70 hover:scale-105 active:scale-95 border border-slate-200/80 dark:border-white/10"
+            className="relative w-10 h-10 rounded-full bg-slate-100 dark:bg-slate-800/80 hover:bg-accent/70 hover:scale-105 active:scale-95 border border-slate-200/80 dark:border-white/10"
             style={{ transition: 'all 0.3s cubic-bezier(0.34, 1.56, 0.64, 1)' }}
           >
             {theme === 'dark' ? (
@@ -223,7 +223,7 @@ const Navbar = () => {
               <Link to="/signup" onClick={() => haptic('selection')}>
                 <Button
                   size="sm"
-                  className="rounded-full px-4 text-xs font-medium text-foreground liquid-glass-surface border-border/70 hover:brightness-105"
+                  className="rounded-full px-4 text-xs font-medium text-foreground bg-primary/10 hover:bg-primary/20 border border-primary/20"
                   style={{
                     boxShadow: '0 8px 18px -10px hsl(var(--primary) / 0.5)'
                   }}
