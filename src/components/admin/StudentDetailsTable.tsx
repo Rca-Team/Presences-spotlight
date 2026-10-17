@@ -78,8 +78,8 @@ const StudentDetailsTable: React.FC = () => {
           .order('created_at', { ascending: true }),
         supabase
           .from('profiles')
-          .select('id, user_id, full_name, display_name, admission_number, employee_id, roll_number, class, section, category, department, avatar_url, photo_url, role, parent_phone, phone, email, parent_email, father_name, mother_name, blood_group, address')
-          .or('role.eq.student,avatar_url.not.is.null,photo_url.not.is.null,admission_number.not.is.null'),
+          .select('id, user_id, full_name, display_name, admission_number, employee_id, roll_number, class, section, category, department, avatar_url, photo_url, role, parent_phone, phone, email, parent_email, father_name, mother_name, blood_group, address, metadata')
+          .limit(2000),
       ]);
 
       if (attendanceRes.error) throw attendanceRes.error;
@@ -309,6 +309,51 @@ const StudentDetailsTable: React.FC = () => {
           parent_email: matchingProfile?.parent_email || matchingProfile?.email || '—',
           transport_mode: '—',
           address: matchingProfile?.address || '—',
+          avatar_url: avatar,
+        });
+      });
+
+      // Include all registered students from profiles who may not have face descriptors yet
+      (profilesRes.data || []).forEach((profile: any) => {
+        if (profile?.role === 'admin' || profile?.role === 'teacher') return;
+        const name = (profile?.full_name || profile?.display_name || profile?.metadata?.name || profile?.metadata?.student_name || '').toString().trim();
+        if (!name || name === 'Unknown' || name === 'User') return;
+
+        const emp = (profile?.admission_number || profile?.employee_id || profile?.roll_number || profile?.metadata?.admission_number || profile?.metadata?.roll_number || '').toString().trim();
+        const empKey = normKey(emp);
+        const userId = normKey(profile?.user_id || profile?.id);
+        const profileKey = empKey ? `emp:${empKey}` : `prof:${profile.id || profile.user_id || Math.random().toString(36).slice(2)}`;
+
+        const profilePhoto = (userId && profileImageByUserId.get(userId)) ||
+          (empKey && profileImageByEmpId.get(empKey)) ||
+          profile?.avatar_url || profile?.profile_image_url || profile?.metadata?.avatar_url || profile?.metadata?.image_url || '';
+
+        const avatar = pickPreferredPhotoCandidate(
+          profilePhoto,
+          empKey ? descriptorImageByStudentKey.get(empKey) : '',
+          userId ? descriptorImageByUserId.get(userId) : '',
+        );
+
+        const category = profile?.category || 
+          (profile?.class && profile?.section ? `${profile.class}-${profile.section}` : '') ||
+          profile?.class ||
+          profile?.metadata?.category ||
+          (profile?.metadata?.class && profile?.metadata?.section ? `${profile.metadata.class}-${profile.metadata.section}` : '') ||
+          'A';
+
+        upsertStudent({
+          id: profileKey,
+          user_id: profile?.user_id || profile?.id || profileKey,
+          name: name,
+          employee_id: emp || '—',
+          roll_number: profile?.roll_number || profile?.metadata?.roll_number || emp || '—',
+          category: category,
+          blood_group: profile?.blood_group || profile?.metadata?.blood_group || '—',
+          parent_name: profile?.father_name || profile?.mother_name || profile?.parent_name || profile?.metadata?.father_name || profile?.metadata?.mother_name || profile?.metadata?.parent_name || '—',
+          parent_phone: profile?.parent_phone || profile?.phone || profile?.metadata?.parent_phone || profile?.metadata?.phone || '—',
+          parent_email: profile?.parent_email || profile?.email || profile?.metadata?.parent_email || profile?.metadata?.email || '—',
+          transport_mode: profile?.transport_mode || profile?.metadata?.transport_mode || '—',
+          address: profile?.address || profile?.metadata?.address || '—',
           avatar_url: avatar,
         });
       });

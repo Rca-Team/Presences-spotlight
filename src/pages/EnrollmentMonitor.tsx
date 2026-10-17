@@ -1551,6 +1551,43 @@ export default function EnrollmentMonitor() {
             console.warn('Upsert chunk error:', upsertErr.message);
           } else {
             directSaved += chunk.length;
+            const attendanceRows = chunk.map((c) => {
+              const adm = (c.employee_id || c.student_id_kv || '').trim().replace(/\s+/g, '-');
+              const name = c.name?.trim() || '';
+              const category = [c.class?.trim(), c.section?.trim()].filter(Boolean).join('-') || 'A';
+              return {
+                student_id: adm || null,
+                student_name: name || null,
+                class: c.class?.trim() || null,
+                section: c.section?.trim() || null,
+                category: category,
+                status: 'registered',
+                timestamp: new Date().toISOString(),
+                date: new Date().toISOString().split('T')[0],
+                device_info: JSON.stringify({
+                  source: 'class_id_card_import',
+                  employee_id: adm,
+                  metadata: {
+                    name,
+                    employee_id: adm,
+                    roll_number: c.roll_number?.trim() || adm,
+                    class: c.class?.trim(),
+                    section: c.section?.trim(),
+                    parent_name: c.parent_name || c.father_name || c.mother_name,
+                    parent_phone: c.parent_phone || c.phone,
+                    parent_email: c.parent_email || c.student_email,
+                    blood_group: c.blood_group?.trim(),
+                    address: c.address?.trim(),
+                  },
+                }),
+                source: 'class_id_card_import',
+              };
+            });
+            try {
+              await supabase.from('attendance_records').insert(attendanceRows);
+            } catch (attErr) {
+              console.warn('Attendance registration insert warning:', attErr);
+            }
           }
         } catch (chunkErr: any) {
           directFailed += chunk.length;
