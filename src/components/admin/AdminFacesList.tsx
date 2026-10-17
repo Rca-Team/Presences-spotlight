@@ -94,6 +94,8 @@ type SortField = 'name' | 'status' | 'attendance' | 'lastSeen';
 type SortDir = 'asc' | 'desc';
 
 // Module-level caches so switching between Admin tabs is 0ms instant
+let cachedUnifiedFaces: RegisteredFace[] | null = null;
+let cachedUnifiedStatuses: Record<string, { status: TodayStatus; time?: string }> | null = null;
 let cachedAttendanceCounts: Record<string, number> | null = null;
 let cachedAttendanceCountsAt = 0;
 let cachedEmotionStats: Record<string, { label: string; confidence: number; samples: number }> | null = null;
@@ -317,58 +319,6 @@ const AdminFacesList: React.FC<AdminFacesListProps> = ({
     return counts;
   }, [faces, todayStatuses]);
 
-  const fetchBatchAttendanceCounts = useCallback(async (faceList: RegisteredFace[]) => {
-    if (cachedAttendanceCounts && Date.now() - cachedAttendanceCountsAt < 120_000) {
-      setAttendanceCounts(cachedAttendanceCounts);
-      return;
-    }
-    try {
-      const { data, error } = await supabase
-        .from('attendance_records')
-        .select('timestamp, status, student_id, user_id, device_info')
-        .in('status', ['present', 'late', 'unauthorized'])
-        .order('timestamp', { ascending: false })
-        .limit(1500);
-
-      if (error || !data) return;
-
-      const employeeIdSet = new Set(faceList.map(f => f.employee_id).filter(Boolean));
-      const userIdSet = new Set(faceList.map(f => f.user_id).filter(Boolean) as string[]);
-      const countsByEmp: Record<string, Set<string>> = {};
-
-      data.forEach(record => {
-        const m = (record.device_info as any)?.metadata || {};
-        const emp = String(m.employee_id || (record.device_info as any)?.employee_id || record.student_id || '').trim();
-        const uid = String(record.user_id || '').trim();
-        const day = new Date(record.timestamp).toLocaleDateString();
-
-        if (emp && employeeIdSet.has(emp)) {
-          if (!countsByEmp[emp]) countsByEmp[emp] = new Set();
-          countsByEmp[emp].add(day);
-        }
-        if (uid && userIdSet.has(uid)) {
-          if (!countsByEmp[uid]) countsByEmp[uid] = new Set();
-          countsByEmp[uid].add(day);
-        }
-      });
-
-      const countsMap: Record<string, number> = {};
-      Object.entries(countsByEmp).forEach(([emp, daysSet]) => {
-        countsMap[emp] = daysSet.size;
-      });
-
-      cachedAttendanceCounts = countsMap;
-      cachedAttendanceCountsAt = Date.now();
-      setAttendanceCounts(countsMap);
-      setFaces(prev => prev.map(face => ({
-        ...face,
-        total_attendance: countsMap[face.employee_id] || (face.user_id ? countsMap[face.user_id] : 0) || 0
-      })));
-    } catch (error) {
-      console.error('Error batch fetching attendance counts:', error);
-    }
-  }, []);
-
   const fetchRegisteredFaces = useCallback(async (forceRefresh = false) => {
     try {
       if (!hasLoadedOnceRef.current) {
@@ -376,126 +326,71 @@ const AdminFacesList: React.FC<AdminFacesListProps> = ({
       }
       if (forceRefresh) {
         invalidateUnifiedStatsCache();
+        cachedUnifiedFaces = null;
       }
 
-      // 1. Instant primary render from shared unified student snapshot (1 shared request burst across Admin)
-      const unified = await fetchUnifiedStudentSnapshot(forceRefresh);
-      const derived = deriveFacesAndStatusesFromSnapshot(unified, cachedAttendanceCounts, cachedDescriptorPhotoMaps);
+      // If already cached in memory and not forcing refresh, hydrate instantly
+      if (!forceRefresh && cachedUnifiedFaces && cachedUnifiedFaces.length > 0) {
+        setFaces(cachedUnifiedFaces);
+        if (cachedUnifiedStatuses) setTodayStatuses(cachedUnifiedStatuses);
+        hasLoadedOnceRef.current = true;
+        setIsLoading(false);
+        return;
+      }
+
+      // 1. Fetch snapshot + attendance counts in one stable pass
+      const [snapshotRes, countsRes] = await Promise.allSettled([
+        fetchUnifiedStudentSnapshot(forceRefresh),
+        supabase
+          .from('attendance_records')
+          .select('timestamp, status, student_id, user_id, device_info')
+          .in('status', ['present', 'late', 'unauthorized'])
+          .order('timestamp', { ascending: false })
+          .limit(1500),
+      ]);
+
+      const snapshot = snapshotRes.status === 'fulfilled' ? snapshotRes.value : null;
+
+      let countsMap: Record<string, number> = cachedAttendanceCounts || {};
+      if (countsRes.status === 'fulfilled' && countsRes.value.data) {
+        const countsByEmp: Record<string, Set<string>> = {};
+        countsRes.value.data.forEach((record: any) => {
+          const day = (record.timestamp || '').split('T')[0];
+          const m = (record.device_info as any)?.metadata || {};
+          const emp = String(m.employee_id || (record.device_info as any)?.employee_id || record.student_id || '').trim();
+          const uid = String(record.user_id || '').trim();
+          if (emp && day) {
+            if (!countsByEmp[emp]) countsByEmp[emp] = new Set();
+            countsByEmp[emp].add(day);
+          }
+          if (uid && day) {
+            if (!countsByEmp[uid]) countsByEmp[uid] = new Set();
+            countsByEmp[uid].add(day);
+          }
+        });
+        countsMap = {};
+        Object.entries(countsByEmp).forEach(([emp, daysSet]) => {
+          countsMap[emp] = daysSet.size;
+        });
+        cachedAttendanceCounts = countsMap;
+        cachedAttendanceCountsAt = Date.now();
+      }
+
+      // 2. Derive stable faces and today's statuses atomically
+      const derived = deriveFacesAndStatusesFromSnapshot(snapshot, countsMap, cachedDescriptorPhotoMaps);
+
+      cachedUnifiedFaces = derived.faces;
+      cachedUnifiedStatuses = derived.statuses;
+
+      setAttendanceCounts(countsMap);
       setFaces(derived.faces);
       setTodayStatuses(derived.statuses);
       hasLoadedOnceRef.current = true;
       setIsLoading(false);
 
-      if (selectedFaceIdRef.current && !derived.faces.some(face => face.id === selectedFaceIdRef.current)) {
+      if (selectedFaceIdRef.current && !derived.faces.some((face) => face.id === selectedFaceIdRef.current)) {
         setSelectedFaceId(null);
       }
-
-      // 2. Non-blocking background enrichment: fallback descriptor photos, attendance counts, emotion stats
-      const enrichBackground = async () => {
-        try {
-          if (!cachedDescriptorPhotoMaps || Date.now() - cachedDescriptorPhotoMaps.fetchedAt > 180_000) {
-            const { data: descriptorRows } = await supabase
-              .from('face_descriptors')
-              .select('user_id, student_id, image_url, metadata, label, created_at')
-              .not('image_url', 'is', null)
-              .order('created_at', { ascending: true })
-              .limit(600);
-
-            if (descriptorRows && descriptorRows.length > 0) {
-              const byUserId = new Map<string, string>();
-              const byStudentKey = new Map<string, string>();
-              descriptorRows.forEach((row: any) => {
-                const descriptorImg = (row?.image_url || '').toString().trim();
-                const descriptorUserId = (row?.user_id || '').toString().trim();
-                const descriptorStudentId = (row?.student_id || '').toString().trim().toLowerCase();
-                if (!descriptorImg) return;
-                const meta = row?.metadata || {};
-                const isPrimary = meta.registration === 'true' || meta.registration === true || row?.label === 'registration-primary' || (row?.label && row.label.toLowerCase().includes('front'));
-                if (isPrimary) {
-                  if (descriptorUserId && !byUserId.has(descriptorUserId)) byUserId.set(descriptorUserId, descriptorImg);
-                  if (descriptorStudentId && !byStudentKey.has(descriptorStudentId)) byStudentKey.set(descriptorStudentId, descriptorImg);
-                }
-              });
-              descriptorRows.forEach((row: any) => {
-                const descriptorImg = (row?.image_url || '').toString().trim();
-                const descriptorUserId = (row?.user_id || '').toString().trim();
-                const descriptorStudentId = (row?.student_id || '').toString().trim().toLowerCase();
-                if (!descriptorImg) return;
-                if (descriptorUserId && !byUserId.has(descriptorUserId)) byUserId.set(descriptorUserId, descriptorImg);
-                if (descriptorStudentId && !byStudentKey.has(descriptorStudentId)) byStudentKey.set(descriptorStudentId, descriptorImg);
-              });
-
-              cachedDescriptorPhotoMaps = { byUserId, byStudentKey, fetchedAt: Date.now() };
-              // Fill in any missing photos without overwriting existing profile/registration photos
-              setFaces((prev) =>
-                prev.map((f) => {
-                  if (f.image_url) return f;
-                  const fallback =
-                    (f.user_id && byUserId.get(f.user_id)) ||
-                    (f.employee_id && byStudentKey.get(f.employee_id.toLowerCase())) ||
-                    '';
-                  return fallback ? { ...f, image_url: resolveStudentPhotoUrlSync(fallback) } : f;
-                })
-              );
-            }
-          }
-        } catch {
-          // Ignore optional descriptor photo enrichment errors
-        }
-
-        void fetchBatchAttendanceCounts(derived.faces);
-
-        if (!cachedEmotionStats || Date.now() - cachedEmotionStatsAt > 180_000) {
-          try {
-            const { data: emotionRows, error: emotionErr } = await supabase
-              .from('emotion_events')
-              .select('user_id, student_id, emotion_label, confidence_score')
-              .limit(100);
-
-            if (!emotionErr && emotionRows) {
-              const summary: Record<string, { label: string; confidence: number; samples: number }> = {};
-              derived.faces.forEach((face) => {
-                const matches = emotionRows.filter((row: any) =>
-                  (face.user_id && row.user_id === face.user_id) ||
-                  (row.student_id && [face.employee_id, face.user_id].filter(Boolean).includes(row.student_id))
-                );
-                if (!matches.length) {
-                  summary[face.employee_id] = { label: 'neutral', confidence: 0, samples: 0 };
-                  return;
-                }
-                const latest = matches.slice(0, 24);
-                const grouped = latest.reduce((acc: Record<string, { count: number; confidenceSum: number }>, row: any) => {
-                  const key = String(row.emotion_label || 'neutral').toLowerCase();
-                  if (!acc[key]) acc[key] = { count: 0, confidenceSum: 0 };
-                  acc[key].count += 1;
-                  acc[key].confidenceSum += Number(row.confidence_score || 0);
-                  return acc;
-                }, {});
-                let dominantLabel = 'neutral';
-                let dominant = { count: 0, confidenceSum: 0 };
-                for (const [label, stats] of Object.entries(grouped) as [string, { count: number; confidenceSum: number }][]) {
-                  if (stats.count > dominant.count) {
-                    dominantLabel = label;
-                    dominant = stats;
-                  }
-                }
-                summary[face.employee_id] = {
-                  label: dominantLabel,
-                  confidence: dominant.count ? Math.round((dominant.confidenceSum / dominant.count) * 100) : 0,
-                  samples: latest.length,
-                };
-              });
-              cachedEmotionStats = summary;
-              cachedEmotionStatsAt = Date.now();
-              setEmotionStatsByStudent(summary);
-            }
-          } catch {
-            // Safe fallback if emotion_events is unavailable
-          }
-        }
-      };
-
-      void enrichBackground();
     } catch (error) {
       console.error('Error fetching registered faces:', error);
       toast({
@@ -507,13 +402,13 @@ const AdminFacesList: React.FC<AdminFacesListProps> = ({
       hasLoadedOnceRef.current = true;
       setIsLoading(false);
     }
-  }, [toast, setSelectedFaceId, fetchBatchAttendanceCounts]);
+  }, [toast, setSelectedFaceId]);
 
   useEffect(() => {
     fetchRegisteredFaces();
 
+    // Debounce realtime sync to 30 seconds so screen never jumps or fluctuates while reading
     let updateTimeout: ReturnType<typeof setTimeout>;
-    
     const attendanceChannel = supabase
       .channel('attendance-changes')
       .on('postgres_changes', 
@@ -522,7 +417,7 @@ const AdminFacesList: React.FC<AdminFacesListProps> = ({
           clearTimeout(updateTimeout);
           updateTimeout = setTimeout(() => {
             fetchRegisteredFaces(true);
-          }, 2500);
+          }, 30000);
         }
       )
       .subscribe();
@@ -727,184 +622,118 @@ const AdminFacesList: React.FC<AdminFacesListProps> = ({
         </div>
       ) : (
         <div className="space-y-4">
-          {/* ── Sub-view Mode Switcher: Roster vs Attendance Calendar ── */}
-          <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-2.5 border-b border-border/60 pb-3">
-            <div className="grid grid-cols-2 sm:flex gap-1 p-1 rounded-xl bg-muted/60 border border-border/60">
-              <button
-                type="button"
-                onClick={() => setSubTab('roster')}
-                className={cn(
-                  "flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all",
-                  subTab === 'roster'
-                    ? "bg-background text-foreground shadow-xs border border-border/50"
-                    : "text-muted-foreground hover:text-foreground"
-                )}
-              >
-                <Users className="w-3.5 h-3.5 shrink-0" />
-                <span>Student Roster</span>
-                <Badge variant="secondary" className="text-[10px] px-1.5 py-0 h-4 ml-0.5 font-mono">
-                  {faces.length}
-                </Badge>
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  setSubTab('calendar');
-                  if (!selectedFaceId && faces.length > 0) {
-                    setSelectedFaceId(faces[0].id);
-                  }
-                }}
-                className={cn(
-                  "flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all",
-                  subTab === 'calendar'
-                    ? "bg-background text-foreground shadow-xs border border-border/50"
-                    : "text-muted-foreground hover:text-foreground"
-                )}
-              >
-                <Calendar className="w-3.5 h-3.5 shrink-0" />
-                <span>Attendance Calendar</span>
-                {selectedFaceId && (
-                  <span className="w-1.5 h-1.5 rounded-full bg-primary ml-0.5 shrink-0" />
-                )}
-              </button>
-            </div>
-
-            <div className="flex items-center gap-2 overflow-x-auto pb-0.5 scrollbar-none">
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={handleExportCSV}
-                className="h-8 text-xs font-medium rounded-lg gap-1.5 shadow-2xs shrink-0"
-                title="Export filtered roster to CSV"
-              >
-                <Download className="w-3.5 h-3.5" />
-                <span>Export CSV</span>
-              </Button>
-
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => navigate('/register?openPdfImporter=true')}
-                className="h-8 text-xs font-medium rounded-lg gap-1.5 shadow-2xs shrink-0"
-                title="Upload ID cards PDF to import students"
-              >
-                <FileText className="w-3.5 h-3.5" />
-                <span>Upload PDF</span>
-              </Button>
-
-              {selectedFaceId && (
+          {subTab === 'calendar' ? (
+            <div className="space-y-4">
+              <div className="flex items-center justify-between pb-3 border-b border-border/60">
                 <Button
                   variant="outline"
                   size="sm"
-                  onClick={() => {
-                    const selected = faces.find(f => f.id === selectedFaceId);
-                    if (selected) {
-                      setRecaptureStudent({
-                        id: selected.id,
-                        user_id: selected.user_id || selected.id,
-                        name: selected.name,
-                        employee_id: selected.employee_id,
-                        category: selected.department,
-                      });
-                    }
-                  }}
-                  className="h-8 text-xs font-semibold rounded-lg border-primary/40 text-primary hover:bg-primary/10 gap-1.5 shadow-2xs shrink-0"
+                  onClick={() => setSubTab('roster')}
+                  className="h-8 text-xs font-semibold rounded-lg gap-1.5"
                 >
-                  <ScanFace className="w-3.5 h-3.5" />
-                  <span>Recapture 3D Face</span>
+                  <ArrowUpDown className="w-3.5 h-3.5 rotate-90" />
+                  <span>← Back to Student List</span>
                 </Button>
-              )}
+                {selectedFaceId && (
+                  <span className="text-xs text-muted-foreground font-medium">
+                    Attendance Calendar for: <strong className="text-foreground">{faces.find(f => f.id === selectedFaceId)?.name || 'Student'}</strong>
+                  </span>
+                )}
+              </div>
+              <AttendanceCalendar
+                selectedFaceId={selectedFaceId}
+                onBack={() => setSubTab('roster')}
+                availableFaces={faces}
+                onSelectFaceId={(id) => setSelectedFaceId(id)}
+              />
             </div>
-          </div>
-
-          {subTab === 'calendar' ? (
-            <AttendanceCalendar
-              selectedFaceId={selectedFaceId}
-              onBack={() => setSubTab('roster')}
-              availableFaces={faces}
-              onSelectFaceId={(id) => setSelectedFaceId(id)}
-            />
           ) : (
             <>
-              {/* ── Executive 4-tile Metric Strip (Professional Clean Grid) ── */}
-              <div className="grid grid-cols-2 lg:grid-cols-4 gap-2.5 sm:gap-3">
-                {[
-                  {
-                    key: 'all' as StatusFilter,
-                    label: 'Total Enrolled',
-                    count: totalStudents,
-                    subtext: `${attendanceRate}% present rate`,
-                    indicator: 'bg-primary/10 text-primary',
-                    activeBorder: 'border-primary shadow-xs ring-1 ring-primary/20 bg-primary/5',
-                  },
-                  {
-                    key: 'present' as StatusFilter,
-                    label: 'Present Today',
-                    count: statusCounts.present,
-                    subtext: 'Marked on time',
-                    indicator: 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400',
-                    activeBorder: 'border-emerald-500 shadow-xs ring-1 ring-emerald-500/20 bg-emerald-500/5',
-                  },
-                  {
-                    key: 'late' as StatusFilter,
-                    label: 'Late Today',
-                    count: statusCounts.late,
-                    subtext: 'Marked after bell',
-                    indicator: 'bg-amber-500/10 text-amber-600 dark:text-amber-400',
-                    activeBorder: 'border-amber-500 shadow-xs ring-1 ring-amber-500/20 bg-amber-500/5',
-                  },
-                  {
-                    key: 'absent' as StatusFilter,
-                    label: 'Absent / Unmarked',
-                    count: statusCounts.absent,
-                    subtext: 'Awaiting check-in',
-                    indicator: 'bg-rose-500/10 text-rose-600 dark:text-rose-400',
-                    activeBorder: 'border-rose-500 shadow-xs ring-1 ring-rose-500/20 bg-rose-500/5',
-                  },
-                ].map((metric) => {
-                  const isSelected = statusFilter === metric.key;
-                  return (
-                    <button
-                      key={metric.key}
-                      type="button"
-                      onClick={() => setStatusFilter(statusFilter === metric.key && metric.key !== 'all' ? 'all' : metric.key)}
-                      className={cn(
-                        "text-left p-3 sm:p-3.5 rounded-xl border transition-all duration-150 flex flex-col justify-between group",
-                        isSelected
-                          ? metric.activeBorder
-                          : "bg-card border-border hover:border-muted-foreground/30 hover:bg-muted/20"
-                      )}
-                    >
-                      <div className="flex items-center justify-between gap-2">
-                        <span className="text-xs font-medium text-muted-foreground">{metric.label}</span>
-                        <span className={cn("text-[10px] font-semibold px-1.5 py-0.5 rounded-md", metric.indicator)}>
-                          {metric.key === 'all' ? `${attendanceRate}%` : metric.key}
-                        </span>
-                      </div>
-                      <div className="mt-2 flex items-baseline justify-between">
-                        <span className="text-xl sm:text-2xl font-bold tracking-tight text-foreground tabular-nums">
-                          {metric.count}
-                        </span>
-                        <span className="text-[11px] text-muted-foreground hidden xs:inline">
-                          {metric.subtext}
-                        </span>
-                      </div>
-                    </button>
-                  );
-                })}
-              </div>
-
-              {/* Subtle linear attendance meter */}
-              <div className="flex items-center gap-3 px-1">
-                <div className="flex-1 h-1.5 bg-muted rounded-full overflow-hidden">
-                  <div
-                    className="h-full bg-emerald-500 transition-all duration-500 rounded-full"
-                    style={{ width: `${attendanceRate}%` }}
-                  />
+              {/* ── Clean Top Bar: Quick Status Filter Pills & Actions ── */}
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 pb-2 border-b border-border/60">
+                <div className="flex items-center gap-1.5 overflow-x-auto pb-1 sm:pb-0 scrollbar-none">
+                  <button
+                    type="button"
+                    onClick={() => setStatusFilter('all')}
+                    className={cn(
+                      "px-3 py-1.5 rounded-lg text-xs font-semibold transition-all shrink-0 flex items-center gap-1.5",
+                      statusFilter === 'all'
+                        ? "bg-primary text-primary-foreground shadow-xs"
+                        : "bg-muted/60 text-muted-foreground hover:text-foreground border border-border/50"
+                    )}
+                  >
+                    <span>All Students</span>
+                    <Badge variant="secondary" className="px-1.5 py-0 h-4 text-[10px] font-mono">
+                      {totalStudents}
+                    </Badge>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setStatusFilter('present')}
+                    className={cn(
+                      "px-3 py-1.5 rounded-lg text-xs font-semibold transition-all shrink-0 flex items-center gap-1.5",
+                      statusFilter === 'present'
+                        ? "bg-emerald-600 text-white shadow-xs"
+                        : "bg-muted/60 text-muted-foreground hover:text-foreground border border-border/50"
+                    )}
+                  >
+                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 shrink-0" />
+                    <span>Present</span>
+                    <span className="text-[10px] font-mono opacity-90">({statusCounts.present})</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setStatusFilter('late')}
+                    className={cn(
+                      "px-3 py-1.5 rounded-lg text-xs font-semibold transition-all shrink-0 flex items-center gap-1.5",
+                      statusFilter === 'late'
+                        ? "bg-amber-600 text-white shadow-xs"
+                        : "bg-muted/60 text-muted-foreground hover:text-foreground border border-border/50"
+                    )}
+                  >
+                    <span className="w-1.5 h-1.5 rounded-full bg-amber-400 shrink-0" />
+                    <span>Late</span>
+                    <span className="text-[10px] font-mono opacity-90">({statusCounts.late})</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setStatusFilter('absent')}
+                    className={cn(
+                      "px-3 py-1.5 rounded-lg text-xs font-semibold transition-all shrink-0 flex items-center gap-1.5",
+                      statusFilter === 'absent'
+                        ? "bg-rose-600 text-white shadow-xs"
+                        : "bg-muted/60 text-muted-foreground hover:text-foreground border border-border/50"
+                    )}
+                  >
+                    <span className="w-1.5 h-1.5 rounded-full bg-rose-400 shrink-0" />
+                    <span>Absent</span>
+                    <span className="text-[10px] font-mono opacity-90">({statusCounts.absent})</span>
+                  </button>
                 </div>
-                <span className="text-xs font-medium text-muted-foreground tabular-nums shrink-0">
-                  {attendanceRate}% Present Today
-                </span>
+
+                <div className="flex items-center gap-2 shrink-0">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={handleExportCSV}
+                    className="h-8 text-xs font-medium rounded-lg gap-1.5 shadow-2xs"
+                    title="Export filtered roster to CSV"
+                  >
+                    <Download className="w-3.5 h-3.5" />
+                    <span>Export CSV</span>
+                  </Button>
+
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => navigate('/register?openPdfImporter=true')}
+                    className="h-8 text-xs font-medium rounded-lg gap-1.5 shadow-2xs"
+                    title="Upload ID cards PDF to import students"
+                  >
+                    <FileText className="w-3.5 h-3.5" />
+                    <span>Upload PDF</span>
+                  </Button>
+                </div>
               </div>
 
               {/* ── Search + Clean Institutional Filters Toolbar ── */}
@@ -912,7 +741,7 @@ const AdminFacesList: React.FC<AdminFacesListProps> = ({
                 <div className="relative flex-1">
                   <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
                   <Input
-                    placeholder="Search by student name or roll ID..."
+                    placeholder="Search by student name, roll number, or admission ID..."
                     className="pl-9 h-9 rounded-lg bg-background border-border text-xs focus-visible:ring-1"
                     value={searchTerm}
                     onChange={(e) => setSearchTerm(e.target.value)}
