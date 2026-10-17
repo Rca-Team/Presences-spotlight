@@ -1891,6 +1891,56 @@ class AppwriteStorageClient {
   }
 }
 
+// Global Shared Realtime Subscription Multiplexer
+// Prevents exhausting Appwrite's 500 concurrent connection limit by sharing 1 connection per topic across all components and tabs
+type RealtimeCallback = (response: any) => void;
+const sharedTopicListeners = new Map<string, Set<RealtimeCallback>>();
+const activeTopicUnsubs = new Map<string, () => void>();
+
+function subscribeSharedTopic(topic: string, callback: RealtimeCallback): () => void {
+  let listeners = sharedTopicListeners.get(topic);
+  if (!listeners) {
+    listeners = new Set<RealtimeCallback>();
+    sharedTopicListeners.set(topic, listeners);
+  }
+  listeners.add(callback);
+
+  if (!activeTopicUnsubs.has(topic)) {
+    try {
+      const unsub = appwriteClient.subscribe(topic, (response) => {
+        const currentListeners = sharedTopicListeners.get(topic);
+        if (currentListeners && currentListeners.size > 0) {
+          for (const cb of currentListeners) {
+            try {
+              cb(response);
+            } catch (_) {}
+          }
+        }
+      });
+      activeTopicUnsubs.set(topic, unsub);
+    } catch (err) {
+      // Safe silent failover
+    }
+  }
+
+  return () => {
+    const currentListeners = sharedTopicListeners.get(topic);
+    if (currentListeners) {
+      currentListeners.delete(callback);
+      if (currentListeners.size === 0) {
+        sharedTopicListeners.delete(topic);
+        const appwriteUnsub = activeTopicUnsubs.get(topic);
+        if (appwriteUnsub) {
+          try {
+            appwriteUnsub();
+          } catch (_) {}
+          activeTopicUnsubs.delete(topic);
+        }
+      }
+    }
+  };
+}
+
 // Realtime Channel Bridge
 class AppwriteRealtimeChannel {
   private channelName: string;
@@ -1908,7 +1958,7 @@ class AppwriteRealtimeChannel {
 
   on(event: string, filter: any, callback: (payload: any) => void): this {
     if (event === 'broadcast') {
-      const unsubscribe = appwriteClient.subscribe(`databases.${DATABASE_ID}.collections.realtime_messages.documents`, response => {
+      const unsubscribe = subscribeSharedTopic(`databases.${DATABASE_ID}.collections.realtime_messages.documents`, response => {
         const message = normalizeDoc(response.payload);
         if (this.disposed || message.channel !== this.channelName || message.event !== filter?.event) return;
         if (response.events.some(e => e.endsWith('.delete')) || Date.parse(message.expires_at) < Date.now()) return;
@@ -1948,30 +1998,26 @@ class AppwriteRealtimeChannel {
         ? `databases.${DATABASE_ID}.collections`
         : `databases.${DATABASE_ID}.collections.${table}.documents`;
 
-      try {
-        const unsub = appwriteClient.subscribe(channelTopic, (response) => {
-          const payload = {
-            schema: 'public',
-            table: table,
-            commit_timestamp: new Date().toISOString(),
-            eventType: response.events.some(e => e.includes('.create')) ? 'INSERT'
-              : response.events.some(e => e.includes('.update')) ? 'UPDATE' : 'DELETE',
-            new: normalizeDoc(response.payload),
-            old: normalizeDoc(response.payload),
-            errors: null
-          };
-          if (filter?.event && filter.event !== '*' && filter.event !== payload.eventType) return;
-          if (filter?.filter) {
-            const match = String(filter.filter).match(/^([^.]+)=eq\.(.+)$/);
-            if (match && String(payload.new?.[match[1]]) !== match[2]) return;
-          }
-          invalidateCollectionCache(table === '*' ? undefined : table);
-          callback(payload);
-        });
-        this.unsubscribeFns.push(unsub);
-      } catch (err) {
-        // Safe silent failover for realtime
-      }
+      const unsub = subscribeSharedTopic(channelTopic, (response) => {
+        const payload = {
+          schema: 'public',
+          table: table,
+          commit_timestamp: new Date().toISOString(),
+          eventType: response.events.some(e => e.includes('.create')) ? 'INSERT'
+            : response.events.some(e => e.includes('.update')) ? 'UPDATE' : 'DELETE',
+          new: normalizeDoc(response.payload),
+          old: normalizeDoc(response.payload),
+          errors: null
+        };
+        if (filter?.event && filter.event !== '*' && filter.event !== payload.eventType) return;
+        if (filter?.filter) {
+          const match = String(filter.filter).match(/^([^.]+)=eq\.(.+)$/);
+          if (match && String(payload.new?.[match[1]]) !== match[2]) return;
+        }
+        invalidateCollectionCache(table === '*' ? undefined : table);
+        callback(payload);
+      });
+      this.unsubscribeFns.push(unsub);
     }
     return this;
   }
