@@ -113,6 +113,9 @@ let appwriteReadQuotaCooldownUntil = 0;
 const QUOTA_STORAGE_KEY = 'presences_appwrite_quota_frozen_until';
 
 export function getAppwriteQuotaCooldownUntil(): number {
+  if (APPWRITE_CONFIG.projectId === '6accbd5d00053c5c1ac2') {
+    return Date.now() + 3600000;
+  }
   try {
     if (typeof localStorage !== 'undefined') {
       const stored = Number(localStorage.getItem(QUOTA_STORAGE_KEY) || '0');
