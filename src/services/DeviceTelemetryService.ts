@@ -654,9 +654,8 @@ export function getRouteDisplayName(pathname: string): string {
   if (pathname.startsWith('/register')) return 'Register Student';
   if (pathname.startsWith('/attendance')) return 'Face Attendance Terminal';
   if (pathname.startsWith('/user')) return 'User Portal';
-  if (pathname.startsWith('/gate/vision')) return 'Gate Vision AI';
-  if (pathname.startsWith('/gate/scanner') || pathname.startsWith('/guard')) return 'Guard Gate Pass Scanner';
-  if (pathname.startsWith('/gate')) return 'Gate & Campus Security';
+  if (pathname.startsWith('/guard')) return 'Guard Gate Pass Scanner';
+  if (pathname.startsWith('/gate-pass')) return 'Digital Gate Pass';
   if (pathname.startsWith('/parent')) return 'Parent Portal';
   if (pathname.startsWith('/teacher') || pathname.startsWith('/class')) return 'Teacher Portal';
   if (pathname.startsWith('/admin')) return 'Admin Center';

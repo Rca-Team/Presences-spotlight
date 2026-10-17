@@ -27,13 +27,20 @@ const importers: Record<string, Importer> = {
   '/notifications': () => import('@/pages/NotificationDemo'),
   '/profile': () => import('@/pages/Profile'),
   '/features': () => import('@/pages/Features'),
-  '/gate': () => import('@/pages/GateMode'),
   '/guard': () => import('@/pages/GuardScanner'),
   '/parent': () => import('@/pages/ParentPortal'),
   '/unsubscribe': () => import('@/pages/Unsubscribe'),
   '/data': () => import('@/pages/DataBackup'),
-  '/jarvis': () => import('@/pages/Jarvis'),
   '/enrollment-monitor': () => import('@/pages/EnrollmentMonitor'),
+  '/enroll': () => import('@/pages/StudentEnrollment'),
+  '/widgets': () => import('@/pages/Widgets'),
+  '/smartboard': () => import('@/pages/SmartBoardMode'),
+  '/backup': () => import('@/pages/Backup'),
+  '/gate-pass': () => import('@/pages/DigitalGatePassPage'),
+  '/emergency': () => import('@/pages/EmergencySafetyPage'),
+  '/face-model-validator': () => import('@/pages/FaceModelValidator'),
+  '/forgot-password': () => import('@/pages/PasswordRecovery'),
+  '/reset-password': () => import('@/pages/PasswordRecovery'),
 };
 
 const inflight: Record<string, Promise<unknown> | undefined> = {};

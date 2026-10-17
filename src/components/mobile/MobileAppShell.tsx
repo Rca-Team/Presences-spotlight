@@ -27,8 +27,6 @@ const routeTitles: Record<string, string> = {
   "/": "Home",
   "/register": "Register Student",
   "/attendance": "Attendance",
-  "/gate": "Gate & Classroom Camera",
-  "/gate-vision": "Gate Scanner",
   "/profile": "My Profile",
   "/admin": "School Admin",
   "/teacher": "Teacher Portal",
@@ -92,26 +90,17 @@ const MobileAppShell: React.FC<MobileAppShellProps> = ({ children }) => {
         icon: ScanLine,
         show: true,
       },
-      {
-        key: "gate",
-        label: "Gate",
-        to: "/gate",
-        icon: DoorOpen,
-        show: true,
-      },
     ].filter((item) => item.show);
   }, [isSignedIn]);
 
   // 2. Normal User Dock Tabs
   const normalTabs = useMemo(() => {
-    const canUseGate = isAdminOrPrincipal;
     const canUseAdmin = isAdminOrPrincipal || (isSignedIn && isRoleLoading);
 
     return [
       { key: "home", label: "Home", to: "/", icon: Home, show: true },
       { key: "register", label: "Register", to: "/register", icon: UserPlus, show: true },
       { key: "attendance", label: "Attendance", to: "/attendance", icon: ScanLine, show: true },
-      { key: "gate", label: "Gate", to: "/gate", icon: ShieldCheck, show: canUseGate },
       { key: "admin", label: "Admin", to: "/admin", icon: LayoutDashboard, show: canUseAdmin },
       { key: "profile", label: isSignedIn ? "Profile" : "Login", to: isSignedIn ? "/profile" : "/login", icon: UserCircle, show: true },
     ].filter((item) => item.show);
@@ -121,11 +110,9 @@ const MobileAppShell: React.FC<MobileAppShellProps> = ({ children }) => {
 
   const path = location.pathname;
 
-  // Fullscreen / Kiosk routes where external camera or turnstile takes 100% of viewport
+  // Fullscreen / Kiosk routes where external camera takes 100% of viewport
   const isImmersiveRoute =
-    path.startsWith('/gate') ||
-    path.startsWith('/guard') ||
-    path.startsWith('/gate-vision');
+    path.startsWith('/guard');
 
   // Routes that already provide their own customized, rich mobile header
   const hasCustomHeader =

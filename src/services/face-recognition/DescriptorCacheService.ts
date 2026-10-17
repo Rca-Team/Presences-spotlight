@@ -171,7 +171,7 @@ export function getAllCachedDescriptors(): CachedDescriptor[] {
  */
 export function findNearestMatch(
   inputDescriptor: number[] | Float32Array,
-  threshold: number = 0.45   // Aligned with MATCH_THRESHOLD in RecognitionService
+  threshold: number = 0.56   // Aligned with MATCH_THRESHOLD in RecognitionService
 ): { descriptor: CachedDescriptor; distance: number } | null {
   if (!kdTree || descriptorMap.size === 0) {
     return null;

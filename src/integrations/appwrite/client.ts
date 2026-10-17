@@ -54,7 +54,7 @@ if (typeof window !== 'undefined' && typeof window.fetch === 'function') {
 
   const rewriteToSameOriginProxy = (urlStr: string): string | null => {
     try {
-      const baseOrigin = isLocalOrNativeOrigin() && APPWRITE_PROJECT_ID === '6accbd5d00053c5c1ac2'
+      const baseOrigin = isLocalOrNativeOrigin() && APPWRITE_PROJECT_ID === '6ad309e200176195d398'
         ? 'https://www.presences.dev'
         : window.location.origin;
       const parsed = new URL(urlStr, window.location.origin);
@@ -117,7 +117,7 @@ if (typeof window !== 'undefined' && typeof window.fetch === 'function') {
       return originalFetch(input, init);
     }
 
-    if ((!isLocalOrNativeOrigin() || APPWRITE_PROJECT_ID === '6accbd5d00053c5c1ac2') && !proxyUnavailable) {
+    if (!proxyUnavailable) {
       const proxyUrl = rewriteToSameOriginProxy(rawUrl);
       if (proxyUrl) {
         const res = await originalFetch(proxyUrl, init);
@@ -192,9 +192,7 @@ if (typeof window !== 'undefined' && typeof window.fetch === 'function') {
 
 const RUNTIME_APPWRITE_ENDPOINT =
   typeof window !== 'undefined'
-    ? (APPWRITE_PROJECT_ID === '6accbd5d00053c5c1ac2'
-        ? (isLocalOrNativeOrigin() ? 'https://www.presences.dev/api/appwrite/v1' : `${window.location.origin}/api/appwrite/v1`)
-        : (!isLocalOrNativeOrigin() ? `${window.location.origin}/api/appwrite/v1` : APPWRITE_ENDPOINT))
+    ? (!isLocalOrNativeOrigin() ? `${window.location.origin}/api/appwrite/v1` : APPWRITE_ENDPOINT)
     : APPWRITE_ENDPOINT;
 
 const REALTIME_APPWRITE_ENDPOINT = APPWRITE_ENDPOINT

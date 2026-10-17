@@ -509,14 +509,14 @@ const StudentDetailsTable: React.FC = () => {
   }
 
   return (
-    <Card className="overflow-hidden">
-      <CardHeader className="border-b bg-gradient-to-r from-cyan-50 via-blue-50 to-violet-50 dark:from-cyan-950/30 dark:via-blue-950/30 dark:to-violet-950/30">
-        <CardTitle className="flex items-center gap-2">
-          <Users className="h-5 w-5 text-primary" />
-          All Students — Full Details & ID Cards
+    <Card className="overflow-hidden liquid-glass-surface border-border/80 shadow-xl">
+      <CardHeader className="border-b border-border/50 bg-white/40 dark:bg-slate-900/40 backdrop-blur-md">
+        <CardTitle className="flex items-center gap-2 text-base font-semibold">
+          <Users className="h-4 w-4 text-primary" />
+          Student Records & ID Directory
         </CardTitle>
-        <CardDescription>
-          Searchable directory of every registered student. Click a row to preview / download an ID card.
+        <CardDescription className="text-xs">
+          Searchable master directory of registered students and ID card generation.
         </CardDescription>
       </CardHeader>
 

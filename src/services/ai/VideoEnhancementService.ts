@@ -7,6 +7,7 @@ env.useBrowserCache = true;
 class VideoEnhancementService {
   private upscaler: any = null;
   private isInitialized = false;
+  private cachedCanvas: HTMLCanvasElement | null = null;
 
   async initialize() {
     if (this.isInitialized) return;
@@ -34,16 +35,21 @@ class VideoEnhancementService {
   }
 
   async enhanceVideoFrame(videoElement: HTMLVideoElement): Promise<HTMLCanvasElement> {
-    const canvas = document.createElement('canvas');
-    const ctx = canvas.getContext('2d');
+    if (!this.cachedCanvas) {
+      this.cachedCanvas = document.createElement('canvas');
+    }
+    const canvas = this.cachedCanvas;
+    const ctx = canvas.getContext('2d', { willReadFrequently: true });
     
     if (!ctx) {
       throw new Error('Could not get canvas context');
     }
 
     // Set canvas dimensions to video dimensions
-    canvas.width = videoElement.videoWidth;
-    canvas.height = videoElement.videoHeight;
+    if (canvas.width !== videoElement.videoWidth || canvas.height !== videoElement.videoHeight) {
+      canvas.width = videoElement.videoWidth;
+      canvas.height = videoElement.videoHeight;
+    }
     
     // Draw current video frame to canvas
     ctx.drawImage(videoElement, 0, 0, canvas.width, canvas.height);

@@ -70,7 +70,7 @@ const TabsContent = React.forwardRef<
     forceMount={(forceMount ?? keepMounted) ? true : undefined}
     className={cn(
       "mt-3.5 ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2",
-      "data-[state=active]:animate-in data-[state=active]:fade-in-50 data-[state=active]:duration-150 data-[state=inactive]:hidden",
+      "data-[state=active]:animate-element-coming data-[state=inactive]:hidden",
       className
     )}
     {...props}

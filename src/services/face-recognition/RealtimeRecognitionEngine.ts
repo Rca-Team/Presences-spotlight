@@ -36,6 +36,8 @@ export interface EngineOptions {
   detectFps?: number;
   /** Max width of the downscaled detection frame */
   detectionWidth?: number;
+  /** TinyFaceDetector input dimension (e.g. 320 for sub-50ms instant detection, 224 for lowCPU) */
+  inputSize?: number;
   /** Euclidean match threshold (face-api descriptors) */
   matchThreshold?: number;
   /** Candidates pulled from the vector index before exact re-scoring */
@@ -161,16 +163,23 @@ function distanceToConfidence(distance: number, threshold: number): number {
  */
 export async function matchDescriptorIndexed(
   descriptor: Float32Array,
-  matchThreshold = 0.45,
+  matchThreshold = 0.56,
   shortlist = 64,
 ): Promise<{ userId: string; name: string; distance: number; confidence: number } | null> {
   await ensureGalleryIndex();
   if (gallery.size === 0) return null;
 
   // Exact re-scoring over all registered students with multi-sample composite distance
+  const seenPeople = new Set<string>();
   const ranked: Array<{ userId: string; name: string; distance: number }> = [];
+
   for (const [userId, entry] of gallery.entries()) {
     if (!entry) continue;
+
+    // Deduplicate student aliases (e.g. entry mapped under both UUID and studentId)
+    const personKey = (entry.studentId || entry.userName || userId).toLowerCase().trim();
+    if (seenPeople.has(personKey)) continue;
+    seenPeople.add(personKey);
 
     // Collect all valid distances matching descriptor length
     const sampleDists: number[] = [];
@@ -187,24 +196,9 @@ export async function matchDescriptorIndexed(
 
     if (sampleDists.length === 0 && !Number.isFinite(centroidDist)) continue;
 
-    sampleDists.sort((a, b) => a - b);
-    const d1 = sampleDists[0] ?? centroidDist;
-    const d2 = sampleDists[1] ?? (Number.isFinite(centroidDist) ? centroidDist : d1);
-
-    // Compute composite distance
-    let effectiveDist = d1;
-    if (sampleDists.length >= 2) {
-      const top2Avg = (d1 + d2) / 2;
-      const validCentroid = Number.isFinite(centroidDist) ? centroidDist : top2Avg;
-      // Guard against a single drifted sample matching an unrelated face:
-      // Centroid must not be completely alienated (> 0.54) from query face
-      if (Number.isFinite(centroidDist) && centroidDist > 0.54 && d1 > 0.40) {
-        continue;
-      }
-      effectiveDist = Math.min(validCentroid, 0.65 * d1 + 0.35 * Math.min(d2, validCentroid));
-    } else if (Number.isFinite(centroidDist)) {
-      effectiveDist = (d1 * 0.65) + (centroidDist * 0.35);
-    }
+    // Use minimum distance across all registered samples & centroid (pure FaceMatcher standard):
+    const minSample = sampleDists.length > 0 ? Math.min(...sampleDists) : Number.POSITIVE_INFINITY;
+    const effectiveDist = Math.min(minSample, centroidDist);
 
     if (!Number.isFinite(effectiveDist)) continue;
     ranked.push({ userId, name: entry.userName, distance: effectiveDist });
@@ -215,13 +209,11 @@ export async function matchDescriptorIndexed(
   const second = ranked[1];
   if (!best || best.distance > matchThreshold) return null;
 
-  // Ambiguity Filter: If a runner-up candidate from a DIFFERENT registered student
-  // is close to the threshold and within a narrow margin of the best match,
-  // reject to prevent look-alike false-positive confusion.
-  if (second && second.userId !== best.userId && second.distance <= matchThreshold + 0.08) {
+  // Ambiguity guard: only if two COMPLETELY DIFFERENT students have virtually identical distance
+  // and both matches are near the threshold edge (best.distance > 0.52 and margin < 0.015)
+  if (second && second.userId !== best.userId && best.distance > 0.52) {
     const margin = second.distance - best.distance;
-    const ratio = second.distance > 0 ? best.distance / second.distance : 1;
-    if (margin < 0.035 || ratio > 0.88) {
+    if (margin < 0.015) {
       return null;
     }
   }
@@ -250,8 +242,9 @@ export function createRecognitionEngine(
   options: EngineOptions = {},
 ): RecognitionEngine {
   const detectFps = options.detectFps ?? 14;
-  const detectionWidth = options.detectionWidth ?? 640;
-  const matchThreshold = options.matchThreshold ?? 0.45;
+  const detectionWidth = options.detectionWidth ?? 480;
+  const inputSize = options.inputSize ?? 320;
+  const matchThreshold = options.matchThreshold ?? 0.56;
   const shortlist = options.shortlist ?? 16;
   const baseRequiredHoldMs = options.requiredHoldMs ?? 0;
 
@@ -315,11 +308,11 @@ export function createRecognitionEngine(
 
     try {
       // 1-Pass Extraction: Detect all faces, landmarks, and 128-d embeddings simultaneously
-      // using inputSize 416 & scoreThreshold 0.35 for sharp facial biometrics without false artifacts
+      // using inputSize (320 standard / 224 lowCPU) for sub-50ms execution on CPU/mobile
       const rawDetections = await faceapi
         .detectAllFaces(
           detectCanvas,
-          new faceapi.TinyFaceDetectorOptions({ inputSize: 416, scoreThreshold: 0.35 }),
+          new faceapi.TinyFaceDetectorOptions({ inputSize, scoreThreshold: 0.35 }),
         )
         .withFaceLandmarks()
         .withFaceDescriptors();
@@ -382,80 +375,62 @@ export function createRecognitionEngine(
         const now = Date.now();
 
         if (match) {
-          // Zero False Positive Guard:
-          // Strong match (dist <= 0.42) -> instant 0ms verification
-          // Borderline match (0.42 < dist <= 0.45) -> require 2-frame consistency (~60ms)
-          const isHighCertainty = match.distance <= 0.42;
-          const isConfirmedCandidate = t.candidate?.userId === match.userId;
+          // Instant verification: student matched within threshold (<100ms)
+          tracker.assignIdentity(t.id, {
+            userId: match.userId,
+            name: match.name,
+            confidence: match.confidence,
+            recognizedAt: now,
+            verified: true,
+          });
 
-          if (isHighCertainty || isConfirmedCandidate || t.identity?.verified) {
-            tracker.assignIdentity(t.id, {
-              userId: match.userId,
-              name: match.name,
-              confidence: match.confidence,
-              recognizedAt: now,
-              verified: true,
-            });
+          const normName = match.name.toLowerCase().trim();
+          const isAlreadyMarkedInSession =
+            markedIdentities.has(`uid:${match.userId}`) ||
+            (normName !== 'unknown' && markedIdentities.has(`name:${normName}`));
 
-            const normName = match.name.toLowerCase().trim();
-            const isAlreadyMarkedInSession =
-              markedIdentities.has(`uid:${match.userId}`) ||
-              (normName !== 'unknown' && markedIdentities.has(`name:${normName}`));
-
-            if (!isAlreadyMarkedInSession) {
-              markedByTrack.set(t.id, match.userId);
-              markedIdentities.add(`uid:${match.userId}`);
-              if (normName !== 'unknown') {
-                markedIdentities.add(`name:${normName}`);
-              }
-
-              const identified: IdentifiedFace = {
-                trackId: t.id,
-                userId: match.userId,
-                name: match.name,
-                confidence: match.confidence,
-                distance: match.distance,
-                box: t.box,
-                descriptor: d.descriptor,
-              };
-
-              options.onIdentified?.(identified);
-
-              if (options.markAttendance) {
-                options.markAttendance(identified).catch(err => {
-                  console.error('[RealtimeEngine] markAttendance handler error:', err);
-                });
-              } else {
-                recordAttendance(
-                  match.userId,
-                  'present',
-                  match.confidence,
-                  {
-                    metadata: {
-                      name: match.name,
-                      source: 'realtime-engine',
-                      trackId: t.id,
-                      matchDistance: match.distance,
-                    },
-                  },
-                  undefined,
-                  'ai-scan'
-                ).catch(err => {
-                  console.error('[RealtimeEngine] Direct cloud attendance write failed:', err);
-                });
-              }
+          if (!isAlreadyMarkedInSession) {
+            markedByTrack.set(t.id, match.userId);
+            markedIdentities.add(`uid:${match.userId}`);
+            if (normName !== 'unknown') {
+              markedIdentities.add(`name:${normName}`);
             }
-          } else {
-            // Register candidate on frame 1 to verify on next frame
-            t.candidate = {
+
+            const identified: IdentifiedFace = {
+              trackId: t.id,
               userId: match.userId,
               name: match.name,
               confidence: match.confidence,
               distance: match.distance,
-              firstMatchedAt: now,
-              lastMatchedAt: now,
-              continuousHoldMs: 0,
+              box: t.box,
+              descriptor: d.descriptor,
             };
+
+            options.onIdentified?.(identified);
+
+            if (options.markAttendance) {
+              options.markAttendance(identified).catch(err => {
+                console.error('[RealtimeEngine] markAttendance handler error:', err);
+              });
+            } else {
+              recordAttendance(
+                match.userId,
+                'present',
+                match.confidence,
+                {
+                  metadata: {
+                    name: match.name,
+                    source: 'realtime-engine',
+                    trackId: t.id,
+                    matchDistance: match.distance,
+                  },
+                },
+                undefined,
+                'ai-scan'
+              ).catch(err => {
+                console.error('[RealtimeEngine] Direct cloud attendance write failed:', err);
+              });
+            }
           }
         }
       }

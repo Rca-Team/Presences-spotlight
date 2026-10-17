@@ -49,6 +49,7 @@ const AttendanceCapture: React.FC<AttendanceCaptureProps> = ({ classScope }) => 
   const lastDetectionCountRef = useRef(0);
   const detectionIntervalRef = useRef<number>();
   const previewIntervalRef = useRef<number>();
+  const captureCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const [unrecognizedAlert, setUnrecognizedAlert] = useState<{
     imageUrl: string;
     timestamp: Date;
@@ -334,15 +335,20 @@ const AttendanceCapture: React.FC<AttendanceCaptureProps> = ({ classScope }) => 
       
       console.log('Capturing photo for comparison...');
       
-      // Capture instant image
-      const canvas = document.createElement('canvas');
-      const ctx = canvas.getContext('2d');
+      // Capture instant image, reusing persistent canvas frame
+      if (!captureCanvasRef.current) {
+        captureCanvasRef.current = document.createElement('canvas');
+      }
+      const canvas = captureCanvasRef.current;
+      const ctx = canvas.getContext('2d', { willReadFrequently: true });
       if (!ctx) {
         throw new Error('Could not get canvas context');
       }
       
-      canvas.width = webcamRef.current.videoWidth;
-      canvas.height = webcamRef.current.videoHeight;
+      if (canvas.width !== webcamRef.current.videoWidth || canvas.height !== webcamRef.current.videoHeight) {
+        canvas.width = webcamRef.current.videoWidth;
+        canvas.height = webcamRef.current.videoHeight;
+      }
       ctx.drawImage(webcamRef.current, 0, 0);
       
       // Apply video enhancement if enabled (legacy)

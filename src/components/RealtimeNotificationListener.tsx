@@ -71,10 +71,6 @@ const RealtimeNotificationListener: React.FC = () => {
   }, []);
 
   useEffect(() => {
-    // Auto-request permission on mount (non-blocking)
-    if ('Notification' in window && Notification.permission === 'default') {
-      Notification.requestPermission().catch(() => {});
-    }
     pushNotificationService.registerServiceWorker().catch(() => {});
 
     const channel = supabase
@@ -100,14 +96,14 @@ const RealtimeNotificationListener: React.FC = () => {
         const time = new Date(g.entry_time).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
 
         if (g.is_recognized && g.student_name) {
-          notify(`🚪 Gate Entry: ${g.student_name}`, `Entered via ${g.gate_name || 'Main Gate'} at ${time}`, '🚪', `gate-${g.id}`, '/gate');
+          notify(`🚪 Gate Entry: ${g.student_name}`, `Entered via ${g.gate_name || 'Main Gate'} at ${time}`, '🚪', `gate-${g.id}`, '/admin?tab=reports');
         } else if (!g.is_recognized) {
           notify(
             '🚨 Unknown Person at Gate!',
             `Unrecognized face detected at ${g.gate_name || 'Main Gate'} at ${time}. Confidence: ${g.confidence ? Math.round(g.confidence * 100) + '%' : 'N/A'}`,
             '🚨',
             `gate-unknown-${g.id}`,
-            '/gate'
+            '/admin?tab=emergency'
           );
         }
       })

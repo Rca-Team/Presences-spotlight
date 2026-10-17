@@ -59,6 +59,12 @@ import {
   stringToDescriptor,
 } from '@/services/face-recognition/ModelService';
 import FaceSampleDeduplicationModal from './FaceSampleDeduplicationModal';
+import FaceSampleReasoningModal from './FaceSampleReasoningModal';
+import {
+  faceSampleReasoningEngine,
+  sanitizeAndCanonicalizeUrl,
+  resolveAnyFaceImageUrl,
+} from '@/services/ai/faceSampleReasoningEngine';
 import { normalizeClassSection } from '@/utils/studentIdentityResolver';
 import CaptureFaceDialog from './CaptureFaceDialog';
 import { resolveStudentPhotoUrl, clearCoverPhotoCache } from '@/utils/studentPhotoResolver';
@@ -77,10 +83,11 @@ export type FaceSample = {
   label: string | null;
   image_url: string | null;
   created_at: string;
-  source: 'descriptor_registration' | 'record_registration' | 'recognition_attendance' | 'recognition_gate';
-  source_table: 'face_descriptors' | 'attendance_records';
+  source: 'descriptor_registration' | 'record_registration' | 'recognition_attendance' | 'recognition_gate' | 'profile_avatar' | 'metadata_extracted';
+  source_table: 'face_descriptors' | 'attendance_records' | 'profiles';
   confidence_score?: number | null;
   status?: string | null;
+  isAiReconstructed?: boolean;
   quality?: {
     brightness?: number;
     sharpness?: number;
@@ -194,7 +201,7 @@ const toPersistentImageReference = (rawValue: string | null | undefined): string
 // High-speed robust URL resolver with multi-bucket & signed URL priority
 const resolveFaceSampleUrl = async (rawValue: string | null | undefined): Promise<string | null> => {
   if (!rawValue) return null;
-  const value = rawValue.trim();
+  const value = sanitizeAndCanonicalizeUrl(rawValue);
   if (!value) return null;
 
   if (value.startsWith('data:') || value.startsWith('blob:')) {
@@ -207,69 +214,14 @@ const resolveFaceSampleUrl = async (rawValue: string | null | undefined): Promis
     if (cached) return cached;
   }
 
-  // 1. Try unified student photo resolver
   try {
-    const resolved = await resolveStudentPhotoUrl(value);
-    if (resolved && (resolved.startsWith('http://') || resolved.startsWith('https://') || resolved.startsWith('data:') || resolved.startsWith('blob:'))) {
+    const resolved = await resolveAnyFaceImageUrl(value);
+    if (resolved) {
       GLOBAL_SIGNED_URL_CACHE.set(cacheKey, resolved);
       return resolved;
     }
   } catch (err) {
-    console.warn('resolveStudentPhotoUrl error:', err);
-  }
-
-  // 2. Direct HTTP(S) URL
-  if (/^https?:\/\//i.test(value)) {
-    GLOBAL_SIGNED_URL_CACHE.set(cacheKey, value);
-    return value;
-  }
-
-  // 3. Multi-bucket candidate generation
-  const candidates: Array<{ bucket: string; path: string }> = [];
-  for (const bucket of FACE_SAMPLE_BUCKETS) {
-    const extracted = parseStoragePathFromUrl(value, bucket);
-    if (extracted) candidates.push({ bucket, path: extracted });
-  }
-
-  if (candidates.length === 0) {
-    const normalized = value.replace(/^\/+/, '');
-    const prefixed = FACE_SAMPLE_BUCKETS.find((b) => normalized.startsWith(`${b}/`));
-    if (prefixed) {
-      candidates.push({ bucket: prefixed, path: normalized.slice(prefixed.length + 1) });
-    }
-    const cleanPath = normalized.replace(/^(?:faces|face-images|student-registration-faces|attendance-training-faces|public)\//, '');
-    candidates.push({ bucket: 'face-images', path: `faces/${cleanPath}` });
-    candidates.push({ bucket: 'face-images', path: cleanPath });
-    for (const b of FACE_SAMPLE_BUCKETS) {
-      candidates.push({ bucket: b, path: normalized });
-      candidates.push({ bucket: b, path: cleanPath });
-    }
-  }
-
-  // Try signed URL across buckets first (works for both private & public buckets)
-  for (const cand of candidates) {
-    try {
-      const { data, error } = await supabase.storage.from(cand.bucket).createSignedUrl(cand.path, 60 * 60 * 24 * 365);
-      if (!error && data?.signedUrl) {
-        GLOBAL_SIGNED_URL_CACHE.set(cacheKey, data.signedUrl);
-        return data.signedUrl;
-      }
-    } catch {
-      // Continue
-    }
-  }
-
-  // Try public URL
-  for (const cand of candidates) {
-    try {
-      const { data } = supabase.storage.from(cand.bucket).getPublicUrl(cand.path);
-      if (data?.publicUrl) {
-        GLOBAL_SIGNED_URL_CACHE.set(cacheKey, data.publicUrl);
-        return data.publicUrl;
-      }
-    } catch {
-      // Continue
-    }
+    console.warn('resolveAnyFaceImageUrl error:', err);
   }
 
   GLOBAL_SIGNED_URL_CACHE.set(cacheKey, value);
@@ -382,6 +334,8 @@ const StudentFaceSamplesManager: React.FC = () => {
   const [previewImageUrl, setPreviewImageUrl] = useState<string | null>(null);
   const [previewTitle, setPreviewTitle] = useState<string>('');
   const [isAutoSelectingCovers, setIsAutoSelectingCovers] = useState(false);
+  const [reasoningModalOpen, setReasoningModalOpen] = useState(false);
+  const [isAutonomousHealing, setIsAutonomousHealing] = useState(false);
 
   // Cache of resolved image URLs for active view
   const [resolvedUrls, setResolvedUrls] = useState<Record<string, string>>({});
@@ -393,7 +347,7 @@ const StudentFaceSamplesManager: React.FC = () => {
       const [descriptorsRes, attendanceRes, profilesRes] = await Promise.all([
         supabase
           .from('face_descriptors')
-          .select('id, user_id, student_id, label, image_url, created_at')
+          .select('id, user_id, student_id, student_name, label, image_url, metadata, descriptor, created_at')
           .order('created_at', { ascending: false }),
         supabase
           .from('attendance_records')
@@ -427,7 +381,7 @@ const StudentFaceSamplesManager: React.FC = () => {
       const profileMapByName = new Map<string, any>();
 
       profileRows.forEach((p) => {
-        const photo = p.photo_url || p.avatar_url || null;
+        const photo = sanitizeAndCanonicalizeUrl(p.photo_url || p.avatar_url || null);
         const normalizedProfile = { ...p, avatar_url: photo };
         if (p.user_id) profileMapByUserId.set(p.user_id, normalizedProfile);
         if (p.id) profileMapByUserId.set(p.id, normalizedProfile);
@@ -452,21 +406,31 @@ const StudentFaceSamplesManager: React.FC = () => {
         const norm = normalizeNameKey(name);
         const normEmp = empId ? String(empId).trim().toLowerCase() : '';
 
+        const candidateUrl = sanitizeAndCanonicalizeUrl(
+          row.image_url ||
+          meta.image_url ||
+          meta.photo_url ||
+          meta.avatar_url ||
+          meta.firebase_image_url ||
+          meta.id_card_photo_url ||
+          di.image_url
+        );
+
         const metaObj = {
           employeeId: empId,
           classSection: classSec,
-          imageUrl: row.image_url,
+          imageUrl: candidateUrl,
           userId: row.user_id,
           name,
         };
 
-        if (norm && (!regMetaByName.has(norm) || row.status === 'registered' || row.image_url)) {
+        if (norm && (!regMetaByName.has(norm) || row.status === 'registered' || candidateUrl)) {
           regMetaByName.set(norm, metaObj);
         }
-        if (normEmp && (!regMetaByEmpId.has(normEmp) || row.status === 'registered' || row.image_url)) {
+        if (normEmp && (!regMetaByEmpId.has(normEmp) || row.status === 'registered' || candidateUrl)) {
           regMetaByEmpId.set(normEmp, metaObj);
         }
-        if (row.user_id && (!regMetaByUserId.has(row.user_id) || row.status === 'registered' || row.image_url)) {
+        if (row.user_id && (!regMetaByUserId.has(row.user_id) || row.status === 'registered' || candidateUrl)) {
           regMetaByUserId.set(row.user_id, metaObj);
         }
       });
@@ -478,7 +442,6 @@ const StudentFaceSamplesManager: React.FC = () => {
         const normName = normalizeNameKey(fallbackName);
         const normEmpId = empId ? String(empId).trim().toLowerCase() : '';
 
-        // Check if we ALREADY have a group indexed by empId, normalized name, or unique student userId
         let existing: StudentGroup | undefined;
         if (normEmpId && studentGroupsMap.has(`emp:${normEmpId}`)) {
           existing = studentGroupsMap.get(`emp:${normEmpId}`);
@@ -486,7 +449,6 @@ const StudentFaceSamplesManager: React.FC = () => {
           existing = studentGroupsMap.get(`name:${normName}`);
         } else if (userId && studentGroupsMap.has(userId)) {
           const candidateExisting = studentGroupsMap.get(userId);
-          // Only group by userId if names match or are unassigned
           if (candidateExisting && (!normName || normName === 'student' || normalizeNameKey(candidateExisting.name) === normName)) {
             existing = candidateExisting;
           }
@@ -548,37 +510,103 @@ const StudentFaceSamplesManager: React.FC = () => {
         return newGroup;
       };
 
-      // 1. Process Descriptors (Live Model Slots)
+      // 1. Process Descriptors (Live Model Slots) & Unpack Embedded Metadata
       descriptorRows.forEach((row: any) => {
-        const group = getOrCreateGroup(row.user_id, row.student_id, row.label || 'Trained Student');
-        const effectiveImg = row.image_url || group.avatarUrl || null;
-        if (!group.avatarUrl && row.image_url) {
-          group.avatarUrl = row.image_url;
+        const studentLabel = row.student_name || row.label || 'Trained Student';
+        const group = getOrCreateGroup(row.user_id, row.student_id, studentLabel);
+
+        let metaObj: any = row.metadata;
+        if (typeof metaObj === 'string') {
+          try { metaObj = JSON.parse(metaObj); } catch { metaObj = {}; }
         }
+
+        const metaImg = metaObj?.image_url || metaObj?.photo_url || metaObj?.avatar_url || metaObj?.firebase_image_url;
+        const candidateImg = sanitizeAndCanonicalizeUrl(row.image_url || metaImg || group.avatarUrl);
+
+        if (!group.avatarUrl && candidateImg) {
+          group.avatarUrl = candidateImg;
+        }
+
         if (!group.samples.some(s => s.id === row.id)) {
           group.samples.push({
             id: row.id,
             user_id: row.user_id,
-            label: row.label,
-            image_url: effectiveImg,
+            label: studentLabel,
+            image_url: candidateImg || null,
             created_at: row.created_at,
             source: 'descriptor_registration',
             source_table: 'face_descriptors',
+            isAiReconstructed: !row.image_url && Boolean(candidateImg),
+          });
+        }
+
+        // Unpack multi-angle photos from metadata if present
+        if (metaObj) {
+          const sampleImgs = Array.isArray(metaObj.sample_images) ? metaObj.sample_images : [];
+          sampleImgs.forEach((imgStr: any, idx: number) => {
+            if (typeof imgStr === 'string' && imgStr.trim()) {
+              const sanitized = sanitizeAndCanonicalizeUrl(imgStr);
+              const sampleId = `${row.id}_meta_${idx}`;
+              if (!group.samples.some(s => s.id === sampleId || s.image_url === sanitized)) {
+                group.samples.push({
+                  id: sampleId,
+                  user_id: row.user_id,
+                  label: `${studentLabel} (Sample ${idx + 1})`,
+                  image_url: sanitized,
+                  created_at: row.created_at,
+                  source: 'descriptor_registration',
+                  source_table: 'face_descriptors',
+                  isAiReconstructed: true,
+                });
+              }
+            }
+          });
+
+          const samplesArr = Array.isArray(metaObj.samples) ? metaObj.samples : [];
+          samplesArr.forEach((sObj: any, idx: number) => {
+            const sImg = sObj?.image_url || sObj?.url || sObj?.data_url;
+            if (typeof sImg === 'string' && sImg.trim()) {
+              const sanitized = sanitizeAndCanonicalizeUrl(sImg);
+              const sampleId = `${row.id}_sample_${idx}`;
+              if (!group.samples.some(s => s.id === sampleId || s.image_url === sanitized)) {
+                group.samples.push({
+                  id: sampleId,
+                  user_id: row.user_id,
+                  label: `${studentLabel} (${sObj?.pose || `Angle ${idx + 1}`})`,
+                  image_url: sanitized,
+                  created_at: row.created_at,
+                  source: 'descriptor_registration',
+                  source_table: 'face_descriptors',
+                  isAiReconstructed: true,
+                });
+              }
+            }
           });
         }
       });
 
       // 2. Process Attendance Records (Captured Photos)
       attendanceRows.forEach((row: any) => {
-        if (!row.image_url) return;
         const di = (row.device_info as Record<string, any>) || {};
         const meta = (di.metadata as Record<string, any>) || {};
         const empId = meta.employee_id || meta.roll_number || di.employee_id || row.student_id || '';
         const name = meta.name || di.name || row.student_name || 'Student';
 
+        const rawImgCandidate =
+          row.image_url ||
+          meta.image_url ||
+          meta.photo_url ||
+          meta.avatar_url ||
+          meta.firebase_image_url ||
+          meta.id_card_photo_url ||
+          di.image_url;
+
+        if (!rawImgCandidate) return;
+        const sanitizedImg = sanitizeAndCanonicalizeUrl(rawImgCandidate);
+
         const group = getOrCreateGroup(row.user_id, empId, name);
-        if (!group.avatarUrl && row.image_url) {
-          group.avatarUrl = row.image_url;
+        if (!group.avatarUrl && sanitizedImg) {
+          group.avatarUrl = sanitizedImg;
         }
 
         let source: FaceSample['source'] = 'recognition_attendance';
@@ -595,12 +623,12 @@ const StudentFaceSamplesManager: React.FC = () => {
           anomalyWarning: q.anomalyWarning,
         } : undefined;
 
-        if (!group.samples.some(s => s.id === row.id || (s.image_url && s.image_url === row.image_url))) {
+        if (!group.samples.some(s => s.id === row.id || (s.image_url && s.image_url === sanitizedImg))) {
           group.samples.push({
             id: row.id,
             user_id: row.user_id || group.userId,
             label: name,
-            image_url: row.image_url,
+            image_url: sanitizedImg,
             created_at: row.timestamp || new Date().toISOString(),
             source,
             source_table: 'attendance_records',
@@ -611,9 +639,25 @@ const StudentFaceSamplesManager: React.FC = () => {
         }
       });
 
-      // 3. Ensure profiles with no samples are also listed
+      // 3. Process Profiles (Ensuring all profiles with portraits are present)
       profileRows.forEach((p) => {
-        getOrCreateGroup(p.user_id, p.employee_id || p.roll_number || '', p.full_name || p.display_name || 'Student');
+        const photo = sanitizeAndCanonicalizeUrl(p.photo_url || p.avatar_url || null);
+        const group = getOrCreateGroup(p.user_id, p.employee_id || p.roll_number || '', p.full_name || p.display_name || 'Student');
+        if (photo) {
+          if (!group.avatarUrl) group.avatarUrl = photo;
+          if (!group.samples.some(s => s.image_url === photo)) {
+            group.samples.unshift({
+              id: `prof_${p.id}`,
+              user_id: p.user_id || group.userId,
+              label: `${group.name} (Profile Photo)`,
+              image_url: photo,
+              created_at: new Date().toISOString(),
+              source: 'profile_avatar',
+              source_table: 'profiles',
+              quality: { clarityScore: 98, isEnhanced: true },
+            });
+          }
+        }
       });
 
       // Ensure avatarUrl is populated for all students and backfill model slots missing images
@@ -633,6 +677,7 @@ const StudentFaceSamplesManager: React.FC = () => {
           group.samples.forEach((s) => {
             if (s.source_table === 'face_descriptors' && !s.image_url) {
               s.image_url = group.avatarUrl;
+              s.isAiReconstructed = true;
               emptySlotUpdates.push({ id: s.id, image_url: persistentRef });
             }
           });
@@ -786,21 +831,18 @@ const StudentFaceSamplesManager: React.FC = () => {
     const captured: FaceSample[] = [];
 
     selectedGroup.samples.forEach((s) => {
-      if (s.source_table !== 'attendance_records') return;
+      if (s.source_table === 'face_descriptors') return;
       if (!s.image_url) return;
-
-      // Exclude registration records (they are in Model Slots)
-      if (s.source === 'record_registration' || s.status === 'registered') return;
 
       const raw = s.image_url.trim();
       const persistent = toPersistentImageReference(raw);
 
-      // Exclude if already shown in Live Model Slots or Cover ID
+      // Only exclude if already displayed in Live Model Slots
       if (trainedImageKeys.has(raw) || (persistent && trainedImageKeys.has(persistent))) {
         return;
       }
 
-      // Deduplicate duplicates within captured photos
+      // Deduplicate identical duplicate URLs within captured photos
       const dedupeKey = persistent || raw;
       if (seenCapturedKeys.has(dedupeKey)) return;
       seenCapturedKeys.add(dedupeKey);
@@ -1162,6 +1204,9 @@ const StudentFaceSamplesManager: React.FC = () => {
     try {
       if (isSlot) {
         await supabase.from('face_descriptors').delete().eq('id', sample.id);
+      } else if (sample.source_table === 'profiles') {
+        const cleanProfId = sample.id.replace(/^prof_/, '');
+        await supabase.from('profiles').update({ avatar_url: null, photo_url: null }).eq('id', cleanProfId);
       } else {
         await supabase.from('attendance_records').update({ image_url: null }).eq('id', sample.id);
       }
@@ -1183,13 +1228,17 @@ const StudentFaceSamplesManager: React.FC = () => {
     try {
       const ids = Array.from(selectedSampleIds);
       const slotIds = ids.filter((id) => trainedSlots.some((s) => s.id === id));
-      const recordIds = ids.filter((id) => capturedPhotos.some((s) => s.id === id));
+      const recordIds = ids.filter((id) => capturedPhotos.some((s) => s.id === id && s.source_table === 'attendance_records'));
+      const profileSampleIds = ids.filter((id) => capturedPhotos.some((s) => s.id === id && s.source_table === 'profiles')).map((id) => id.replace(/^prof_/, ''));
 
       if (slotIds.length > 0) {
         await supabase.from('face_descriptors').delete().in('id', slotIds);
       }
       if (recordIds.length > 0) {
         await supabase.from('attendance_records').update({ image_url: null }).in('id', recordIds);
+      }
+      if (profileSampleIds.length > 0) {
+        await supabase.from('profiles').update({ avatar_url: null, photo_url: null }).in('id', profileSampleIds);
       }
 
       toast({ title: 'Bulk Delete Complete', description: `Pruned ${ids.length} sample photos.` });
@@ -1734,8 +1783,8 @@ const StudentFaceSamplesManager: React.FC = () => {
 
   return (
     <div className="space-y-6">
-      {/* Studio Header Card */}
-      <Card className="rounded-3xl border border-border/60 bg-card/70 backdrop-blur-xl shadow-xl overflow-hidden">
+      {/* Studio Header Card — Apple Nano-Textured Liquid Glass */}
+      <Card className="rounded-3xl liquid-glass-surface shadow-2xl overflow-hidden">
         <CardContent className="p-6">
           <div className="flex flex-col md:flex-row md:items-center justify-between gap-6">
             <div className="space-y-1">
@@ -1764,6 +1813,16 @@ const StudentFaceSamplesManager: React.FC = () => {
               <Badge variant="outline" className="rounded-full px-3 py-1 text-xs font-bold gap-1.5">
                 <Camera className="h-3.5 w-3.5 text-blue-500" /> {totalSamplesCount} Total Photos
               </Badge>
+
+              <Button
+                variant="default"
+                size="sm"
+                onClick={() => setReasoningModalOpen(true)}
+                className="rounded-2xl bg-gradient-to-r from-cyan-600 via-blue-600 to-indigo-600 hover:from-cyan-700 hover:to-indigo-700 text-white font-bold text-xs gap-1.5 shadow-md shadow-blue-500/25 active:scale-95 transition-all"
+              >
+                <Brain className="h-3.5 w-3.5 animate-pulse" />
+                AI Reasoning & Self-Heal
+              </Button>
 
               <Button
                 variant="default"
@@ -1875,8 +1934,8 @@ const StudentFaceSamplesManager: React.FC = () => {
       {/* Main Studio Dual-Panel Workspace */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
         
-        {/* LEFT COLUMN: Student Navigation List */}
-        <Card className="lg:col-span-4 rounded-3xl border border-border/60 bg-card/70 backdrop-blur-xl shadow-xl overflow-hidden">
+        {/* LEFT COLUMN: Student Navigation List — Liquid Glass Chassis */}
+        <Card className="lg:col-span-4 rounded-3xl liquid-glass-surface shadow-xl overflow-hidden">
           <CardHeader className="p-4 pb-3 border-b border-border/40 space-y-3">
             <div className="relative">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
@@ -2022,8 +2081,8 @@ const StudentFaceSamplesManager: React.FC = () => {
           </CardContent>
         </Card>
 
-        {/* RIGHT COLUMN: Calibration & Face Training Canvas */}
-        <Card className="lg:col-span-8 rounded-3xl border border-border/60 bg-card/70 backdrop-blur-xl shadow-xl overflow-hidden">
+        {/* RIGHT COLUMN: Calibration & Face Training Canvas — Liquid Glass Chassis */}
+        <Card className="lg:col-span-8 rounded-3xl liquid-glass-surface shadow-xl overflow-hidden">
           {selectedGroup ? (
             <div className="divide-y divide-border/40">
               
@@ -2088,6 +2147,16 @@ const StudentFaceSamplesManager: React.FC = () => {
                   >
                     <Brain className={`h-3.5 w-3.5 ${trainingStudent ? 'animate-spin' : ''}`} />
                     {trainingStudent ? 'Calibrating Model...' : `Train from All Photos (${selectedGroup.samples.length})`}
+                  </Button>
+
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => setReasoningModalOpen(true)}
+                    className="rounded-xl border-cyan-500/40 bg-cyan-500/10 hover:bg-cyan-500/20 text-cyan-600 dark:text-cyan-400 text-xs font-bold gap-1.5 shadow-sm active:scale-95 transition-all"
+                  >
+                    <Brain className="h-3.5 w-3.5 text-cyan-500 animate-pulse" />
+                    AI Reasoning
                   </Button>
 
                   <Button
@@ -2465,6 +2534,13 @@ const StudentFaceSamplesManager: React.FC = () => {
         onCompleted={() => fetchSamples({ silent: true })}
       />
 
+      {/* Autonomous AI Reasoning & Self-Healing Modal */}
+      <FaceSampleReasoningModal
+        open={reasoningModalOpen}
+        onOpenChange={setReasoningModalOpen}
+        onHealed={() => fetchSamples({ silent: true })}
+      />
+
       {/* 3D Face Recapture Modal */}
       {(() => {
         const target = recaptureTargetGroup || selectedGroup;
@@ -2711,7 +2787,15 @@ const PhotoCard: React.FC<PhotoCardProps> = ({
               {sample.quality.clarityScore}% Q
             </Badge>
           )}
-          {isUsingFallback && (
+          {sample.isAiReconstructed && (
+            <Badge
+              variant="outline"
+              className="text-[9px] font-bold px-1.5 py-0.5 rounded-md border-cyan-500/30 text-cyan-400 bg-cyan-500/10 flex items-center gap-0.5"
+            >
+              <Brain className="w-2.5 h-2.5" /> AI Restored
+            </Badge>
+          )}
+          {isUsingFallback && !sample.isAiReconstructed && (
             <Badge
               variant="outline"
               className="text-[9px] font-bold px-1.5 py-0.5 rounded-md border-emerald-500/30 text-emerald-500 bg-emerald-500/10"
@@ -2723,7 +2807,13 @@ const PhotoCard: React.FC<PhotoCardProps> = ({
             variant={isSlot ? 'default' : 'secondary'}
             className="text-[10px] font-bold px-2 py-0.5 rounded-full uppercase"
           >
-            {isSlot ? 'Model Slot' : sample.source === 'recognition_gate' ? 'Gate Camera' : 'Attendance'}
+            {isSlot
+              ? 'Model Slot'
+              : sample.source === 'profile_avatar'
+              ? 'Profile Avatar'
+              : sample.source === 'recognition_gate'
+              ? 'Gate Camera'
+              : 'Attendance'}
           </Badge>
         </div>
       </div>

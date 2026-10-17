@@ -3,7 +3,7 @@ import { Toaster } from "@/components/ui/toaster";
 import { Toaster as Sonner } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { BrowserRouter, Routes, Route, useLocation } from "react-router-dom";
+import { BrowserRouter, Routes, Route, Navigate, useLocation } from "react-router-dom";
 import { Helmet, HelmetProvider } from "react-helmet-async";
 import { lazyWithRetry } from "@/lib/lazyWithRetry";
 import RouteFallback from "@/components/RouteFallback";
@@ -25,8 +25,6 @@ const Contact = lazyWithRetry(() => import('./pages/Contact'), 'contact');
 const NotificationDemo = lazyWithRetry(() => import('./pages/NotificationDemo'), 'notification-demo');
 const Profile = lazyWithRetry(() => import('./pages/Profile'), 'profile');
 const Features = lazyWithRetry(() => import('./pages/Features'), 'features');
-const GateMode = lazyWithRetry(() => import('./pages/GateMode'), 'gate-mode');
-const GateVisionMode = lazyWithRetry(() => import('./pages/GateVisionMode'), 'gate-vision-mode');
 const ParentPortal = lazyWithRetry(() => import('./pages/ParentPortal'), 'parent-portal');
 const StudentEnrollment = lazyWithRetry(() => import('./pages/StudentEnrollment'), 'student-enrollment');
 const Unsubscribe = lazyWithRetry(() => import('./pages/Unsubscribe'), 'unsubscribe');
@@ -40,20 +38,22 @@ const Widgets = lazyWithRetry(() => import("./pages/Widgets"), "widgets");
 const SmartBoardMode = lazyWithRetry(() => import("./pages/SmartBoardMode"), "smartboard");
 const GuardScanner = lazyWithRetry(() => import("./pages/GuardScanner"), "guard-scanner");
 const SharedMediaPage = lazyWithRetry(() => import("./pages/SharedMediaPage"), "shared-media-page");
+const DigitalGatePassPage = lazyWithRetry(() => import("./pages/DigitalGatePassPage"), "gate-pass");
+const EmergencySafetyPage = lazyWithRetry(() => import("./pages/EmergencySafetyPage"), "emergency");
 
 import { AttendanceProvider } from './contexts/AttendanceContext';
 import { ThemeProvider } from './hooks/use-theme';
 import { PerformanceModeProvider } from './hooks/usePerformanceMode';
 import SharedMediaGateway from './components/share/SharedMediaGateway';
 
-
-import MobileAppShell from "./components/mobile/MobileAppShell";
+import AndroidAppShell from "./components/mobile/AndroidAppShell";
 import { ProtectedRoute } from './components/ProtectedRoute';
 import PWAInstallPrompt from './components/PWAInstallPrompt';
 import EmergencyAlertListener from './components/EmergencyAlertListener';
 import RealtimeNotificationListener from './components/RealtimeNotificationListener';
 import AppExperienceLayer from './components/AppExperienceLayer';
 import SplashAnimation from './components/SplashAnimation';
+import PageTransition from './components/PageTransition';
 // NOTE: ModelService is imported dynamically inside the prefetch effect below.
 // A static import would pull face-api.js + tfjs into the entry chunk.
 
@@ -63,6 +63,7 @@ import RoyalScrollProvider from './components/RoyalScrollProvider';
 import DesktopSlideProvider from './components/DesktopSlideProvider';
 import GlobalTelemetryTracker from './components/telemetry/GlobalTelemetryTracker';
 import AppUpdateListener from './components/AppUpdateListener';
+import MadeByGauravBadge from './components/MadeByGauravBadge';
 
 
 const queryClient = new QueryClient();
@@ -108,6 +109,16 @@ const ROUTE_SEO: Record<string, { title: string; description: string }> = {
     title: "Parent Portal | Presences",
     description:
       "Check your child's daily attendance, class timetable, and school entry updates.",
+  },
+  "/gate-pass": {
+    title: "Digital Gate Pass | Presences",
+    description:
+      "Tamper-proof dynamic QR gate pass for authorized student campus departure.",
+  },
+  "/emergency": {
+    title: "Campus Emergency HUD | Presences",
+    description:
+      "Real-time institutional emergency broadcast and evacuation wayfinding hub.",
   },
   "/guard": {
     title: "Gate Pass Scanner | Presences",
@@ -241,7 +252,9 @@ function AnimatedRoutes() {
   }, [renderedLocation.pathname]);
 
   const bound = (element: React.ReactNode, title?: string) => (
-    <RouteErrorBoundary pageTitle={title}>{element}</RouteErrorBoundary>
+    <RouteErrorBoundary pageTitle={title}>
+      {element}
+    </RouteErrorBoundary>
   );
 
   return (
@@ -274,27 +287,17 @@ function AnimatedRoutes() {
             {bound(<Attendance />, "Attendance")}
           </ProtectedRoute>
         } />
-        <Route path="/gate" element={
-          <ProtectedRoute requireRoles={["admin", "principal", "teacher"]}>
-            {bound(<GateMode />, "Gate & Campus")}
-          </ProtectedRoute>
-        } />
-        <Route path="/gate/vision" element={
-          <ProtectedRoute requireRoles={["admin", "principal", "teacher"]}>
-            {bound(<GateVisionMode />, "Gate Vision")}
-          </ProtectedRoute>
-        } />
+        <Route path="/gate" element={<Navigate to="/attendance" replace />} />
+        <Route path="/gate/vision" element={<Navigate to="/attendance" replace />} />
+        <Route path="/gate/scanner" element={<Navigate to="/guard" replace />} />
         <Route path="/guard" element={
           <ProtectedRoute requireRoles={["admin", "principal", "teacher", "guard", "security"]}>
             {bound(<GuardScanner />, "Gate Scanner")}
           </ProtectedRoute>
         } />
-        <Route path="/gate/scanner" element={
-          <ProtectedRoute requireRoles={["admin", "principal", "teacher", "guard", "security"]}>
-            {bound(<GuardScanner />, "Gate Scanner")}
-          </ProtectedRoute>
-        } />
         <Route path="/parent" element={bound(<ParentPortal />, "Parent Portal")} />
+        <Route path="/gate-pass" element={bound(<DigitalGatePassPage />, "Digital Gate Pass")} />
+        <Route path="/emergency" element={bound(<EmergencySafetyPage />, "Emergency SOS")} />
         <Route path="/enroll" element={bound(<StudentEnrollment />, "Student Enrollment")} />
         <Route path="/enrollment-monitor" element={
           <ProtectedRoute requireRoles={["admin", "principal", "teacher", "enroller", "student_coordinator"]}>
@@ -469,11 +472,11 @@ function App() {
                   <RoyalScrollProvider>
                     <DesktopSlideProvider>
                       <NotificationPermissionGate>
-                        <MobileAppShell>
+                        <AndroidAppShell>
                           <SeoHead />
                           <LuminaScope />
                           <AppErrorBoundary><AnimatedRoutes /></AppErrorBoundary>
-                        </MobileAppShell>
+                        </AndroidAppShell>
                         {mountNonCritical && (
                           <AppExperienceLayer />
                         )}
@@ -481,6 +484,7 @@ function App() {
                         <EmergencyAlertListener />
                         <RealtimeNotificationListener />
                         <SharedMediaGateway />
+                        <MadeByGauravBadge />
                       </NotificationPermissionGate>
                     </DesktopSlideProvider>
                   </RoyalScrollProvider>

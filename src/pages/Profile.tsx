@@ -13,7 +13,7 @@ import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Badge } from '@/components/ui/badge';
 import { ProgressRing } from '@/components/ui/progress-ring';
-import PageTransition from '@/components/PageTransition';
+import PageTransition, { AnimatedSection } from '@/components/PageTransition';
 import { 
   User, 
   Mail, 
@@ -314,9 +314,10 @@ const Profile = () => {
         <div className="relative mobile-container py-6 sm:py-8">
           {/* Header */}
           <motion.div
-            initial={{ opacity: 0, y: 20 }}
+            initial={{ opacity: 0.90, y: 8 }}
             animate={{ opacity: 1, y: 0 }}
-            transition={{ type: 'spring', stiffness: 400, damping: 30 }}
+            transition={{ type: 'spring', stiffness: 400, damping: 30, mass: 0.8 }}
+            style={{ transform: 'translateZ(0)' }}
             className="text-center mb-6 sm:mb-8"
           >
             <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full nano-glass mb-4 border border-blue-500/20 shadow-xs hardware-layer">
@@ -334,9 +335,10 @@ const Profile = () => {
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 sm:gap-6">
             {/* Profile Card - Mobile Optimized */}
             <motion.div
-              initial={{ opacity: 0, x: -20 }}
-              animate={{ opacity: 1, x: 0 }}
-              transition={{ type: 'spring', stiffness: 420, damping: 32 }}
+              initial={{ opacity: 0.90, y: 8 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ type: 'spring', stiffness: 400, damping: 30, mass: 0.8 }}
+              style={{ transform: 'translateZ(0)' }}
               className="lg:col-span-1"
             >
               <Card className="nano-glass border border-slate-200/80 dark:border-white/10 shadow-lg overflow-hidden hardware-layer rounded-3xl">
@@ -418,19 +420,21 @@ const Profile = () => {
 
             {/* Main Content */}
             <motion.div
-              initial={{ opacity: 0, x: 20 }}
-              animate={{ opacity: 1, x: 0 }}
-              transition={{ delay: 0.2 }}
+              initial={{ opacity: 0.88, y: 8 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ type: 'spring', stiffness: 400, damping: 30, mass: 0.8 }}
               className="lg:col-span-2 space-y-4 sm:space-y-6"
+              style={{ transform: 'translateZ(0)', willChange: 'transform, opacity' }}
             >
               {/* Stats Grid */}
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 sm:gap-4">
                 {statsCards.map((stat, i) => (
                   <motion.div
                     key={i}
-                    initial={{ opacity: 0, y: 20 }}
+                    initial={{ opacity: 0.90, y: 8 }}
                     animate={{ opacity: 1, y: 0 }}
-                    transition={{ delay: 0.1 * i }}
+                    transition={{ type: 'spring', stiffness: 400, damping: 30, delay: 0.04 * i }}
+                    style={{ transform: 'translateZ(0)' }}
                     whileHover={{ y: -3 }}
                     className={`p-3 sm:p-4 rounded-xl bg-gradient-to-br ${stat.color} shadow-lg`}
                   >
@@ -463,7 +467,8 @@ const Profile = () => {
                 </TabsList>
 
                 <TabsContent value="details">
-                  <Card className="bg-white/70 dark:bg-slate-900/70 backdrop-blur-xl border border-blue-100 dark:border-blue-900/50 shadow-xl">
+                  <AnimatedSection>
+                    <Card className="bg-white/70 dark:bg-slate-900/70 backdrop-blur-xl border border-blue-100 dark:border-blue-900/50 shadow-xl">
                         <CardHeader className="pb-4">
                           <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-3">
                             <CardTitle className="flex items-center gap-2 text-base sm:text-lg">
@@ -551,18 +556,22 @@ const Profile = () => {
                           </div>
                         </CardContent>
                       </Card>
-                  </TabsContent>
+                  </AnimatedSection>
+                </TabsContent>
 
                   <TabsContent value="face">
+                    <AnimatedSection>
                       {user && (
                         <FaceReRegistration 
                           userId={user.id} 
                           userName={profile?.display_name || user.email || 'User'} 
                         />
                       )}
+                    </AnimatedSection>
                   </TabsContent>
 
                   <TabsContent value="insights">
+                    <AnimatedSection>
                       <Card className="bg-white/70 dark:bg-slate-900/70 backdrop-blur-xl border border-blue-100 dark:border-blue-900/50 shadow-xl">
                         <CardHeader className="pb-4">
                           <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-3">
@@ -621,14 +630,16 @@ const Profile = () => {
                           )}
                         </CardContent>
                       </Card>
+                    </AnimatedSection>
                   </TabsContent>
 
                   <TabsContent value="notifications" className="space-y-4">
+                    <AnimatedSection>
                       {/* Push Notification Settings */}
                       <PushNotificationSettings className="bg-white/70 dark:bg-slate-900/70 backdrop-blur-xl border border-blue-100 dark:border-blue-900/50 shadow-xl" />
 
                       {/* WhatsApp Test */}
-                      <Card className="bg-white/70 dark:bg-slate-900/70 backdrop-blur-xl border border-blue-100 dark:border-blue-900/50 shadow-xl">
+                      <Card className="bg-white/70 dark:bg-slate-900/70 backdrop-blur-xl border border-blue-100 dark:border-blue-900/50 shadow-xl mt-4">
                         <CardHeader className="pb-4">
                           <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-3">
                             <div>
@@ -679,7 +690,7 @@ const Profile = () => {
                       </Card>
                       
                       {/* Notification History */}
-                      <Card className="bg-white/70 dark:bg-slate-900/70 backdrop-blur-xl border border-blue-100 dark:border-blue-900/50 shadow-xl">
+                      <Card className="bg-white/70 dark:bg-slate-900/70 backdrop-blur-xl border border-blue-100 dark:border-blue-900/50 shadow-xl mt-4">
                         <CardHeader className="pb-4">
                           <CardTitle className="flex items-center gap-2 text-base sm:text-lg">
                             <div className="w-8 h-8 sm:w-10 sm:h-10 rounded-lg bg-gradient-to-br from-orange-500 to-red-500 flex items-center justify-center">
@@ -719,6 +730,7 @@ const Profile = () => {
                           )}
                         </CardContent>
                       </Card>
+                    </AnimatedSection>
                   </TabsContent>
               </Tabs>
 

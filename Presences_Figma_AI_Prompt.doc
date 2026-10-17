@@ -1,0 +1,290 @@
+<!DOCTYPE html>
+<html xmlns:o='urn:schemas-microsoft-com:office:office' xmlns:w='urn:schemas-microsoft-com:office:word' xmlns='http://www.w3.org/TR/REC-html40'>
+<head>
+<meta charset='utf-8'>
+<title>Presences - Figma AI Master Prompt</title>
+<style>
+  body {
+    font-family: 'Segoe UI', -apple-system, BlinkMacSystemFont, Arial, sans-serif;
+    color: #1e293b;
+    line-height: 1.6;
+    margin: 40px;
+    background-color: #ffffff;
+  }
+  h1 {
+    color: #0284c7;
+    font-size: 24pt;
+    border-bottom: 2px solid #0284c7;
+    padding-bottom: 8px;
+    margin-bottom: 16px;
+  }
+  h2 {
+    color: #0f172a;
+    font-size: 16pt;
+    background-color: #f1f5f9;
+    padding: 8px 12px;
+    border-left: 5px solid #0284c7;
+    margin-top: 24px;
+    margin-bottom: 12px;
+  }
+  h3 {
+    color: #334155;
+    font-size: 13pt;
+    margin-top: 18px;
+    margin-bottom: 6px;
+    border-bottom: 1px dashed #cbd5e1;
+    padding-bottom: 4px;
+  }
+  pre {
+    background-color: #0f172a;
+    color: #f8fafc;
+    padding: 18px;
+    border-radius: 8px;
+    font-family: 'Consolas', 'Courier New', monospace;
+    font-size: 10pt;
+    white-space: pre-wrap;
+    word-break: break-word;
+    border: 1px solid #334155;
+  }
+  .meta-tag {
+    display: inline-block;
+    background-color: #e0f2fe;
+    color: #0369a1;
+    padding: 4px 10px;
+    border-radius: 4px;
+    font-weight: 600;
+    font-size: 10pt;
+    margin-bottom: 16px;
+  }
+</style>
+</head>
+<body>
+  <h1>PRESENCES — FIGMA AI MASTER PROMPT</h1>
+  <div class="meta-tag">Total Word Count: 1,983 Words (Optimized for 2,000 Word Limit) | iOS Nano-Textured Liquid Glass</div>
+  <p>Below is the complete, full-stack prompt engineered for Figma AI (Make Designs / First Draft) to generate the entire Presences mobile application ecosystem across all 8 core screens.</p>
+  <pre># MASTER FIGMA AI PROMPT: PRESENCES (iOS MOBILE APPLICATION)
+# THEME: NANO-TEXTURED MATTE GLASS &amp; LIQUID GLASS (APPLE VISIONOS + iOS 18 HIG)
+
+--------------------------------------------------------------------------------
+PART 1: EXECUTIVE BRIEF &amp; APP ARCHITECTURE
+--------------------------------------------------------------------------------
+
+Design an enterprise iOS app for "Presences" — a smart campus attendance, gate monitoring, and student safety ecosystem using touchless facial recognition.
+
+Presences replaces manual registers, fingerprint scanners, paper logs, and gate slips with a unified real-time spatial platform.
+
+User roles supported:
+1. Students: Touchless check-in, live timetable, punctuality streak, digital ID, and attendance history.
+2. Faculty: Classroom attendance kiosk, rosters, roll-call override, absence alerts, and parent messaging.
+3. Gate Security: Continuous camera scanner, stranger detection, QR pass scanning, and uniform compliance checks.
+4. Parents: Real-time gate logs with camera snapshots, live timetable, leave requests, and emergency gate passes.
+5. Administrators: Database integrity, department analytics, anti-proxy audits, report exports (PDF/Excel), and emergency broadcast.
+
+The UI focuses on clarity, spatial depth, biometric telemetry, and campus safety.
+
+--------------------------------------------------------------------------------
+PART 2: DESIGN SYSTEM: NANO-TEXTURED LIQUID GLASS (iOS HIG &amp; VISIONOS)
+--------------------------------------------------------------------------------
+
+1. Optical Materiality &amp; Glass Physics:
+- Nano-Textured Glass: Panels and cards use frosted nano-glass, diffusing reflections without glare.
+  * Backdrop Blur: 40px to 60px Gaussian blur.
+  * Surface Fill: Semi-translucent obsidian base (rgba(15, 23, 42, 0.65) to rgba(30, 41, 59, 0.45)).
+  * Nano-Grain Etching: Subtle 4% monochrome procedural grain overlay in Soft Light blend mode.
+- Liquid Glass Accents: Primary containers, hero cards, and capsules use liquid glass physics.
+  * Squircle Geometry: 28px–32px corner radius on cards, 40px on capsules, with Apple 60% curvature smoothing.
+  * Specular Refractive Rims: 1.25px inner border as a 135-degree linear gradient: top-left ambient highlight (rgba(255, 255, 255, 0.55)), flowing into faint sky cyan caustics along the waist (rgba(56, 189, 248, 0.30)), tapering to deep slate (rgba(255, 255, 255, 0.05)) at bottom-right.
+  * Chromatic Caustics: Radial backlights cast luminous halos through frosted layers.
+
+2. Color Tokens:
+- Canvas: Pure OLED #07090E canvas with midnight environmental tones (#0B0F19, #0F172A).
+- Atmospheric Liquid Nebulas:
+  * Electric Sapphire: #1D4ED8 (ambient depth)
+  * Luminous Sky Cyan: #0EA5E9 and #38BDF8 (primary interactive focus)
+  * Bio-Verified Emerald: #10B981 (biometric match, punctuality, active presence)
+  * Solar Warning Amber: #F59E0B (tardiness, pending verification, uniform alert)
+  * High-Urgency Crimson: #EF4444 (stranger alert, security breach, emergency SOS)
+- Typography Colors:
+  * Headers &amp; Key Data: Pure Frost White (#F8FAFC)
+  * Secondary Labels: Muted Titanium Silver (#94A3B8)
+  * Tertiary Details &amp; Outlines: Deep Slate (#334155)
+
+3. Spatial Typography &amp; System Rhythms:
+- Primary Fonts: Apple SF Pro Display for hero numbers; SF Pro Text for UI labels.
+- Tabular Monospaced Numbers: SF Pro Rounded / Monospaced figures for timestamps, percentages, and confidence scores.
+- Grid &amp; Spacing Scale: 8pt baseline grid (8px, 16px, 24px, 32px), with 16px screen margin padding and 12px card spacing gaps.
+
+--------------------------------------------------------------------------------
+PART 3: COMPREHENSIVE SCREEN SPECIFICATIONS
+--------------------------------------------------------------------------------
+
+--------------------------------------------------------------------------------
+SCREEN 1: ONBOARDING &amp; 3D BIOMETRIC FACIAL MESH ENROLLMENT
+--------------------------------------------------------------------------------
+- Viewport: Apple iPhone 16 Pro frame (393 x 852 px).
+- Header: Frosted glass nav bar with back chevron, campus crest, and stepper: "Step 2 of 3: Biometric Mapping".
+- Central Biometric Capture Viewport:
+  * Squircle-shaped liquid glass camera viewport centered on screen.
+  * Front camera stream with iridescent cyan/emerald 3D facial mesh mapping 128 landmarks in real time.
+  * Calibration Ring: Segmented ring around face that illuminates in emerald as user turns head (Center, Left, Right, Up).
+  * Telemetry Badge: Floating nano-glass pill: "Optimal Lighting Verified — Distance: 45cm — Hold Still".
+- Identity Confirmation Card:
+  * Frosted nano-glass card anchored below camera.
+  * Fields: Name ("Jordan Hayes"), ID ("#STU-2026-8819"), Dept ("Computer Science"), Year ("Junior — 2026").
+- Bottom Action Zone:
+  * Primary Action: High-sheen liquid glass button with azure gradient (#0EA5E9 to #2563EB) and specular rim: "Complete Biometric Encryption".
+  * Security Notice: Micro-label with lock: "Biometric vectors encrypted locally via AES-256 GCM. Raw photos never stored."
+
+--------------------------------------------------------------------------------
+SCREEN 2: STUDENT &amp; STAFF UNIFIED HOME DASHBOARD
+--------------------------------------------------------------------------------
+- Top App Bar:
+  * Left: Portrait with active emerald beacon and greeting ("Good Morning, Jordan").
+  * Center: Institution badge ("Apex Institute of Technology").
+  * Right: Nano-glass bell with unread badge (2 gate alerts).
+- Hero Card — Today’s Live Attendance Telemetry:
+  * Multi-layered liquid glass card with emerald caustic backlight.
+  * Status Row: Pulsing emerald beacon with "PRESENT &amp; VERIFIED".
+  * Sub-Metrics: "Checked In: 08:32 AM via North Pedestrian Gate 02".
+  * Punctuality Dial: Segmented progress ring displaying "98.2% Punctuality Streak" (+1.4% this month).
+- Quick-Access Glass Action Grid:
+  * Four square nano-textured glass tiles with subtle refraction: "Digital Gate Pass", "Leave Request", "Live Timetable", and "Attendance History".
+- Today’s Academic Schedule Stepper:
+  * Vertical frosted nano-glass timeline container:
+    * Period 1 (09:00 - 10:15 AM): Distributed Systems — Hall B — Prof. Vance — Marked Present (Green pill).
+    * Period 2 (10:30 - 11:45 AM): Deep Learning Lab — Lab 04 — Active Period (Pulsing blue liquid glass pill).
+    * Period 3 (12:00 - 01:15 PM): Computer Graphics — Room 302 — Scheduled (Muted slate pill).
+- Bottom Navigation Dock:
+  * Floating liquid glass dock: Home (active), Scanner HUD, Gate Pass, Analytics, and Profile.
+
+--------------------------------------------------------------------------------
+SCREEN 3: LIVE CAMERA ATTENDANCE HUD (GATE VISION &amp; CLASSROOM KIOSK)
+--------------------------------------------------------------------------------
+- Viewport: Full-bleed camera stream in touchless multi-subject detection mode.
+- Top Dynamic Island Banner:
+  * Black glass island showing live throughput: "Terminal 01: 64 Students Checked In Today | Stream Active".
+- Real-Time Facial Recognition HUD Overlay:
+  * Reticle 1 (Recognized Student): Rounded green neon bracket locked onto face with HUD tag: "Jordan Hayes (ID #8819) — Match: 99.8% — Attendance Logged (08:34:12)".
+  * Reticle 2 (Uniform Compliance Flag): Amber neon bracket tracking student with tag: "Liam Chen — Late Entry (+18m) — Uniform Alert: Missing ID Badge".
+  * Reticle 3 (Unregistered Person): Pulsing crimson bracket tracking unverified person with urgent tag: "UNKNOWN VISITOR — No Biometric Match — Flagged to Security".
+- Bottom Camera Controls Bar:
+  * Translucent liquid glass capsule containing:
+    * Switch Camera lens button (Wide / Telephoto).
+    * Flashlight / Infrared toggle button.
+    * "Manual Roster Override" button for faculty roll-call verification.
+    * Offline Cache Status: Emerald pill reading "Offline Local Engine Active (Syncs to Cloud on Reconnect)".
+
+--------------------------------------------------------------------------------
+SCREEN 4: PARENT PORTAL &amp; REAL-TIME CAMPUS SAFETY MONITOR
+--------------------------------------------------------------------------------
+- Child Profile Selector Bar:
+  * Floating glass dropdown pill with child photo, name ("Leo Hayes — Grade 11-A"), and campus badge ("In Science Lab 2").
+- Safety Metric Overview:
+  * Three horizontal nano-textured glass stat tiles: "Entered 08:14 AM via East Gate", "100% Present Across 4 Lectures", and "Expected Dismissal: 03:30 PM".
+- Live Visual Gate Activity Timeline:
+  * Vertical feed of photographic verification cards:
+    * Card 1 (08:14:22 AM): Gate camera snapshot of child passing scanner, terminal badge ("Gate A"), and guard stamp ("Officer Miller").
+    * Card 2 (11:45:00 AM): Class transition log ("Entered Chemistry Lab — Verified by Room Kiosk").
+    * Card 3 (Pending 03:30 PM): Anticipated gate departure countdown.
+- Immediate Action Glass Bar:
+  * Liquid glass buttons: "Request Emergency Gate Pass" and "Submit Absence / Medical Slip".
+- Direct Faculty Contact Tile:
+  * Frosted glass card with one-touch encrypted call and messaging to class teacher.
+
+--------------------------------------------------------------------------------
+SCREEN 5: DIGITAL HOLOGRAPHIC ANTI-COUNTERFEIT QR GATE PASS
+--------------------------------------------------------------------------------
+- Hero Element — Holographic Liquid Glass Pass Card:
+  * Apple Wallet-inspired pass with iridescent foil glass reflecting ambient light.
+  * Header: Embossed institutional crest, text "APEX INSTITUTE OF TECHNOLOGY — OFFICIAL DIGITAL GATE PASS".
+  * Student ID: Biometric portrait photo with holographic border, student name, roll number, and blood group.
+  * Authorization Badge: Amber liquid glass pill badge: "EARLY MEDICAL DISMISSAL".
+  * Validity Window: "Valid Today Only: 01:30 PM to 02:15 PM".
+- Dynamic Anti-Screenshot Rolling Security QR Code:
+  * High-density QR code inside inner frosted nano-glass housing.
+  * Perimeter Countdown Ring: Animated cyan ring cycling every 30 seconds as QR hash refreshes to prevent screenshots or proxy passes.
+  * Verified Watermark: Security watermark: "Authorized by Dean of Students — Token #GP-99428-X".
+- Security Instruction Plate:
+  * Nano-glass card below pass: "Present dynamic code to gate turnstile laser or guard scanner. Static screenshots are rejected."
+
+--------------------------------------------------------------------------------
+SCREEN 6: GATE SECURITY GUARD HIGH-SPEED VERIFICATION TERMINAL
+--------------------------------------------------------------------------------
+- Mode Selector:
+  * Dual-segment liquid glass toggle: "Biometric Gate Stream" | "QR Scanner Mode".
+- Live Verification Card (Pop-up Overlay):
+  * Triggered automatically upon student approach or QR scan:
+    * High-contrast split: Left shows camera snapshot; Right shows enrolled biometric photo.
+    * Verification Verdict: Emerald liquid glass banner: "ACCESS GRANTED — EXIT PASS VERIFIED".
+    * Student Details: "Jordan Hayes | Class 12-B | Reason: Medical Appointment | Parent Phone Verified".
+    * Guard Action Buttons: Green "Log Exit" button and red "Hold &amp; Inspect" button.
+- Real-Time Stranger Alert Panel:
+  * Persistent card anchored at bottom with pulsing crimson glow: "STRANGER DETECTED AT PERIMETER GATE 03 — Unenrolled visitor without badge. Tap to alert patrol."
+
+--------------------------------------------------------------------------------
+SCREEN 7: INSTITUTIONAL EMERGENCY BROADCAST &amp; EVACUATION HUD
+--------------------------------------------------------------------------------
+- Atmospheric Override:
+  * Dark obsidian canvas with pulsating crimson (#EF4444) and amber (#F59E0B) ambient liquid glass glow.
+- Urgent Broadcast Header:
+  * Hazard glyph and headline: "CAMPUS EMERGENCY ALERT — LEVEL 2 IMMEDIATE EVACUATION".
+  * Sub-text: "Triggered by Central Safety Operations (10:42 AM) — Incident: Fire Alarm Sector C".
+- Primary Life-Safety Action Button:
+  * Radiant emerald liquid button with pulsing aura: "I AM SAFE AT DESIGNATED ASSEMBLY POINT", logging GPS and biometric confirmation.
+- Live Campus Safety Roll-Call Card:
+  * Frosted glass card with live counts: "2,148 Confirmed Safe", "34 Unaccounted For", and "First Responders Dispatched".
+- Interactive Evacuation Wayfinding Map:
+  * Translucent schematic map highlighting current room and glowing green path to "Assembly Point Beta".
+  * Safety rules: "Do not use elevators. Leave belongings. Proceed calmly to Sector B."
+- Emergency Hotlink Dock:
+  * Floating glass capsule with one-tap calling to Campus Security, Medical, and Fire Marshall.
+
+--------------------------------------------------------------------------------
+SCREEN 8: ADMINISTRATIVE ANALYTICS &amp; BIOMETRIC HEALTH HUB
+--------------------------------------------------------------------------------
+- Executive KPI Metric Row:
+  * Four nano-glass metric cards: "95.6% Daily Attendance", "100% Anti-Spoof Success", "2,842 on Campus", and "99.4% Biometrics Synced".
+- Departmental Attendance Comparison Chart:
+  * Frosted nano-glass card with multi-bar chart comparing department attendance with interactive glass tooltips.
+- Automated Low-Attendance Flag List:
+  * Scrollable glass roster listing students below 75% threshold, with quick actions to dispatch SMS notices to parents.
+- System Administration &amp; Compliance Export:
+  * Utility glass bar: "Export Government PDF Report", "Sync Edge Gate Terminals", and "Audit Biometric Liveness Logs".
+
+--------------------------------------------------------------------------------
+PART 4: FIGMA COMPONENT TOKENS &amp; IMPLEMENTATION SPECIFICATIONS
+--------------------------------------------------------------------------------
+
+Component tokens:
+
+1. Liquid Glass Card Tokens:
+- Fill Layer 1: Linear Gradient (135°), rgba(255, 255, 255, 0.08) at 0% to rgba(255, 255, 255, 0.02) at 100%.
+- Fill Layer 2: Solid Tint, rgba(15, 23, 42, 0.65).
+- Inner Stroke: 1.25px Inside, Linear Gradient (135°), rgba(255, 255, 255, 0.50) top-left fading to rgba(255, 255, 255, 0.05) bottom-right.
+- Effects:
+  * Backdrop Blur: 48px.
+  * Drop Shadow: X: 0, Y: 16, Blur: 36, Spread: -4, Color: rgba(0, 0, 0, 0.50).
+  * Inner Shadow: X: 0, Y: 1, Blur: 2, Color: rgba(255, 255, 255, 0.20).
+
+2. Floating Glass Pill Navigation Bar:
+- Dimensions: 345px width x 68px height, Corner Radius: 38px.
+- Background Fill: rgba(15, 23, 42, 0.75).
+- Backdrop Blur: 60px.
+- Stroke: 1.5px rgba(255, 255, 255, 0.22).
+- Drop Shadow: X: 0, Y: 20, Blur: 40, Color: rgba(0, 0, 0, 0.60).
+- Active Pill Item: Background rgba(14, 165, 233, 0.18) with 1px stroke rgba(56, 189, 248, 0.55).
+
+3. Nano-Texture Matte Overlay:
+- Add a 100% width/height rectangle over glass containers with a subtle seamless monochrome noise pattern at 4% opacity in Soft Light blend mode.
+
+4. Layout Framework:
+- Frame Format: Apple iPhone 16 Pro (393 x 852 px).
+- Auto-Layout: Enabled on all containers with 8px/12px/16px padding intervals.
+- Layer Hierarchy: Strict naming convention: `[Screen-Name] / [Section] / [Glass-Card-Type] / [Content-Element]`.
+
+--------------------------------------------------------------------------------
+EXECUTION INSTRUCTION FOR FIGMA AI:
+Generate all 8 connected screens as a cohesive iOS app in dark mode with nano-textured glass physics, squircle corners, specular edge lighting, and full Presences features.
+</pre>
+</body>
+</html>

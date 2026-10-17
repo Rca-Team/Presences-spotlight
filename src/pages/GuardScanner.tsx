@@ -486,7 +486,7 @@ export const GuardScanner: React.FC = () => {
       </header>
 
       {/* Main Security Stage */}
-      <div className="flex-1 p-3 sm:p-5 max-w-5xl mx-auto w-full grid grid-cols-1 lg:grid-cols-12 gap-4">
+      <div className="flex-1 p-3 sm:p-5 max-w-5xl mx-auto w-full grid grid-cols-1 lg:grid-cols-12 gap-4 animate-element-coming">
         {/* Left Side: Scanner & Search Viewport (7 Cols) */}
         <div className="lg:col-span-7 space-y-3 flex flex-col">
           {/* Navigation Mode Switcher */}
@@ -528,7 +528,7 @@ export const GuardScanner: React.FC = () => {
 
           {/* TAB 1: CAMERA SCANNER */}
           {activeTab === 'camera' && (
-            <Card className="border-slate-800 bg-slate-900/80 overflow-hidden rounded-3xl relative flex-1 min-h-[360px] flex flex-col justify-center shadow-2xl">
+            <Card className="border-slate-800 bg-slate-900/80 overflow-hidden rounded-3xl relative flex-1 min-h-[360px] flex flex-col justify-center shadow-2xl animate-element-coming">
               <div className="relative w-full h-[360px] sm:h-[420px] bg-black flex items-center justify-center overflow-hidden">
                 <video
                   ref={videoRef}
@@ -616,7 +616,7 @@ export const GuardScanner: React.FC = () => {
 
           {/* TAB 2: MANUAL SEARCH */}
           {activeTab === 'search' && (
-            <Card className="border-slate-800 bg-slate-900/80 rounded-3xl p-4 space-y-3 flex-1">
+            <Card className="border-slate-800 bg-slate-900/80 rounded-3xl p-4 space-y-3 flex-1 animate-element-coming">
               <div className="relative">
                 <Search className="h-4 w-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
                 <Input
@@ -684,7 +684,7 @@ export const GuardScanner: React.FC = () => {
 
           {/* TAB 3: GATE DEPARTURE LOG */}
           {activeTab === 'log' && (
-            <Card className="border-slate-800 bg-slate-900/80 rounded-3xl p-4 space-y-3 flex-1">
+            <Card className="border-slate-800 bg-slate-900/80 rounded-3xl p-4 space-y-3 flex-1 animate-element-coming">
               <div className="flex items-center justify-between">
                 <h3 className="text-xs font-bold text-slate-300 flex items-center gap-1.5">
                   <CheckCircle2 className="h-4 w-4 text-emerald-400" /> Today's Gate Exit Log

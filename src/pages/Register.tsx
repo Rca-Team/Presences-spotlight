@@ -673,7 +673,7 @@ const Register = () => {
               </div>
             </div>
             <div className="space-y-6">
-              <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.2 }}>
+              <motion.div initial={{ opacity: 0.90, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ type: 'spring', stiffness: 400, damping: 30 }}>
                 <span className="px-3 py-1 rounded-full bg-white/10 text-xs font-medium backdrop-blur-sm border border-white/10">
                   Student Registration
                 </span>
@@ -688,7 +688,7 @@ const Register = () => {
                   { icon: Shield, text: "Safe, secure student photo storage" },
                   { icon: Users, text: "Automatic daily attendance marking" }
                 ].map((item, i) => (
-                  <motion.div key={i} initial={{ opacity: 0, x: -20 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: i * 0.15 }}
+                  <motion.div key={i} initial={{ opacity: 0.90, x: -8 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: i * 0.05 }}
                     className="flex items-center gap-3 text-white/90">
                     <div className="w-10 h-10 rounded-xl bg-white/10 flex items-center justify-center backdrop-blur-sm border border-white/10">
                       <item.icon className="w-5 h-5 text-blue-300" />
@@ -711,10 +711,10 @@ const Register = () => {
             </span>
           </div>
           <div className="flex-1 flex flex-col justify-center px-4 sm:px-8 lg:px-12 xl:px-16 py-8">
-            <div className="w-full max-w-lg mx-auto">
+            <div className="w-full max-w-lg mx-auto animate-element-coming">
               {returnUrl && (
                 <motion.div
-                  initial={{ opacity: 0, y: -10 }}
+                  initial={{ opacity: 0.90, y: -6 }}
                   animate={{ opacity: 1, y: 0 }}
                   className="mb-6 p-3.5 rounded-2xl bg-blue-500/10 border border-blue-500/25 flex items-center justify-between gap-3 shadow-xs"
                 >
@@ -738,7 +738,7 @@ const Register = () => {
                 </motion.div>
               )}
 
-              <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ type: 'spring', stiffness: 400, damping: 30 }} className="mb-8">
+              <motion.div initial={{ opacity: 0.90, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ type: 'spring', stiffness: 400, damping: 30 }} className="mb-8">
                 <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full nano-glass mb-4 border border-emerald-500/25 bg-emerald-500/10 hardware-layer shadow-xs">
                   <Sparkles className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
                   <span className="text-xs font-bold uppercase tracking-wider text-emerald-700 dark:text-emerald-300">Open Student Enrollment · All Users</span>
@@ -750,7 +750,7 @@ const Register = () => {
               {/* Bulk Class PDF ID Card Import (Teachers & Admins Only) */}
               {canBulkImport && (
                 <motion.div
-                  initial={{ opacity: 0, y: 10 }}
+                  initial={{ opacity: 0.90, y: 8 }}
                   animate={{ opacity: 1, y: 0 }}
                   className="mb-6 p-4 rounded-2xl bg-gradient-to-r from-blue-600/10 via-indigo-600/10 to-purple-600/10 border border-blue-500/30 flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-xs"
                 >
@@ -983,7 +983,7 @@ const Register = () => {
               <form onSubmit={handleSubmit}>
                 <AnimatePresence mode="wait">
                   {registrationStep === 1 ? (
-                    <motion.div key="step1" initial={{ opacity: 0, x: -20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: 20 }} transition={{ duration: 0.3 }} className="space-y-5">
+                    <motion.div key="step1" initial={{ opacity: 0.88, x: -8 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0.88, x: 8 }} transition={{ type: 'spring', stiffness: 400, damping: 30 }} style={{ transform: 'translateZ(0)' }} className="space-y-5">
                       <IDCardAutoFillScanner
                         onExtracted={(f: IDCardExtractedFields) => {
                           setFormData((prev) => ({
@@ -1133,7 +1133,7 @@ const Register = () => {
                       </Button>
                     </motion.div>
                   ) : (
-                    <motion.div key="step2" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }} transition={{ duration: 0.3 }} className="space-y-6">
+                    <motion.div key="step2" initial={{ opacity: 0.88, x: 8 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0.88, x: -8 }} transition={{ type: 'spring', stiffness: 400, damping: 30 }} style={{ transform: 'translateZ(0)' }} className="space-y-6">
                       <div className="relative rounded-2xl overflow-hidden bg-gradient-to-br from-blue-600 to-blue-500 p-1 shadow-xl shadow-blue-500/20">
                         <div className="bg-background rounded-xl overflow-hidden">
                           <div className="p-4 bg-gradient-to-r from-emerald-600 via-teal-600 to-cyan-600">

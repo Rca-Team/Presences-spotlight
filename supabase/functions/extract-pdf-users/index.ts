@@ -15,7 +15,7 @@ Deno.serve(async request => {
     const jwt = request.headers.get('x-appwrite-user-jwt');
     if (!jwt) return json({ error: 'Sign in with your school account.' }, 401);
     const endpoint = Deno.env.get('APPWRITE_ENDPOINT') || 'https://sgp.cloud.appwrite.io/v1';
-    const project = Deno.env.get('APPWRITE_PROJECT_ID') || '6accbd5d00053c5c1ac2';
+    const project = Deno.env.get('APPWRITE_PROJECT_ID') || '6ad309e200176195d398';
     const auth = await fetch(`${endpoint.replace(/\/$/, '')}/account`, {
       headers: { 'x-appwrite-project': project, 'x-appwrite-jwt': jwt },
       signal: AbortSignal.timeout(10000),

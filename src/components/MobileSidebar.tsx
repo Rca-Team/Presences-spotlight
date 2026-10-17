@@ -113,7 +113,6 @@ const MobileSidebar = () => {
       { name: 'Profile', path: '/profile', icon: User, show: !!user },
       { name: 'Register', path: '/register', icon: UserPlus, show: true },
       { name: 'Attendance', path: '/attendance', icon: Clock, show: true },
-      { name: 'Gate Mode', path: '/gate', icon: Scan, show: isAdminOrPrincipal || isTeacher },
       {
         name: isTeacher && !isAdminOrPrincipal ? 'Teacher' : 'Admin',
         path: '/admin',

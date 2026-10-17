@@ -65,6 +65,7 @@ import {
   ShieldCheck,
   Cpu,
   UserPlus,
+  QrCode,
 } from 'lucide-react';
 
 const cardTilt = {
@@ -97,7 +98,7 @@ const Index = () => {
   const modules = [
     { icon: Scan, label: 'Attendance', tone: 'bg-primary/20 text-primary', to: '/attendance' },
     { icon: BookOpen, label: 'Timetable', tone: 'bg-accent/30 text-accent-foreground', to: '/admin?tab=timetable' },
-    { icon: Shield, label: 'Gate Passes', tone: 'bg-warning/20 text-warning-foreground', to: '/gate' },
+    { icon: Shield, label: 'Gate Passes', tone: 'bg-warning/20 text-warning-foreground', to: '/gate-pass' },
     { icon: Bell, label: 'Alerts', tone: 'bg-success/20 text-success', to: '/admin?tab=emergency' },
     { icon: BarChart3, label: 'Reports', tone: 'bg-primary/20 text-primary', to: '/admin?tab=reports' },
     { icon: UserPlus, label: 'Add Student', tone: 'bg-emerald-500/20 text-emerald-600 dark:text-emerald-400', to: '/register' },
@@ -576,13 +577,13 @@ const Index = () => {
 
                   {/* Row 2: Gate Kiosk, Timetable & Theme Toggle */}
                   <div className="flex flex-wrap items-center gap-3">
-                    <Link to="/gate">
+                    <Link to="/gate-pass">
                       <Button
                         variant="outline"
                         className="h-12 sm:h-13 rounded-full border border-slate-300/80 dark:border-slate-700/80 bg-white/80 dark:bg-slate-900/60 px-6 text-sm sm:text-base font-semibold text-slate-900 dark:text-white hover:bg-slate-100 dark:hover:bg-slate-800/80 backdrop-blur-md transition-all duration-200 btn-spring gap-2 active:scale-95"
                       >
-                        <DoorOpen className="w-4 h-4 text-fuchsia-500 dark:text-fuchsia-400" />
-                        <span>Gate & Campus</span>
+                        <QrCode className="w-4 h-4 text-fuchsia-500 dark:text-fuchsia-400" />
+                        <span>Digital Gate Pass</span>
                       </Button>
                     </Link>
                     <Link to="/admin?tab=timetable">
@@ -1475,7 +1476,7 @@ const Index = () => {
         ))}
 
         {/* ========================================================================= */}
-        {/* CAMPUS & MEDIA GALLERY (Bento, Grid, and Cinematic Carousel)              */}
+        {/* CAMPUS & MEDIA GALLERY (Bento, Grid, and Liquid Glass Showcase)            */}
         {/* ========================================================================= */}
         {(portfolio.settings?.showGalleryOnHome !== false) && portfolio.gallery.length > 0 && (
           <RoyalReveal effect="fade-up" className="pb-14 min-w-0">

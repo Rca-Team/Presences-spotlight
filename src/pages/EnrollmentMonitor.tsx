@@ -89,6 +89,10 @@ import {
 } from '@/services/enrollment/monitor';
 import { ClassPDFIDCardImporter, type ExtractedStudentCard } from '@/components/register/ClassPDFIDCardImporter';
 import { enrollmentApi } from '@/services/enrollment/api';
+import {
+  deleteSingleFacePhoto,
+  deleteAllStudentFacePhotos,
+} from '@/services/enrollment/photoDeletionService';
 import '@/components/enrollment/enrollment.css';
 
 const StudentStoredFaceAssets = lazy(() => import('@/components/enrollment/StudentStoredFaceAssets'));
@@ -408,6 +412,10 @@ function StudentDetailSheet({
   const { toast } = useToast();
   const [editing, setEditing] = useState(false);
   const [savingEdit, setSavingEdit] = useState(false);
+  const [localSamples, setLocalSamples] = useState<MonitorSample[]>(student?.samples || []);
+  const [sampleToDelete, setSampleToDelete] = useState<MonitorSample | null>(null);
+  const [confirmDeleteAllSamples, setConfirmDeleteAllSamples] = useState(false);
+  const [isDeletingSample, setIsDeletingSample] = useState(false);
   const [form, setForm] = useState({
     name: '',
     class: '',
@@ -426,6 +434,7 @@ function StudentDetailSheet({
   useEffect(() => {
     if (student) {
       setEditing(false);
+      setLocalSamples(student.samples || []);
       setForm({
         name: student.name || '',
         class: student.class || '',
@@ -442,6 +451,56 @@ function StudentDetailSheet({
       });
     }
   }, [student]);
+
+  const handleDeleteSample = async (sample: MonitorSample) => {
+    if (!student) return;
+    setIsDeletingSample(true);
+    try {
+      await deleteSingleFacePhoto({
+        student,
+        photoUrl: sample.imageUrl,
+        fileId: sample.fileId,
+      });
+      setLocalSamples((prev) => prev.filter((s) => s.fileId !== sample.fileId));
+      toast({
+        title: 'Photo Deleted',
+        description: `${sample.pose} face photo removed successfully.`,
+      });
+      setSampleToDelete(null);
+      onChanged();
+    } catch (err: any) {
+      toast({
+        title: 'Delete Failed',
+        description: err?.message || 'Could not delete sample photo.',
+        variant: 'destructive',
+      });
+    } finally {
+      setIsDeletingSample(false);
+    }
+  };
+
+  const handleDeleteAllSamples = async () => {
+    if (!student) return;
+    setIsDeletingSample(true);
+    try {
+      await deleteAllStudentFacePhotos(student);
+      setLocalSamples([]);
+      toast({
+        title: 'All Photos Removed',
+        description: `All face enrollment photos removed for ${student.name}.`,
+      });
+      setConfirmDeleteAllSamples(false);
+      onChanged();
+    } catch (err: any) {
+      toast({
+        title: 'Delete Failed',
+        description: err?.message || 'Could not delete all photos.',
+        variant: 'destructive',
+      });
+    } finally {
+      setIsDeletingSample(false);
+    }
+  };
 
   const events = useMemo(
     () => (student && data ? data.activity.filter((a) => a.student === student.admission_number) : []),
@@ -810,26 +869,41 @@ function StudentDetailSheet({
             </div>
           }
         >
-          <StudentStoredFaceAssets key={student.admission_number} student={student} />
+          <StudentStoredFaceAssets
+            key={student.admission_number}
+            student={student}
+            onPhotosChanged={onChanged}
+          />
         </Suspense>
 
         {/* Captured Samples */}
-        {student.samples.length > 0 && (
+        {localSamples.length > 0 && (
           <section className="mt-5 space-y-3">
-            <h4 className="text-xs font-bold uppercase tracking-wider text-slate-400 flex items-center gap-1.5">
-              <Camera className="h-3.5 w-3.5 text-cyan-400" />
-              Captured Face Samples ({student.samples.length})
-              {glasses && (
-                <Badge variant="outline" className="border-cyan-500/40 text-cyan-300 text-[10px] ml-1">
-                  <Glasses className="h-3 w-3 mr-1" /> Glasses
-                </Badge>
-              )}
-            </h4>
+            <div className="flex items-center justify-between">
+              <h4 className="text-xs font-bold uppercase tracking-wider text-slate-400 flex items-center gap-1.5">
+                <Camera className="h-3.5 w-3.5 text-cyan-400" />
+                Captured Face Samples ({localSamples.length})
+                {glasses && (
+                  <Badge variant="outline" className="border-cyan-500/40 text-cyan-300 text-[10px] ml-1">
+                    <Glasses className="h-3 w-3 mr-1" /> Glasses
+                  </Badge>
+                )}
+              </h4>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setConfirmDeleteAllSamples(true)}
+                className="h-6 text-[10px] border-rose-500/30 bg-rose-500/10 text-rose-300 hover:bg-rose-500/20 gap-1 px-2 font-medium"
+              >
+                <Trash2 className="h-3 w-3" />
+                Remove All Photos
+              </Button>
+            </div>
             <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5">
-              {student.samples.map((s) => (
+              {localSamples.map((s) => (
                 <figure
                   key={s.fileId}
-                  className="rounded-xl border border-slate-800 bg-slate-900 overflow-hidden"
+                  className="group relative rounded-xl border border-slate-800 bg-slate-900 overflow-hidden hover:border-slate-700 transition-colors"
                 >
                   <div className="relative aspect-square bg-slate-950">
                     <SamplePhoto
@@ -837,12 +911,34 @@ function StudentDetailSheet({
                       fileId={s.fileId}
                       directUrl={s.imageUrl}
                     />
+                    <Button
+                      variant="destructive"
+                      size="icon"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setSampleToDelete(s);
+                      }}
+                      title={`Delete ${s.pose} face photo`}
+                      className="absolute top-1.5 right-1.5 z-10 h-6 w-6 rounded-md bg-black/60 hover:bg-rose-600 text-white/80 hover:text-white transition-all shadow-md backdrop-blur-sm"
+                    >
+                      <Trash2 className="h-3 w-3" />
+                      <span className="sr-only">Delete sample photo</span>
+                    </Button>
                   </div>
-                  <figcaption className="p-2 text-[10px] bg-slate-900">
-                    <span className="font-bold text-white capitalize block truncate">{s.pose}</span>
-                    <span className="text-slate-400 block mt-0.5 truncate">
-                      L: {s.brightness} · S: {s.sharpness}
-                    </span>
+                  <figcaption className="p-2 text-[10px] bg-slate-900 flex items-center justify-between">
+                    <div className="min-w-0">
+                      <span className="font-bold text-white capitalize block truncate">{s.pose}</span>
+                      <span className="text-slate-400 block mt-0.5 truncate">
+                        L: {s.brightness} · S: {s.sharpness}
+                      </span>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setSampleToDelete(s)}
+                      className="text-[10px] text-rose-400 hover:text-rose-300 hover:underline shrink-0 ml-1"
+                    >
+                      Delete
+                    </button>
                   </figcaption>
                 </figure>
               ))}
@@ -891,6 +987,95 @@ function StudentDetailSheet({
             </ul>
           </section>
         )}
+
+        {/* Confirmation Dialog for Single Sample Photo Deletion */}
+        <AlertDialog open={Boolean(sampleToDelete)} onOpenChange={(open) => !open && !isDeletingSample && setSampleToDelete(null)}>
+          <AlertDialogContent className="max-w-md bg-slate-900 border-slate-800 text-white">
+            <AlertDialogHeader>
+              <AlertDialogTitle className="flex items-center gap-2 text-rose-400">
+                <Trash2 className="h-5 w-5" />
+                Delete {sampleToDelete?.pose || 'Sample'} Photo?
+              </AlertDialogTitle>
+              <AlertDialogDescription className="text-slate-300 text-xs pt-1">
+                Are you sure you want to delete this captured face sample for <strong className="text-white">{student.name}</strong>?
+                This will remove the photo file and delete its biometric descriptor slot.
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter className="gap-2 mt-2">
+              <AlertDialogCancel
+                disabled={isDeletingSample}
+                onClick={() => setSampleToDelete(null)}
+                className="border-slate-700 bg-slate-800 text-white hover:bg-slate-700"
+              >
+                Cancel
+              </AlertDialogCancel>
+              <AlertDialogAction
+                disabled={isDeletingSample}
+                onClick={(e) => {
+                  e.preventDefault();
+                  if (sampleToDelete) void handleDeleteSample(sampleToDelete);
+                }}
+                className="bg-rose-600 hover:bg-rose-700 text-white font-semibold"
+              >
+                {isDeletingSample ? (
+                  <>
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    Deleting…
+                  </>
+                ) : (
+                  'Yes, Delete Photo'
+                )}
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
+
+        {/* Confirmation Dialog for All Samples Deletion */}
+        <AlertDialog open={confirmDeleteAllSamples} onOpenChange={(open) => !open && !isDeletingSample && setConfirmDeleteAllSamples(false)}>
+          <AlertDialogContent className="max-w-md bg-slate-900 border-slate-800 text-white">
+            <AlertDialogHeader>
+              <AlertDialogTitle className="flex items-center gap-2 text-rose-400">
+                <Trash2 className="h-5 w-5" />
+                Remove All Face Photos & Biometrics?
+              </AlertDialogTitle>
+              <AlertDialogDescription className="text-slate-300 text-xs space-y-2 pt-1">
+                <p>
+                  Permanently remove all {localSamples.length} captured face photos and biometric descriptor slots for{' '}
+                  <strong className="text-white">{student.name}</strong> (<span className="font-mono text-emerald-300">{student.admission_number}</span>)?
+                </p>
+                <p className="text-amber-300/90 font-medium">
+                  The student will need to be re-scanned in studio or through the enrollment portal.
+                </p>
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter className="gap-2 mt-2">
+              <AlertDialogCancel
+                disabled={isDeletingSample}
+                onClick={() => setConfirmDeleteAllSamples(false)}
+                className="border-slate-700 bg-slate-800 text-white hover:bg-slate-700"
+              >
+                Cancel
+              </AlertDialogCancel>
+              <AlertDialogAction
+                disabled={isDeletingSample}
+                onClick={(e) => {
+                  e.preventDefault();
+                  void handleDeleteAllSamples();
+                }}
+                className="bg-rose-600 hover:bg-rose-700 text-white font-semibold"
+              >
+                {isDeletingSample ? (
+                  <>
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    Removing All…
+                  </>
+                ) : (
+                  'Yes, Remove All Photos'
+                )}
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
       </SheetContent>
     </Sheet>
   );

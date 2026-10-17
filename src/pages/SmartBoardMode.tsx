@@ -489,7 +489,7 @@ export const SmartBoardMode: React.FC = () => {
           </div>
 
           {/* Active Interactive Board Component Area */}
-          <div className="flex-1 bg-slate-900/90 border border-slate-800 rounded-3xl p-5 shadow-2xl flex flex-col min-h-[500px]">
+          <div key={activeTab} className="flex-1 bg-slate-900/90 border border-slate-800 rounded-3xl p-5 shadow-2xl flex flex-col min-h-[500px] animate-element-coming">
             {activeTab === 'scratchpad' && (
               <div className="flex-1 flex flex-col">
                 <SmartBoardScratchpad />

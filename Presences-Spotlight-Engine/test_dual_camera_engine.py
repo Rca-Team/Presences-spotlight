@@ -101,9 +101,10 @@ def run_tests():
 
     # ── Test 4: Cross-Camera Deduplication Verification ──
     print("\n[TEST 4] Testing Cross-Camera Real-Time Deduplication...")
+    test_sid = f"test_dedup_{int(time.time() * 1000)}"
     fake_student = {
-        "student_id": "test_dedup_999",
-        "student_name": "Charlie Brown",
+        "student_id": test_sid,
+        "student_name": f"Charlie {test_sid[-4:]}",
         "class_name": "12",
         "section": "C"
     }

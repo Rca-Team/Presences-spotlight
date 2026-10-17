@@ -30,8 +30,8 @@ const NeuralOrbPanel: React.FC = () => (
           <motion.span
             key={i}
             aria-hidden
-            className="absolute rounded-full border border-primary/20"
-            style={{ height: `${68 * s}%`, width: `${68 * s}%` }}
+            className="absolute rounded-full border border-primary/20 pointer-events-none"
+            style={{ height: `${68 * s}%`, width: `${68 * s}%`, transform: 'translate3d(0, 0, 0)' }}
             animate={{ opacity: [0.2, 0.55, 0.2], scale: [0.99, 1.02, 0.99] }}
             transition={{ duration: 4 + i, repeat: Infinity, ease: 'easeInOut', delay: i * 0.4 }}
           />
@@ -39,11 +39,12 @@ const NeuralOrbPanel: React.FC = () => (
 
         {/* the orb */}
         <motion.div
-          className="relative h-[62%] w-[62%] rounded-full"
+          className="relative h-[62%] w-[62%] rounded-full pointer-events-none"
           style={{
             background:
               'radial-gradient(circle at 34% 28%, hsl(0 0% 100% / 0.95), hsl(var(--primary) / 0.9) 38%, hsl(214 84% 44%) 72%, hsl(228 60% 18%) 100%)',
             boxShadow: '0 0 50px hsl(var(--primary) / 0.45), 0 0 100px hsl(205 82% 52% / 0.25)',
+            transform: 'translate3d(0, 0, 0)',
           }}
           animate={{ scale: [1, 1.035, 1] }}
           transition={{ duration: 5.5, repeat: Infinity, ease: 'easeInOut' }}

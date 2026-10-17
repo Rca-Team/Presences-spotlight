@@ -1377,7 +1377,7 @@ const Portfolio = () => {
                           <SelectContent>
                             <SelectItem value="bento">Bento Masonry Grid (Dynamic)</SelectItem>
                             <SelectItem value="grid">Uniform Cyber Grid</SelectItem>
-                            <SelectItem value="carousel">Cinematic Slider Carousel</SelectItem>
+                            <SelectItem value="liquid">Liquid Glass Showcase</SelectItem>
                           </SelectContent>
                         </Select>
                       </div>

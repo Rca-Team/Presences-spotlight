@@ -302,16 +302,20 @@ const PremiumFaceScanner: React.FC = () => {
       return score * 0.5 + sizeScore * 0.3 + centerBonus * 0.2;
     };
 
-    // Capture the ROI of the current video frame into a fresh canvas we can keep.
-    const captureSnapshot = (video: HTMLVideoElement, box: Track['box']): HTMLCanvasElement | null => {
+    // Capture the ROI of the current video frame, reusing previous frame canvas whenever possible
+    const captureSnapshot = (video: HTMLVideoElement, box: Track['box'], existingCanvas?: HTMLCanvasElement): HTMLCanvasElement | null => {
       const pad = Math.max(box.width, box.height) * 0.35;
       const sx = Math.max(0, box.x - pad);
       const sy = Math.max(0, box.y - pad);
       const sw = Math.min(video.videoWidth - sx, box.width + pad * 2);
       const sh = Math.min(video.videoHeight - sy, box.height + pad * 2);
-      const c = document.createElement('canvas');
-      c.width = Math.max(160, Math.round(sw));
-      c.height = Math.max(160, Math.round(sh));
+      const targetW = Math.max(160, Math.round(sw));
+      const targetH = Math.max(160, Math.round(sh));
+      const c = existingCanvas || document.createElement('canvas');
+      if (c.width !== targetW || c.height !== targetH) {
+        c.width = targetW;
+        c.height = targetH;
+      }
       const ctx = c.getContext('2d', { willReadFrequently: true });
       if (!ctx) return null;
       ctx.drawImage(video, sx, sy, sw, sh, 0, 0, c.width, c.height);
@@ -387,7 +391,7 @@ const PremiumFaceScanner: React.FC = () => {
 
           // Only bother snapshotting tracks that still need recognition
           if (track.state === 'tracking' && box.width >= MIN_FACE_SIZE && q > track.bestQuality) {
-            const snap = captureSnapshot(video, box);
+            const snap = captureSnapshot(video, box, track.bestSnapshot);
             if (snap) {
               track.bestQuality = q;
               track.bestSnapshot = snap;

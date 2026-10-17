@@ -91,10 +91,15 @@ class RTSPVideoStream:
                 self.cap.release()
 
             if isinstance(self.src_id, str) and self.src_id.startswith("rtsp://"):
-                os.environ["OPENCV_FFMPEG_CAPTURE_OPTIONS"] = "rtsp_transport;tcp|stimeout;5000000"
+                os.environ["OPENCV_FFMPEG_CAPTURE_OPTIONS"] = "rtsp_transport;tcp|fflags;nobuffer|flags;low_delay|stimeout;5000000|max_delay;500000"
                 self.cap = cv2.VideoCapture(self.src_id, cv2.CAP_FFMPEG)
             else:
-                self.cap = cv2.VideoCapture(self.src_id)
+                if sys.platform == "win32" and isinstance(self.src_id, int):
+                    self.cap = cv2.VideoCapture(self.src_id, cv2.CAP_DSHOW)
+                    if not self.cap.isOpened():
+                        self.cap = cv2.VideoCapture(self.src_id)
+                else:
+                    self.cap = cv2.VideoCapture(self.src_id)
 
             if self.cap.isOpened():
                 self.cap.set(cv2.CAP_PROP_FRAME_WIDTH, self.width)
@@ -119,19 +124,21 @@ class RTSPVideoStream:
     def _update(self):
         consecutive_failures = 0
         while not self.stopped:
+            now = time.time()
             if self.cap is None or not self.cap.isOpened():
-                time.sleep(2.0)
-                self._connect()
+                if (now - self.last_connect_attempt) >= 10.0:
+                    self._connect()
+                time.sleep(0.1)
                 continue
 
             grabbed, frame = self.cap.read()
             if not grabbed or frame is None:
                 consecutive_failures += 1
                 self.is_connected = False
-                if consecutive_failures > 20:
-                    time.sleep(1.0)
-                    self._connect()
-                    consecutive_failures = 0
+                if consecutive_failures > 30:
+                    if (now - self.last_connect_attempt) >= 10.0:
+                        self._connect()
+                        consecutive_failures = 0
                 time.sleep(0.04)
                 continue
 
@@ -269,7 +276,9 @@ class LocalDatabase:
             """, (str(student_key), str(student_name), str(class_name or ""), str(section or ""), str(status), float(confidence), str(marked_time), str(session_date), str(camera_lane)))
             conn.commit()
 
-    def get_today_logs(self, session_date: str) -> List[Dict]:
+    def get_today_logs(self, session_date: Optional[str] = None) -> List[Dict]:
+        if not session_date:
+            session_date = datetime.now().strftime("%Y-%m-%d")
         with self._get_connection() as conn:
             cursor = conn.cursor()
             try:
@@ -468,12 +477,12 @@ class AppwriteSync:
             from appwrite.query import Query as AppwriteQuery
 
             if self.databases:
-                # 1. Fetch user profiles mapping
+                # 1. Fetch user profiles mapping (quick fast-path)
                 profile_map = {}
                 parent_email_map = {}
                 try:
                     p_offset = 0
-                    while True:
+                    for _ in range(2):
                         prof_resp = self.databases.list_documents(
                             database_id=self.db_id,
                             collection_id='profiles',
@@ -584,13 +593,30 @@ class AppwriteSync:
         return []
 
     def post_attendance(self, payload: Dict) -> bool:
-        """Records attendance directly into Appwrite attendance_records collection."""
+        """Records attendance directly into Appwrite attendance_records collection adhering strictly to schema."""
         try:
             from appwrite.id import ID as AppwriteID
 
             clean_payload = dict(payload)
+            if "camera_lane" in clean_payload and "camera_location" not in clean_payload:
+                clean_payload["camera_location"] = clean_payload["camera_lane"]
+            if "date" not in clean_payload:
+                clean_payload["date"] = datetime.now().strftime("%Y-%m-%d")
+            if "confidence" not in clean_payload and "confidence_score" in clean_payload:
+                clean_payload["confidence"] = clean_payload["confidence_score"]
             if isinstance(clean_payload.get("device_info"), dict):
                 clean_payload["device_info"] = json.dumps(clean_payload["device_info"])
+            if isinstance(clean_payload.get("metadata"), dict):
+                clean_payload["metadata"] = json.dumps(clean_payload["metadata"])
+
+            allowed_keys = {
+                'user_id', 'student_id', 'student_name', 'class', 'section', 
+                'roll_number', 'category', 'status', 'timestamp', 'date', 
+                'image_url', 'verified_by', 'confidence', 'camera_location', 
+                'device_info', 'face_descriptor', 'confidence_score', 
+                'capture_mode', 'source', 'metadata', 'recognized', 'notes'
+            }
+            clean_payload = {k: v for k, v in clean_payload.items() if k in allowed_keys and v is not None}
 
             if self.databases:
                 doc_id = AppwriteID.unique()
@@ -702,28 +728,31 @@ def play_feedback_sound():
         return
 
     def _play():
-        chime_file = config.CHIME_PATH
-        if not os.path.exists(chime_file):
-            generate_chime(chime_file)
+        try:
+            chime_file = config.CHIME_PATH
+            if not os.path.exists(chime_file):
+                generate_chime(chime_file)
 
-        if AUDIO_BACKEND == "winsound":
-            try:
-                import winsound
-                winsound.PlaySound(chime_file, winsound.SND_FILENAME | winsound.SND_ASYNC)
-            except Exception:
-                pass
-        elif AUDIO_BACKEND == "pygame":
-            try:
-                import pygame
-                pygame.mixer.music.load(chime_file)
-                pygame.mixer.music.play()
-            except Exception:
-                pass
-        else:
-            try:
-                subprocess.run(["aplay", "-q", chime_file], stdout=cv2.DEVNULL, stderr=cv2.DEVNULL)
-            except Exception:
-                pass
+            if AUDIO_BACKEND == "winsound":
+                try:
+                    import winsound
+                    winsound.PlaySound(chime_file, winsound.SND_FILENAME | winsound.SND_ASYNC)
+                except Exception:
+                    pass
+            elif AUDIO_BACKEND == "pygame":
+                try:
+                    import pygame
+                    pygame.mixer.music.load(chime_file)
+                    pygame.mixer.music.play()
+                except Exception:
+                    pass
+            else:
+                try:
+                    subprocess.run(["aplay", "-q", chime_file], stdout=cv2.DEVNULL, stderr=cv2.DEVNULL)
+                except Exception:
+                    pass
+        except Exception:
+            pass
 
     threading.Thread(target=_play, daemon=True).start()
 
@@ -803,7 +832,10 @@ class SpotlightEngine:
         self.cloud = UnifiedCloudSync(self.db)
         self.enrolled_students: List[Dict] = []
         self.descriptors_matrix: Optional[np.ndarray] = None
-        self.last_sync_time = 0
+        self.last_sync_time = time.time()
+        self.is_syncing = False
+        self.sync_lock = threading.Lock()
+        self.view_mode = "dual"
         self.running = False
 
         # Live Session Counters
@@ -834,7 +866,7 @@ class SpotlightEngine:
         self.last_chime_time = 0.0
 
         # Dedicated AI Inference Worker Queue (accepts (cam_id, frame) tuples)
-        self.inference_queue = queue.Queue(maxsize=4)
+        self.inference_queue = queue.Queue(maxsize=2)
 
         # Initialize Google Vision & MediaPipe Pipeline
         self.google_pipeline = GoogleFacePipeline()
@@ -873,33 +905,46 @@ class SpotlightEngine:
             return t
 
     def submit_frame(self, frame: np.ndarray, cam_id: int = 1):
-        """Dispatches frame to AI worker queue without stalling the camera stream."""
-        if not self.inference_queue.full():
-            try:
-                self.inference_queue.put_nowait((cam_id, frame.copy()))
-            except queue.Full:
-                pass
+        """Dispatches frame to AI worker queue without lag by dropping stale frames."""
+        try:
+            # Drain stale frames so worker always processes the freshest frame
+            while not self.inference_queue.empty():
+                try:
+                    self.inference_queue.get_nowait()
+                except queue.Empty:
+                    break
+            self.inference_queue.put_nowait((cam_id, frame.copy()))
+        except (queue.Full, queue.Empty):
+            pass
 
     def sync_students(self):
-        """Loads student face descriptors into contiguous NumPy matrix for C-speed Euclidean search."""
-        print("[Spotlight] Synchronizing student face models from Appwrite Cloud...")
-        cloud_students = self.cloud.fetch_enrolled_faces()
-        if cloud_students:
-            self.db.save_cached_students(cloud_students)
-            self.enrolled_students = self.db.get_cached_students()
-        else:
-            print("[Spotlight] Using cached student models from local SQLite DB...")
-            self.enrolled_students = self.db.get_cached_students()
+        """Loads student face descriptors into contiguous NumPy matrix with thread-safe single-instance locking."""
+        with self.sync_lock:
+            if self.is_syncing:
+                return
+            self.is_syncing = True
 
-        if self.enrolled_students:
-            matrix_list = [s["descriptor"] for s in self.enrolled_students]
-            self.descriptors_matrix = np.array(matrix_list, dtype=np.float32)
-        else:
-            self.descriptors_matrix = None
+        try:
+            print("[Spotlight] Synchronizing student face models from Appwrite Cloud...")
+            cloud_students = self.cloud.fetch_enrolled_faces()
+            if cloud_students:
+                self.db.save_cached_students(cloud_students)
+                self.enrolled_students = self.db.get_cached_students()
+            else:
+                print("[Spotlight] Using cached student models from local SQLite DB...")
+                self.enrolled_students = self.db.get_cached_students()
 
-        distinct_count = len(set(s["student_name"] for s in self.enrolled_students))
-        print(f"[Spotlight] Ready with {distinct_count} enrolled students ({len(self.enrolled_students)} models) in memory.")
-        self.last_sync_time = time.time()
+            if self.enrolled_students:
+                matrix_list = [s["descriptor"] for s in self.enrolled_students]
+                self.descriptors_matrix = np.array(matrix_list, dtype=np.float32)
+            else:
+                self.descriptors_matrix = None
+
+            distinct_count = len(set(s["student_name"] for s in self.enrolled_students))
+            print(f"[Spotlight] Ready with {distinct_count} enrolled students ({len(self.enrolled_students)} models) in memory.")
+        finally:
+            self.last_sync_time = time.time()
+            self.is_syncing = False
 
     def determine_status(self) -> str:
         """Determines 'present' vs 'late' based on daily cutoff configuration."""
@@ -927,19 +972,21 @@ class SpotlightEngine:
             best_match = self.enrolled_students[best_idx]
             best_name = best_match["student_name"]
 
-            # Ambiguity Check 1: Ensure 2nd distinct student is not overly close (< 0.48)
+            # Ambiguity Check: Ensure distinct 2nd student is not overly close
             second_best_dist = float('inf')
-            for idx in sorted_indices[1:10]:
+            for idx in sorted_indices[1:15]:
                 if idx < len(self.enrolled_students) and self.enrolled_students[idx]["student_name"] != best_name:
                     second_best_dist = float(dists[idx])
                     break
 
-            if second_best_dist < 0.48 and (best_dist / second_best_dist) > config.AMBIGUITY_RATIO:
-                return None, best_dist
+            if second_best_dist < float('inf'):
+                # 1. Ambiguity Ratio check
+                if second_best_dist < 0.46 and (best_dist / second_best_dist) > config.AMBIGUITY_RATIO:
+                    return None, best_dist
 
-            # Ambiguity Check 2: Dynamic Margin Delta Guard (guarantees zero false attendance for lookalikes)
-            if second_best_dist < 0.52 and (second_best_dist - best_dist) < config.AMBIGUITY_MARGIN_DELTA:
-                return None, best_dist
+                # 2. Dynamic Margin Delta Guard
+                if (second_best_dist - best_dist) < config.AMBIGUITY_MARGIN_DELTA:
+                    return None, best_dist
 
             return best_match, best_dist
 
@@ -951,7 +998,7 @@ class SpotlightEngine:
         now = time.time()
         tracks_for_cam = self.active_tracks.setdefault(cam_id, {})
 
-        stale_ids = [tid for tid, trk in tracks_for_cam.items() if (now - trk.last_seen) > 2.0]
+        stale_ids = [tid for tid, trk in tracks_for_cam.items() if (now - trk.last_seen) > 3.5]
         for tid in stale_ids:
             del tracks_for_cam[tid]
 
@@ -1063,7 +1110,7 @@ class SpotlightEngine:
             "section": student.get("section"),
             "confidence_score": round(confidence_score, 4),
             "device_info": {
-                "system": "Presences Spotlight AI (Dual-Camera Edition)",
+                "system": "Presences - Spotlight Engine (Dual-Camera Edition)",
                 "backend": "Appwrite Cloud",
                 "gate_name": config.GATE_NAME,
                 "lane_name": lane_name,
@@ -1322,7 +1369,7 @@ class SpotlightEngine:
 
 
     def run(self):
-        """Main execution loop for Presences Spotlight AI (CLI / OpenCV window mode)."""
+        """Main execution loop for Presences - Spotlight Engine (CLI / OpenCV window mode)."""
         self.running = True
 
         print(f"[Spotlight] Starting Camera 1: {config.CAMERA_1_NAME} ({config.CAMERA_1_SOURCE})...")
@@ -1335,7 +1382,7 @@ class SpotlightEngine:
 
         self.start_worker()
 
-        win_name = "Presences Spotlight AI — Dual-Camera Gate Terminal"
+        win_name = "Presences - Spotlight Engine"
         if config.SHOW_WINDOW:
             cv2.namedWindow(win_name, cv2.WINDOW_NORMAL)
             if config.FULLSCREEN_KIOSK:
@@ -1344,41 +1391,52 @@ class SpotlightEngine:
                 cv2.resizeWindow(win_name, 1280, 720)
 
         print("[Spotlight] Engine initialized. Live attendance monitoring is active.")
-        print("            Hotkeys: 'q'=Quit | 'r'=Reload Database | 's'=Toggle Audio | 'm'=Toggle Mesh | 'f'=Fullscreen")
+        print("            Hotkeys: 'q'=Quit | 'd'=Dual View | '1'=Cam 1 Solo | '2'=Cam 2 Solo | 'r'=Reload | 's'=Audio | 'm'=Mesh | 'f'=Fullscreen")
 
         try:
             while self.running:
                 grabbed1, frame1, fps1 = stream1.read()
-                if not grabbed1 and frame1 is None:
-                    time.sleep(0.01)
-                    continue
-
-                self.submit_frame(frame1, cam_id=1)
-                annotated_1 = self.render_hud(frame1, fps1, cam_id=1, cam_name=config.CAMERA_1_NAME)
+                if grabbed1 and frame1 is not None:
+                    self.submit_frame(frame1, cam_id=1)
+                    annotated_1 = self.render_hud(frame1, fps1, cam_id=1, cam_name=config.CAMERA_1_NAME)
+                elif frame1 is not None:
+                    annotated_1 = frame1
+                else:
+                    annotated_1 = stream1._generate_placeholder()
 
                 if stream2:
                     grabbed2, frame2, fps2 = stream2.read()
-                    if frame2 is not None:
+                    if grabbed2 and frame2 is not None:
                         self.submit_frame(frame2, cam_id=2)
                         annotated_2 = self.render_hud(frame2, fps2, cam_id=2, cam_name=config.CAMERA_2_NAME)
+                    elif frame2 is not None:
+                        annotated_2 = frame2
                     else:
                         annotated_2 = stream2._generate_placeholder()
 
-                    # Combine side-by-side
-                    h1, w1 = annotated_1.shape[:2]
-                    h2, w2 = annotated_2.shape[:2]
-                    target_h = min(h1, h2)
-                    target_w = int(w1 * (target_h / h1))
-                    r1 = cv2.resize(annotated_1, (target_w, target_h))
-                    r2 = cv2.resize(annotated_2, (target_w, target_h))
-                    display_frame = np.hstack([r1, r2])
+                    # Render selected view mode
+                    if self.view_mode == "cam1":
+                        display_frame = annotated_1
+                    elif self.view_mode == "cam2":
+                        display_frame = annotated_2
+                    else:
+                        # Combine side-by-side Dual View
+                        h1, w1 = annotated_1.shape[:2]
+                        h2, w2 = annotated_2.shape[:2]
+                        target_h = min(h1, h2)
+                        target_w = int(w1 * (target_h / h1))
+                        r1 = cv2.resize(annotated_1, (target_w, target_h))
+                        r2 = cv2.resize(annotated_2, (target_w, target_h))
+                        display_frame = np.hstack([r1, r2])
                 else:
                     display_frame = annotated_1
 
                 now = time.time()
                 if (now - self.last_sync_time) > config.STUDENT_SYNC_INTERVAL_SEC:
-                    threading.Thread(target=self.cloud.process_offline_queue, daemon=True).start()
-                    threading.Thread(target=self.sync_students, daemon=True).start()
+                    self.last_sync_time = now
+                    if not self.is_syncing:
+                        threading.Thread(target=self.cloud.process_offline_queue, daemon=True).start()
+                        threading.Thread(target=self.sync_students, daemon=True).start()
 
                 if config.SHOW_WINDOW:
                     cv2.imshow(win_name, display_frame)
@@ -1386,9 +1444,19 @@ class SpotlightEngine:
                     if key in (ord('q'), ord('Q'), 27):
                         print("[Spotlight] Exit signal received.")
                         break
+                    elif key in (ord('d'), ord('D')):
+                        self.view_mode = "dual"
+                        print("\n[Spotlight View] Switched to Dual-Camera Side-by-Side View.")
+                    elif key == ord('1'):
+                        self.view_mode = "cam1"
+                        print(f"\n[Spotlight View] Switched to Solo View: {config.CAMERA_1_NAME}.")
+                    elif key == ord('2'):
+                        self.view_mode = "cam2"
+                        print(f"\n[Spotlight View] Switched to Solo View: {config.CAMERA_2_NAME}.")
                     elif key in (ord('r'), ord('R')):
-                        print("\n[Spotlight] Manual face reload triggered. Syncing from Appwrite Cloud...")
-                        threading.Thread(target=self.sync_students, daemon=True).start()
+                        if not self.is_syncing:
+                            print("\n[Spotlight] Manual face reload triggered. Syncing from Appwrite Cloud...")
+                            threading.Thread(target=self.sync_students, daemon=True).start()
                     elif key in (ord('s'), ord('S')):
                         config.ENABLE_AUDIO = not config.ENABLE_AUDIO
                         state_str = "ENABLED (Sound ON)" if config.ENABLE_AUDIO else "MUTED (Silent Mode)"

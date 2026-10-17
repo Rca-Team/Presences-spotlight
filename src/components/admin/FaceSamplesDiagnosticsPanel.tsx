@@ -16,9 +16,12 @@ import {
   Sparkles,
   CheckCircle2,
   Cpu,
+  Brain,
+  Zap,
 } from 'lucide-react';
 import { syncFromSupabase as syncDescriptorCache } from '@/services/face-recognition/DescriptorCacheService';
 import FaceSampleDeduplicationModal from './FaceSampleDeduplicationModal';
+import FaceSampleReasoningModal from './FaceSampleReasoningModal';
 
 type Diagnostics = {
   active_students: number;
@@ -49,6 +52,7 @@ const FaceSamplesDiagnosticsPanel: React.FC = () => {
   const [cleaning, setCleaning] = useState(false);
   const [syncingCache, setSyncingCache] = useState(false);
   const [dedupOpen, setDedupOpen] = useState(false);
+  const [reasoningOpen, setReasoningOpen] = useState(false);
   const [data, setData] = useState<Diagnostics | null>(null);
 
   const fetchDiagnosticsFallback = async (): Promise<Diagnostics> => {
@@ -259,6 +263,15 @@ const FaceSamplesDiagnosticsPanel: React.FC = () => {
             <div className="flex flex-wrap items-center gap-2">
               <Button
                 size="sm"
+                variant="default"
+                onClick={() => setReasoningOpen(true)}
+                className="rounded-2xl bg-gradient-to-r from-primary to-cyan-500 hover:from-primary/90 hover:to-cyan-600 text-white gap-1.5 text-xs font-bold shadow-md shadow-primary/25 active:scale-95 transition-all"
+              >
+                <Brain className="w-3.5 h-3.5 animate-pulse" />
+                AI Reasoning & Self-Heal
+              </Button>
+              <Button
+                size="sm"
                 variant="outline"
                 onClick={() => setDedupOpen(true)}
                 className="rounded-2xl border-primary/40 bg-primary/10 gap-1.5 text-xs font-bold text-primary hover:bg-primary/20 shadow-sm"
@@ -362,6 +375,12 @@ const FaceSamplesDiagnosticsPanel: React.FC = () => {
         open={dedupOpen}
         onOpenChange={setDedupOpen}
         onCompleted={() => fetchDiagnostics()}
+      />
+
+      <FaceSampleReasoningModal
+        open={reasoningOpen}
+        onOpenChange={setReasoningOpen}
+        onHealed={() => fetchDiagnostics()}
       />
     </>
   );

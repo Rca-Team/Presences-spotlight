@@ -41,7 +41,10 @@ export const DesktopSlideProvider: React.FC<DesktopSlideProviderProps> = ({ chil
 
   useEffect(() => {
     // Only engage desktop listeners on devices with fine pointer / mouse
-    const isFinePointer = window.matchMedia('(hover: hover) and (pointer: fine)').matches;
+    const isFinePointer = typeof window !== 'undefined' && window.matchMedia('(hover: hover) and (pointer: fine)').matches;
+    if (!isFinePointer) {
+      return;
+    }
 
     // Helper: Determine if an element is horizontally scrollable
     const findHorizontallyScrollableParent = (target: HTMLElement | null): HTMLElement | null => {
@@ -57,7 +60,9 @@ export const DesktopSlideProvider: React.FC<DesktopSlideProviderProps> = ({ chil
           cur.isContentEditable ||
           cur.getAttribute('role') === 'slider' ||
           cur.classList.contains('no-drag') ||
-          cur.classList.contains('no-slide')
+          cur.classList.contains('no-slide') ||
+          cur.classList.contains('liquid-glass-dock') ||
+          cur.classList.contains('liquid-glass-pill')
         ) {
           return null;
         }
@@ -88,7 +93,7 @@ export const DesktopSlideProvider: React.FC<DesktopSlideProviderProps> = ({ chil
 
       // Do not initiate drag on interactive text fields or native sliders
       if (
-        target.closest('input, textarea, select, [contenteditable="true"], [role="slider"], canvas, video, .no-drag')
+        target.closest('input, textarea, select, [contenteditable="true"], [role="slider"], canvas, video, .no-drag, .liquid-glass-dock, .liquid-glass-pill')
       ) {
         return;
       }
@@ -113,6 +118,10 @@ export const DesktopSlideProvider: React.FC<DesktopSlideProviderProps> = ({ chil
         velocityX: 0,
         animationFrameId: null,
       };
+
+      window.addEventListener('pointermove', onPointerMove, { passive: true });
+      window.addEventListener('pointerup', onPointerUp, { passive: true });
+      window.addEventListener('pointercancel', onPointerUp, { passive: true });
     };
 
     // 2. Pointer Move Handler (Dragging)
@@ -170,16 +179,27 @@ export const DesktopSlideProvider: React.FC<DesktopSlideProviderProps> = ({ chil
         document.body.style.userSelect = '';
 
         // Apply smooth coasting momentum if released with velocity
-        if (Math.abs(velocityX) > 0.12) {
-          let currentVelocity = velocityX * 14;
-          const decay = 0.91;
+        if (Math.abs(velocityX) > 0.08) {
+          let currentVelocity = velocityX * 16;
+          const decay = 0.92;
+          const maxScroll = element.scrollWidth - element.clientWidth;
 
           const momentumStep = () => {
-            if (Math.abs(currentVelocity) < 0.3) {
+            if (Math.abs(currentVelocity) < 0.15) {
               state.animationFrameId = null;
               return;
             }
-            element.scrollLeft -= currentVelocity;
+            const nextScroll = element.scrollLeft - currentVelocity;
+            if (nextScroll <= 0) {
+              element.scrollLeft = 0;
+              state.animationFrameId = null;
+              return;
+            } else if (nextScroll >= maxScroll) {
+              element.scrollLeft = maxScroll;
+              state.animationFrameId = null;
+              return;
+            }
+            element.scrollLeft = nextScroll;
             currentVelocity *= decay;
             state.animationFrameId = requestAnimationFrame(momentumStep);
           };
@@ -201,6 +221,10 @@ export const DesktopSlideProvider: React.FC<DesktopSlideProviderProps> = ({ chil
           window.removeEventListener('click', preventGhostClick, true);
         }, 120);
       }
+
+      window.removeEventListener('pointermove', onPointerMove);
+      window.removeEventListener('pointerup', onPointerUp);
+      window.removeEventListener('pointercancel', onPointerUp);
 
       activeDragRef.current = null;
     };
@@ -233,9 +257,6 @@ export const DesktopSlideProvider: React.FC<DesktopSlideProviderProps> = ({ chil
     };
 
     window.addEventListener('pointerdown', onPointerDown, { passive: true });
-    window.addEventListener('pointermove', onPointerMove, { passive: true });
-    window.addEventListener('pointerup', onPointerUp, { passive: true });
-    window.addEventListener('pointercancel', onPointerUp, { passive: true });
     window.addEventListener('wheel', onWheel, { passive: false });
 
     return () => {

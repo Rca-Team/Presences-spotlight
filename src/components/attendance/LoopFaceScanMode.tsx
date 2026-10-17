@@ -133,6 +133,7 @@ const LoopFaceScanMode: React.FC = () => {
   const committedRef = useRef<Float32Array[]>([]);
   const queueRef = useRef<CapturedFace[]>([]);
   const submittingRef = useRef(false);
+  const captureCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const autoFlushTimerRef = useRef<number | null>(null);
 
   const [modelsReady, setModelsReady] = useState(false);
@@ -185,9 +186,13 @@ const LoopFaceScanMode: React.FC = () => {
     const ch = Math.min(h, box.height * (1 + pad * 2));
     const cx = Math.max(0, box.x - box.width * pad);
     const cy = Math.max(0, box.y - box.height * pad);
-    const c = document.createElement('canvas');
-    c.width = 320; c.height = 320;
-    const ctx = c.getContext('2d')!;
+    if (!captureCanvasRef.current) {
+      captureCanvasRef.current = document.createElement('canvas');
+      captureCanvasRef.current.width = 320;
+      captureCanvasRef.current.height = 320;
+    }
+    const c = captureCanvasRef.current;
+    const ctx = c.getContext('2d', { willReadFrequently: true })!;
     ctx.drawImage(video, cx, cy, cw, ch, 0, 0, 320, 320);
     return c.toDataURL('image/jpeg', 0.85);
   }, []);

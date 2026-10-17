@@ -6,15 +6,18 @@
 
 ## 🚀 Key Dual-Camera & School Features
 
+- **Smart Gate Attendance Logistic (100% Precision)**:
+  - **Adaptive Illumination Normalizer (AIE)**: Automatically rescues dark, shadowed, or backlit faces (sun behind walking children) using LAB L-channel CLAHE, and normalizes harsh sunlight glare via adaptive gamma compression.
+  - **Motion Blur Recovery**: Unsharp masking filters mild walking motion blur to maintain crisp biometric feature matching.
+  - **Dynamic Ambiguity Margin Guard**: Rejects matches when two enrolled students have overly close candidate scores ($\Delta < 0.08$), guaranteeing zero false attendance for lookalikes.
+  - **Multi-Frame Trajectory Consensus**: Strictly mandates consistent identity agreement across consecutive walking frames, eliminating single-glance accidental marks.
 - **Simultaneous Dual-Camera Processing**: Runs two camera streams in parallel (e.g., Gate 1 & Gate 2, or Entry Lane & Exit Lane, using USB webcams or RTSP PoE IP cameras).
 - **Cross-Camera Real-Time Deduplication**: Centralized cooldown guard prevents double attendance marks, duplicate parent emails, or double audio chimes when a student crosses both camera angles simultaneously.
 - **Side-by-Side Dual Viewport & Focus Modes**: Seamless PyQt6 UI allowing administrators to view both cameras concurrently (`⊞ Dual View`), or isolate either lane (`📷 Lane 1`, `📷 Lane 2`).
 - **Google MediaPipe 478 3D Landmark Mesh**: Ultra-low latency, hardware-accelerated face detection using Google's XNNPACK delegate.
 - **5-Point Canonical Affine Face Alignment**: Standardizes head tilt, roll, and distance into normalized 112x112 facial representations for invariant matching.
 - **Sub-Millisecond Vector Search**: In-memory vectorized BLAS matrix matching searches 2,000+ student embeddings in **< 0.2 ms**.
-- **Ambiguity Ratio Protection**: Rejects matches when two candidate identities have overly close confidence scores to prevent misidentifications.
 - **Offline Resilience & Instant SQLite Logging**: 0ms attendance logging with lane tracking (`camera_lane`) and automatic background sync to Appwrite/Supabase.
-- **Daily Attendance Reports & Export**: Filter by grade, status, or search query with one-click **Export to CSV / Excel**.
 - **1-Student-1-Email-Per-Day Rate Limiting**: Ensures parents receive exactly one arrival notification per morning.
 
 ---

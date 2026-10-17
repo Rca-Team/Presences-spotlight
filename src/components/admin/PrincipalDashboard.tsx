@@ -1435,8 +1435,10 @@ const SimpleStatCard: React.FC<{
   onClick?: () => void;
 }> = ({ label, value, icon: Icon, color, bgColor, helper, onClick }) => (
   <motion.div
-    initial={{ opacity: 0, y: 8 }}
+    initial={{ opacity: 0.90, y: 8 }}
     animate={{ opacity: 1, y: 0 }}
+    transition={{ type: 'spring', stiffness: 400, damping: 30, mass: 0.8 }}
+    style={{ transform: 'translateZ(0)', willChange: 'transform, opacity' }}
     onClick={onClick}
     className={cn(
       "relative overflow-hidden rounded-2xl border border-border/80 bg-card p-4 sm:p-5 transition-all duration-200",

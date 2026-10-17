@@ -38,7 +38,7 @@ export default function PasswordRecovery() {
   }
 
   return <main className="min-h-screen flex items-center justify-center bg-background p-6">
-    <div className="w-full max-w-sm space-y-6 rounded-2xl border border-border bg-card p-6 shadow-lg">
+    <div className="w-full max-w-sm space-y-6 rounded-2xl border border-border bg-card p-6 shadow-lg animate-element-coming">
       <h1 className="text-2xl font-semibold">{resetting ? 'Set a new password' : 'Reset your password'}</h1>
       <p className="text-sm text-muted-foreground">{resetting ? 'Use at least 8 characters.' : 'Enter the email address you use to sign in.'}</p>
       {!done && <form onSubmit={submit} className="space-y-4">

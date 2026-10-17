@@ -610,139 +610,176 @@ export async function getAllTrainedDescriptors(forceFresh = false): Promise<Map<
       try {
         const result = new Map<string, TrainedUserEntry>();
 
-        // ── FAST PATH: Read 1 row per student from `profiles` (47 rows vs 652 rows!) ──
-        const { data: profilesData, error: profilesErr } = await supabase
-          .from('profiles')
-          .select('id, user_id, full_name, display_name, admission_number, employee_id, roll_number, class, section, category, department, position, avatar_url, photo_url, metadata');
+        // Concurrently query:
+        // 1. face_descriptors (primary trained vectors)
+        // 2. profiles (metadata.biometric_summary, names, photos)
+        // 3. attendance_records with status='registered' (legacy and standard registrations)
+        const [fdRes, profRes, regRes] = await Promise.all([
+          supabase
+            .from('face_descriptors')
+            .select('user_id, descriptor, label, student_name, student_id, class, section, category, image_url, metadata')
+            .order('created_at', { ascending: false }),
+          supabase
+            .from('profiles')
+            .select('id, user_id, full_name, display_name, admission_number, employee_id, roll_number, class, section, category, department, position, avatar_url, photo_url, metadata'),
+          supabase
+            .from('attendance_records')
+            .select('user_id, student_id, student_name, category, class, section, device_info, face_descriptor, image_url')
+            .eq('status', 'registered')
+            .order('timestamp', { ascending: false }),
+        ]);
 
-        if (!profilesErr && profilesData && profilesData.length > 0) {
-          const scopedProfiles = scope.userIds
-            ? profilesData.filter((p: any) => isRowInGalleryScope(scope, p))
-            : profilesData;
+        const fdRows = (!fdRes.error && fdRes.data) ? (scope.userIds ? fdRes.data.filter((r: any) => isRowInGalleryScope(scope, r)) : fdRes.data) : [];
+        const profRows = (!profRes.error && profRes.data) ? (scope.userIds ? profRes.data.filter((p: any) => isRowInGalleryScope(scope, p)) : profRes.data) : [];
+        const regRows = (!regRes.error && regRes.data) ? (scope.userIds ? regRes.data.filter((r: any) => isRowInGalleryScope(scope, r)) : regRes.data) : [];
 
-          for (const p of scopedProfiles) {
-            let meta: any = p.metadata;
-            if (typeof meta === 'string') {
-              try { meta = JSON.parse(meta); } catch { meta = null; }
-            }
-            const bio = meta?.biometric_summary;
-            if (!bio?.centroid_descriptor) continue;
+        // Build canonical identity resolver
+        const aliasToCanonical = new Map<string, string>();
+        const profileInfo = new Map<string, any>();
 
-            const centroid = parseStoredDescriptor(bio.centroid_descriptor);
-            if (!centroid) continue;
-
-            const exemplars: Float32Array[] = [];
-            if (Array.isArray(bio.exemplar_descriptors)) {
-              for (const ex of bio.exemplar_descriptors) {
-                const parsedEx = parseStoredDescriptor(ex);
-                if (parsedEx && parsedEx.length === centroid.length) {
-                  exemplars.push(parsedEx);
-                }
-              }
-            }
-            if (exemplars.length === 0) {
-              exemplars.push(centroid);
-            }
-
-            const uid = String(p.user_id || p.id).trim();
-            const userName = String(p.full_name || p.display_name || meta?.name || 'Unknown').trim();
-            const studentId = String(p.admission_number || p.employee_id || meta?.student_id || '').trim() || null;
-            const dept = String(p.category || (p.class && p.section ? `${p.class}-${p.section}` : p.department || meta?.department || 'Unknown')).trim();
-            const pos = String(p.roll_number || p.position || meta?.roll_number || 'Student').trim();
-            const avatarUrl = String(p.avatar_url || p.photo_url || meta?.avatar_url || '').trim();
-
-            result.set(uid, {
-              descriptors:        exemplars,
-              averagedDescriptor: centroid,
-              userName,
-              studentId,
-              sampleCount:        Number(bio.sample_count) || exemplars.length,
-              avatarUrl,
-              department:         dept,
-              position:           pos,
-            });
+        // 1. Index profiles
+        for (const p of profRows) {
+          const uid = String(p.user_id || p.id).trim();
+          const sid = String(p.admission_number || p.employee_id || '').trim();
+          const name = String(p.full_name || p.display_name || '').trim();
+          profileInfo.set(uid, p);
+          aliasToCanonical.set(`uid:${uid}`, uid);
+          if (sid) {
+            aliasToCanonical.set(`sid:${sid}`, uid);
+            profileInfo.set(sid, p);
+          }
+          if (name && name !== 'Unknown') {
+            aliasToCanonical.set(`name:${name.toLowerCase().trim()}`, uid);
           }
         }
 
-        // If `profiles` fast-path loaded our enrolled students, cache and return immediately!
-        if (result.size > 0) {
-          trainedGalleryCache = {
-            expiresAt: Date.now() + TRAINED_GALLERY_CACHE_TTL_MS,
-            scopeKey,
-            data: result,
-          };
-          console.log(`[FastGallery] Loaded ${result.size} student centroids from profiles in 1 page read`);
-          return result;
-        }
+        const resolveCanonicalKey = (userId?: string | null, studentId?: string | null, name?: string | null) => {
+          const u = userId ? String(userId).trim() : '';
+          const s = studentId ? String(studentId).trim() : '';
+          const n = name && name !== 'Unknown' ? name.toLowerCase().trim() : '';
 
-        // ── FALLBACK PATH: Full scan of `face_descriptors` if profiles had no summaries ──
-        const { data, error } = await supabase
-          .from('face_descriptors')
-          .select('user_id, descriptor, label, student_name, student_id, class, section, category, image_url, metadata')
-          .order('created_at', { ascending: false });
+          let key = (s && aliasToCanonical.get(`sid:${s}`)) ||
+                    (u && aliasToCanonical.get(`uid:${u}`)) ||
+                    (n && aliasToCanonical.get(`name:${n}`));
 
-        if (error || !data?.length) return new Map();
+          if (!key) {
+            key = u || s || n || 'unknown';
+            if (u) aliasToCanonical.set(`uid:${u}`, key);
+            if (s) aliasToCanonical.set(`sid:${s}`, key);
+            if (n) aliasToCanonical.set(`name:${n}`, key);
+          } else {
+            if (u) aliasToCanonical.set(`uid:${u}`, key);
+            if (s) aliasToCanonical.set(`sid:${s}`, key);
+            if (n) aliasToCanonical.set(`name:${n}`, key);
+          }
+          return key;
+        };
 
-        const rows = scope.userIds ? data.filter((r: any) => isRowInGalleryScope(scope, r)) : data;
-        if (!rows.length) return new Map();
-
-        const aliasToCanonical = new Map<string, string>();
         const grouped = new Map<string, {
           descriptors: Float32Array[];
           userName: string;
           studentId: string | null;
           avatarUrl: string;
           department: string;
+          position: string;
         }>();
 
-        for (const rec of rows) {
-          const desc = parseStoredDescriptor(rec.descriptor);
-          if (!desc) continue;
-
-          const resolvedName =
-            (rec as any).student_name ||
-            rec.label ||
-            ((rec as any).metadata as any)?.name ||
-            'Unknown';
-          const resolvedStudentId = (rec as any).student_id ? String((rec as any).student_id).trim() : null;
-          const normName = resolvedName !== 'Unknown' ? resolvedName.toLowerCase().trim() : null;
-
-          let canonicalKey = (resolvedStudentId && aliasToCanonical.get(`sid:${resolvedStudentId}`)) ||
-                             (normName && aliasToCanonical.get(`name:${normName}`)) ||
-                             aliasToCanonical.get(`uid:${rec.user_id}`);
-
-          if (!canonicalKey) {
-            canonicalKey = rec.user_id;
-            aliasToCanonical.set(`uid:${rec.user_id}`, canonicalKey);
-            if (resolvedStudentId) aliasToCanonical.set(`sid:${resolvedStudentId}`, canonicalKey);
-            if (normName) aliasToCanonical.set(`name:${normName}`, canonicalKey);
-          } else {
-            aliasToCanonical.set(`uid:${rec.user_id}`, canonicalKey);
-            if (resolvedStudentId) aliasToCanonical.set(`sid:${resolvedStudentId}`, canonicalKey);
-            if (normName) aliasToCanonical.set(`name:${normName}`, canonicalKey);
-          }
-
-          const dept = (rec as any).category || ((rec as any).class && (rec as any).section ? `${(rec as any).class}-${(rec as any).section}` : 'Unknown');
-          const img = (rec as any).image_url || '';
-
+        const ensureGroup = (canonicalKey: string) => {
           if (!grouped.has(canonicalKey)) {
+            const p = profileInfo.get(canonicalKey);
+            const rawMeta = p?.metadata;
+            let meta: any = rawMeta;
+            if (typeof rawMeta === 'string') {
+              try { meta = JSON.parse(rawMeta); } catch { meta = null; }
+            }
+            const name = String(p?.full_name || p?.display_name || meta?.name || 'Unknown').trim();
+            const sid = String(p?.admission_number || p?.employee_id || meta?.student_id || '').trim() || null;
+            const dept = String(p?.category || (p?.class && p?.section ? `${p.class}-${p.section}` : p?.department || meta?.department || 'Unknown')).trim();
+            const pos = String(p?.roll_number || p?.position || meta?.roll_number || 'Student').trim();
+            const avatarUrl = String(p?.avatar_url || p?.photo_url || meta?.avatar_url || '').trim();
+
             grouped.set(canonicalKey, {
               descriptors: [],
-              userName: resolvedName,
-              studentId: resolvedStudentId,
-              avatarUrl: img,
+              userName: name,
+              studentId: sid,
+              avatarUrl,
               department: dept,
+              position: pos,
             });
-          } else {
-            const g = grouped.get(canonicalKey)!;
-            if (g.userName === 'Unknown' && resolvedName !== 'Unknown') g.userName = resolvedName;
-            if (!g.studentId && resolvedStudentId) g.studentId = resolvedStudentId;
-            if (!g.avatarUrl && img) g.avatarUrl = img;
           }
-          grouped.get(canonicalKey)!.descriptors.push(desc);
+          return grouped.get(canonicalKey)!;
+        };
+
+        // 2. Load from profiles metadata.biometric_summary
+        for (const p of profRows) {
+          let meta: any = p.metadata;
+          if (typeof meta === 'string') {
+            try { meta = JSON.parse(meta); } catch { meta = null; }
+          }
+          const bio = meta?.biometric_summary;
+          if (bio?.centroid_descriptor) {
+            const centroid = parseStoredDescriptor(bio.centroid_descriptor);
+            if (centroid) {
+              const uid = String(p.user_id || p.id).trim();
+              const sid = String(p.admission_number || p.employee_id || meta?.student_id || '').trim() || null;
+              const name = String(p.full_name || p.display_name || meta?.name || '').trim();
+              const key = resolveCanonicalKey(uid, sid, name);
+              const g = ensureGroup(key);
+              g.descriptors.push(centroid);
+              if (Array.isArray(bio.exemplar_descriptors)) {
+                for (const ex of bio.exemplar_descriptors) {
+                  const d = parseStoredDescriptor(ex);
+                  if (d && d.length === centroid.length) g.descriptors.push(d);
+                }
+              }
+            }
+          }
         }
 
-        for (const [userId, { descriptors, userName, studentId, avatarUrl, department }] of grouped) {
+        // 3. Load from face_descriptors table
+        for (const rec of fdRows) {
+          const desc = parseStoredDescriptor((rec as any).descriptor);
+          if (!desc) continue;
+          const sid = (rec as any).student_id ? String((rec as any).student_id).trim() : null;
+          const name = String((rec as any).student_name || (rec as any).label || (rec as any).metadata?.name || '').trim();
+          const uid = (rec as any).user_id ? String((rec as any).user_id).trim() : null;
+          const key = resolveCanonicalKey(uid, sid, name);
+          const g = ensureGroup(key);
+          g.descriptors.push(desc);
+          if (g.userName === 'Unknown' && name && name !== 'Unknown') g.userName = name;
+          if (!g.studentId && sid) g.studentId = sid;
+          if (!g.avatarUrl && (rec as any).image_url) g.avatarUrl = (rec as any).image_url;
+          if ((!g.department || g.department === 'Unknown') && (rec as any).category) {
+            g.department = (rec as any).category;
+          }
+        }
+
+        // 4. Load from attendance_records table (status='registered')
+        for (const rec of regRows) {
+          const rawDesc = (rec as any).face_descriptor ||
+                          (rec as any).device_info?.metadata?.faceDescriptor ||
+                          (rec as any).device_info?.faceDescriptor;
+          const desc = parseStoredDescriptor(rawDesc);
+          if (!desc) continue;
+
+          const sid = (rec as any).student_id || (rec as any).device_info?.metadata?.employee_id || null;
+          const name = String((rec as any).student_name || (rec as any).device_info?.metadata?.name || '').trim();
+          const uid = (rec as any).user_id ? String((rec as any).user_id).trim() : null;
+          const key = resolveCanonicalKey(uid, sid, name);
+          const g = ensureGroup(key);
+          g.descriptors.push(desc);
+          if (g.userName === 'Unknown' && name && name !== 'Unknown') g.userName = name;
+          if (!g.studentId && sid) g.studentId = sid;
+          if (!g.avatarUrl && (rec as any).image_url) g.avatarUrl = (rec as any).image_url;
+          if ((!g.department || g.department === 'Unknown') && (rec as any).category) {
+            g.department = (rec as any).category;
+          }
+        }
+
+        // 5. Build centroids and diverse exemplars for every registered person
+        for (const [key, { descriptors, userName, studentId, avatarUrl, department, position }] of grouped) {
+          if (descriptors.length === 0) continue;
+
           const dimGroups = new Map<number, Float32Array[]>();
           for (const d of descriptors) {
             const group = dimGroups.get(d.length) ?? [];
@@ -751,23 +788,31 @@ export async function getAllTrainedDescriptors(forceFresh = false): Promise<Map<
           }
           let dominantGroup: Float32Array[] = [];
           for (const [, group] of dimGroups) {
-            if (group.length > dominantGroup.length) {
-              dominantGroup = group;
-            }
+            if (group.length > dominantGroup.length) dominantGroup = group;
           }
           if (dominantGroup.length === 0) continue;
 
           const averaged = robustAverage(dominantGroup);
-          const exemplars = selectDiverseExemplars(dominantGroup, averaged, 5);
-          result.set(userId, {
-            descriptors:        exemplars,
+          const exemplars = selectDiverseExemplars(dominantGroup, averaged, 6);
+
+          const entry: TrainedUserEntry = {
+            descriptors: exemplars,
             averagedDescriptor: averaged,
             userName,
-            studentId:          studentId ?? null,
-            sampleCount:        dominantGroup.length,
+            studentId: studentId ?? null,
+            sampleCount: dominantGroup.length,
             avatarUrl,
-            department,
-          });
+            department: department || 'Unknown',
+            position: position || 'Student',
+          };
+
+          // Store under primary canonical key
+          result.set(key, entry);
+
+          // ALSO map under studentId and UUID alias so lookups by student ID / roll find it instantly
+          if (studentId && studentId !== key) {
+            result.set(studentId, entry);
+          }
         }
 
         trainedGalleryCache = {
@@ -775,7 +820,7 @@ export async function getAllTrainedDescriptors(forceFresh = false): Promise<Map<
           scopeKey,
           data: result,
         };
-        console.log(`Loaded ${result.size} users with trained descriptors (fallback path)`);
+        console.log(`[UnifiedGallery] Loaded ${result.size} enrolled student entries across face_descriptors, profiles, and attendance_records`);
         return result;
       } finally {
         trainedGalleryInFlight = null;

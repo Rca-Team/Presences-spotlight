@@ -58,6 +58,9 @@ const Carousel = React.forwardRef<
   ) => {
     const [carouselRef, api] = useEmblaCarousel(
       {
+        duration: 25,
+        dragFree: false,
+        containScroll: "trimSnaps",
         ...opts,
         axis: orientation === "horizontal" ? "x" : "y",
       },
@@ -155,14 +158,15 @@ const CarouselContent = React.forwardRef<
   const { carouselRef, orientation } = useCarousel()
 
   return (
-    <div ref={carouselRef} className="overflow-hidden">
+    <div ref={carouselRef} className="overflow-hidden select-none">
       <div
         ref={ref}
         className={cn(
-          "flex",
+          "flex transition-transform will-change-transform",
           orientation === "horizontal" ? "-ml-4" : "-mt-4 flex-col",
           className
         )}
+        style={{ transform: "translate3d(0,0,0)", backfaceVisibility: "hidden" }}
         {...props}
       />
     </div>
@@ -182,10 +186,11 @@ const CarouselItem = React.forwardRef<
       role="group"
       aria-roledescription="slide"
       className={cn(
-        "min-w-0 shrink-0 grow-0 basis-full",
+        "min-w-0 shrink-0 grow-0 basis-full transition-opacity duration-200",
         orientation === "horizontal" ? "pl-4" : "pt-4",
         className
       )}
+      style={{ transform: "translateZ(0)" }}
       {...props}
     />
   )
@@ -204,7 +209,7 @@ const CarouselPrevious = React.forwardRef<
       variant={variant}
       size={size}
       className={cn(
-        "absolute  h-8 w-8 rounded-full",
+        "absolute h-8 w-8 rounded-full transition-all duration-150 active:scale-90 hover:shadow-md",
         orientation === "horizontal"
           ? "-left-12 top-1/2 -translate-y-1/2"
           : "-top-12 left-1/2 -translate-x-1/2 rotate-90",
@@ -233,7 +238,7 @@ const CarouselNext = React.forwardRef<
       variant={variant}
       size={size}
       className={cn(
-        "absolute h-8 w-8 rounded-full",
+        "absolute h-8 w-8 rounded-full transition-all duration-150 active:scale-90 hover:shadow-md",
         orientation === "horizontal"
           ? "-right-12 top-1/2 -translate-y-1/2"
           : "-bottom-12 left-1/2 -translate-x-1/2 rotate-90",

@@ -152,23 +152,30 @@ def test_5_cross_camera_deduplication():
     print("\n--- Test 5: Cross-Camera Real-Time Deduplication ---")
     
     engine = SpotlightEngine()
-    student = {"student_id": "301", "student_name": "Emma Watson", "class_name": "10", "section": "A"}
+    test_uid = f"test_student_{int(time.time() * 1000)}"
+    student = {"student_id": test_uid, "student_name": f"Student {test_uid[-4:]}", "class_name": "10", "section": "A"}
     
-    # Clear session and dedup table for test
+    # Snapshot initial counters from today's persistent db
+    init_total = engine.counter_total_present
+    init_lane1 = engine.counter_lane1
+    init_lane2 = engine.counter_lane2
+    
+    # Clear in-memory dedup cache
     engine.recent_verifications.clear()
     
     # 1. Camera 1 verifies student
     engine.handle_confirmed_attendance(student, confidence_score=0.96, cam_id=1)
-    assert engine.counter_lane1 == 1
+    assert engine.counter_lane1 == init_lane1 + 1
+    assert engine.counter_total_present == init_total + 1
     print("  [OK] Lane 1 confirmed student arrival")
 
-    # 2. Camera 2 sees student 5 seconds later
+    # 2. Camera 2 sees student 50ms later
     time.sleep(0.05)
     engine.handle_confirmed_attendance(student, confidence_score=0.95, cam_id=2)
     
-    # Lane 2 count must not increment, total present must stay 1
-    assert engine.counter_total_present == 1, f"Failed: Duplicate mark was not suppressed (total: {engine.counter_total_present})"
-    assert engine.counter_lane2 == 0, f"Failed: Lane 2 should be 0, got {engine.counter_lane2}"
+    # Lane 2 count must not increment, total present must stay init_total + 1
+    assert engine.counter_total_present == init_total + 1, f"Failed: Duplicate mark was not suppressed (total: {engine.counter_total_present})"
+    assert engine.counter_lane2 == init_lane2, f"Failed: Lane 2 should remain {init_lane2}, got {engine.counter_lane2}"
     assert engine.hud_banner_status[2] == "ALREADY RECORDED"
     print("  [OK] Lane 2 correctly identified student as 'ALREADY RECORDED' with zero duplicate rows")
 

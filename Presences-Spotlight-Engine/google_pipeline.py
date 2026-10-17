@@ -402,33 +402,25 @@ class GoogleFacePipeline:
                     if encs and len(encs) > 0:
                         return np.array(encs[0], dtype=np.float32)
 
-                    # 2. Fallback: Expanded margin (+15%) for face landmark coverage
+                    # 2. Fallback: Expanded margin (+12%) for face landmark coverage
                     bw = c_right - c_left
                     bh = c_bottom - c_top
-                    e_top = max(0, int(c_top - bh * 0.15))
-                    e_bottom = min(h - 1, int(c_bottom + bh * 0.15))
-                    e_left = max(0, int(c_left - bw * 0.15))
-                    e_right = min(w - 1, int(c_right + bw * 0.15))
+                    e_top = max(0, int(c_top - bh * 0.12))
+                    e_bottom = min(h - 1, int(c_bottom + bh * 0.12))
+                    e_left = max(0, int(c_left - bw * 0.12))
+                    e_right = min(w - 1, int(c_right + bw * 0.12))
 
                     encs_exp = face_recognition.face_encodings(rgb_full, [(e_top, e_right, e_bottom, e_left)], num_jitters=1)
                     if encs_exp and len(encs_exp) > 0:
                         return np.array(encs_exp[0], dtype=np.float32)
 
                 # 3. Fallback: On enhanced/illuminated crop if full frame lookup failed
-                if raw_crop is not None and raw_crop.shape[0] >= 40 and raw_crop.shape[1] >= 40:
+                if raw_crop is not None and raw_crop.shape[0] >= 50 and raw_crop.shape[1] >= 50:
                     rgb_crop = cv2.cvtColor(raw_crop, cv2.COLOR_BGR2RGB)
                     ch, cw, _ = rgb_crop.shape
                     encs_crop = face_recognition.face_encodings(rgb_crop, [(0, cw, ch, 0)], num_jitters=1)
                     if encs_crop and len(encs_crop) > 0:
                         return np.array(encs_crop[0], dtype=np.float32)
-
-                # 4. Fallback: On 112x112 canonical aligned face
-                if aligned_face is not None and aligned_face.shape[0] >= 50:
-                    rgb_aligned = cv2.cvtColor(aligned_face, cv2.COLOR_BGR2RGB)
-                    ah, aw, _ = rgb_aligned.shape
-                    encs_align = face_recognition.face_encodings(rgb_aligned, [(0, aw, ah, 0)], num_jitters=1)
-                    if encs_align and len(encs_align) > 0:
-                        return np.array(encs_align[0], dtype=np.float32)
 
             except Exception:
                 pass
@@ -526,12 +518,10 @@ class GoogleFacePipeline:
                     if aligned_crop is not None and was_enhanced:
                         aligned_crop, _, _ = self.enhance_face_illumination(aligned_crop)
 
-                # 8. Face Embedding Vector (Extracts with quality guard)
+                # 8. Face Embedding Vector (Multi-level fallback: full-res, expanded, enhanced crop, aligned)
                 embedding = None
                 if extract_embeddings:
-                    # Only compute embedding if quality meets threshold or face is frontal
-                    if quality >= config.MIN_QUALITY_FOR_ENCODING or is_frontal:
-                        embedding = self.extract_face_embedding(aligned_crop, enhanced_crop, frame, bbox, rgb_full=rgb_frame)
+                    embedding = self.extract_face_embedding(aligned_crop, enhanced_crop, frame, bbox, rgb_full=rgb_frame)
 
                 results.append(GoogleFaceData(
                     bbox=bbox,

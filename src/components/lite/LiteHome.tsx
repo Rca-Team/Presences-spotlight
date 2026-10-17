@@ -73,12 +73,12 @@ const MODULES_LIST: ModuleItem[] = [
     colorScheme: 'blue',
   },
   {
-    to: '/gate',
-    icon: DoorOpen,
-    label: 'Gate Security Kiosk',
-    desc: 'Campus boundary monitoring, visitor entry-exit tracking and stranger alerts',
+    to: '/gate-pass',
+    icon: QrCode,
+    label: 'Digital Gate Pass',
+    desc: 'Instant student gate passes, QR scanning, and parent pickup authorizations',
     category: 'Attendance',
-    badge: 'Perimeter',
+    badge: 'Gate Pass',
     colorScheme: 'purple',
   },
 
@@ -399,35 +399,35 @@ export const LiteHome: React.FC = () => {
             </div>
           </div>
 
-          {/* TILE 3: GATE SECURITY KIOSK */}
+          {/* TILE 3: DIGITAL GATE PASS */}
           <div className="group relative rounded-3xl border border-purple-500/30 bg-gradient-to-br from-purple-500/10 via-card to-card p-5 shadow-xs flex flex-col justify-between hover:border-purple-500/60 transition-all">
             <div className="space-y-3">
               <div className="flex items-center justify-between">
                 <div className="h-11 w-11 rounded-2xl bg-purple-500/15 text-purple-600 dark:text-purple-400 flex items-center justify-center font-bold">
-                  <DoorOpen className="h-6 w-6" />
+                  <QrCode className="h-6 w-6" />
                 </div>
                 <span className="text-[10px] font-extrabold uppercase px-2 py-0.5 rounded-full bg-purple-500/20 text-purple-700 dark:text-purple-300 border border-purple-500/30">
-                  Perimeter
+                  Gate Pass
                 </span>
               </div>
               <div>
                 <h2 className="font-black text-lg text-foreground group-hover:text-purple-600 dark:group-hover:text-purple-400 transition-colors">
-                  Gate Security
+                  Digital Gate Pass
                 </h2>
                 <p className="text-xs text-muted-foreground mt-1 leading-relaxed">
-                  Perimeter monitoring, stranger alerts, and visitor verification at school gates.
+                  Student gate pass approval, departure logs, and instant QR verification.
                 </p>
               </div>
             </div>
 
             <div className="pt-4 mt-4 border-t border-border/60 flex items-center justify-between">
               <Button asChild size="sm" className="h-8 px-3.5 rounded-xl bg-purple-600 hover:bg-purple-700 text-white font-bold text-xs gap-1.5 shadow-sm shadow-purple-600/25">
-                <Link to="/gate">
-                  Launch Gate <ArrowRight className="h-3.5 w-3.5" />
+                <Link to="/gate-pass">
+                  Open Gate Pass <ArrowRight className="h-3.5 w-3.5" />
                 </Link>
               </Button>
-              <Link to="/admin?tab=emergency" className="text-[11px] font-semibold text-rose-500 hover:underline flex items-center gap-1">
-                <Bell className="h-3.5 w-3.5" /> Alert Mode
+              <Link to="/guard" className="text-[11px] font-semibold text-purple-500 hover:underline flex items-center gap-1">
+                <ShieldCheck className="h-3.5 w-3.5" /> Guard Scanner
               </Link>
             </div>
           </div>

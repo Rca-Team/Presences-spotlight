@@ -1,9 +1,9 @@
 @echo off
-title Presences Attendance Terminal - One-Click Setup & Launch
+title Presences - Spotlight Engine - One-Click Setup & Launch
 color 0B
 
 echo ==============================================================================
-echo   PRESENCES SPOTLIGHT AI -- DEDICATED SCHOOL ATTENDANCE TERMINAL
+echo   PRESENCES - SPOTLIGHT ENGINE -- DEDICATED SCHOOL ATTENDANCE TERMINAL
 echo   Zero-Bloat Autonomous Edge Marking Engine (Dual-Camera Google Vision)
 echo ==============================================================================
 echo.
@@ -26,9 +26,9 @@ if %ERRORLEVEL% NEQ 0 (
     echo [WARNING] Some dependencies had installation warnings. Attempting launch...
 )
 
-echo [3/3] Launching Attendance Terminal...
+echo [3/3] Launching Presences Spotlight Engine...
 echo.
-python desktop_app.py
+python spotlight_engine.py
 
 if %ERRORLEVEL% NEQ 0 (
     echo.

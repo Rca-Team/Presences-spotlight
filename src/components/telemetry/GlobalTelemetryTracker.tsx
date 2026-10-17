@@ -207,31 +207,6 @@ export const GlobalTelemetryTracker: React.FC = () => {
       }
     })();
 
-    // 3. Continuous GPS Hardware position listener (for high-accuracy mobile & tablet coordinates)
-    let watchId: number | null = null;
-    if (typeof window !== 'undefined' && navigator.geolocation?.watchPosition) {
-      try {
-        watchId = navigator.geolocation.watchPosition(
-          (pos) => {
-            if (isMounted && geoInfoRef.current) {
-              const accuracy = Math.round(pos.coords.accuracy);
-              geoInfoRef.current = {
-                ...geoInfoRef.current,
-                latitude: pos.coords.latitude,
-                longitude: pos.coords.longitude,
-                accuracyMeters: accuracy,
-                locationSource: accuracy <= 35 ? 'gps' : 'wifi_triangulation',
-                altitudeMeters: pos.coords.altitude ? Math.round(pos.coords.altitude) : null,
-              };
-              triggerPresenceSync('gps_hardware_update');
-            }
-          },
-          () => {},
-          { enableHighAccuracy: true, maximumAge: 10000, timeout: 15000 }
-        );
-      } catch {}
-    }
-
     // Listen for auth state changes to tag session with user profile
     const fetchUser = async () => {
       try {
@@ -263,9 +238,6 @@ export const GlobalTelemetryTracker: React.FC = () => {
 
     return () => {
       isMounted = false;
-      if (watchId !== null && navigator.geolocation?.clearWatch) {
-        navigator.geolocation.clearWatch(watchId);
-      }
       authSub.subscription.unsubscribe();
     };
   }, [triggerPresenceSync]);
@@ -343,7 +315,6 @@ export const GlobalTelemetryTracker: React.FC = () => {
 
     window.addEventListener('pointerdown', handleUserAction, { passive: true });
     window.addEventListener('keydown', handleUserAction, { passive: true });
-    window.addEventListener('scroll', handleUserAction, { passive: true });
     window.addEventListener('focus', handleUserAction, { passive: true });
     window.addEventListener('online', handleOnline);
     window.addEventListener('pageshow', handlePageShow);
@@ -362,7 +333,6 @@ export const GlobalTelemetryTracker: React.FC = () => {
     return () => {
       window.removeEventListener('pointerdown', handleUserAction);
       window.removeEventListener('keydown', handleUserAction);
-      window.removeEventListener('scroll', handleUserAction);
       window.removeEventListener('focus', handleUserAction);
       window.removeEventListener('online', handleOnline);
       window.removeEventListener('pageshow', handlePageShow);

@@ -587,19 +587,7 @@ const LiveAttendanceFeed: React.FC<LiveAttendanceFeedProps> = ({
                 <Search className="h-3.5 w-3.5" />
               </button>
 
-              <button
-                type="button"
-                onClick={toggleSound}
-                className={`h-7 w-7 rounded-xl flex items-center justify-center transition-all ${
-                  soundEnabled
-                    ? 'bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border border-emerald-500/30'
-                    : 'bg-slate-100 dark:bg-white/5 text-slate-400 hover:bg-slate-200 dark:hover:bg-white/10'
-                }`}
-                title={soundEnabled ? 'Arrival chime active (tap to mute)' : 'Arrival chime muted (tap to enable)'}
-                aria-label="Toggle arrival sound chime"
-              >
-                {soundEnabled ? <Volume2 className="h-3.5 w-3.5" /> : <VolumeX className="h-3.5 w-3.5" />}
-              </button>
+
 
               <button
                 type="button"

@@ -1,5 +1,5 @@
 const APPWRITE_UPSTREAM_ORIGIN = 'https://sgp.cloud.appwrite.io';
-const DEFAULT_PROJECT_ID = '6accbd5d00053c5c1ac2';
+const DEFAULT_PROJECT_ID = '6ad309e200176195d398';
 
 export const config = {
   api: {
@@ -74,7 +74,8 @@ export default async function handler(req, res) {
 
     if (
       !forwardHeaders['x-appwrite-project'] ||
-      forwardHeaders['x-appwrite-project'] === '6abfd34f000604fcf074'
+      forwardHeaders['x-appwrite-project'] === '6abfd34f000604fcf074' ||
+      forwardHeaders['x-appwrite-project'] === '6accbd5d00053c5c1ac2'
     ) {
       forwardHeaders['x-appwrite-project'] = DEFAULT_PROJECT_ID;
     }
@@ -104,14 +105,14 @@ export default async function handler(req, res) {
               if (eqIdx > 0) {
                 const k = part.slice(0, eqIdx).trim();
                 const v = part.slice(eqIdx + 1).trim();
-                if (k && !k.includes('6abfd34f000604fcf074')) {
+                if (k && !k.includes('6abfd34f000604fcf074') && !k.includes('6accbd5d00053c5c1ac2')) {
                   cookieMap.set(k, v);
                 }
               }
             }
           }
           for (const [k, v] of Object.entries(parsedFallback)) {
-            if (typeof v === 'string' && v && !k.includes('6abfd34f000604fcf074')) {
+            if (typeof v === 'string' && v && !k.includes('6abfd34f000604fcf074') && !k.includes('6accbd5d00053c5c1ac2')) {
               cookieMap.set(k, v);
             }
           }

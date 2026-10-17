@@ -319,9 +319,9 @@ export const resolveStudentPhotoUrlSync = (
     return value;
   }
 
-  // If Appwrite backend is explicitly configured as primary
-  const backendType = import.meta.env.VITE_BACKEND_TYPE || 'supabase';
-  if (backendType === 'appwrite') {
+  // Appwrite backend is the primary cloud storage
+  const backendType = import.meta.env.VITE_BACKEND_TYPE || 'appwrite';
+  if (backendType === 'appwrite' || !import.meta.env.VITE_SUPABASE_URL) {
     const appwriteFileId = getAppwriteFileId(bucketPath);
     const appwriteUrl = options
       ? getAppwriteStoragePreviewUrl(primaryBucket, appwriteFileId, options)
@@ -337,12 +337,11 @@ export const resolveStudentPhotoUrlSync = (
     return appwriteUrl;
   }
 
-  // Default / Supabase storage public URL
-  const { data } = supabase.storage.from(primaryBucket).getPublicUrl(bucketPath);
-  const supabaseUrl = data?.publicUrl || value;
-
-  signedUrlCache.set(cacheKey, supabaseUrl);
-  return supabaseUrl;
+  // Fallback to Appwrite storage or local public assets if Supabase storage is unavailable
+  const appwriteFileId = getAppwriteFileId(bucketPath);
+  const fallbackUrl = getAppwriteStorageViewUrl(primaryBucket, appwriteFileId);
+  signedUrlCache.set(cacheKey, fallbackUrl);
+  return fallbackUrl;
 };
 
 export const resolveStudentPhotoUrl = async (

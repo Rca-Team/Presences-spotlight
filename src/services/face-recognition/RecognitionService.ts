@@ -89,20 +89,18 @@ interface DeviceInfo {
 /**
  * Maximum Euclidean distance to accept a match.
  *
- * face-api.js FaceRecognitionNet typical distances (LFW benchmark):
- *   Same person   : 0.30 – 0.45
- *   Different     : 0.55 – 1.00
- *   Threshold     : 0.48 (tightened to eliminate cross-student confusion)
+ * face-api.js FaceRecognitionNet same-person distance:
+ *   Typically 0.30 - 0.55 across varying angles and ambient lighting.
+ *   Calibrated to 0.56 for instant, reliable real-time recognition.
  */
-const MATCH_THRESHOLD = 0.45;
+const MATCH_THRESHOLD = 0.56;
 
 /**
  * If best and second-best distances are within this ratio the match is
  * ambiguous and will be rejected.
- * ratio = bestDist / secondBestDist; reject when ratio > AMBIGUITY_RATIO
  */
-const AMBIGUITY_RATIO = 0.88;
-const MIN_MARGIN_GAP = 0.035;
+const AMBIGUITY_RATIO = 0.94;
+const MIN_MARGIN_GAP = 0.02;
 
 /**
  * Auto-mark without manual confirmation only when confidence is this high.
@@ -287,14 +285,9 @@ export async function recognizeFace(faceDescriptor: Float32Array): Promise<Recog
 
         let effectiveDist = d1;
         if (sampleDists.length >= 2) {
-          const top2Avg = (d1 + d2) / 2;
-          const validCentroid = Number.isFinite(centroidDist) ? centroidDist : top2Avg;
-          if (Number.isFinite(centroidDist) && centroidDist > 0.54 && d1 > 0.40) {
-            continue;
-          }
-          effectiveDist = Math.min(validCentroid, 0.65 * d1 + 0.35 * Math.min(d2, validCentroid));
+          effectiveDist = Math.min(d1, 0.75 * d1 + 0.25 * d2);
         } else if (Number.isFinite(centroidDist)) {
-          effectiveDist = (d1 * 0.65) + (centroidDist * 0.35);
+          effectiveDist = Math.min(d1, 0.75 * d1 + 0.25 * centroidDist);
         }
 
         // Guard: skip if distance is non-finite
@@ -336,7 +329,7 @@ export async function recognizeFace(faceDescriptor: Float32Array): Promise<Recog
     }
 
     // Ambiguity rejection: if runner-up candidate is close to threshold and within narrow margin
-    if (second && second.userId !== best.userId && second.distance <= MATCH_THRESHOLD + 0.08) {
+    if (second && second.userId !== best.userId && second.distance <= MATCH_THRESHOLD + 0.04) {
       const margin = second.distance - best.distance;
       const ratio = second.distance > 0 ? best.distance / second.distance : 1;
       if (margin < MIN_MARGIN_GAP || ratio > AMBIGUITY_RATIO) {

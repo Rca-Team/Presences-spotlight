@@ -13,8 +13,6 @@ const LUMINA_PATHS = new Set<string>([
   '/attendance',
   '/user',
   '/admin',
-  '/gate',
-  '/gate-vision',
   '/features',
   '/parent',
   '/teacher',

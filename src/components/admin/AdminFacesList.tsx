@@ -8,10 +8,18 @@ import { Label } from '@/components/ui/label';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useToast } from '@/hooks/use-toast';
 import { supabase } from '@/integrations/supabase/client';
-import { Search, User, Users, UserCheck, UserX, Calendar, MoreVertical, Phone, Filter, ArrowUpDown, Clock, CheckCircle2, XCircle, SortAsc, SortDesc, Trash2, BellRing, X, BrainCircuit, ScanFace, FileText } from 'lucide-react';
+import { Search, User, Users, UserCheck, UserX, Calendar, MoreVertical, Phone, Filter, ArrowUpDown, Clock, CheckCircle2, XCircle, SortAsc, SortDesc, Trash2, BellRing, X, BrainCircuit, ScanFace, FileText, Download, LayoutList, LayoutGrid } from 'lucide-react';
 import NotificationService from './NotificationService';
 import AttendanceCalendar from './AttendanceCalendar';
 import CaptureFaceDialog from './CaptureFaceDialog';
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from '@/components/ui/table';
 import { 
   DropdownMenu,
   DropdownMenuContent,
@@ -195,6 +203,7 @@ const AdminFacesList: React.FC<AdminFacesListProps> = ({
     () => cachedEmotionStats || {}
   );
   const [promoteOpen, setPromoteOpen] = useState(false);
+  const [displayMode, setDisplayMode] = useState<'table' | 'cards'>('table');
   const [selectedTeacher, setSelectedTeacher] = useState<RegisteredFace | null>(null);
   const [teacherCategories, setTeacherCategories] = useState<string[]>([]);
   const [classTeacherCategory, setClassTeacherCategory] = useState<string>('none');
@@ -630,24 +639,24 @@ const AdminFacesList: React.FC<AdminFacesListProps> = ({
     switch (status) {
       case 'present':
         return (
-          <Badge className="bg-green-500/15 text-green-700 dark:text-green-400 border-green-500/30 gap-1 px-2 py-0.5 text-[11px] font-medium shrink-0">
-            <CheckCircle2 className="w-3 h-3 shrink-0" />
+          <Badge variant="outline" className="bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 border-emerald-500/25 gap-1.5 px-2 py-0.5 text-xs font-medium shrink-0">
+            <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 shrink-0" />
             <span>Present</span>
-            {info?.time && <span className="text-[10px] opacity-75 ml-0.5 hidden xs:inline">{info.time}</span>}
+            {info?.time && <span className="text-[10px] text-muted-foreground ml-0.5 hidden xs:inline">{info.time}</span>}
           </Badge>
         );
       case 'late':
         return (
-          <Badge className="bg-amber-500/15 text-orange-700 dark:text-orange-400 border-orange-500/30 gap-1 px-2 py-0.5 text-[11px] font-medium shrink-0">
-            <Clock className="w-3 h-3 shrink-0" />
+          <Badge variant="outline" className="bg-amber-500/10 text-amber-700 dark:text-amber-400 border-amber-500/25 gap-1.5 px-2 py-0.5 text-xs font-medium shrink-0">
+            <span className="w-1.5 h-1.5 rounded-full bg-amber-500 shrink-0" />
             <span>Late</span>
-            {info?.time && <span className="text-[10px] opacity-75 ml-0.5 hidden xs:inline">{info.time}</span>}
+            {info?.time && <span className="text-[10px] text-muted-foreground ml-0.5 hidden xs:inline">{info.time}</span>}
           </Badge>
         );
       case 'absent':
         return (
-          <Badge variant="outline" className="bg-red-500/10 text-red-600 dark:text-red-400 border-red-500/30 gap-1 px-2 py-0.5 text-[11px] font-medium shrink-0">
-            <XCircle className="w-3 h-3 shrink-0" />
+          <Badge variant="outline" className="bg-rose-500/10 text-rose-700 dark:text-rose-400 border-rose-500/25 gap-1.5 px-2 py-0.5 text-xs font-medium shrink-0">
+            <span className="w-1.5 h-1.5 rounded-full bg-rose-500 shrink-0" />
             <span>Absent</span>
           </Badge>
         );
@@ -661,39 +670,84 @@ const AdminFacesList: React.FC<AdminFacesListProps> = ({
 
   const hasActiveFilters = statusFilter !== 'all' || sectionFilter !== 'all' || classFilter !== 'all' || searchTerm.trim() !== '';
 
+  const handleExportCSV = () => {
+    if (filteredAndSortedFaces.length === 0) {
+      toast({
+        title: "No data to export",
+        description: "There are no student records matching the current filters.",
+        variant: "destructive"
+      });
+      return;
+    }
+    
+    const headers = ["Roll / ID", "Student Name", "Class & Section", "Today's Status", "Check-in Time", "Total Attendance Days", "Phone"];
+    const rows = filteredAndSortedFaces.map(face => {
+      const today = todayStatuses[face.employee_id];
+      const status = today?.status || 'absent';
+      const time = today?.time || '';
+      const totalDays = attendanceCounts[face.employee_id] || 0;
+      const phone = face.phone || '';
+      return [
+        `"${face.employee_id || ''}"`,
+        `"${(face.name || '').replace(/"/g, '""')}"`,
+        `"${(face.department || '').replace(/"/g, '""')}"`,
+        `"${status}"`,
+        `"${time}"`,
+        totalDays,
+        `"${phone}"`
+      ].join(',');
+    });
+
+    const csvContent = "data:text/csv;charset=utf-8," + [headers.join(','), ...rows].join('\n');
+    const encodedUri = encodeURI(csvContent);
+    const link = document.createElement("a");
+    link.setAttribute("href", encodedUri);
+    link.setAttribute("download", `student_roster_${format(new Date(), 'yyyy-MM-dd')}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+
+    toast({
+      title: "Roster Exported",
+      description: `Exported ${filteredAndSortedFaces.length} student records as CSV.`,
+    });
+  };
+
   return (
     <>
       {isLoading ? (
         <div className="space-y-4">
-          <div className="grid grid-cols-3 gap-2 sm:gap-3">
-            {[1, 2, 3].map(i => <Skeleton key={i} className="h-14 sm:h-16 rounded-2xl" />)}
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-2.5 sm:gap-3">
+            {[1, 2, 3, 4].map(i => <Skeleton key={i} className="h-20 rounded-xl" />)}
           </div>
           <Skeleton className="h-10 rounded-xl" />
           <div className="space-y-2">
-            {[1, 2, 3, 4].map(i => <Skeleton key={i} className="h-20 rounded-xl" />)}
+            {[1, 2, 3, 4, 5].map(i => <Skeleton key={i} className="h-12 rounded-xl" />)}
           </div>
         </div>
       ) : (
         <div className="space-y-4">
           {/* ── Sub-view Mode Switcher: Roster vs Attendance Calendar ── */}
           <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-2.5 border-b border-border/60 pb-3">
-            <div className="grid grid-cols-2 sm:flex gap-1 p-1 rounded-2xl bg-muted/60 border border-border/50">
+            <div className="grid grid-cols-2 sm:flex gap-1 p-1 rounded-xl bg-muted/60 border border-border/60">
               <button
+                type="button"
                 onClick={() => setSubTab('roster')}
                 className={cn(
-                  "flex items-center justify-center gap-1.5 px-3 py-2 sm:px-3.5 sm:py-1.5 rounded-xl text-xs font-semibold transition-all",
+                  "flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all",
                   subTab === 'roster'
-                    ? "bg-background text-foreground shadow-xs"
+                    ? "bg-background text-foreground shadow-xs border border-border/50"
                     : "text-muted-foreground hover:text-foreground"
                 )}
               >
                 <Users className="w-3.5 h-3.5 shrink-0" />
-                <span className="truncate">Directory</span>
-                <Badge variant="secondary" className="text-[10px] px-1 py-0 h-4 ml-0.5">
+                <span>Student Roster</span>
+                <Badge variant="secondary" className="text-[10px] px-1.5 py-0 h-4 ml-0.5 font-mono">
                   {faces.length}
                 </Badge>
               </button>
               <button
+                type="button"
                 onClick={() => {
                   setSubTab('calendar');
                   if (!selectedFaceId && faces.length > 0) {
@@ -701,30 +755,41 @@ const AdminFacesList: React.FC<AdminFacesListProps> = ({
                   }
                 }}
                 className={cn(
-                  "flex items-center justify-center gap-1.5 px-3 py-2 sm:px-3.5 sm:py-1.5 rounded-xl text-xs font-semibold transition-all",
+                  "flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all",
                   subTab === 'calendar'
-                    ? "bg-background text-foreground shadow-xs"
+                    ? "bg-background text-foreground shadow-xs border border-border/50"
                     : "text-muted-foreground hover:text-foreground"
                 )}
               >
                 <Calendar className="w-3.5 h-3.5 shrink-0" />
-                <span className="truncate">Calendar</span>
+                <span>Attendance Calendar</span>
                 {selectedFaceId && (
                   <span className="w-1.5 h-1.5 rounded-full bg-primary ml-0.5 shrink-0" />
                 )}
               </button>
             </div>
 
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2 overflow-x-auto pb-0.5 scrollbar-none">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={handleExportCSV}
+                className="h-8 text-xs font-medium rounded-lg gap-1.5 shadow-2xs shrink-0"
+                title="Export filtered roster to CSV"
+              >
+                <Download className="w-3.5 h-3.5" />
+                <span>Export CSV</span>
+              </Button>
+
               <Button
                 variant="outline"
                 size="sm"
                 onClick={() => navigate('/register?openPdfImporter=true')}
-                className="h-8 text-xs font-semibold rounded-xl border-blue-500/40 text-blue-600 dark:text-blue-400 hover:bg-blue-500/10 gap-1.5 shadow-sm justify-center"
-                title="Upload whole class ID cards PDF to extract all students and queue face scans"
+                className="h-8 text-xs font-medium rounded-lg gap-1.5 shadow-2xs shrink-0"
+                title="Upload ID cards PDF to import students"
               >
                 <FileText className="w-3.5 h-3.5" />
-                <span>Upload Class PDF</span>
+                <span>Upload PDF</span>
               </Button>
 
               {selectedFaceId && (
@@ -743,7 +808,7 @@ const AdminFacesList: React.FC<AdminFacesListProps> = ({
                       });
                     }
                   }}
-                  className="h-8 text-xs font-semibold rounded-xl border-primary/40 text-primary hover:bg-primary/10 gap-1.5 shadow-sm justify-center"
+                  className="h-8 text-xs font-semibold rounded-lg border-primary/40 text-primary hover:bg-primary/10 gap-1.5 shadow-2xs shrink-0"
                 >
                   <ScanFace className="w-3.5 h-3.5" />
                   <span>Recapture 3D Face</span>
@@ -761,53 +826,94 @@ const AdminFacesList: React.FC<AdminFacesListProps> = ({
             />
           ) : (
             <>
-              {/* ── Status Pills (3-column responsive) ── */}
-              <div className="grid grid-cols-3 gap-2">
-                {([
-                  { key: 'present' as StatusFilter, count: statusCounts.present, label: 'Present', activeClass: 'bg-green-500/15 border-green-500/40 text-green-700 dark:text-green-400', dotClass: 'bg-green-500' },
-                  { key: 'late' as StatusFilter, count: statusCounts.late, label: 'Late', activeClass: 'bg-amber-500/15 border-amber-500/40 text-amber-700 dark:text-amber-400', dotClass: 'bg-amber-500' },
-                  { key: 'absent' as StatusFilter, count: statusCounts.absent, label: 'Absent', activeClass: 'bg-red-500/15 border-red-500/40 text-red-700 dark:text-red-400', dotClass: 'bg-red-500' },
-                ]).map(item => (
-                  <motion.button
-                    key={item.key}
-                    whileTap={{ scale: 0.96 }}
-                    onClick={() => setStatusFilter(statusFilter === item.key ? 'all' : item.key)}
-                    className={cn(
-                      "flex flex-col sm:flex-row items-center justify-center gap-1 sm:gap-2 py-2 sm:py-2.5 px-2 rounded-2xl border-2 transition-all duration-200 font-medium",
-                      statusFilter === item.key
-                        ? item.activeClass
-                        : "bg-card border-border hover:border-muted-foreground/20 text-foreground"
-                    )}
-                  >
-                    <div className="flex items-center gap-1.5">
-                      <span className={cn("w-2 h-2 rounded-full shrink-0", item.dotClass)} />
-                      <span className="text-xs font-semibold">{item.label}</span>
-                    </div>
-                    <span className="text-base sm:text-xl font-bold tabular-nums">{item.count}</span>
-                  </motion.button>
-                ))}
+              {/* ── Executive 4-tile Metric Strip (Professional Clean Grid) ── */}
+              <div className="grid grid-cols-2 lg:grid-cols-4 gap-2.5 sm:gap-3">
+                {[
+                  {
+                    key: 'all' as StatusFilter,
+                    label: 'Total Enrolled',
+                    count: totalStudents,
+                    subtext: `${attendanceRate}% present rate`,
+                    indicator: 'bg-primary/10 text-primary',
+                    activeBorder: 'border-primary shadow-xs ring-1 ring-primary/20 bg-primary/5',
+                  },
+                  {
+                    key: 'present' as StatusFilter,
+                    label: 'Present Today',
+                    count: statusCounts.present,
+                    subtext: 'Marked on time',
+                    indicator: 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400',
+                    activeBorder: 'border-emerald-500 shadow-xs ring-1 ring-emerald-500/20 bg-emerald-500/5',
+                  },
+                  {
+                    key: 'late' as StatusFilter,
+                    label: 'Late Today',
+                    count: statusCounts.late,
+                    subtext: 'Marked after bell',
+                    indicator: 'bg-amber-500/10 text-amber-600 dark:text-amber-400',
+                    activeBorder: 'border-amber-500 shadow-xs ring-1 ring-amber-500/20 bg-amber-500/5',
+                  },
+                  {
+                    key: 'absent' as StatusFilter,
+                    label: 'Absent / Unmarked',
+                    count: statusCounts.absent,
+                    subtext: 'Awaiting check-in',
+                    indicator: 'bg-rose-500/10 text-rose-600 dark:text-rose-400',
+                    activeBorder: 'border-rose-500 shadow-xs ring-1 ring-rose-500/20 bg-rose-500/5',
+                  },
+                ].map((metric) => {
+                  const isSelected = statusFilter === metric.key;
+                  return (
+                    <button
+                      key={metric.key}
+                      type="button"
+                      onClick={() => setStatusFilter(statusFilter === metric.key && metric.key !== 'all' ? 'all' : metric.key)}
+                      className={cn(
+                        "text-left p-3 sm:p-3.5 rounded-xl border transition-all duration-150 flex flex-col justify-between group",
+                        isSelected
+                          ? metric.activeBorder
+                          : "bg-card border-border hover:border-muted-foreground/30 hover:bg-muted/20"
+                      )}
+                    >
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="text-xs font-medium text-muted-foreground">{metric.label}</span>
+                        <span className={cn("text-[10px] font-semibold px-1.5 py-0.5 rounded-md", metric.indicator)}>
+                          {metric.key === 'all' ? `${attendanceRate}%` : metric.key}
+                        </span>
+                      </div>
+                      <div className="mt-2 flex items-baseline justify-between">
+                        <span className="text-xl sm:text-2xl font-bold tracking-tight text-foreground tabular-nums">
+                          {metric.count}
+                        </span>
+                        <span className="text-[11px] text-muted-foreground hidden xs:inline">
+                          {metric.subtext}
+                        </span>
+                      </div>
+                    </button>
+                  );
+                })}
               </div>
 
-              {/* ── Attendance rate bar ── */}
-              <div className="relative h-2 rounded-full bg-muted overflow-hidden">
-                <motion.div
-                  className="absolute inset-y-0 left-0 rounded-full bg-gradient-to-r from-green-500 to-emerald-400"
-                  initial={{ width: 0 }}
-                  animate={{ width: `${attendanceRate}%` }}
-                  transition={{ duration: 0.8, ease: 'easeOut' }}
-                />
-                <span className="absolute right-0 -top-5 text-[10px] font-medium text-muted-foreground">
-                  {attendanceRate}% attendance
+              {/* Subtle linear attendance meter */}
+              <div className="flex items-center gap-3 px-1">
+                <div className="flex-1 h-1.5 bg-muted rounded-full overflow-hidden">
+                  <div
+                    className="h-full bg-emerald-500 transition-all duration-500 rounded-full"
+                    style={{ width: `${attendanceRate}%` }}
+                  />
+                </div>
+                <span className="text-xs font-medium text-muted-foreground tabular-nums shrink-0">
+                  {attendanceRate}% Present Today
                 </span>
               </div>
 
-              {/* ── Search + Compact Horizontal Filters ── */}
-              <div className="flex flex-col gap-2">
-                <div className="relative">
+              {/* ── Search + Clean Institutional Filters Toolbar ── */}
+              <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-2">
+                <div className="relative flex-1">
                   <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
                   <Input
-                    placeholder="Search students..."
-                    className="pl-9 h-10 rounded-xl bg-muted/40 border-0 focus-visible:ring-1"
+                    placeholder="Search by student name or roll ID..."
+                    className="pl-9 h-9 rounded-lg bg-background border-border text-xs focus-visible:ring-1"
                     value={searchTerm}
                     onChange={(e) => setSearchTerm(e.target.value)}
                   />
@@ -818,9 +924,9 @@ const AdminFacesList: React.FC<AdminFacesListProps> = ({
                   )}
                 </div>
 
-                <div className="flex items-center gap-1.5 overflow-x-auto pb-1 scrollbar-none">
+                <div className="flex items-center gap-1.5 overflow-x-auto pb-1 sm:pb-0 scrollbar-none">
                   <Select value={sectionFilter} onValueChange={setSectionFilter}>
-                    <SelectTrigger className="w-auto min-w-[90px] h-8 text-xs rounded-lg border-dashed shrink-0">
+                    <SelectTrigger className="w-auto min-w-[95px] h-9 text-xs rounded-lg border-border shrink-0 bg-background">
                       <SelectValue placeholder="Section" />
                     </SelectTrigger>
                     <SelectContent>
@@ -832,7 +938,7 @@ const AdminFacesList: React.FC<AdminFacesListProps> = ({
                   </Select>
 
                   <Select value={classFilter} onValueChange={setClassFilter}>
-                    <SelectTrigger className="w-auto min-w-[90px] h-8 text-xs rounded-lg border-dashed shrink-0">
+                    <SelectTrigger className="w-auto min-w-[95px] h-9 text-xs rounded-lg border-border shrink-0 bg-background">
                       <SelectValue placeholder="Class" />
                     </SelectTrigger>
                     <SelectContent>
@@ -845,7 +951,7 @@ const AdminFacesList: React.FC<AdminFacesListProps> = ({
 
                   <DropdownMenu>
                     <DropdownMenuTrigger asChild>
-                      <Button variant="outline" size="sm" className={cn("h-8 text-xs rounded-lg border-dashed gap-1 shrink-0", sortField !== 'name' && "border-primary text-primary")}>
+                      <Button variant="outline" size="sm" className={cn("h-9 text-xs rounded-lg border-border gap-1 shrink-0 bg-background", sortField !== 'name' && "border-primary text-primary font-semibold")}>
                         <ArrowUpDown className="h-3 w-3" />
                         <span className="hidden sm:inline">Sort:</span> {sortField === 'name' ? 'Name' : sortField === 'status' ? 'Status' : sortField === 'attendance' ? 'Attendance' : 'Recent'}
                       </Button>
@@ -867,11 +973,33 @@ const AdminFacesList: React.FC<AdminFacesListProps> = ({
                     </DropdownMenuContent>
                   </DropdownMenu>
 
+                  {/* View Mode Switcher (Table / Cards) */}
+                  <div className="flex items-center border border-border rounded-lg p-0.5 bg-muted/40 shrink-0">
+                    <Button
+                      variant={displayMode === 'table' ? 'secondary' : 'ghost'}
+                      size="icon"
+                      className="h-8 w-8 rounded-md"
+                      title="Data Table View"
+                      onClick={() => setDisplayMode('table')}
+                    >
+                      <LayoutList className="h-3.5 w-3.5" />
+                    </Button>
+                    <Button
+                      variant={displayMode === 'cards' ? 'secondary' : 'ghost'}
+                      size="icon"
+                      className="h-8 w-8 rounded-md"
+                      title="Compact Cards View"
+                      onClick={() => setDisplayMode('cards')}
+                    >
+                      <LayoutGrid className="h-3.5 w-3.5" />
+                    </Button>
+                  </div>
+
                   {hasActiveFilters && (
                     <Button
                       variant="ghost"
                       size="sm"
-                      className="h-8 text-xs text-muted-foreground hover:text-foreground px-2 shrink-0"
+                      className="h-9 text-xs text-muted-foreground hover:text-foreground px-2 shrink-0"
                       onClick={() => {
                         setStatusFilter('all');
                         setSectionFilter('all');
@@ -885,16 +1013,171 @@ const AdminFacesList: React.FC<AdminFacesListProps> = ({
                 </div>
               </div>
 
-              {/* ── Student List (Mobile-optimized cards with 1-tap 3D recapture) ── */}
-              <div className="space-y-2">
-                {filteredAndSortedFaces.length === 0 ? (
-                  <div className="py-12 text-center text-muted-foreground">
-                    <User className="h-8 w-8 mx-auto mb-2 opacity-40" />
-                    <p className="text-sm font-medium">No students found</p>
-                    <p className="text-xs mt-1">Try adjusting your filters</p>
+              {/* ── Student Data Display (Structured Table or Cards) ── */}
+              {filteredAndSortedFaces.length === 0 ? (
+                <div className="py-14 text-center text-muted-foreground border border-dashed rounded-xl bg-muted/10">
+                  <User className="h-9 w-9 mx-auto mb-2 opacity-30" />
+                  <p className="text-sm font-semibold text-foreground">No students match current filters</p>
+                  <p className="text-xs mt-1 text-muted-foreground">Try clearing search terms or resetting filters</p>
+                </div>
+              ) : displayMode === 'table' ? (
+                /* ── High-density Institutional Table View ── */
+                <div className="rounded-xl border border-border bg-card overflow-hidden shadow-xs">
+                  <div className="overflow-x-auto">
+                    <Table>
+                      <TableHeader className="bg-muted/40">
+                        <TableRow className="hover:bg-transparent">
+                          <TableHead className="w-[280px] text-xs font-semibold">Student</TableHead>
+                          <TableHead className="text-xs font-semibold">Roll / ID</TableHead>
+                          <TableHead className="text-xs font-semibold">Class & Section</TableHead>
+                          <TableHead className="text-xs font-semibold">Today's Status</TableHead>
+                          <TableHead className="text-xs font-semibold text-center">Total Attendance</TableHead>
+                          <TableHead className="text-xs font-semibold text-right pr-4">Actions</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {displayedFaces.map((face) => {
+                          const isSelected = selectedFaceId === face.id;
+                          return (
+                            <TableRow
+                              key={face.id}
+                              onClick={() => {
+                                setSelectedFaceId(face.id);
+                              }}
+                              className={cn(
+                                "cursor-pointer transition-colors text-xs",
+                                isSelected ? "bg-muted/60 font-medium" : "hover:bg-muted/30"
+                              )}
+                            >
+                              <TableCell className="py-2.5">
+                                <div className="flex items-center gap-3">
+                                  <Avatar className="h-8 w-8 rounded-lg border border-border shrink-0">
+                                    <AvatarImage src={face.image_url} alt={face.name} className="object-cover" />
+                                    <AvatarFallback className="rounded-lg text-xs font-bold bg-muted">
+                                      {face.name?.charAt(0) || '?'}
+                                    </AvatarFallback>
+                                  </Avatar>
+                                  <div className="min-w-0">
+                                    <p className="font-semibold text-foreground truncate">{face.name}</p>
+                                    {face.phone && (
+                                      <span className="text-[11px] text-muted-foreground">{face.phone}</span>
+                                    )}
+                                  </div>
+                                </div>
+                              </TableCell>
+                              <TableCell className="font-mono text-xs text-muted-foreground font-medium py-2.5">
+                                {face.employee_id}
+                              </TableCell>
+                              <TableCell className="py-2.5">
+                                {face.department && face.department !== 'N/A' ? (
+                                  <Badge variant="secondary" className="text-[11px] font-medium">
+                                    {face.department}
+                                  </Badge>
+                                ) : (
+                                  <span className="text-muted-foreground text-xs">—</span>
+                                )}
+                              </TableCell>
+                              <TableCell className="py-2.5">
+                                {getStatusBadge(face.employee_id)}
+                              </TableCell>
+                              <TableCell className="text-center font-medium tabular-nums py-2.5">
+                                <Badge variant="outline" className="text-xs font-mono font-normal">
+                                  {attendanceCounts[face.employee_id] || 0} days
+                                </Badge>
+                              </TableCell>
+                              <TableCell className="text-right py-2.5 pr-3">
+                                <div className="flex items-center justify-end gap-1" onClick={(e) => e.stopPropagation()}>
+                                  <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    className="h-7 text-xs px-2 gap-1 rounded-md text-primary hover:bg-primary/10 hover:text-primary"
+                                    title="Recapture 3D Face"
+                                    onClick={() => {
+                                      setRecaptureStudent({
+                                        id: face.id,
+                                        user_id: face.user_id || face.id,
+                                        name: face.name,
+                                        employee_id: face.employee_id,
+                                        category: face.department,
+                                      });
+                                    }}
+                                  >
+                                    <ScanFace className="h-3.5 w-3.5" />
+                                    <span className="hidden md:inline">Recapture</span>
+                                  </Button>
+
+                                  <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    className="h-7 text-xs px-2 gap-1 rounded-md hover:bg-muted"
+                                    title="View Attendance Calendar"
+                                    onClick={() => {
+                                      setSelectedFaceId(face.id);
+                                      setSubTab('calendar');
+                                    }}
+                                  >
+                                    <Calendar className="h-3.5 w-3.5" />
+                                    <span className="hidden md:inline">Calendar</span>
+                                  </Button>
+
+                                  <DropdownMenu>
+                                    <DropdownMenuTrigger asChild>
+                                      <Button variant="ghost" size="icon" className="h-7 w-7 rounded-md">
+                                        <MoreVertical className="h-3.5 w-3.5" />
+                                      </Button>
+                                    </DropdownMenuTrigger>
+                                    <DropdownMenuContent align="end" className="w-48">
+                                      <DropdownMenuItem
+                                        onClick={() => {
+                                          setSelectedFaceId(face.id);
+                                          setSubTab('calendar');
+                                        }}
+                                        className="text-xs gap-2"
+                                      >
+                                        <Calendar className="h-3.5 w-3.5" /> View Attendance Calendar
+                                      </DropdownMenuItem>
+                                      <DropdownMenuItem
+                                        onClick={() => {
+                                          setRecaptureStudent({
+                                            id: face.id,
+                                            user_id: face.user_id || face.id,
+                                            name: face.name,
+                                            employee_id: face.employee_id,
+                                            category: face.department,
+                                          });
+                                        }}
+                                        className="text-xs gap-2 text-primary font-medium"
+                                      >
+                                        <ScanFace className="h-3.5 w-3.5 text-primary" /> Recapture 3D Face
+                                      </DropdownMenuItem>
+                                      <DropdownMenuItem
+                                        onClick={() => openPromoteDialog(face)}
+                                        className="text-xs gap-2"
+                                      >
+                                        <UserCheck className="h-3.5 w-3.5" /> Make Teacher
+                                      </DropdownMenuItem>
+                                      <DropdownMenuSeparator />
+                                      <DropdownMenuItem
+                                        onClick={() => setStudentToDelete(face)}
+                                        className="text-xs text-destructive gap-2 font-medium"
+                                      >
+                                        <Trash2 className="h-3.5 w-3.5" /> Delete Student Everywhere
+                                      </DropdownMenuItem>
+                                    </DropdownMenuContent>
+                                  </DropdownMenu>
+                                </div>
+                              </TableCell>
+                            </TableRow>
+                          );
+                        })}
+                      </TableBody>
+                    </Table>
                   </div>
-                ) : (
-                  displayedFaces.map((face, index) => (
+                </div>
+              ) : (
+                /* ── Compact Cards View ── */
+                <div className="space-y-2">
+                  {displayedFaces.map((face, index) => (
                     <motion.div
                       key={face.id}
                       initial={index < 8 ? { opacity: 0, y: 6 } : false}
@@ -903,57 +1186,51 @@ const AdminFacesList: React.FC<AdminFacesListProps> = ({
                     >
                       <Card
                         className={cn(
-                          "cursor-pointer transition-all duration-200 active:scale-[0.99] sm:hover:shadow-md overflow-hidden",
+                          "cursor-pointer transition-all duration-150 overflow-hidden border-border",
                           selectedFaceId === face.id
-                            ? "ring-2 ring-primary shadow-md"
-                            : "hover:bg-accent/50"
+                            ? "ring-1 ring-primary shadow-xs border-primary/50"
+                            : "hover:bg-muted/30"
                         )}
                         onClick={() => {
                           setSelectedFaceId(face.id);
                           setSubTab('calendar');
                         }}
                       >
-                        <CardContent className="p-2.5 sm:p-3">
-                          <div className="flex items-center gap-2.5 sm:gap-3">
+                        <CardContent className="p-3">
+                          <div className="flex items-center gap-3">
                             <div className="relative shrink-0">
-                              <Avatar className="h-10 w-10 sm:h-12 sm:w-12 rounded-xl border border-border">
+                              <Avatar className="h-10 w-10 rounded-lg border border-border">
                                 <AvatarImage src={face.image_url} alt={face.name} className="object-cover" />
-                                <AvatarFallback className="rounded-xl text-sm font-bold bg-muted">
+                                <AvatarFallback className="rounded-lg text-sm font-bold bg-muted">
                                   {face.name?.charAt(0) || '?'}
                                 </AvatarFallback>
                               </Avatar>
-                              {/* Status dot */}
                               <span className={cn(
-                                "absolute -bottom-0.5 -right-0.5 w-3 h-3 sm:w-3.5 sm:h-3.5 rounded-full border-2 border-card",
-                                todayStatuses[face.employee_id]?.status === 'present' ? 'bg-green-500' :
+                                "absolute -bottom-0.5 -right-0.5 w-2.5 h-2.5 rounded-full border-2 border-card",
+                                todayStatuses[face.employee_id]?.status === 'present' ? 'bg-emerald-500' :
                                 todayStatuses[face.employee_id]?.status === 'late' ? 'bg-amber-500' :
-                                'bg-red-400'
+                                'bg-rose-500'
                               )} />
                             </div>
 
                             <div className="flex-1 min-w-0">
-                              <p className="font-semibold text-sm truncate">{face.name}</p>
+                              <p className="font-semibold text-sm truncate text-foreground">{face.name}</p>
                               <div className="flex items-center gap-1.5 mt-0.5">
-                                <span className="text-[10px] text-muted-foreground font-mono">{face.employee_id}</span>
-                                {face.department !== 'N/A' && (
-                                  <span className="text-[10px] text-muted-foreground truncate">· {face.department}</span>
+                                <span className="text-[11px] text-muted-foreground font-mono">{face.employee_id}</span>
+                                {face.department && face.department !== 'N/A' && (
+                                  <span className="text-[11px] text-muted-foreground truncate">· {face.department}</span>
                                 )}
                               </div>
                             </div>
 
-                            <div className="flex items-center gap-1 sm:gap-1.5 shrink-0">
-                              <Badge variant="outline" className="hidden md:inline-flex gap-1 text-[10px]">
-                                <BrainCircuit className="w-3 h-3" />
-                                {emotionStatsByStudent[face.employee_id]?.label?.replace('-', ' ') || 'neutral'}
-                              </Badge>
+                            <div className="flex items-center gap-1.5 shrink-0">
                               {getStatusBadge(face.employee_id)}
                               
-                              {/* Direct 1-tap 3D Face Recapture button */}
                               <Button
                                 variant="ghost"
                                 size="icon"
                                 title="Recapture 3D Face"
-                                className="h-8 w-8 rounded-xl text-primary hover:bg-primary/10 hover:text-primary shrink-0"
+                                className="h-8 w-8 rounded-lg text-primary hover:bg-primary/10 hover:text-primary shrink-0"
                                 onClick={(e) => {
                                   e.stopPropagation();
                                   setRecaptureStudent({
@@ -970,7 +1247,7 @@ const AdminFacesList: React.FC<AdminFacesListProps> = ({
 
                               <DropdownMenu>
                                 <DropdownMenuTrigger asChild>
-                                  <Button variant="ghost" size="icon" className="h-8 w-8 rounded-xl shrink-0" onClick={e => e.stopPropagation()}>
+                                  <Button variant="ghost" size="icon" className="h-8 w-8 rounded-lg shrink-0" onClick={e => e.stopPropagation()}>
                                     <MoreVertical className="h-3.5 w-3.5" />
                                   </Button>
                                 </DropdownMenuTrigger>
@@ -980,7 +1257,7 @@ const AdminFacesList: React.FC<AdminFacesListProps> = ({
                                     setSelectedFaceId(face.id); 
                                     setSubTab('calendar');
                                   }} className="text-xs gap-2">
-                                    <Calendar className="h-3 w-3" /> View Calendar
+                                    <Calendar className="h-3.5 w-3.5" /> View Calendar
                                   </DropdownMenuItem>
                                   <DropdownMenuItem onClick={(e) => { 
                                     e.stopPropagation(); 
@@ -991,15 +1268,15 @@ const AdminFacesList: React.FC<AdminFacesListProps> = ({
                                       employee_id: face.employee_id,
                                       category: face.department,
                                     });
-                                  }} className="text-xs gap-2 text-primary font-semibold">
+                                  }} className="text-xs gap-2 text-primary font-medium">
                                     <ScanFace className="h-3.5 w-3.5 text-primary" /> Recapture 3D Face
                                   </DropdownMenuItem>
                                   <DropdownMenuItem onClick={(e) => { e.stopPropagation(); openPromoteDialog(face); }} className="text-xs gap-2">
-                                    <UserCheck className="h-3 w-3" /> Make Teacher
+                                    <UserCheck className="h-3.5 w-3.5" /> Make Teacher
                                   </DropdownMenuItem>
                                   <DropdownMenuSeparator />
-                                  <DropdownMenuItem onClick={(e) => { e.stopPropagation(); setStudentToDelete(face); }} className="text-xs text-destructive gap-2 font-semibold">
-                                    <Trash2 className="h-3 w-3" /> Delete Student Everywhere
+                                  <DropdownMenuItem onClick={(e) => { e.stopPropagation(); setStudentToDelete(face); }} className="text-xs text-destructive gap-2 font-medium">
+                                    <Trash2 className="h-3.5 w-3.5" /> Delete Student Everywhere
                                   </DropdownMenuItem>
                                 </DropdownMenuContent>
                               </DropdownMenu>
@@ -1008,16 +1285,16 @@ const AdminFacesList: React.FC<AdminFacesListProps> = ({
                         </CardContent>
                       </Card>
                     </motion.div>
-                  ))
-                )}
-              </div>
+                  ))}
+                </div>
+              )}
 
               {filteredAndSortedFaces.length > displayLimit && (
                 <div className="pt-2 text-center">
                   <Button
                     variant="outline"
                     size="sm"
-                    className="w-full text-xs font-semibold h-8 rounded-xl"
+                    className="w-full text-xs font-semibold h-8 rounded-lg"
                     onClick={() => setDisplayLimit(prev => prev + 40)}
                   >
                     Load More Students ({filteredAndSortedFaces.length - displayLimit} remaining)
@@ -1025,7 +1302,7 @@ const AdminFacesList: React.FC<AdminFacesListProps> = ({
                 </div>
               )}
 
-              <p className="text-[10px] text-muted-foreground text-center pt-2">
+              <p className="text-[11px] text-muted-foreground text-center pt-2">
                 Showing {Math.min(displayLimit, filteredAndSortedFaces.length)} of {filteredAndSortedFaces.length} students ({totalStudents} total enrolled)
               </p>
             </>

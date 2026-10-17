@@ -496,7 +496,7 @@ const WidgetsPage: React.FC = () => {
     <div className="min-h-screen bg-background text-foreground flex flex-col selection:bg-primary/20 pb-28 md:pb-16">
       <Navbar />
 
-      <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 pt-24 pb-8 space-y-6">
+      <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 pt-24 pb-8 space-y-6 animate-element-coming">
         {/* Hero Banner with Material You Accent */}
         <div className="relative overflow-hidden rounded-3xl border border-primary/20 bg-gradient-to-br from-card/90 via-card/60 to-primary/10 p-5 md:p-7 shadow-xl backdrop-blur-2xl">
           <div className="pointer-events-none absolute -right-20 -top-20 h-56 w-56 rounded-full bg-primary/15 blur-3xl" />

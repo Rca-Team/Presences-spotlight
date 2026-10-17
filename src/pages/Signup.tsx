@@ -152,16 +152,16 @@ const Signup = () => {
       {/* Left Panel (desktop) */}
       <div className="hidden lg:flex lg:w-1/2 relative items-center justify-center p-12">
         <div className="max-w-md space-y-8">
-          <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.2 }}>
+          <motion.div initial={{ opacity: 0.90, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ type: 'spring', stiffness: 400, damping: 30 }}>
             <Logo size="lg" />
           </motion.div>
-          <motion.h2 initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.3 }}
+          <motion.h2 initial={{ opacity: 0.90, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ type: 'spring', stiffness: 400, damping: 30 }}
             className="text-3xl font-bold text-foreground">
             Join Smart School Platform
           </motion.h2>
 
 
-          <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.5 }}
+          <motion.div initial={{ opacity: 0.90, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ type: 'spring', stiffness: 400, damping: 30 }}
             className="grid grid-cols-2 gap-3">
             {[
               { icon: Scan, label: "Face Attendance", colorVar: '--ios-blue' },
@@ -180,7 +180,7 @@ const Signup = () => {
 
       {/* Right Panel - Signup Form */}
       <div className="flex-1 flex items-center justify-center px-5 py-6 sm:p-6 relative">
-        <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.5 }}
+        <motion.div initial={{ opacity: 0.90, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ type: 'spring', stiffness: 400, damping: 30 }}
           className="w-full max-w-[420px] space-y-4">
           
           <div className="flex items-center justify-between">

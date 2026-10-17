@@ -27,8 +27,10 @@ function sanitizeImageUrl(url: any): string | null {
       return getAppwriteStorageViewUrl(bucket, fileId, APPWRITE_CONFIG.projectId);
     }
   }
-  if (url.includes('6abfd34f000604fcf074')) {
-    return url.replace(/6abfd34f000604fcf074/g, APPWRITE_CONFIG.projectId);
+  if (url.includes('6abfd34f000604fcf074') || url.includes('6accbd5d00053c5c1ac2')) {
+    return url
+      .replace(/6abfd34f000604fcf074/g, APPWRITE_CONFIG.projectId)
+      .replace(/6accbd5d00053c5c1ac2/g, APPWRITE_CONFIG.projectId);
   }
   return url;
 }
@@ -113,9 +115,6 @@ let appwriteReadQuotaCooldownUntil = 0;
 const QUOTA_STORAGE_KEY = 'presences_appwrite_quota_frozen_until';
 
 export function getAppwriteQuotaCooldownUntil(): number {
-  if (APPWRITE_CONFIG.projectId === '6accbd5d00053c5c1ac2') {
-    return Date.now() + 3600000;
-  }
   try {
     if (typeof localStorage !== 'undefined') {
       const stored = Number(localStorage.getItem(QUOTA_STORAGE_KEY) || '0');

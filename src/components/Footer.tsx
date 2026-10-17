@@ -72,7 +72,7 @@ const Footer = () => {
           <ul className="space-y-2">
             {[
               { label: 'Attendance System', path: '/attendance' },
-              { label: 'Gate Security Mode', path: '/gate' },
+              { label: 'Digital Gate Pass', path: '/gate-pass' },
               { label: 'Parent Portal', path: '/parent' },
               { label: 'Features & Architecture', path: '/features' },
             ].map((item) => (

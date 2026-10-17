@@ -29,16 +29,16 @@ ENABLE_CANONICAL_ALIGNMENT = os.getenv("ENABLE_CANONICAL_ALIGNMENT", "true").low
 # Adaptive Illumination & Quality Normalization (AIE - Backlight, Shadow & Glare Fix)
 ENABLE_ADAPTIVE_ILLUMINATION = os.getenv("ENABLE_ADAPTIVE_ILLUMINATION", "true").lower() in ("true", "1", "yes")
 ENABLE_MOTION_BLUR_FILTER = os.getenv("ENABLE_MOTION_BLUR_FILTER", "true").lower() in ("true", "1", "yes")
-MIN_QUALITY_FOR_ENCODING = float(os.getenv("MIN_QUALITY_FOR_ENCODING", "0.45"))
+MIN_QUALITY_FOR_ENCODING = float(os.getenv("MIN_QUALITY_FOR_ENCODING", "0.30"))
 
 # 3D Head Pose Filtering (Tolerates normal walk-through head turns)
 ENABLE_POSE_FILTER = os.getenv("ENABLE_POSE_FILTER", "false").lower() in ("true", "1", "yes")
 MAX_POSE_YAW_DEG = float(os.getenv("MAX_POSE_YAW_DEG", "45.0"))
-MAX_POSE_PITCH_DEG = float(os.getenv("MAX_POSE_PITCH_DEG", "35.0"))
+MAX_POSE_PITCH_DEG = float(os.getenv("MAX_POSE_PITCH_DEG", "38.0"))
 
 # Face Quality Gate (Tolerant for typical school webcams and PoE bullet cameras)
-MIN_SHARPNESS_LAPLACIAN = float(os.getenv("MIN_SHARPNESS_LAPLACIAN", "15.0"))
-MIN_FACE_SIZE_PX = int(os.getenv("MIN_FACE_SIZE_PX", "50"))
+MIN_SHARPNESS_LAPLACIAN = float(os.getenv("MIN_SHARPNESS_LAPLACIAN", "12.0"))
+MIN_FACE_SIZE_PX = int(os.getenv("MIN_FACE_SIZE_PX", "35"))
 
 # Anti-Spoofing & Liveness Guard (Eye Aspect Ratio EAR + 3D Mesh Depth check)
 ENABLE_LIVENESS_GUARD = os.getenv("ENABLE_LIVENESS_GUARD", "false").lower() in ("true", "1", "yes")
@@ -55,7 +55,7 @@ BACKEND_TYPE = os.getenv("BACKEND_TYPE", "appwrite").lower()
 
 # Appwrite Official Cloud Backend Configuration
 APPWRITE_ENDPOINT = os.getenv("APPWRITE_ENDPOINT", os.getenv("VITE_APPWRITE_ENDPOINT", "https://sgp.cloud.appwrite.io/v1")).rstrip('/')
-APPWRITE_PROJECT_ID = os.getenv("APPWRITE_PROJECT_ID", os.getenv("VITE_APPWRITE_PROJECT_ID", "6accbd5d00053c5c1ac2"))
+APPWRITE_PROJECT_ID = os.getenv("APPWRITE_PROJECT_ID", os.getenv("VITE_APPWRITE_PROJECT_ID", "6ad309e200176195d398"))
 APPWRITE_API_KEY = os.getenv("APPWRITE_API_KEY", "")
 APPWRITE_DATABASE_ID = os.getenv("APPWRITE_DATABASE_ID", os.getenv("VITE_APPWRITE_DATABASE_ID", "presences_db"))
 APPWRITE_BUCKET_ID = os.getenv("APPWRITE_BUCKET_ID", "face-images")
@@ -96,14 +96,14 @@ CROSS_CAMERA_COOLDOWN_SEC = int(os.getenv("CROSS_CAMERA_COOLDOWN_SEC", "45"))
 
 
 # ─── 4. Recognition & Anti-False Attendance Safeguards ───────────────────────
-# Euclidean distance threshold (0.50 is the optimal threshold for Face-API.js / dlib 128-D vectors)
-MATCH_THRESHOLD = float(os.getenv("MATCH_THRESHOLD", "0.50"))
+# Euclidean distance threshold (0.52 is the calibrated threshold for school cameras)
+MATCH_THRESHOLD = float(os.getenv("MATCH_THRESHOLD", "0.52"))
 
 # Ambiguity Ratio: If best_distance / second_best_distance > 0.88, flag as ambiguous to prevent misidentifying similar students
 AMBIGUITY_RATIO = float(os.getenv("AMBIGUITY_RATIO", "0.88"))
 
 # Ambiguity Margin Delta: Absolute separation required between top candidate and runner-up candidate
-AMBIGUITY_MARGIN_DELTA = float(os.getenv("AMBIGUITY_MARGIN_DELTA", "0.08"))
+AMBIGUITY_MARGIN_DELTA = float(os.getenv("AMBIGUITY_MARGIN_DELTA", "0.05"))
 
 # Strict Zero False Mode: Enforces mandatory multi-frame consensus and margin checks
 STRICT_ZERO_FALSE_MODE = os.getenv("STRICT_ZERO_FALSE_MODE", "true").lower() in ("true", "1", "yes")
@@ -133,7 +133,7 @@ CAPTURE_MODE = "spotlight-gate"
 SHOW_WINDOW = os.getenv("SHOW_WINDOW", "true").lower() in ("true", "1", "yes")
 FULLSCREEN_KIOSK = os.getenv("FULLSCREEN_KIOSK", "false").lower() in ("true", "1", "yes")
 # Audio verification (Set to False for silent operation)
-ENABLE_AUDIO = os.getenv("ENABLE_AUDIO", "false").lower() in ("true", "1", "yes")
+ENABLE_AUDIO = os.getenv("ENABLE_AUDIO", "true").lower() in ("true", "1", "yes")
 # Toggle 478-Landmark wireframe mesh overlay by default
 SHOW_LANDMARK_MESH = os.getenv("SHOW_LANDMARK_MESH", "false").lower() in ("true", "1", "yes")
 

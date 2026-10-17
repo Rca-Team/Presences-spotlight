@@ -64,12 +64,6 @@ const Features = () => {
           description="Helpful tools for attendance, timetables, and campus activities"
           icon={<Sparkles className="h-8 w-8 text-cyan-400" />}
         />
-        {isAdminOrPrincipal && (
-          <Button onClick={() => navigate('/gate')} className="gap-2 w-full sm:w-auto shrink-0" size="lg">
-            <DoorOpen className="h-5 w-5" />
-            Open Gate & Classroom Camera
-          </Button>
-        )}
       </div>
 
       <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
