@@ -133,6 +133,13 @@ export async function universalDeleteStudent(
     candidateNames.add(rawName.trim());
   }
 
+  // Any key formatted like a UUID or document ID should also be treated as a potential profile ID
+  for (const k of candidateStudentKeys) {
+    if (/^[a-zA-Z0-9_-]{15,40}$/.test(k)) {
+      candidateProfileIds.add(k);
+    }
+  }
+
   if (target.image_url) imageUrlsToPurge.add(target.image_url);
   if (target.avatar_url) imageUrlsToPurge.add(target.avatar_url);
   if (target.photo_url) imageUrlsToPurge.add(target.photo_url);
@@ -155,6 +162,7 @@ export async function universalDeleteStudent(
       profileLookupQueries.push(supabase.from('profiles').select('*').in('admission_number', keys));
       profileLookupQueries.push(supabase.from('profiles').select('*').in('employee_id', keys));
       profileLookupQueries.push(supabase.from('profiles').select('*').in('roll_number', keys));
+      profileLookupQueries.push(supabase.from('profiles').select('*').in('id', keys));
     }
     if (candidateUserIds.size > 0) {
       profileLookupQueries.push(supabase.from('profiles').select('*').in('user_id', Array.from(candidateUserIds)));
@@ -163,10 +171,10 @@ export async function universalDeleteStudent(
       profileLookupQueries.push(supabase.from('profiles').select('*').in('id', Array.from(candidateProfileIds)));
     }
 
-    const lookupResults = await Promise.all(profileLookupQueries);
+    const lookupResults = await Promise.allSettled(profileLookupQueries);
     for (const res of lookupResults) {
-      if (res?.data && Array.isArray(res.data)) {
-        for (const p of res.data) {
+      if (res.status === 'fulfilled' && res.value?.data && Array.isArray(res.value.data)) {
+        for (const p of res.value.data) {
           if (p.id) candidateProfileIds.add(p.id);
           if (p.$id) candidateProfileIds.add(p.$id);
           if (p.user_id) candidateUserIds.add(p.user_id);
@@ -184,19 +192,20 @@ export async function universalDeleteStudent(
     console.warn('[universalDeleteStudent] Profile identity discovery error:', err?.message);
   }
 
-  // 3. Invoke Cloud Function `staff.deleteStudent` (Appwrite Backend)
+  // 3. Fast non-blocking backend cloud function trigger (with strict timeout)
   onProgress?.('Triggering backend biometric & enrollment purge...');
   try {
     const admissionParam = target.admission_number || target.employee_id || Array.from(candidateStudentKeys)[0] || Array.from(candidateUserIds)[0] || target.id;
     if (admissionParam) {
-      await enrollmentApi('staff.deleteStudent', {
-        admission: String(admissionParam).trim(),
-        admission_number: String(admissionParam).trim(),
-        user_id: Array.from(candidateUserIds)[0] || target.user_id,
-      }).catch(async (apiErr) => {
-        console.warn('[universalDeleteStudent] staff.deleteStudent notice:', apiErr?.message);
-        return enrollmentApi('staff.revert', { admission: String(admissionParam).trim() }).catch(() => {});
-      });
+      const fastTimeout = new Promise((resolve) => setTimeout(resolve, 800));
+      await Promise.race([
+        enrollmentApi('staff.deleteStudent', {
+          admission: String(admissionParam).trim(),
+          admission_number: String(admissionParam).trim(),
+          user_id: Array.from(candidateUserIds)[0] || target.user_id,
+        }).catch(() => {}),
+        fastTimeout,
+      ]);
     }
   } catch (backendErr: any) {
     console.warn('[universalDeleteStudent] Backend cloud function purge warning:', backendErr?.message);
@@ -266,6 +275,16 @@ export async function universalDeleteStudent(
   // 6. Delete from `profiles`
   onProgress?.('Permanently removing student profile...');
   try {
+    // Direct delete from Appwrite database
+    for (const pId of candidateProfileIds) {
+      try {
+        await databases.deleteDocument(APPWRITE_CONFIG.databaseId, 'profiles', pId);
+        deletedProfiles++;
+      } catch (err: any) {
+        if (err?.code !== 404) console.warn('Appwrite profile delete error:', err?.message);
+      }
+    }
+
     const profQueries: Promise<any>[] = [];
     if (candidateProfileIds.size > 0) {
       profQueries.push(supabase.from('profiles').delete().in('id', Array.from(candidateProfileIds)));
@@ -278,18 +297,15 @@ export async function universalDeleteStudent(
       profQueries.push(supabase.from('profiles').delete().in('admission_number', keys));
       profQueries.push(supabase.from('profiles').delete().in('employee_id', keys));
       profQueries.push(supabase.from('profiles').delete().in('roll_number', keys));
+      profQueries.push(supabase.from('profiles').delete().in('id', keys));
     }
 
-    const profRes = await Promise.all(profQueries);
+    const profRes = await Promise.allSettled(profQueries);
     profRes.forEach((r) => {
-      if (r?.data?.length) deletedProfiles += r.data.length;
-      if (r?.count) deletedProfiles += r.count;
+      if (r.status === 'fulfilled' && (r.value as any)?.data?.length) {
+        deletedProfiles += (r.value as any).data.length;
+      }
     });
-
-    // Also direct delete via Appwrite database SDK if profile IDs known
-    for (const pId of candidateProfileIds) {
-      await databases.deleteDocument(APPWRITE_CONFIG.databaseId, 'profiles', pId).catch(() => {});
-    }
   } catch (profErr: any) {
     errors.push(`Profiles: ${profErr.message}`);
   }
@@ -332,7 +348,7 @@ export async function universalDeleteStudent(
     console.warn('[universalDeleteStudent] Secondary tables cleanup warning:', secErr?.message);
   }
 
-  // 8. Delete Cloud Storage photos from all buckets
+  // 8. Delete Cloud Storage photos from all buckets in parallel
   onProgress?.('Reclaiming cloud storage space...');
   try {
     const refsToDelete: Array<{ bucket: string; fileId: string; path?: string }> = [];
@@ -351,18 +367,20 @@ export async function universalDeleteStudent(
       }
     }
 
-    for (const ref of refsToDelete) {
-      try {
-        await appwriteStorage.deleteFile(ref.bucket, ref.fileId).catch(() => {});
-        deletedFiles++;
-      } catch {}
-
-      if (ref.path) {
+    await Promise.allSettled(
+      refsToDelete.map(async (ref) => {
         try {
-          await supabase.storage.from(ref.bucket).remove([ref.path]).catch(() => {});
+          await appwriteStorage.deleteFile(ref.bucket, ref.fileId);
+          deletedFiles++;
         } catch {}
-      }
-    }
+
+        if (ref.path) {
+          try {
+            await supabase.storage.from(ref.bucket).remove([ref.path]);
+          } catch {}
+        }
+      })
+    );
   } catch (storageErr: any) {
     console.warn('[universalDeleteStudent] Storage cleanup warning:', storageErr?.message);
   }

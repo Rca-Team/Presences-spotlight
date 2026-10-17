@@ -1276,26 +1276,34 @@ export default function EnrollmentMonitor() {
     if (!studentToDelete) return;
     const admissionToRemove = studentToDelete.admission_number;
     const nameToRemove = studentToDelete.name;
+    const idToRemove = studentToDelete.id;
+    const userIdToRemove = studentToDelete.userId;
     setIsDeleting(true);
     setDeleteProgress(`Starting permanent deletion for ${nameToRemove}...`);
 
     removeStudentFromMonitorCache(admissionToRemove);
+    if (idToRemove) removeStudentFromMonitorCache(idToRemove);
     setData((prev) => {
       if (!prev) return prev;
       return {
         ...prev,
-        students: prev.students.filter((s) => s.admission_number !== admissionToRemove),
+        students: prev.students.filter(
+          (s) => s.admission_number !== admissionToRemove && (!idToRemove || s.id !== idToRemove)
+        ),
       };
     });
     setSelectedAdmissions((prev) => {
       const next = new Set(prev);
       next.delete(admissionToRemove);
+      if (idToRemove) next.delete(idToRemove);
       return next;
     });
 
     try {
       const res = await universalDeleteStudent(
         {
+          id: idToRemove,
+          user_id: userIdToRemove,
           admission_number: admissionToRemove,
           employee_id: admissionToRemove,
           name: nameToRemove,
@@ -1342,13 +1350,17 @@ export default function EnrollmentMonitor() {
 
     for (const student of bulkDeleteTargets) {
       removeStudentFromMonitorCache(student.admission_number);
+      if (student.id) removeStudentFromMonitorCache(student.id);
     }
     const targetAdms = new Set(bulkDeleteTargets.map((s) => s.admission_number));
+    const targetIds = new Set(bulkDeleteTargets.map((s) => s.id).filter(Boolean));
     setData((prev) => {
       if (!prev) return prev;
       return {
         ...prev,
-        students: prev.students.filter((s) => !targetAdms.has(s.admission_number)),
+        students: prev.students.filter(
+          (s) => !targetAdms.has(s.admission_number) && (!s.id || !targetIds.has(s.id))
+        ),
       };
     });
 
@@ -1357,6 +1369,8 @@ export default function EnrollmentMonitor() {
         setDeleteProgress(`Deleting ${index + 1}/${bulkDeleteTargets.length}: ${student.name}...`);
         try {
           const res = await universalDeleteStudent({
+            id: student.id,
+            user_id: student.userId,
             admission_number: student.admission_number,
             employee_id: student.admission_number,
             name: student.name,
@@ -1367,6 +1381,7 @@ export default function EnrollmentMonitor() {
             setSelectedAdmissions((prev) => {
               const next = new Set(prev);
               next.delete(student.admission_number);
+              if (student.id) next.delete(student.id);
               return next;
             });
           } else {

@@ -307,16 +307,27 @@ export const fetchMonitor = async (force = false): Promise<MonitorOverview> => {
     for (const p of rawProfiles) {
       if (p.role && p.role !== 'student') continue;
       const meta = parseMetadataObject(p.metadata);
-      const admission = String(
+      const studentName = String(p.full_name || p.display_name || meta.name || '').trim();
+      const rawAdmission = String(
         p.admission_number ||
           p.employee_id ||
           meta.admission_number ||
           meta.employee_id ||
           meta.student_id_kv ||
           p.roll_number ||
-          p.id ||
           ''
       ).trim();
+
+      // Skip empty ghost profiles (no student name, no student ID, and no biometric data)
+      const hasAnyBio = descriptorCountMap.has(String(p.user_id || '').toLowerCase()) ||
+        descriptorCountMap.has(String(p.id || '').toLowerCase()) ||
+        Boolean(meta.biometric_summary?.sample_count) ||
+        Boolean(meta.face_enrolled);
+      if (!studentName && !rawAdmission && !hasAnyBio) {
+        continue;
+      }
+
+      const admission = rawAdmission || String(p.id || '').trim();
       if (!admission) continue;
 
       const lowerAdm = admission.toLowerCase();
