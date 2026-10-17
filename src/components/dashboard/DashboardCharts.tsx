@@ -107,10 +107,12 @@ const DashboardCharts: React.FC<DashboardChartsProps> = ({
       
       setWeeklyData(processedWeeklyData);
       
-      // Process department data (from device_info)
+      // Process department data (from recent attendance records)
       const { data: deptAttendance, error: deptError } = await supabase
         .from('attendance_records')
-        .select('device_info');
+        .select('device_info')
+        .gte('timestamp', oneWeekAgo.toISOString())
+        .limit(200);
       
       if (deptError) {
         console.error('Error fetching department data:', deptError);

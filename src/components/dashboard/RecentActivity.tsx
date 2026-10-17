@@ -12,6 +12,8 @@ interface RecentActivityProps {
   activityData?: any[];
 }
 
+const usernameCache = new Map<string, string>();
+
 const RecentActivity: React.FC<RecentActivityProps> = ({ isLoading, activityData: initialActivityData }) => {
   const [activityData, setActivityData] = useState(initialActivityData || []);
 
@@ -44,8 +46,28 @@ const RecentActivity: React.FC<RecentActivityProps> = ({ isLoading, activityData
         }
         
         if (data) {
-          // Process the data to extract user info from device_info
-          const processedData = await Promise.all(data.map(async (record) => {
+          // Pre-resolve all missing user profiles in a single batch query
+          const missingIds = data
+            .filter(r => (!r.device_info || !(r.device_info as any)?.metadata?.name) && r.user_id && !usernameCache.has(r.user_id))
+            .map(r => r.user_id);
+
+          if (missingIds.length > 0) {
+            try {
+              const { data: profiles } = await supabase
+                .from('profiles')
+                .select('id, username, full_name, display_name')
+                .in('id', missingIds);
+              if (Array.isArray(profiles)) {
+                for (const p of profiles) {
+                  const uname = p.full_name || p.display_name || p.username;
+                  if (uname) usernameCache.set(p.id, uname);
+                }
+              }
+            } catch (_) {}
+          }
+
+          // Process the data to extract user info from device_info or cache
+          const processedData = data.map((record) => {
             let name = 'Unknown';
             let avatarUrl = null;
             
@@ -69,17 +91,9 @@ const RecentActivity: React.FC<RecentActivityProps> = ({ isLoading, activityData
               avatarUrl = record.image_url;
             }
             
-            // If no name in device_info, try to get from profiles table
-            if (name === 'Unknown' && record.user_id) {
-              const { data: profileData } = await supabase
-                .from('profiles')
-                .select('username')
-                .eq('id', record.user_id)
-                .maybeSingle();
-                
-              if (profileData && profileData.username) {
-                name = profileData.username;
-              }
+            // Lookup from usernameCache
+            if (name === 'Unknown' && record.user_id && usernameCache.has(record.user_id)) {
+              name = usernameCache.get(record.user_id)!;
             }
             
             return {
@@ -87,7 +101,7 @@ const RecentActivity: React.FC<RecentActivityProps> = ({ isLoading, activityData
               displayName: name,
               avatarUrl
             };
-          }));
+          });
           
           setActivityData(processedData);
         }

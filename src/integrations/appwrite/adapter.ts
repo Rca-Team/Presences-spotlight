@@ -125,7 +125,7 @@ export function getAppwriteQuotaCooldownUntil(): number {
   return appwriteReadQuotaCooldownUntil;
 }
 
-export function setAppwriteQuotaCooldown(durationMs = 60 * 60 * 1000) {
+export function setAppwriteQuotaCooldown(durationMs = 24 * 60 * 60 * 1000) {
   const until = Date.now() + durationMs;
   appwriteReadQuotaCooldownUntil = until;
   try {
@@ -1059,7 +1059,9 @@ export class AppwriteQueryBuilder<T = any> implements PromiseLike<{ data: T | nu
         const result = { documents, total: response.total };
         if (canCache && (!boundedSingleRead || documents.length <= 1)) {
           const fastChanging = ['attendance_records', 'gate_entries', 'notifications', 'emergency_events'];
-          const ttl = fastChanging.includes(this.collectionName) ? 30000 : 120000;
+          const ttl = fastChanging.includes(this.collectionName)
+            ? 45000
+            : (['profiles', 'face_descriptors'].includes(this.collectionName) ? 600000 : 900000);
           queryCache.set(cacheKey, { data: result, expiresAt: Date.now() + ttl });
         }
         return result;
@@ -1068,7 +1070,7 @@ export class AppwriteQueryBuilder<T = any> implements PromiseLike<{ data: T | nu
           return { documents: [], total: 0 };
         }
         if (isAppwriteQuotaLimitError(err)) {
-          setAppwriteQuotaCooldown();
+          setAppwriteQuotaCooldown(24 * 60 * 60 * 1000);
           console.warn(`[AppwriteAdapter] Appwrite read limit reached (402) on "${this.collectionName}". Switching to live cloud failover.`);
           const fbResult = await querySupabaseFallback(this.collectionName, queries, all || (!hasLimit && !boundedSingleRead));
           if (fbResult.documents.length > 0) {
