@@ -545,8 +545,10 @@ export async function recordAttendance(
 
   const isUuid = (val?: string | null): val is string =>
     typeof val === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(val);
+  const isValidId = (val?: string | null): val is string =>
+    typeof val === 'string' && val.trim().length > 0 && val !== 'unknown' && val !== 'null' && val !== 'undefined';
 
-  let validUserId = isUuid(userId) ? userId : null;
+  let validUserId = isValidId(userId) ? userId.trim() : null;
   if (!validUserId && resolvedStudentId && resolvedStudentId !== 'unknown') {
     try {
       const { data: fdRow } = await supabase
@@ -556,8 +558,8 @@ export async function recordAttendance(
         .not('user_id', 'is', null)
         .limit(1)
         .maybeSingle();
-      if (fdRow?.user_id && isUuid(fdRow.user_id)) {
-        validUserId = fdRow.user_id;
+      if (fdRow?.user_id && isValidId(fdRow.user_id)) {
+        validUserId = fdRow.user_id.trim();
       }
     } catch {
       // ignore
@@ -617,10 +619,11 @@ export async function recordAttendance(
 
     // 4. Safe check Database for today's existing present/late record
     try {
-      const uuidFilters: string[] = [];
-      if (validUserId) uuidFilters.push(`user_id.eq.${validUserId}`);
-      if (isUuid(resolvedStudentId) && resolvedStudentId !== validUserId) {
-        uuidFilters.push(`user_id.eq.${resolvedStudentId}`);
+      const candidateUserIds: string[] = [];
+      if (validUserId) candidateUserIds.push(`user_id.eq.${validUserId}`);
+      if (isValidId(resolvedStudentId) && resolvedStudentId !== validUserId) {
+        candidateUserIds.push(`user_id.eq.${resolvedStudentId}`);
+        candidateUserIds.push(`student_id.eq.${resolvedStudentId}`);
       }
 
       let query = supabase
@@ -631,8 +634,8 @@ export async function recordAttendance(
         .order('timestamp', { ascending: false })
         .limit(25);
 
-      if (uuidFilters.length > 0) {
-        query = query.or(uuidFilters.join(','));
+      if (candidateUserIds.length > 0) {
+        query = query.or(candidateUserIds.join(','));
       }
 
       const { data: existingRows } = await query;

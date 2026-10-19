@@ -999,10 +999,10 @@ export class AppwriteQueryBuilder<T = any> implements PromiseLike<{ data: T | nu
     const shouldPaginate =
       !boundedSingleRead &&
       !queries.some(q => { try { return JSON.parse(q).method === 'offset'; } catch { return false; } }) &&
-      (all || (this.requestedLimit !== null && this.requestedLimit > 100));
+      (all || this.requestedLimit === null || this.requestedLimit > 100);
 
     const canCache = !this.mutation && (!boundedSingleRead || queries.length > 1);
-    const cacheKey = `${this.collectionName}:${JSON.stringify(queries)}:${boundedSingleRead ? 'single' : 'list'}:max=${all ? 'all' : (this.requestedLimit ?? 100)}`;
+    const cacheKey = `${this.collectionName}:${JSON.stringify(queries)}:${boundedSingleRead ? 'single' : 'list'}:max=${all ? 'all' : (this.requestedLimit ?? 'unbounded')}`;
     if (canCache) {
       const cached = queryCache.get(cacheKey);
       if (cached && cached.expiresAt > Date.now()) {
@@ -1025,7 +1025,9 @@ export class AppwriteQueryBuilder<T = any> implements PromiseLike<{ data: T | nu
         const response = await databases.listDocuments(DATABASE_ID, this.collectionName, queries);
         const documents = [...response.documents];
         if (shouldPaginate && response.total > documents.length) {
-          const targetTotal = all ? response.total : Math.min(response.total, this.requestedLimit || 100);
+          const targetTotal = (all || this.requestedLimit === null)
+            ? Math.min(response.total, 5000)
+            : Math.min(response.total, this.requestedLimit || 100);
           const baseQueries = queries.filter(q => {
             try { return !['limit', 'offset'].includes(JSON.parse(q).method); } catch { return true; }
           });

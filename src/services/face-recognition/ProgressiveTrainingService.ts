@@ -435,6 +435,7 @@ export async function storeRegistrationSamplesBatch(params: {
 }
 
 export interface TrainedUserEntry {
+  userId?:            string;
   descriptors:        Float32Array[];
   averagedDescriptor: Float32Array;
   userName:           string;
@@ -493,8 +494,8 @@ export async function syncUserBiometricSummaryToProfile(
     if (vectors.length === 0) return;
 
     const centroid = robustAverage(vectors);
-    const exemplars = selectDiverseExemplars(vectors, centroid, 5);
-    const roundVec = (v: Float32Array) => Array.from(v, (n) => Number(n.toFixed(5)));
+    const exemplars = selectDiverseExemplars(vectors, centroid, 2);
+    const roundVec = (v: Float32Array) => Array.from(v, (n) => Number(n.toFixed(4)));
 
     let profileRow: any = null;
     const { data: byUid } = await supabase
@@ -618,15 +619,16 @@ export async function getAllTrainedDescriptors(forceFresh = false): Promise<Map<
           supabase
             .from('face_descriptors')
             .select('user_id, descriptor, label, student_name, student_id, class, section, category, image_url, metadata')
-            .order('created_at', { ascending: false }),
+            .limit(5000),
           supabase
             .from('profiles')
-            .select('id, user_id, full_name, display_name, admission_number, employee_id, roll_number, class, section, category, department, position, avatar_url, photo_url, metadata'),
+            .select('id, user_id, full_name, display_name, admission_number, employee_id, roll_number, class, section, category, department, position, avatar_url, photo_url, metadata')
+            .limit(5000),
           supabase
             .from('attendance_records')
             .select('user_id, student_id, student_name, category, class, section, device_info, face_descriptor, image_url')
             .eq('status', 'registered')
-            .order('timestamp', { ascending: false }),
+            .limit(5000),
         ]);
 
         const fdRows = (!fdRes.error && fdRes.data) ? (scope.userIds ? fdRes.data.filter((r: any) => isRowInGalleryScope(scope, r)) : fdRes.data) : [];
@@ -796,6 +798,7 @@ export async function getAllTrainedDescriptors(forceFresh = false): Promise<Map<
           const exemplars = selectDiverseExemplars(dominantGroup, averaged, 6);
 
           const entry: TrainedUserEntry = {
+            userId: key,
             descriptors: exemplars,
             averagedDescriptor: averaged,
             userName,
@@ -808,11 +811,6 @@ export async function getAllTrainedDescriptors(forceFresh = false): Promise<Map<
 
           // Store under primary canonical key
           result.set(key, entry);
-
-          // ALSO map under studentId and UUID alias so lookups by student ID / roll find it instantly
-          if (studentId && studentId !== key) {
-            result.set(studentId, entry);
-          }
         }
 
         trainedGalleryCache = {

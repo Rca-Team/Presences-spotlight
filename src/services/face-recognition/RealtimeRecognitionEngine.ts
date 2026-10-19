@@ -201,7 +201,8 @@ export async function matchDescriptorIndexed(
     const effectiveDist = Math.min(minSample, centroidDist);
 
     if (!Number.isFinite(effectiveDist)) continue;
-    ranked.push({ userId, name: entry.userName, distance: effectiveDist });
+    const finalUserId = (entry as any).userId || userId;
+    ranked.push({ userId: finalUserId, name: entry.userName, distance: effectiveDist });
   }
 
   ranked.sort((a, b) => a.distance - b.distance);
@@ -210,10 +211,10 @@ export async function matchDescriptorIndexed(
   if (!best || best.distance > matchThreshold) return null;
 
   // Ambiguity guard: only if two COMPLETELY DIFFERENT students have virtually identical distance
-  // and both matches are near the threshold edge (best.distance > 0.52 and margin < 0.015)
-  if (second && second.userId !== best.userId && best.distance > 0.52) {
+  // and both matches are near the threshold edge (best.distance > 0.48 and margin < 0.02)
+  if (second && second.userId !== best.userId && best.distance > 0.48) {
     const margin = second.distance - best.distance;
-    if (margin < 0.015) {
+    if (margin < 0.02) {
       return null;
     }
   }

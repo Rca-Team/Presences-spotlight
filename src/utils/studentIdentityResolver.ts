@@ -133,7 +133,8 @@ export async function prefetchStudentIdentities(): Promise<void> {
       const { data: descriptors } = await supabase
         .from('face_descriptors')
         .select('user_id, student_id, student_name, class, section, category, label')
-        .not('student_id', 'is', null);
+        .not('student_id', 'is', null)
+        .limit(5000);
 
       (descriptors || []).forEach((row) => {
         const classSec = normalizeClassSection(row.class, row.section, row.category);
@@ -150,7 +151,8 @@ export async function prefetchStudentIdentities(): Promise<void> {
       const { data: regRecords } = await supabase
         .from('attendance_records')
         .select('user_id, student_id, student_name, category, class, section, device_info')
-        .eq('status', 'registered');
+        .eq('status', 'registered')
+        .limit(5000);
 
       (regRecords || []).forEach((r) => {
         const m = (r.device_info as any)?.metadata || {};
@@ -169,7 +171,8 @@ export async function prefetchStudentIdentities(): Promise<void> {
       // 3. Fetch from profiles
       const { data: profs } = await supabase
         .from('profiles')
-        .select('user_id, admission_number, employee_id, class, section, display_name');
+        .select('user_id, admission_number, employee_id, class, section, display_name')
+        .limit(5000);
 
       (profs || []).forEach((p) => {
         const cls = normalizeClassSection(p.class, p.section);
