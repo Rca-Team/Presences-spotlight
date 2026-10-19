@@ -1,4 +1,5 @@
 import { storageFileId } from './storage-id';
+import { canMakeCloudRequest, triggerCloudCooldown, isCloudInCooldown } from '@/services/cloud-safety/CloudQuotaGuard';
 import { Query, ID, OAuthProvider, Permission, Role, Channel } from 'appwrite';
 import {
   appwriteClient,
@@ -126,8 +127,9 @@ export function getAppwriteQuotaCooldownUntil(): number {
   return appwriteReadQuotaCooldownUntil;
 }
 
-export function setAppwriteQuotaCooldown(durationMs = 60 * 1000) {
-  const until = Date.now() + durationMs;
+export function setAppwriteQuotaCooldown(durationMs = 8 * 1000) {
+  const safeDuration = Math.min(Math.max(1000, durationMs), 15000);
+  const until = Date.now() + safeDuration;
   appwriteReadQuotaCooldownUntil = until;
 }
 
@@ -962,7 +964,7 @@ export class AppwriteQueryBuilder<T = any> implements PromiseLike<{ data: T | nu
     if (this.emptyResult) return { documents: [], total: 0 };
     if (this.headOnly && !this.mutation) {
       const headQueries = [...this.queries.filter(q => { try { return !['limit', 'offset'].includes(JSON.parse(q).method); } catch { return true; } }), Query.limit(1)];
-      if (Date.now() < appwriteReadQuotaCooldownUntil) {
+      if (!canMakeCloudRequest() || Date.now() < appwriteReadQuotaCooldownUntil) {
         const fb = await querySupabaseFallback(this.collectionName, headQueries, false);
         return { documents: [], total: fb.total };
       }
@@ -974,7 +976,8 @@ export class AppwriteQueryBuilder<T = any> implements PromiseLike<{ data: T | nu
           return { documents: [], total: 0 };
         }
         if (isAppwriteQuotaLimitError(err)) {
-          appwriteReadQuotaCooldownUntil = Date.now() + 10 * 60 * 1000;
+          triggerCloudCooldown('Appwrite quota on headOnly', 8000);
+          setAppwriteQuotaCooldown(8000);
           const fb = await querySupabaseFallback(this.collectionName, headQueries, false);
           return { documents: [], total: fb.total };
         }
@@ -1014,9 +1017,13 @@ export class AppwriteQueryBuilder<T = any> implements PromiseLike<{ data: T | nu
     }
 
     const fetchPromise = (async () => {
-      if (Date.now() < getAppwriteQuotaCooldownUntil()) {
+      if (!canMakeCloudRequest() || Date.now() < getAppwriteQuotaCooldownUntil()) {
+        const cached = queryCache.get(cacheKey);
+        if (cached && cached.data.documents.length > 0) {
+          return { documents: [...cached.data.documents], total: cached.data.total };
+        }
         const fbResult = await querySupabaseFallback(this.collectionName, queries, shouldPaginate || (!hasLimit && !boundedSingleRead));
-        if (canCache) {
+        if (canCache && fbResult.documents.length > 0) {
           queryCache.set(cacheKey, { data: fbResult, expiresAt: Date.now() + 20000 });
         }
         return fbResult;
@@ -1068,8 +1075,13 @@ export class AppwriteQueryBuilder<T = any> implements PromiseLike<{ data: T | nu
           return { documents: [], total: 0 };
         }
         if (isAppwriteQuotaLimitError(err)) {
-          setAppwriteQuotaCooldown(24 * 60 * 60 * 1000);
-          console.warn(`[AppwriteAdapter] Appwrite read limit reached (402) on "${this.collectionName}". Switching to live cloud failover.`);
+          triggerCloudCooldown(`Appwrite 402/quota on ${this.collectionName}`, 8000);
+          setAppwriteQuotaCooldown(8000);
+          console.warn(`[AppwriteAdapter] Appwrite rate/quota response on "${this.collectionName}". Checking resilient cache & failover.`);
+          const cached = queryCache.get(cacheKey);
+          if (cached && cached.data.documents.length > 0) {
+            return { documents: [...cached.data.documents], total: cached.data.total };
+          }
           const fbResult = await querySupabaseFallback(this.collectionName, queries, all || (!hasLimit && !boundedSingleRead));
           if (fbResult.documents.length > 0) {
             if (canCache) {
@@ -1077,7 +1089,6 @@ export class AppwriteQueryBuilder<T = any> implements PromiseLike<{ data: T | nu
             }
             return fbResult;
           }
-          const cached = queryCache.get(cacheKey);
           if (cached) return { documents: [...cached.data.documents], total: cached.data.total };
           return fbResult;
         }
@@ -1131,7 +1142,7 @@ export class AppwriteQueryBuilder<T = any> implements PromiseLike<{ data: T | nu
                 }
               } catch (confErr: any) {
                 if (isAppwriteQuotaLimitError(confErr)) {
-                  appwriteReadQuotaCooldownUntil = Date.now() + 10 * 60 * 1000;
+                  setAppwriteQuotaCooldown(8000);
                 }
               }
             }
@@ -1174,7 +1185,7 @@ export class AppwriteQueryBuilder<T = any> implements PromiseLike<{ data: T | nu
                 }
               } catch (confErr: any) {
                 if (isAppwriteQuotaLimitError(confErr)) {
-                  appwriteReadQuotaCooldownUntil = Date.now() + 10 * 60 * 1000;
+                  setAppwriteQuotaCooldown(8000);
                   try {
                     const existing = await querySupabaseFallback(this.collectionName, conflictQueries, false);
                     id = existing.documents[0]?.$id || existing.documents[0]?.id;

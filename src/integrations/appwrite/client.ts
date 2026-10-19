@@ -109,13 +109,6 @@ if (typeof window !== 'undefined' && typeof window.fetch === 'function') {
         const directUrl = rawUrl.replace(/^https?:\/\/[^/]+\/api\/appwrite\/v1/, APPWRITE_ENDPOINT).replace(/^\/api\/appwrite\/v1/, APPWRITE_ENDPOINT);
         return originalFetch(directUrl, init);
       }
-      if (res.status === 402) {
-        try {
-          if (typeof localStorage !== 'undefined') {
-            localStorage.setItem('presences_appwrite_quota_frozen_until', String(Date.now() + 60 * 60 * 1000));
-          }
-        } catch {}
-      }
       return res;
     }
 
@@ -131,25 +124,11 @@ if (typeof window !== 'undefined' && typeof window.fetch === 'function') {
           proxyUnavailable = true;
           return originalFetch(input, init);
         }
-        if (res.status === 402) {
-          try {
-            if (typeof localStorage !== 'undefined') {
-              localStorage.setItem('presences_appwrite_quota_frozen_until', String(Date.now() + 60 * 60 * 1000));
-            }
-          } catch {}
-        }
         return res;
       }
     }
 
     const res = await originalFetch(input, init);
-    if (res.status === 402) {
-      try {
-        if (typeof localStorage !== 'undefined') {
-          localStorage.setItem('presences_appwrite_quota_frozen_until', String(Date.now() + 60 * 60 * 1000));
-        }
-      } catch {}
-    }
     return res;
   };
 

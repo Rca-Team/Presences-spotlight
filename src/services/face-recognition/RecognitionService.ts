@@ -36,6 +36,7 @@ import { dataUrlToBlob, uploadAttendanceTrainingImage } from './TrainingDataStor
 import { resolveStudentAdmissionId, resolveStudentClass, normalizeClassSection, isTeacherIdentity } from '@/utils/studentIdentityResolver';
 import { parseClassSection } from '@/utils/teacherAccess';
 import { ensureActiveClassSession, upsertClassAttendanceEvent } from '../attendance/ClassSessionService';
+import { queueOfflineAttendance, flushOfflineAttendanceQueue } from '@/services/cloud-safety/CloudQuotaGuard';
 
 // ─── types ────────────────────────────────────────────────────────────────────
 
@@ -946,13 +947,27 @@ export async function recordAttendance(
   }
 
   if (insertError && !data) {
-    const candidateKeys = Array.from(new Set([userId, resolvedStudentId, effectiveName].filter(Boolean) as string[]));
-    for (const k of candidateKeys) {
-      if (markedTodayCache.get(k)?.id === '__pending__') {
-        markedTodayCache.delete(k);
-      }
-    }
-    throw new Error(`Failed to record attendance: ${insertError.message}`);
+    console.warn('[AttendanceService] Cloud insert unavailable, queuing offline for background sync:', insertError?.message || insertError);
+    const offlineRecord = {
+      id: `offline-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+      user_id: validUserId || userId,
+      student_id: String(effectiveStudentId || resolvedStudentId || 'unknown'),
+      student_name: effectiveName || 'Student',
+      class: resolvedClass,
+      section: resolvedSection,
+      category: resolvedCategory,
+      status: adjustedStatus,
+      timestamp,
+      confidence: confidence ?? 0.95,
+      confidence_score: confidence ?? 0.95,
+      source: resolvedSource,
+      capture_mode: sanitizeSegment(captureMode),
+      device_info: fullDeviceInfo,
+      metadata: fullDeviceInfo?.metadata || fullDeviceInfo,
+      queuedAt: Date.now(),
+    };
+    void queueOfflineAttendance(offlineRecord);
+    data = { ...offlineRecord, offline_pending: true };
   }
 
   if (data && (adjustedStatus === 'present' || adjustedStatus === 'late')) {
@@ -1019,5 +1034,14 @@ export async function recordAttendance(
       .catch(e => console.error('Notification module load error:', e));
   }
 
+  // Trigger non-blocking sync of any previously queued records
+  void flushOfflineAttendanceQueue(supabase);
+
   return data;
+}
+
+if (typeof window !== 'undefined') {
+  setInterval(() => {
+    void flushOfflineAttendanceQueue(supabase);
+  }, 30_000);
 }
