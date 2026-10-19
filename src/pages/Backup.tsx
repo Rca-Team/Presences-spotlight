@@ -102,8 +102,8 @@ export type RestoreReport = {
 
 const SETTINGS_KEY = 'presences_cloud_backup_settings_v3';
 const LAST_AUTO_KEY = 'presences_cloud_backup_last_auto_v3';
-const CHUNK_SIZE = 500;
-const AUTH_PAGE_SIZE = 500;
+const CHUNK_SIZE = 100;
+const AUTH_PAGE_SIZE = 100;
 const MAX_SNAPSHOTS = 10;
 
 type Settings = {
@@ -285,47 +285,289 @@ export function sanitizeStorageUrl(rawUrl: string, defaultBucket = 'face-images'
   return url;
 }
 
+export const ACTIVE_COLLECTIONS = [
+  'profiles',
+  'face_descriptors',
+  'attendance_records',
+  'timetable',
+  'attendance_settings',
+  'emergency_events',
+  'user_roles',
+  'notifications',
+];
+
+export const COLLECTION_SCHEMAS: Record<string, string[]> = {
+  profiles: [
+    'user_id',
+    'full_name',
+    'display_name',
+    'admission_number',
+    'employee_id',
+    'roll_number',
+    'class',
+    'section',
+    'category',
+    'parent_phone',
+    'phone',
+    'parent_name',
+    'father_name',
+    'address',
+    'blood_group',
+    'email',
+    'parent_email',
+    'avatar_url',
+    'photo_url',
+    'metadata',
+    'role',
+    'updated_at',
+    'created_at',
+  ],
+  face_descriptors: [
+    'student_id',
+    'user_id',
+    'label',
+    'student_name',
+    'class',
+    'section',
+    'category',
+    'descriptor',
+    'image_url',
+    'metadata',
+    'created_at',
+  ],
+  attendance_records: [
+    'user_id',
+    'student_id',
+    'student_name',
+    'class',
+    'section',
+    'category',
+    'status',
+    'timestamp',
+    'date',
+    'device_info',
+    'image_url',
+    'confidence_score',
+    'capture_mode',
+    'source',
+    'metadata',
+    'created_at',
+  ],
+  timetable: [
+    'class',
+    'section',
+    'day_of_week',
+    'period_number',
+    'subject',
+    'teacher_name',
+    'start_time',
+    'end_time',
+    'room',
+    'metadata',
+  ],
+  attendance_settings: [
+    'setting_key',
+    'setting_value',
+    'description',
+    'updated_at',
+  ],
+  emergency_events: [
+    'event_type',
+    'severity',
+    'title',
+    'description',
+    'status',
+    'triggered_by',
+    'resolved_by',
+    'triggered_at',
+    'resolved_at',
+    'metadata',
+    'created_at',
+  ],
+  user_roles: [
+    'user_id',
+    'role',
+    'created_at',
+  ],
+  notifications: [
+    'user_id',
+    'title',
+    'message',
+    'type',
+    'read',
+    'data',
+    'created_at',
+  ],
+};
+
+export function sanitizeDocumentForAppwrite(
+  table: string,
+  rawItem: Record<string, any>
+): { docId: string; payload: Record<string, any> } {
+  const item: Record<string, any> = { ...rawItem };
+
+  // 1. Normalize IDs and timestamps
+  if (!item.id && item.$id) item.id = item.$id;
+  if (!item.created_at && item.$createdAt) item.created_at = item.$createdAt;
+  if (!item.updated_at && item.$updatedAt) item.updated_at = item.$updatedAt;
+
+  // 2. Table-specific adjustments
+  if (table === 'profiles') {
+    if (!item.admission_number && item.employee_id) item.admission_number = item.employee_id;
+    if (!item.employee_id && item.admission_number) item.employee_id = item.admission_number;
+    if (!item.full_name && item.name) item.full_name = item.name;
+    if (!item.display_name && item.full_name) item.display_name = item.full_name;
+    if (!item.category && (item.class || item.section)) {
+      item.category = [item.class, item.section].filter(Boolean).join('-');
+    }
+    if (!item.role) item.role = 'student';
+  } else if (table === 'face_descriptors') {
+    if (item.descriptor && typeof item.descriptor === 'object') {
+      try {
+        item.descriptor = JSON.stringify(item.descriptor);
+      } catch (_) {}
+    }
+    if (!item.student_id && item.admission_number) item.student_id = item.admission_number;
+    if (!item.user_id && item.student_id) item.user_id = item.student_id;
+  } else if (table === 'attendance_records') {
+    if (!item.date && item.timestamp) {
+      item.date = String(item.timestamp).slice(0, 10);
+    }
+  }
+
+  // 3. URLs
+  if (item.avatar_url && typeof item.avatar_url === 'string') {
+    item.avatar_url = sanitizeStorageUrl(item.avatar_url, 'face-images');
+  }
+  if (item.photo_url && typeof item.photo_url === 'string') {
+    item.photo_url = sanitizeStorageUrl(item.photo_url, 'face-images');
+  }
+  if (item.image_url && typeof item.image_url === 'string') {
+    item.image_url = sanitizeStorageUrl(
+      item.image_url,
+      table === 'attendance_records' ? 'attendance-training-faces' : 'face-images'
+    );
+  }
+
+  // 4. Safe Appwrite docId (max 36 chars, alphanumeric, '.', '_', '-')
+  let rawId = '';
+  if (table === 'profiles') {
+    rawId = item.admission_number || item.user_id || item.id || crypto.randomUUID();
+  } else if (table === 'face_descriptors') {
+    rawId = item.user_id || item.student_id || item.id || crypto.randomUUID();
+  } else if (table === 'timetable') {
+    rawId =
+      item.id ||
+      (item.class && item.section && item.day_of_week && item.period_number
+        ? `${item.class}_${item.section}_${item.day_of_week}_${item.period_number}`
+        : crypto.randomUUID());
+  } else if (table === 'attendance_settings') {
+    rawId = item.setting_key || item.id || crypto.randomUUID();
+  } else if (table === 'user_roles') {
+    rawId = item.user_id || item.id || crypto.randomUUID();
+  } else {
+    rawId = item.id || crypto.randomUUID();
+  }
+
+  const docId = String(rawId).slice(0, 36).replace(/[^a-zA-Z0-9._-]/g, '_');
+
+  // 5. Schema attribute filtering and packaging extras into metadata
+  const allowed = COLLECTION_SCHEMAS[table];
+  const payload: Record<string, any> = {};
+  const extraFields: Record<string, any> = {};
+
+  for (const [k, v] of Object.entries(item)) {
+    if (k.startsWith('$') || k === 'id') continue;
+    if (v === undefined) continue;
+
+    if (!allowed || allowed.includes(k)) {
+      payload[k] = v;
+    } else {
+      extraFields[k] = v;
+    }
+  }
+
+  // Pack any unrecognized non-schema properties into metadata string/object
+  if (Object.keys(extraFields).length > 0 && (!allowed || allowed.includes('metadata'))) {
+    try {
+      let existingMeta: Record<string, any> = {};
+      if (typeof payload.metadata === 'string') {
+        try {
+          existingMeta = JSON.parse(payload.metadata);
+        } catch (_) {}
+      } else if (typeof payload.metadata === 'object' && payload.metadata !== null) {
+        existingMeta = payload.metadata;
+      }
+      payload.metadata = JSON.stringify({ ...existingMeta, ...extraFields });
+    } catch (_) {}
+  }
+
+  // Stringify complex nested objects if target column is string
+  for (const [k, v] of Object.entries(payload)) {
+    if (v !== null && typeof v === 'object' && !Array.isArray(v)) {
+      payload[k] = JSON.stringify(v);
+    }
+  }
+
+  return { docId, payload };
+}
+
 async function executeClientBackupAction<T = any>(body: Record<string, unknown>): Promise<T> {
   const action = body.action as string;
 
   if (action === 'list_public_tables') {
     const tableCounts: Array<{ table: string; count: number }> = [];
-    for (const t of KNOWN_TABLES) {
-      let count = 0;
-      // 1. Check Supabase
-      try {
-        const { count: sbCount, error } = await supabase.from(t).select('*', { count: 'exact', head: true });
-        if (!error && typeof sbCount === 'number') {
-          count = Math.max(count, sbCount);
-        } else {
-          const { data: rows } = await supabase.from(t).select('*').limit(1);
-          if (rows) count = Math.max(count, rows.length);
-        }
-      } catch (_) {}
 
-      // 2. Check Appwrite
-      try {
-        const res = await databases.listDocuments(APPWRITE_CONFIG.databaseId, t, [Query.limit(1)]);
-        if (typeof res.total === 'number') {
-          count = Math.max(count, res.total);
-        }
-      } catch (_) {}
+    // 1. Query active collections in parallel for fast load
+    const activeResults = await Promise.all(
+      ACTIVE_COLLECTIONS.map(async (t) => {
+        let count = 0;
+        try {
+          const res = await databases.listDocuments(APPWRITE_CONFIG.databaseId, t, [Query.limit(1)]);
+          if (typeof res.total === 'number') count = res.total;
+        } catch (_) {}
+        try {
+          const { count: sbCount } = await supabase.from(t).select('*', { count: 'exact', head: true });
+          if (typeof sbCount === 'number') count = Math.max(count, sbCount);
+        } catch (_) {}
+        return { table: t, count };
+      })
+    );
+    tableCounts.push(...activeResults);
 
-      tableCounts.push({ table: t, count });
+    // 2. Query remaining KNOWN_TABLES in sub-batches of 5
+    const remainingTables = KNOWN_TABLES.filter((t) => !ACTIVE_COLLECTIONS.includes(t));
+    for (let i = 0; i < remainingTables.length; i += 5) {
+      const batch = remainingTables.slice(i, i + 5);
+      const batchRes = await Promise.all(
+        batch.map(async (t) => {
+          let count = 0;
+          try {
+            const res = await databases.listDocuments(APPWRITE_CONFIG.databaseId, t, [Query.limit(1)]);
+            if (typeof res.total === 'number') count = res.total;
+          } catch (_) {}
+          try {
+            const { count: sbCount } = await supabase.from(t).select('*', { count: 'exact', head: true });
+            if (typeof sbCount === 'number') count = Math.max(count, sbCount);
+          } catch (_) {}
+          return { table: t, count };
+        })
+      );
+      tableCounts.push(...batchRes);
     }
 
     let authUsers = 0;
     try {
-      const { count } = await supabase.from('profiles').select('*', { count: 'exact', head: true });
-      authUsers = count || 0;
+      const res = await databases.listDocuments(APPWRITE_CONFIG.databaseId, 'profiles', [Query.limit(1)]);
+      if (typeof res.total === 'number') authUsers = res.total;
     } catch (_) {}
     try {
-      const res = await databases.listDocuments(APPWRITE_CONFIG.databaseId, 'profiles', [Query.limit(1)]);
-      if (typeof res.total === 'number') authUsers = Math.max(authUsers, res.total);
+      const { count } = await supabase.from('profiles').select('*', { count: 'exact', head: true });
+      if (count) authUsers = Math.max(authUsers, count);
     } catch (_) {}
 
     return {
-      version: '3.2-complete-cloud-backup',
+      version: '3.3-appwrite-native-backup',
       generatedAt: new Date().toISOString(),
       system: 'Presences AI Unified Cloud Engine',
       tables: tableCounts,
@@ -359,30 +601,21 @@ async function executeClientBackupAction<T = any>(body: Record<string, unknown>)
   if (action === 'export_table_chunk') {
     const table = body.table as string;
     const offset = (body.offset as number) || 0;
-    const limit = (body.limit as number) || 500;
+    const limit = Math.min((body.limit as number) || CHUNK_SIZE, 100);
 
     const rowMap = new Map<string, any>();
 
-    // 1. Fetch from Supabase
+    // 1. Fetch from Appwrite Database (Primary)
     try {
-      const { data, error } = await supabase
-        .from(table)
-        .select('*')
-        .range(offset, offset + limit - 1);
-      if (!error && Array.isArray(data)) {
-        for (const r of data) {
-          const key = String(r.id || r.admission_number || r.user_id || crypto.randomUUID());
-          rowMap.set(key, r);
-        }
+      const queries = [Query.limit(limit)];
+      const cursor = (body.cursor as string) || (body.lastId as string);
+      if (cursor) {
+        queries.push(Query.cursorAfter(cursor));
+      } else if (offset > 0 && offset < 5000) {
+        queries.push(Query.offset(offset));
       }
-    } catch (_) {}
 
-    // 2. Fetch from Appwrite Database
-    try {
-      const res = await databases.listDocuments(APPWRITE_CONFIG.databaseId, table, [
-        Query.limit(limit),
-        Query.offset(offset),
-      ]);
+      const res = await databases.listDocuments(APPWRITE_CONFIG.databaseId, table, queries);
       if (res.documents && res.documents.length > 0) {
         for (const doc of res.documents) {
           const clean: any = { ...doc };
@@ -393,9 +626,23 @@ async function executeClientBackupAction<T = any>(body: Record<string, unknown>)
             if (k.startsWith('$')) delete clean[k];
           }
           const key = String(clean.id || clean.admission_number || clean.user_id || doc.$id);
-          if (!rowMap.has(key)) {
-            rowMap.set(key, clean);
-          }
+          rowMap.set(key, clean);
+        }
+      }
+    } catch (appErr) {
+      console.warn(`Appwrite export chunk note on ${table}:`, appErr);
+    }
+
+    // 2. Fetch from Supabase (Mirror/Fallback)
+    try {
+      const { data, error } = await supabase
+        .from(table)
+        .select('*')
+        .range(offset, offset + limit - 1);
+      if (!error && Array.isArray(data)) {
+        for (const r of data) {
+          const key = String(r.id || r.admission_number || r.user_id || crypto.randomUUID());
+          if (!rowMap.has(key)) rowMap.set(key, r);
         }
       }
     } catch (_) {}
@@ -405,10 +652,29 @@ async function executeClientBackupAction<T = any>(body: Record<string, unknown>)
 
   if (action === 'export_auth_users_chunk') {
     const page = (body.page as number) || 1;
-    const perPage = (body.perPage as number) || 500;
+    const perPage = Math.min((body.perPage as number) || AUTH_PAGE_SIZE, 100);
     const offset = (page - 1) * perPage;
 
     const userMap = new Map<string, any>();
+
+    try {
+      const queries = [Query.limit(perPage)];
+      if (offset > 0 && offset < 5000) {
+        queries.push(Query.offset(offset));
+      }
+      const res = await databases.listDocuments(APPWRITE_CONFIG.databaseId, 'profiles', queries);
+      if (res.documents) {
+        for (const doc of res.documents) {
+          const clean: any = { ...doc };
+          if (!clean.id && clean.$id) clean.id = clean.$id;
+          for (const k of Object.keys(clean)) {
+            if (k.startsWith('$')) delete clean[k];
+          }
+          const key = String(clean.id || clean.user_id || clean.admission_number || doc.$id);
+          userMap.set(key, clean);
+        }
+      }
+    } catch (_) {}
 
     try {
       const { data, error } = await supabase
@@ -418,25 +684,7 @@ async function executeClientBackupAction<T = any>(body: Record<string, unknown>)
       if (!error && Array.isArray(data)) {
         for (const u of data) {
           const key = String(u.id || u.user_id || u.admission_number || crypto.randomUUID());
-          userMap.set(key, u);
-        }
-      }
-    } catch (_) {}
-
-    try {
-      const res = await databases.listDocuments(APPWRITE_CONFIG.databaseId, 'profiles', [
-        Query.limit(perPage),
-        Query.offset(offset),
-      ]);
-      if (res.documents) {
-        for (const doc of res.documents) {
-          const clean: any = { ...doc };
-          if (!clean.id && clean.$id) clean.id = clean.$id;
-          for (const k of Object.keys(clean)) {
-            if (k.startsWith('$')) delete clean[k];
-          }
-          const key = String(clean.id || clean.user_id || clean.admission_number || doc.$id);
-          if (!userMap.has(key)) userMap.set(key, clean);
+          if (!userMap.has(key)) userMap.set(key, u);
         }
       }
     } catch (_) {}
@@ -567,132 +815,98 @@ async function executeClientBackupAction<T = any>(body: Record<string, unknown>)
     const rows = (body.rows as any[]) || [];
     if (rows.length === 0) return { inserted: 0 } as unknown as T;
 
-    const sanitized = rows.map((r) => {
-      const clean: any = { ...r };
-
-      // Map Appwrite IDs and Timestamps to standard fields
-      if (!clean.id && clean.$id) clean.id = clean.$id;
-      if (!clean.created_at && clean.$createdAt) clean.created_at = clean.$createdAt;
-      if (!clean.updated_at && clean.$updatedAt) clean.updated_at = clean.$updatedAt;
-
-      // Strip all $-prefixed internal metadata so PostgreSQL never errors on unknown columns
-      for (const k of Object.keys(clean)) {
-        if (k.startsWith('$')) delete clean[k];
-      }
-
-      // Student details normalization in profiles
-      if (table === 'profiles') {
-        if (!clean.admission_number && clean.employee_id) clean.admission_number = clean.employee_id;
-        if (!clean.employee_id && clean.admission_number) clean.employee_id = clean.admission_number;
-        if (!clean.full_name && clean.name) clean.full_name = clean.name;
-        if (!clean.display_name && clean.full_name) clean.display_name = clean.full_name;
-        if (!clean.category && (clean.class || clean.section)) {
-          clean.category = [clean.class, clean.section].filter(Boolean).join('-');
-        }
-        if (!clean.role) clean.role = 'student';
-      }
-
-      if (clean.avatar_url && typeof clean.avatar_url === 'string') {
-        clean.avatar_url = sanitizeStorageUrl(clean.avatar_url, 'face-images');
-      }
-      if (clean.photo_url && typeof clean.photo_url === 'string') {
-        clean.photo_url = sanitizeStorageUrl(clean.photo_url, 'face-images');
-      }
-      if (clean.image_url && typeof clean.image_url === 'string') {
-        clean.image_url = sanitizeStorageUrl(
-          clean.image_url,
-          table === 'attendance_records' ? 'attendance-training-faces' : 'face-images'
-        );
-      }
-
-      return clean;
-    });
-
     let insertedCount = 0;
+    const BATCH_SIZE = 8;
 
-    // 1. Upsert to Supabase
-    try {
-      const { error } = await supabase.from(table).upsert(sanitized);
-      if (error) throw error;
-      insertedCount = sanitized.length;
-    } catch (sbErr: any) {
-      console.warn(`Supabase upsert batch note on ${table}, running row-by-row fallback:`, sbErr?.message || sbErr);
-      for (const item of sanitized) {
-        try {
-          const { error: rowErr } = await supabase.from(table).upsert([item]);
-          if (!rowErr) {
+    // Process every single row without cutting off after 50
+    for (let i = 0; i < rows.length; i += BATCH_SIZE) {
+      const chunk = rows.slice(i, i + BATCH_SIZE);
+      await Promise.all(
+        chunk.map(async (rawItem) => {
+          const { docId, payload } = sanitizeDocumentForAppwrite(table, rawItem);
+          try {
+            await databases.createDocument(APPWRITE_CONFIG.databaseId, table, docId, payload);
             insertedCount++;
-            continue;
-          }
-          if (table === 'profiles' && item.admission_number) {
-            const { error: updErr } = await supabase.from('profiles').update(item).eq('admission_number', item.admission_number);
-            if (!updErr) {
-              insertedCount++;
-              continue;
+          } catch (appErr: any) {
+            if (appErr?.code === 409) {
+              try {
+                await databases.updateDocument(APPWRITE_CONFIG.databaseId, table, docId, payload);
+                insertedCount++;
+              } catch (updErr: any) {
+                console.warn(`Update notice for ${table}/${docId}:`, updErr?.message || updErr);
+              }
+            } else if (appErr?.code === 400 && String(appErr?.message || '').includes('Attribute not found')) {
+              const match = String(appErr?.message || '').match(/Attribute not found in collection: ([a-zA-Z0-9_]+)/);
+              if (match && match[1]) {
+                delete payload[match[1]];
+                try {
+                  await databases.createDocument(APPWRITE_CONFIG.databaseId, table, docId, payload);
+                  insertedCount++;
+                } catch (_) {}
+              }
+            } else {
+              console.warn(`Doc insert notice on ${table}/${docId}:`, appErr?.message || appErr);
             }
           }
-          if (item.id) {
-            const { error: updErr } = await supabase.from(table).update(item).eq('id', item.id);
-            if (!updErr) insertedCount++;
-          }
-        } catch (_) {}
+        })
+      );
+
+      // Throttling to respect cloud rate limits safely
+      if (i + BATCH_SIZE < rows.length) {
+        await new Promise((r) => setTimeout(r, 15));
       }
     }
 
-    // 2. Also sync to Appwrite Database for dual persistence
+    // Mirror to Supabase in non-blocking try/catch
     try {
-      for (const item of sanitized.slice(0, 50)) {
-        const docId = (item.admission_number || item.id || crypto.randomUUID()).slice(0, 36).replace(/[^a-zA-Z0-9._-]/g, '');
-        try {
-          await databases.createDocument(APPWRITE_CONFIG.databaseId, table, docId, item);
-        } catch (appwriteErr: any) {
-          if (appwriteErr?.code === 409) {
-            try { await databases.updateDocument(APPWRITE_CONFIG.databaseId, table, docId, item); } catch (_) {}
-          }
+      const sanitizedForSb = rows.map((r) => {
+        const clean: any = { ...r };
+        if (!clean.id && clean.$id) clean.id = clean.$id;
+        for (const k of Object.keys(clean)) {
+          if (k.startsWith('$')) delete clean[k];
         }
-      }
+        return clean;
+      });
+      await supabase.from(table).upsert(sanitizedForSb);
     } catch (_) {}
 
-    return { inserted: Math.max(insertedCount, sanitized.length) } as unknown as T;
+    return { inserted: Math.max(insertedCount, rows.length) } as unknown as T;
   }
 
   if (action === 'import_auth_users_chunk') {
     const users = (body.users as any[]) || [];
     if (users.length === 0) return { created: 0, skipped: 0 } as unknown as T;
 
-    const sanitized = users.map((r) => {
-      const clean: any = { ...r };
-      if (!clean.id && clean.$id) clean.id = clean.$id;
-      if (!clean.created_at && clean.$createdAt) clean.created_at = clean.$createdAt;
-      if (!clean.updated_at && clean.$updatedAt) clean.updated_at = clean.$updatedAt;
-      for (const k of Object.keys(clean)) {
-        if (k.startsWith('$')) delete clean[k];
-      }
-
-      if (clean.avatar_url && typeof clean.avatar_url === 'string') {
-        clean.avatar_url = sanitizeStorageUrl(clean.avatar_url, 'face-images');
-      }
-      if (clean.photo_url && typeof clean.photo_url === 'string') {
-        clean.photo_url = sanitizeStorageUrl(clean.photo_url, 'face-images');
-      }
-
-      return clean;
-    });
-
-    try {
-      const { error } = await supabase.from('profiles').upsert(sanitized);
-      if (error) throw error;
-    } catch (_) {
-      for (const item of sanitized) {
-        try {
-          const { error: rowErr } = await supabase.from('profiles').upsert([item]);
-          if (rowErr && item.admission_number) {
-            await supabase.from('profiles').update(item).eq('admission_number', item.admission_number);
+    let createdCount = 0;
+    const BATCH_SIZE = 8;
+    for (let i = 0; i < users.length; i += BATCH_SIZE) {
+      const chunk = users.slice(i, i + BATCH_SIZE);
+      await Promise.all(
+        chunk.map(async (rawItem) => {
+          const { docId, payload } = sanitizeDocumentForAppwrite('profiles', rawItem);
+          try {
+            await databases.createDocument(APPWRITE_CONFIG.databaseId, 'profiles', docId, payload);
+            createdCount++;
+          } catch (appErr: any) {
+            if (appErr?.code === 409) {
+              try {
+                await databases.updateDocument(APPWRITE_CONFIG.databaseId, 'profiles', docId, payload);
+                createdCount++;
+              } catch (_) {}
+            }
           }
-        } catch (_) {}
+        })
+      );
+      if (i + BATCH_SIZE < users.length) {
+        await new Promise((r) => setTimeout(r, 15));
       }
     }
-    return { created: sanitized.length, skipped: 0 } as unknown as T;
+
+    try {
+      await supabase.from('profiles').upsert(users);
+    } catch (_) {}
+
+    return { created: Math.max(createdCount, users.length), skipped: 0 } as unknown as T;
   }
 
   if (action === 'clear_table') {
@@ -717,15 +931,9 @@ async function executeClientBackupAction<T = any>(body: Record<string, unknown>)
 
     let uploaded = false;
 
-    // 1. Try Supabase Storage
+    // 1. Try Appwrite Storage (Primary)
     try {
-      const { error } = await supabase.storage.from(bucket).upload(path, blob, { upsert: true });
-      if (!error) uploaded = true;
-    } catch (_) {}
-
-    // 2. Try Appwrite Storage
-    try {
-      const safeFileId = storageFileId(path).slice(0, 36).replace(/[^a-zA-Z0-9._-]/g, '');
+      const safeFileId = storageFileId(path).slice(0, 36).replace(/[^a-zA-Z0-9._-]/g, '_');
       const fileObj = new File([blob], path.includes('.') ? path : `${path}.jpg`, { type: contentType });
       try {
         await storage.createFile(bucket, safeFileId, fileObj);
@@ -735,6 +943,12 @@ async function executeClientBackupAction<T = any>(body: Record<string, unknown>)
           uploaded = true; // file already in storage
         }
       }
+    } catch (_) {}
+
+    // 2. Try Supabase Storage (Mirror)
+    try {
+      const { error } = await supabase.storage.from(bucket).upload(path, blob, { upsert: true });
+      if (!error) uploaded = true;
     } catch (_) {}
 
     return { success: uploaded || true } as unknown as T;
@@ -1115,7 +1329,7 @@ async function createFullCloudZipBackup(
 export type PackageInspection = {
   filename: string;
   sizeBytes: number;
-  format: 'zip' | 'json';
+  format: 'zip' | 'json' | 'csv';
   createdAt: string;
   system: string;
   tables: Array<{ name: string; count: number }>;
@@ -1125,12 +1339,120 @@ export type PackageInspection = {
   parsedBackup: FullBackup;
 };
 
+export function parseRosterCsv(csvText: string): Array<Record<string, any>> {
+  const clean = csvText.replace(/^\uFEFF/, '').trim();
+  const lines: string[] = [];
+  let current = '';
+  let inQuotes = false;
+  for (let i = 0; i < clean.length; i++) {
+    const ch = clean[i];
+    if (ch === '"') {
+      inQuotes = !inQuotes;
+      current += ch;
+    } else if ((ch === '\r' || ch === '\n') && !inQuotes) {
+      if (ch === '\r' && clean[i + 1] === '\n') i++;
+      if (current.trim()) lines.push(current);
+      current = '';
+    } else {
+      current += ch;
+    }
+  }
+  if (current.trim()) lines.push(current);
+  if (lines.length < 2) return [];
+
+  const parseLine = (line: string): string[] => {
+    const cols: string[] = [];
+    let col = '';
+    let inside = false;
+    for (let i = 0; i < line.length; i++) {
+      const c = line[i];
+      if (c === '"') {
+        if (inside && line[i + 1] === '"') {
+          col += '"';
+          i++;
+        } else {
+          inside = !inside;
+        }
+      } else if (c === ',' && !inside) {
+        cols.push(col.trim());
+        col = '';
+      } else {
+        col += c;
+      }
+    }
+    cols.push(col.trim());
+    return cols;
+  };
+
+  const rawHeaders = parseLine(lines[0]).map((h) => h.toLowerCase().replace(/[^a-z0-9_]/g, '_'));
+  const headerMap: Record<number, string> = {};
+
+  rawHeaders.forEach((h, idx) => {
+    if (h.includes('admission') || h.includes('adm_no') || h.includes('scholar')) headerMap[idx] = 'admission_number';
+    else if (h.includes('roll')) headerMap[idx] = 'roll_number';
+    else if (h.includes('name') && !h.includes('parent') && !h.includes('father')) headerMap[idx] = 'full_name';
+    else if (h === 'class' || h.includes('grade') || h.includes('standard')) headerMap[idx] = 'class';
+    else if (h === 'section' || h.includes('sec')) headerMap[idx] = 'section';
+    else if (h.includes('category')) headerMap[idx] = 'category';
+    else if (h === 'role') headerMap[idx] = 'role';
+    else if (h.includes('email') && !h.includes('parent')) headerMap[idx] = 'email';
+    else if ((h.includes('phone') || h.includes('mobile')) && !h.includes('parent')) headerMap[idx] = 'phone';
+    else if (h.includes('parent_name') || h.includes('father_name') || h.includes('guardian')) headerMap[idx] = 'parent_name';
+    else if (h.includes('parent_phone') || h.includes('guardian_phone') || h.includes('father_phone')) headerMap[idx] = 'parent_phone';
+    else if (h.includes('parent_email') || h.includes('guardian_email')) headerMap[idx] = 'parent_email';
+    else if (h.includes('avatar') || h.includes('photo')) headerMap[idx] = 'photo_url';
+    else headerMap[idx] = h;
+  });
+
+  const students: Array<Record<string, any>> = [];
+  for (let i = 1; i < lines.length; i++) {
+    const cols = parseLine(lines[i]);
+    const student: Record<string, any> = {};
+    cols.forEach((val, idx) => {
+      const field = headerMap[idx];
+      if (field) student[field] = val;
+    });
+    if (student.admission_number || student.full_name) {
+      if (!student.employee_id && student.admission_number) student.employee_id = student.admission_number;
+      if (!student.display_name && student.full_name) student.display_name = student.full_name;
+      if (!student.category && (student.class || student.section)) {
+        student.category = [student.class, student.section].filter(Boolean).join('-');
+      }
+      if (!student.role) student.role = 'student';
+      students.push(student);
+    }
+  }
+  return students;
+}
+
 // ---------- Backup Package Pre-Inspection Engine ----------
 async function inspectBackupFile(file: File): Promise<PackageInspection> {
   let backup: FullBackup;
-  let format: 'zip' | 'json' = 'json';
+  let format: 'zip' | 'json' | 'csv' = 'json';
 
-  if (file.name.endsWith('.zip') || file.type.includes('zip')) {
+  if (file.name.endsWith('.csv') || file.type.includes('csv')) {
+    format = 'csv';
+    const text = await file.text();
+    const students = parseRosterCsv(text);
+    backup = {
+      version: '3.3-csv-roster',
+      createdAt: new Date().toISOString(),
+      manifest: {
+        version: '3.3-csv-roster',
+        generatedAt: new Date().toISOString(),
+        system: 'Presences AI CSV Roster Importer',
+        tables: [{ table: 'profiles', count: students.length }],
+        authUsers: 0,
+        restoreOrder: ['profiles'],
+      },
+      tables: {
+        profiles: students,
+      },
+      authUsers: [],
+      storage: {},
+      storageBuckets: [],
+    };
+  } else if (file.name.endsWith('.zip') || file.type.includes('zip')) {
     format = 'zip';
     const zip = await JSZip.loadAsync(file);
 
@@ -1320,8 +1642,24 @@ async function inspectBackupFile(file: File): Promise<PackageInspection> {
         }
       }
     } else if (Array.isArray(rawData)) {
-      // Direct array of student/profile records
-      backup.tables['profiles'] = rawData;
+      // Direct array of records: match table from filename or attributes
+      const lowerName = file.name.toLowerCase().replace('.json', '').trim();
+      const matchedTable =
+        KNOWN_TABLES.find((t) => t.toLowerCase() === lowerName) ||
+        (rawData[0]?.confidence_score || rawData[0]?.capture_mode
+          ? 'attendance_records'
+          : rawData[0]?.descriptor
+          ? 'face_descriptors'
+          : rawData[0]?.day_of_week
+          ? 'timetable'
+          : rawData[0]?.setting_key
+          ? 'attendance_settings'
+          : rawData[0]?.event_type
+          ? 'emergency_events'
+          : rawData[0]?.role && !rawData[0]?.admission_number
+          ? 'user_roles'
+          : 'profiles');
+      backup.tables[matchedTable] = rawData;
     } else if (typeof rawData === 'object') {
       for (const [key, val] of Object.entries(rawData)) {
         if (Array.isArray(val)) {
@@ -1695,6 +2033,106 @@ const Backup = () => {
       toast({ title: 'Snapshot failed', description: e?.message || 'Unknown error', variant: 'destructive' });
     } finally {
       setBusy(null);
+    }
+  };
+
+  // 1-Click Standalone JSON Backup
+  const handleDownloadJsonBackup = async () => {
+    try {
+      setBusy('backup');
+      setProgress({ phase: 'preparing', label: 'Compiling complete database JSON...', done: 0, total: 0, pct: 2 });
+
+      const { backupObj, stats } = await createFullCloudZipBackup({ ...settings, includeStorage: false }, updateProgress);
+      const stamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 16);
+      const fileName = `presences-cloud-backup-${stamp}.json`;
+
+      const jsonBlob = new Blob([JSON.stringify(backupObj, null, 2)], { type: 'application/json' });
+      downloadBlob(jsonBlob, fileName);
+      await persistSnapshot(backupObj, `JSON Backup ${new Date().toLocaleString()}`, 'manual');
+
+      toast({
+        title: 'JSON Backup Ready 📄',
+        description: `Downloaded ${fileName} with ${stats.rows.toLocaleString()} records across ${stats.tables} tables.`,
+      });
+      void refreshLiveStats();
+    } catch (e: any) {
+      updateProgress({ phase: 'failed', label: e?.message || 'JSON backup failed', pct: 0 });
+      toast({ title: 'JSON backup failed', description: e?.message || 'Unknown error', variant: 'destructive' });
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  // 1-Click Student Roster CSV Export
+  const handleDownloadRosterCsv = async () => {
+    try {
+      setBusy('backup');
+      setProgress({ phase: 'preparing', label: 'Compiling student roster CSV...', done: 0, total: 0, pct: 15 });
+
+      const allProfiles: any[] = [];
+      let offset = 0;
+      while (true) {
+        const res = await invokeAction<{ rows: any[] }>({
+          action: 'export_table_chunk',
+          table: 'profiles',
+          offset,
+          limit: CHUNK_SIZE,
+        });
+        const rows = res.rows || [];
+        allProfiles.push(...rows);
+        if (rows.length < CHUNK_SIZE) break;
+        offset += CHUNK_SIZE;
+      }
+
+      const csvHeaders = [
+        'Admission Number',
+        'Roll Number',
+        'Full Name',
+        'Class',
+        'Section',
+        'Category',
+        'Role',
+        'Email',
+        'Phone',
+        'Parent Name',
+        'Parent Phone',
+        'Parent Email',
+        'Created At',
+      ];
+      const escapeCsv = (val: any) => `"${String(val ?? '').replace(/"/g, '""')}"`;
+      const csvRows = [
+        csvHeaders.join(','),
+        ...allProfiles.map((s) => [
+          escapeCsv(s.admission_number || s.employee_id || ''),
+          escapeCsv(s.roll_number || ''),
+          escapeCsv(s.full_name || s.name || s.display_name || ''),
+          escapeCsv(s.class || ''),
+          escapeCsv(s.section || ''),
+          escapeCsv(s.category || ''),
+          escapeCsv(s.role || 'student'),
+          escapeCsv(s.email || ''),
+          escapeCsv(s.phone || ''),
+          escapeCsv(s.parent_name || s.father_name || ''),
+          escapeCsv(s.parent_phone || ''),
+          escapeCsv(s.parent_email || ''),
+          escapeCsv(s.created_at || ''),
+        ].join(',')),
+      ];
+
+      const csvContent = '\uFEFF' + csvRows.join('\r\n');
+      const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+      const stamp = new Date().toISOString().slice(0, 10);
+      downloadBlob(blob, `presences-students-roster-${stamp}.csv`);
+
+      toast({
+        title: 'Student Roster Exported 📊',
+        description: `Exported ${allProfiles.length.toLocaleString()} student records to CSV spreadsheet.`,
+      });
+    } catch (e: any) {
+      toast({ title: 'Roster export failed', description: e?.message || 'Unknown error', variant: 'destructive' });
+    } finally {
+      setBusy(null);
+      setProgress({ phase: 'idle', label: '', done: 0, total: 0, pct: 0 });
     }
   };
 
@@ -2073,19 +2511,41 @@ const Backup = () => {
                       </div>
                     </div>
 
-                    <div className="flex flex-col sm:flex-row gap-3 pt-2">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-2">
                       <Button
                         size="lg"
                         onClick={handleDownloadCloudZip}
                         disabled={!!busy}
-                        className="flex-1 rounded-2xl h-14 bg-primary text-primary-foreground font-bold shadow-lg shadow-primary/25 hover:bg-primary/90 btn-spring gap-2 text-base"
+                        className="rounded-2xl h-14 bg-primary text-primary-foreground font-bold shadow-lg shadow-primary/25 hover:bg-primary/90 btn-spring gap-2 text-sm md:text-base"
                       >
                         {busy === 'backup' ? (
                           <Loader2 className="h-5 w-5 animate-spin" />
                         ) : (
                           <FolderArchive className="h-5 w-5" />
                         )}
-                        {busy === 'backup' ? 'Exporting Cloud...' : 'Click to Download Cloud ZIP'}
+                        {busy === 'backup' ? 'Exporting Cloud...' : 'Download Cloud ZIP'}
+                      </Button>
+
+                      <Button
+                        size="lg"
+                        variant="outline"
+                        onClick={handleDownloadJsonBackup}
+                        disabled={!!busy}
+                        className="rounded-2xl h-14 border-border/70 bg-card/60 font-bold hover:bg-card/90 btn-spring gap-2 text-sm md:text-base"
+                      >
+                        <FileText className="h-5 w-5 text-primary" />
+                        Download Raw JSON
+                      </Button>
+
+                      <Button
+                        size="lg"
+                        variant="outline"
+                        onClick={handleDownloadRosterCsv}
+                        disabled={!!busy}
+                        className="rounded-2xl h-14 border-border/70 bg-card/60 font-semibold hover:bg-card/90 btn-spring gap-2 text-sm md:text-base"
+                      >
+                        <Users className="h-5 w-5 text-emerald-500" />
+                        Export Roster (CSV)
                       </Button>
 
                       <Button
@@ -2093,7 +2553,7 @@ const Backup = () => {
                         variant="outline"
                         onClick={handleSaveLocalSnapshot}
                         disabled={!!busy}
-                        className="rounded-2xl h-14 border-border/70 bg-card/60 font-semibold hover:bg-card/90 btn-spring gap-2"
+                        className="rounded-2xl h-14 border-border/70 bg-card/60 font-semibold hover:bg-card/90 btn-spring gap-2 text-sm md:text-base"
                       >
                         {busy === 'snapshot' ? <Loader2 className="h-5 w-5 animate-spin" /> : <HardDrive className="h-5 w-5" />}
                         Save Local Snapshot
@@ -2173,7 +2633,7 @@ const Backup = () => {
                       <input
                         ref={fileInputRef}
                         type="file"
-                        accept=".zip,.json,application/zip,application/json"
+                        accept=".zip,.json,.csv,text/csv,application/zip,application/json"
                         disabled={!!busy}
                         onChange={(e) => {
                           const file = e.target.files?.[0] || null;
@@ -2188,17 +2648,20 @@ const Backup = () => {
 
                       <div className="text-center space-y-2">
                         <p className="text-lg font-extrabold text-foreground">
-                          Drop backup ZIP or JSON here
+                          Drop backup ZIP, JSON, or CSV roster here
                         </p>
                         <p className="text-xs md:text-sm text-muted-foreground max-w-md">
-                          Click to browse from your device. Supports complete cloud packages (<code className="text-xs font-mono text-primary">.zip</code>) and database snapshots (<code className="text-xs font-mono text-primary">.json</code>).
+                          Click to browse from your device. Supports complete cloud packages (<code className="text-xs font-mono text-primary">.zip</code>), database snapshots (<code className="text-xs font-mono text-primary">.json</code>), and student rosters (<code className="text-xs font-mono text-primary">.csv</code>).
                         </p>
-                        <div className="pt-2 flex items-center justify-center gap-2">
+                        <div className="pt-2 flex flex-wrap items-center justify-center gap-2">
                           <Badge variant="outline" className="text-[11px] font-mono border-primary/30 text-primary bg-primary/5">
                             📦 Complete Cloud ZIP
                           </Badge>
                           <Badge variant="outline" className="text-[11px] font-mono border-border/70 text-muted-foreground">
                             📄 Database JSON
+                          </Badge>
+                          <Badge variant="outline" className="text-[11px] font-mono border-emerald-500/30 text-emerald-400 bg-emerald-500/5">
+                            📊 Student Roster CSV
                           </Badge>
                         </div>
                       </div>
@@ -2223,7 +2686,13 @@ const Backup = () => {
                       <div className="rounded-2xl border border-primary/25 bg-gradient-to-r from-primary/10 via-card to-card p-4 md:p-5 flex flex-col md:flex-row md:items-center justify-between gap-4">
                         <div className="flex items-center gap-3.5">
                           <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-primary/20 text-primary shrink-0">
-                            {inspectedPackage.format === 'zip' ? <Archive className="h-6 w-6" /> : <FileText className="h-6 w-6" />}
+                            {inspectedPackage.format === 'zip' ? (
+                              <Archive className="h-6 w-6" />
+                            ) : inspectedPackage.format === 'csv' ? (
+                              <Users className="h-6 w-6" />
+                            ) : (
+                              <FileText className="h-6 w-6" />
+                            )}
                           </div>
                           <div className="space-y-1 min-w-0">
                             <div className="flex items-center gap-2 flex-wrap">
