@@ -191,13 +191,36 @@ export const useFaceRecognition = () => {
       const status: 'present' | 'late' = isPastCutoff ? 'late' : 'present';
       console.log(`Attendance status determined: ${status} (past cutoff: ${isPastCutoff})`);
       
-      // Attendance is marked purely from face vectors (zero-photo retention)
+      let capturedDataUrl: string | undefined;
+      try {
+        if (mediaElement instanceof HTMLVideoElement && mediaElement.videoWidth > 0) {
+          const canvas = document.createElement('canvas');
+          canvas.width = mediaElement.videoWidth;
+          canvas.height = mediaElement.videoHeight;
+          const ctx = canvas.getContext('2d');
+          if (ctx) {
+            ctx.drawImage(mediaElement, 0, 0, canvas.width, canvas.height);
+            capturedDataUrl = canvas.toDataURL('image/jpeg', 0.88);
+          }
+        } else if (mediaElement instanceof HTMLCanvasElement) {
+          capturedDataUrl = mediaElement.toDataURL('image/jpeg', 0.88);
+        } else if (mediaElement instanceof HTMLImageElement) {
+          capturedDataUrl = mediaElement.src;
+        }
+      } catch {}
+
       await recordAttendance(
         recognitionResult.employee.id, 
         status, 
         recognitionResult.confidence,
-        undefined,
-        undefined,
+        {
+          source: 'face-recognition-hook',
+          metadata: {
+            name: recognitionResult.employee.name,
+            force_attendance_save: true,
+          },
+        },
+        capturedDataUrl,
         'ai-scan'
       );
       

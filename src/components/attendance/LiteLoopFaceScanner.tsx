@@ -64,6 +64,7 @@ interface CapturedFace {
   quality: number;
   samples: number;
   blinked?: boolean;
+  snapshotUrl?: string;
 }
 type ItemStatus = 'marked' | 'late' | 'already' | 'unmatched' | 'error';
 interface ItemResult { clientId: string; status: ItemStatus; name?: string; confidence?: number }
@@ -186,6 +187,27 @@ const LiteLoopFaceScanner: React.FC = () => {
     if (dupQueue || dupSession) return;
     committedRef.current.push(descriptor);
     if (committedRef.current.length > 400) committedRef.current.shift();
+
+    let snapshotUrl: string | undefined;
+    try {
+      if (videoRef.current && videoRef.current.videoWidth > 0) {
+        const c = document.createElement('canvas');
+        c.width = 240;
+        c.height = 240;
+        const ctx = c.getContext('2d');
+        if (ctx) {
+          const b = t.box;
+          const pad = 0.2;
+          const sx = Math.max(0, b.x - b.width * pad);
+          const sy = Math.max(0, b.y - b.height * pad);
+          const sw = Math.min(videoRef.current.videoWidth - sx, b.width * (1 + 2 * pad));
+          const sh = Math.min(videoRef.current.videoHeight - sy, b.height * (1 + 2 * pad));
+          ctx.drawImage(videoRef.current, sx, sy, sw, sh, 0, 0, 240, 240);
+          snapshotUrl = c.toDataURL('image/jpeg', 0.85);
+        }
+      }
+    } catch {}
+
     setQueue(prev => [{
       clientId: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
       descriptor: Array.from(descriptor),
@@ -195,6 +217,7 @@ const LiteLoopFaceScanner: React.FC = () => {
       quality: t.bestQuality,
       samples: t.std.length,
       blinked: t.blinked,
+      snapshotUrl,
     }, ...prev]);
     signal('ok');
   }, [signal]);
@@ -431,7 +454,7 @@ const LiteLoopFaceScanner: React.FC = () => {
           const outcome = await recordAttendance(
             bestRec.employee.id, 'present', bestRec.confidence,
             { source: 'lite-loop-local', metadata: { name: bestRec.employee.name, blinked: !!item.blinked, force_attendance_save: true } },
-            undefined, 'ai-scan',
+            item.snapshotUrl, 'ai-scan',
           );
           const name = bestRec.employee.name;
           if (outcome?.skipped && outcome.reason === 'already_marked') {

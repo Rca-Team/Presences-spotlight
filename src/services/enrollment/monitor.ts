@@ -495,8 +495,7 @@ export const fetchMonitor = async (force = false): Promise<MonitorOverview> => {
 
       const hasFace =
         descCount > 0 ||
-        Boolean(bioSummary?.centroid_descriptor) ||
-        Boolean(meta.face_enrolled);
+        Boolean(bioSummary?.centroid_descriptor);
 
       const avatar =
         p.photo_url ||
@@ -558,25 +557,24 @@ export const fetchMonitor = async (force = false): Promise<MonitorOverview> => {
           existing.samples = fallbackSamples;
         }
         existing.vectorCount = Math.max(descCount, existing.samples?.length || 0);
-        if (hasFace || existing.completedAt > 0 || existing.samples.length > 0) {
+        if (hasFace || (existing.vectorCount ?? 0) > 0 || existing.samples.length > 0) {
           existing.faceOnFile = true;
-          if (existing.status === 'not_started' || existing.status === 'failed') {
-            existing.status = 'completed';
-          }
+          existing.status = 'completed';
           if (!existing.completedAt && completedTimestamp) {
             existing.completedAt = completedTimestamp;
           }
+        } else {
+          existing.faceOnFile = false;
+          existing.status = 'not_started';
         }
       } else {
         const backendAux = backendStudentAuxMap.get(lowerAdm);
         const mergedSamples = fallbackSamples.length
           ? fallbackSamples
           : backendAux?.samples || [];
-        const effectiveFace = hasFace || Boolean(backendAux?.faceOnFile) || mergedSamples.length > 0;
+        const effectiveFace = hasFace || mergedSamples.length > 0 || descCount > 0;
         const effectiveStatus: MonitorStatus = effectiveFace
           ? 'completed'
-          : backendAux?.status && backendAux.status !== 'completed'
-          ? backendAux.status
           : 'not_started';
 
         const newStudent: MonitorStudent = {
@@ -773,8 +771,18 @@ export const fetchMonitor = async (force = false): Promise<MonitorOverview> => {
         if (!existing.email && email) existing.email = email;
         if (!existing.avatarUrl && avatar) existing.avatarUrl = avatar;
         if (avatar) existing.portrait = true;
-        if (existing.status === 'not_started') existing.status = 'completed';
-        existing.faceOnFile = true;
+        const recHasDesc = Boolean(
+          (r as any).face_descriptor ||
+          meta.faceDescriptor ||
+          meta.face_descriptor ||
+          (meta.biometric_summary?.centroid_descriptor) ||
+          (descriptorCountMap.get(lowerAdm) || 0) > 0 ||
+          (lowerUid && (descriptorCountMap.get(lowerUid) || 0) > 0)
+        );
+        if (recHasDesc) {
+          existing.faceOnFile = true;
+          existing.status = 'completed';
+        }
       } else {
         const fallbackSamples = descriptorSamplesMap.get(lowerAdm) || (lowerUid ? descriptorSamplesMap.get(lowerUid) : []) || [];
         const newStudent: MonitorStudent = {

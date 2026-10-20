@@ -120,7 +120,7 @@ const PAGE = 100;
 const ago = (t: number) => (t ? formatDistanceToNow(t, { addSuffix: true }) : '—');
 const needsAttention = (s: MonitorStudent) => Boolean(s.correction) || !s.hasPhone || s.failures > 0;
 export const isStudentEnrolled = (s: MonitorStudent) =>
-  s.status === 'completed' || s.faceOnFile || s.samples.length > 0 || (s.vectorCount ?? 0) > 0;
+  (s.vectorCount ?? 0) > 0 || (s.samples && s.samples.length > 0);
 
 const matchesFilter = (s: MonitorStudent, f: Filter) =>
   f === 'all'
@@ -1489,27 +1489,42 @@ export default function EnrollmentMonitor() {
     if (!cards.length) return;
     toast({
       title: 'Saving Students...',
-      description: `Fast-syncing ${cards.length} students into Appwrite Cloud...`,
+      description: `Fast-syncing ${cards.length} students, photos & face descriptors into Appwrite Cloud...`,
     });
 
     try {
       const { supabase } = await import('@/integrations/supabase/client');
-      const BATCH_SIZE = 50;
+      const { storage: appwriteStorage, APPWRITE_CONFIG, getAppwriteStorageViewUrl } = await import('@/integrations/appwrite/client');
+      const { Permission, Role } = await import('appwrite');
+      const { storageFileId } = await import('@/integrations/appwrite/storage-id');
+      const { dataUrlToBlob } = await import('@/services/face-recognition/TrainingDataStorageService');
+      const { getFaceDescriptorFromBlob, loadRegistrationModels } = await import('@/services/face-recognition/OptimizedRegistrationService');
+      const { descriptorToString } = await import('@/services/face-recognition/ModelService');
+      const { v4: uuidv4 } = await import('uuid');
+
+      try {
+        await loadRegistrationModels();
+      } catch {}
+
+      const BATCH_SIZE = 25;
       let directSaved = 0;
       let directFailed = 0;
+      let syncedDescriptorsCount = 0;
 
       const allAdmNumbers = Array.from(
         new Set(cards.map((c) => (c.employee_id || c.student_id_kv || '').trim()).filter(Boolean))
       );
       const existingMetaMap: Record<string, Record<string, any>> = {};
+      const existingUserIdMap: Record<string, string> = {};
       if (allAdmNumbers.length > 0) {
         try {
           const { data: existingRows } = await supabase
             .from('profiles')
-            .select('admission_number, employee_id, metadata')
+            .select('admission_number, employee_id, user_id, metadata')
             .in('admission_number', allAdmNumbers);
           for (const row of existingRows || []) {
             const key = (row.admission_number || row.employee_id || '').toLowerCase();
+            if (row.user_id) existingUserIdMap[key] = row.user_id;
             try {
               existingMetaMap[key] =
                 typeof row.metadata === 'string' ? JSON.parse(row.metadata) : row.metadata || {};
@@ -1522,11 +1537,59 @@ export default function EnrollmentMonitor() {
 
       for (let i = 0; i < cards.length; i += BATCH_SIZE) {
         const chunk = cards.slice(i, i + BATCH_SIZE);
-        const rows = chunk.map((c) => {
-          const adm = (c.employee_id || c.student_id_kv || '').trim().replace(/\s+/g, '-');
+        const profileRows: any[] = [];
+        const descriptorRows: any[] = [];
+        const attendanceRows: any[] = [];
+
+        for (const c of chunk) {
+          const cleanName = (c.name || '').trim();
           const rawPhone = String(c.parent_phone || c.phone || '').replace(/\D/g, '');
           const cleanPhone = rawPhone.length >= 10 ? rawPhone.slice(-10) : rawPhone;
+          const rawAdm = (c.employee_id || c.student_id_kv || '').trim().replace(/\s+/g, '-');
+          const adm = rawAdm || c.roll_number?.trim() || (cleanName ? `STU-${cleanName.replace(/[^a-zA-Z0-9]/g, '')}-${cleanPhone || Date.now().toString(36).slice(-4)}` : `STU-${Date.now().toString(36)}`);
           const existingMeta = existingMetaMap[adm.toLowerCase()] || {};
+          const stableUserId = existingUserIdMap[adm.toLowerCase()] || uuidv4();
+          const category = [c.class?.trim(), c.section?.trim()].filter(Boolean).join('-') || c.department || 'A';
+          const now = new Date().toISOString();
+
+          let photoUrl: string | null = null;
+          let descriptor: Float32Array | null = null;
+          const photoData = c.student_photo_data_url || (c as any).portrait || (c as any).preview;
+
+          if (photoData && typeof photoData === 'string' && photoData.startsWith('data:image')) {
+            try {
+              const blob = await dataUrlToBlob(photoData);
+              if (blob && blob.size > 0) {
+                const cleanAdm = adm.replace(/[^a-zA-Z0-9_-]/g, '_');
+                const fileId = storageFileId(`students/${cleanAdm}/face.jpg`);
+                const file = new File([blob], `${cleanAdm}.jpg`, { type: 'image/jpeg' });
+                const bucketId = APPWRITE_CONFIG.buckets.faceImages || 'face-images';
+
+                try {
+                  const res = await appwriteStorage.createFile(
+                    bucketId,
+                    fileId,
+                    file,
+                    [
+                      Permission.read(Role.any()),
+                      Permission.write(Role.any()),
+                      Permission.delete(Role.any()),
+                    ]
+                  );
+                  photoUrl = getAppwriteStorageViewUrl(bucketId, res.$id);
+                } catch {
+                  photoUrl = getAppwriteStorageViewUrl(bucketId, fileId);
+                }
+
+                try {
+                  descriptor = await getFaceDescriptorFromBlob(blob);
+                } catch {}
+              }
+            } catch (pErr) {
+              console.warn('[Importer] Photo upload skipped for', adm, pErr);
+            }
+          }
+
           const mergedMeta: Record<string, any> = {
             ...existingMeta,
             blood_group: c.blood_group || existingMeta.blood_group || '',
@@ -1539,76 +1602,115 @@ export default function EnrollmentMonitor() {
             source: 'pdf_upload',
             imported_from_pdf: true,
             verified_parent_phone: cleanPhone,
+            photo_url: photoUrl || existingMeta.photo_url || '',
+            avatar_url: photoUrl || existingMeta.avatar_url || '',
           };
           for (const k of Object.keys(mergedMeta)) {
             if (mergedMeta[k] === '' || mergedMeta[k] == null) delete mergedMeta[k];
           }
-          return {
-            full_name: c.name.trim(),
-            display_name: c.name.trim(),
+
+          profileRows.push({
+            user_id: stableUserId,
+            full_name: cleanName || adm,
+            display_name: cleanName || adm,
             admission_number: adm,
             employee_id: adm,
             roll_number: c.roll_number?.trim() || null,
             class: c.class?.trim() || null,
             section: c.section?.trim() || null,
-            category: [c.class?.trim(), c.section?.trim()].filter(Boolean).join('-') || null,
+            category: category || null,
             parent_phone: cleanPhone || null,
             phone: cleanPhone || null,
             parent_name: c.parent_name || c.father_name || c.mother_name || null,
             father_name: c.father_name?.trim() || null,
             blood_group: c.blood_group?.trim() || null,
             address: c.address?.trim() || null,
+            email: c.student_email?.trim() || null,
+            parent_email: c.parent_email?.trim() || null,
+            avatar_url: photoUrl || existingMeta.avatar_url || null,
+            photo_url: photoUrl || existingMeta.photo_url || null,
             role: 'student',
             metadata: JSON.stringify(mergedMeta),
-            updated_at: new Date().toISOString(),
-          };
-        });
+            updated_at: now,
+          });
+
+          if (descriptor) {
+            syncedDescriptorsCount++;
+            descriptorRows.push({
+              student_id: adm,
+              user_id: stableUserId,
+              label: cleanName || adm,
+              student_name: cleanName || adm,
+              class: c.class?.trim() || null,
+              section: c.section?.trim() || null,
+              category: category || null,
+              descriptor: descriptorToString(descriptor),
+              image_url: photoUrl,
+              metadata: JSON.stringify({
+                source: 'class_id_card_import',
+                has_aligned_face: true,
+                imported_at: now,
+              }),
+              created_at: now,
+            });
+          }
+
+          attendanceRows.push({
+            user_id: stableUserId,
+            student_id: adm,
+            student_name: cleanName || adm,
+            class: c.class?.trim() || null,
+            section: c.section?.trim() || null,
+            category: category,
+            status: 'registered',
+            timestamp: now,
+            date: now.split('T')[0],
+            image_url: photoUrl || null,
+            device_info: JSON.stringify({
+              source: 'class_id_card_import',
+              employee_id: adm,
+              metadata: {
+                name: cleanName,
+                employee_id: adm,
+                roll_number: c.roll_number?.trim() || adm,
+                class: c.class?.trim(),
+                section: c.section?.trim(),
+                parent_name: c.parent_name || c.father_name || c.mother_name,
+                parent_phone: c.parent_phone || c.phone,
+                parent_email: c.parent_email || c.student_email,
+                blood_group: c.blood_group?.trim(),
+                address: c.address?.trim(),
+                photo_url: photoUrl,
+              },
+            }),
+            source: 'class_id_card_import',
+          });
+        }
 
         try {
           const { error: upsertErr } = await supabase
             .from('profiles')
-            .upsert(rows, { onConflict: 'admission_number' });
+            .upsert(profileRows, { onConflict: 'admission_number' });
           if (upsertErr) {
             directFailed += chunk.length;
             console.warn('Upsert chunk error:', upsertErr.message);
           } else {
             directSaved += chunk.length;
-            const attendanceRows = chunk.map((c) => {
-              const adm = (c.employee_id || c.student_id_kv || '').trim().replace(/\s+/g, '-');
-              const name = c.name?.trim() || '';
-              const category = [c.class?.trim(), c.section?.trim()].filter(Boolean).join('-') || 'A';
-              return {
-                student_id: adm || null,
-                student_name: name || null,
-                class: c.class?.trim() || null,
-                section: c.section?.trim() || null,
-                category: category,
-                status: 'registered',
-                timestamp: new Date().toISOString(),
-                date: new Date().toISOString().split('T')[0],
-                device_info: JSON.stringify({
-                  source: 'class_id_card_import',
-                  employee_id: adm,
-                  metadata: {
-                    name,
-                    employee_id: adm,
-                    roll_number: c.roll_number?.trim() || adm,
-                    class: c.class?.trim(),
-                    section: c.section?.trim(),
-                    parent_name: c.parent_name || c.father_name || c.mother_name,
-                    parent_phone: c.parent_phone || c.phone,
-                    parent_email: c.parent_email || c.student_email,
-                    blood_group: c.blood_group?.trim(),
-                    address: c.address?.trim(),
-                  },
-                }),
-                source: 'class_id_card_import',
-              };
-            });
-            try {
-              await supabase.from('attendance_records').insert(attendanceRows);
-            } catch (attErr) {
-              console.warn('Attendance registration insert warning:', attErr);
+
+            if (descriptorRows.length > 0) {
+              try {
+                await supabase.from('face_descriptors').upsert(descriptorRows, { onConflict: 'student_id' });
+              } catch (descErr) {
+                console.warn('Descriptors upsert warning:', descErr);
+              }
+            }
+
+            if (attendanceRows.length > 0) {
+              try {
+                await supabase.from('attendance_records').insert(attendanceRows);
+              } catch (attErr) {
+                console.warn('Attendance registration insert warning:', attErr);
+              }
             }
           }
         } catch (chunkErr: any) {
@@ -1616,6 +1718,9 @@ export default function EnrollmentMonitor() {
           console.warn('Chunk save error:', chunkErr?.message);
         }
       }
+
+      window.dispatchEvent(new CustomEvent('presence:descriptors-updated'));
+      window.dispatchEvent(new CustomEvent('presences:roster-updated'));
 
       if (directSaved > 0) {
         clearMonitorCache();
@@ -1626,8 +1731,8 @@ export default function EnrollmentMonitor() {
               : 'Class ID Cards Imported! 🚀',
           description:
             directFailed > 0
-              ? `${directSaved} students saved quickly. ${directFailed} could not be saved.`
-              : `Successfully added ${directSaved} students to Enrollment Management.`,
+              ? `${directSaved} students saved. ${directFailed} could not be saved.`
+              : `Successfully added ${directSaved} students${syncedDescriptorsCount > 0 ? ` & synced ${syncedDescriptorsCount} biometric face descriptors` : ''} to Enrollment Management.`,
         });
         void load(true);
         setUploadOpen(false);

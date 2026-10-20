@@ -87,6 +87,7 @@ interface RegisteredFace {
   position?: string;
   total_attendance: number;
   last_attendance?: string;
+  is_face_enrolled?: boolean;
 }
 
 type TodayStatus = 'present' | 'late' | 'absent';
@@ -163,6 +164,7 @@ function deriveFacesAndStatusesFromSnapshot(
       image_url: resolvedImg,
       total_attendance: totalAtt,
       last_attendance: matched?.time || 'Never',
+      is_face_enrolled: Boolean(student.is_face_enrolled),
     };
   });
 
@@ -197,6 +199,7 @@ const AdminFacesList: React.FC<AdminFacesListProps> = ({
   const [sectionFilter, setSectionFilter] = useState<string>('all');
   const [classFilter, setClassFilter] = useState<string>('all');
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('all');
+  const [enrollmentFilter, setEnrollmentFilter] = useState<'all' | 'enrolled' | 'pending'>('all');
   const [sortField, setSortField] = useState<SortField>('name');
   const [sortDir, setSortDir] = useState<SortDir>('asc');
   const [todayStatuses, setTodayStatuses] = useState<Record<string, { status: TodayStatus; time?: string }>>(
@@ -255,6 +258,10 @@ const AdminFacesList: React.FC<AdminFacesListProps> = ({
       if (classFilter !== 'all') {
         if (extractClass(face.department) !== classFilter) return false;
       }
+
+      // Enrollment filter
+      if (enrollmentFilter === 'enrolled' && !face.is_face_enrolled) return false;
+      if (enrollmentFilter === 'pending' && face.is_face_enrolled) return false;
 
       // Status filter
       if (statusFilter !== 'all') {
@@ -560,6 +567,7 @@ const AdminFacesList: React.FC<AdminFacesListProps> = ({
   };
 
   const totalStudents = faces.length;
+  const enrolledCount = useMemo(() => faces.filter(f => f.is_face_enrolled).length, [faces]);
   const attendanceRate = totalStudents > 0 
     ? Math.round(((statusCounts.present + statusCounts.late) / totalStudents) * 100)
     : 0;
@@ -655,10 +663,10 @@ const AdminFacesList: React.FC<AdminFacesListProps> = ({
                 <div className="flex items-center gap-1.5 overflow-x-auto pb-1 sm:pb-0 scrollbar-none">
                   <button
                     type="button"
-                    onClick={() => setStatusFilter('all')}
+                    onClick={() => { setStatusFilter('all'); setEnrollmentFilter('all'); }}
                     className={cn(
                       "px-3 py-1.5 rounded-lg text-xs font-semibold transition-all shrink-0 flex items-center gap-1.5",
-                      statusFilter === 'all'
+                      statusFilter === 'all' && enrollmentFilter === 'all'
                         ? "bg-primary text-primary-foreground shadow-xs"
                         : "bg-muted/60 text-muted-foreground hover:text-foreground border border-border/50"
                     )}
@@ -667,6 +675,33 @@ const AdminFacesList: React.FC<AdminFacesListProps> = ({
                     <Badge variant="secondary" className="px-1.5 py-0 h-4 text-[10px] font-mono">
                       {totalStudents}
                     </Badge>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setEnrollmentFilter(enrollmentFilter === 'enrolled' ? 'all' : 'enrolled')}
+                    className={cn(
+                      "px-3 py-1.5 rounded-lg text-xs font-semibold transition-all shrink-0 flex items-center gap-1.5 border",
+                      enrollmentFilter === 'enrolled'
+                        ? "bg-indigo-600 text-white border-indigo-500 shadow-xs"
+                        : "bg-muted/60 text-muted-foreground hover:text-foreground border-border/50"
+                    )}
+                  >
+                    <ScanFace className="w-3.5 h-3.5 text-indigo-400" />
+                    <span>Face Enrolled</span>
+                    <span className="text-[10px] font-mono opacity-90">({enrolledCount})</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setEnrollmentFilter(enrollmentFilter === 'pending' ? 'all' : 'pending')}
+                    className={cn(
+                      "px-3 py-1.5 rounded-lg text-xs font-semibold transition-all shrink-0 flex items-center gap-1.5 border",
+                      enrollmentFilter === 'pending'
+                        ? "bg-slate-700 text-white border-slate-600 shadow-xs"
+                        : "bg-muted/60 text-muted-foreground hover:text-foreground border-border/50"
+                    )}
+                  >
+                    <span>No Face Data</span>
+                    <span className="text-[10px] font-mono opacity-90">({totalStudents - enrolledCount})</span>
                   </button>
                   <button
                     type="button"
@@ -908,7 +943,19 @@ const AdminFacesList: React.FC<AdminFacesListProps> = ({
                                 )}
                               </TableCell>
                               <TableCell className="py-2.5">
-                                {getStatusBadge(face.employee_id)}
+                                <div className="flex items-center gap-1.5 flex-wrap">
+                                  {getStatusBadge(face.employee_id)}
+                                  {face.is_face_enrolled ? (
+                                    <Badge variant="outline" className="bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 border-emerald-500/25 text-[10px] font-semibold gap-1 shrink-0">
+                                      <CheckCircle2 className="w-2.5 h-2.5 text-emerald-500" />
+                                      Enrolled
+                                    </Badge>
+                                  ) : (
+                                    <Badge variant="outline" className="bg-slate-500/10 text-slate-500 border-slate-500/20 text-[10px] font-medium shrink-0">
+                                      No Face Data
+                                    </Badge>
+                                  )}
+                                </div>
                               </TableCell>
                               <TableCell className="text-center font-medium tabular-nums py-2.5">
                                 <Badge variant="outline" className="text-xs font-mono font-normal">

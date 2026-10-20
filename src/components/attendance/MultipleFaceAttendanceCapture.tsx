@@ -294,6 +294,26 @@ const MultipleFaceAttendanceCapture = () => {
         try {
           const recognition = await recognizeFace(descriptor);
           
+          let faceSnapshotUrl: string | undefined;
+          try {
+            if (videoRef.current && videoRef.current.videoWidth > 0) {
+              const canvas = document.createElement('canvas');
+              const box = detection.detection.box;
+              const pad = 0.25;
+              const sx = Math.max(0, box.x - box.width * pad);
+              const sy = Math.max(0, box.y - box.height * pad);
+              const sw = Math.min(videoRef.current.videoWidth - sx, box.width * (1 + 2 * pad));
+              const sh = Math.min(videoRef.current.videoHeight - sy, box.height * (1 + 2 * pad));
+              canvas.width = Math.max(160, Math.round(sw));
+              canvas.height = Math.max(160, Math.round(sh));
+              const ctx = canvas.getContext('2d');
+              if (ctx) {
+                ctx.drawImage(videoRef.current, sx, sy, sw, sh, 0, 0, canvas.width, canvas.height);
+                faceSnapshotUrl = canvas.toDataURL('image/jpeg', 0.88);
+              }
+            }
+          } catch {}
+
           if (recognition.recognized && recognition.employee) {
             // Determine status based on cutoff time
             const now = new Date();
@@ -301,11 +321,20 @@ const MultipleFaceAttendanceCapture = () => {
             const isPastCutoff = now.getHours() >= cutoffHour;
             const attendanceStatus = isPastCutoff ? 'late' : 'present';
             
-            // Record attendance
+            // Record attendance with captured face snapshot saved to cloud
             await recordAttendance(
               recognition.employee.id,
               attendanceStatus,
-              recognition.confidence
+              recognition.confidence,
+              {
+                source: 'multi-face-scanner',
+                metadata: {
+                  name: recognition.employee.name,
+                  force_attendance_save: true,
+                },
+              },
+              faceSnapshotUrl,
+              'ai-scan'
             );
             
             processed.push({
@@ -313,7 +342,7 @@ const MultipleFaceAttendanceCapture = () => {
               name: recognition.employee.name || 'Unknown',
               status: attendanceStatus,
               confidence: recognition.confidence,
-              imageUrl: recognition.employee.avatar_url || recognition.employee.firebase_image_url
+              imageUrl: faceSnapshotUrl || recognition.employee.avatar_url || recognition.employee.firebase_image_url
             });
             recognizedCount++;
           } else {
@@ -321,7 +350,8 @@ const MultipleFaceAttendanceCapture = () => {
               id: `face-${Math.random()}`,
               name: 'Unknown Person',
               status: 'unrecognized',
-              confidence: detection.detection.score
+              confidence: detection.detection.score,
+              imageUrl: faceSnapshotUrl
             });
           }
         } catch (recognitionErr) {

@@ -58,7 +58,6 @@ const MAX_CONCURRENT_RECOG = 5;
 const TRACK_TTL_MS = 700;
 const MIN_FACE_SIZE = 60;
 
-
 const iou = (
   a: { x: number; y: number; width: number; height: number },
   b: { x: number; y: number; width: number; height: number }
@@ -263,14 +262,61 @@ const PremiumFaceScanner: React.FC = () => {
         if (navigator.vibrate) navigator.vibrate(30);
         playBeep();
 
+        let snapUrl: string | undefined;
+
+        try {
+
+          if (videoRef.current && videoRef.current.videoWidth > 0) {
+
+            const c = document.createElement('canvas');
+
+            c.width = 320;
+
+            c.height = 240;
+
+            const ctx = c.getContext('2d');
+
+            if (ctx) {
+
+              ctx.drawImage(videoRef.current, 0, 0, 320, 240);
+
+              snapUrl = c.toDataURL('image/jpeg', 0.85);
+
+            }
+
+          }
+
+        } catch {}
+
         // Background writes — fire and forget
-        recordAttendance(uid, status, result.confidence, {
-          metadata: {
-            name: result.employee.name,
-            employee_id: result.employee.employee_id,
-            source: 'premium-face-scanner',
+
+        recordAttendance(
+
+          uid,
+
+          status,
+
+          result.confidence,
+
+          {
+
+            metadata: {
+
+              name: result.employee.name,
+
+              employee_id: result.employee.employee_id,
+
+              source: 'premium-face-scanner',
+
+            },
+
           },
-        }).catch(err => console.error('attendance save failed', err));
+
+          snapUrl,
+
+          'ai-scan'
+
+        ).catch(err => console.error('attendance save failed', err));
 
         sendAutoParentNotification(
           uid,
@@ -455,7 +501,6 @@ const PremiumFaceScanner: React.FC = () => {
     rafRef.current = requestAnimationFrame(tick);
     return () => { if (rafRef.current) cancelAnimationFrame(rafRef.current); };
   }, [phase, setPhaseIfChanged]);
-
 
   const ringColor =
     phase === 'recognized' ? 'hsl(var(--ios-green))' :

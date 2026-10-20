@@ -53,13 +53,16 @@ const SUPPORTED_MIME_REGEX = /^(?:application\/pdf|application\/vnd\.openxmlform
 const REVIEW_PAGE_SIZE = 40;
 
 function isSupportedFile(f: File): boolean {
-  return SUPPORTED_EXT_REGEX.test(f.name) || SUPPORTED_MIME_REGEX.test(f.type);
+  if (SUPPORTED_EXT_REGEX.test(f.name) || SUPPORTED_MIME_REGEX.test(f.type)) return true;
+  // If extension is omitted or stripped by browser download (e.g. "samagam.kvs.gov.in_mis_icard (1)"):
+  if (/icard|idcard|student|samagam|roster|enroll/i.test(f.name)) return true;
+  return false;
 }
 
 function getFileTypeLabel(f: File): 'PDF' | 'EXCEL' | 'MHT' | 'IMAGE' {
   if (/\.pdf$/i.test(f.name) || f.type === 'application/pdf') return 'PDF';
   if (/\.(?:xlsx|xls|csv|ods)$/i.test(f.name) || /spreadsheet|excel|csv/i.test(f.type)) return 'EXCEL';
-  if (/\.(?:mht|mhtml|html|htm)$/i.test(f.name) || /multipart|rfc822|mimearchive|html/i.test(f.type)) return 'MHT';
+  if (/\.(?:mht|mhtml|html|htm)$/i.test(f.name) || /multipart|rfc822|mimearchive|html/i.test(f.type) || /samagam|mis_icard/i.test(f.name)) return 'MHT';
   return 'IMAGE';
 }
 
@@ -108,7 +111,7 @@ export function ClassPDFIDCardImporter({ isOpen, onClose, onImportDrafts, initia
     ),
     [chosen]
   );
-  const invalid = chosen.some(c => !c.student.name.trim() || !c.student.employee_id.trim()) || duplicateIds.size > 0;
+  const invalid = chosen.some(c => !c.student.name.trim() || (!c.student.employee_id.trim() && !c.student.student_id_kv?.trim() && !c.student.roll_number?.trim())) || duplicateIds.size > 0;
   const clear = () => { setCards([]); setSelected(new Set()); setError(''); setPercent(0); setStage(''); setReviewPage(1); };
   const close = () => { if (saving) return; abort.current?.abort(); clear(); setFiles([]); onClose(); };
 
@@ -175,14 +178,21 @@ export function ClassPDFIDCardImporter({ isOpen, onClose, onImportDrafts, initia
     }, 90000);
 
     try {
-      const students = chosen.map(({ student }) => ({
-        ...student,
-        department: [student.class.trim(), student.section.trim()].filter(Boolean).join('-'),
-        student_id_kv: student.student_id_kv?.trim() || '',
-        parent_name: student.father_name || student.mother_name || student.parent_name,
-        name: student.name.trim(),
-        employee_id: student.employee_id.trim(),
-      }));
+      const students = chosen.map(({ student, preview }) => {
+        const cleanName = student.name.trim();
+        const rawAdm = (student.employee_id || student.student_id_kv || '').trim();
+        const fallbackAdm = rawAdm || student.roll_number?.trim() || student.pen_number?.trim() || `STU-${cleanName.replace(/[^a-zA-Z0-9]/g, '')}-${Date.now().toString(36).slice(-4)}`;
+        return {
+          ...student,
+          name: cleanName,
+          employee_id: fallbackAdm,
+          admission_number: fallbackAdm,
+          department: [student.class?.trim(), student.section?.trim()].filter(Boolean).join('-') || student.department || '',
+          student_id_kv: student.student_id_kv?.trim() || '',
+          parent_name: student.father_name || student.mother_name || student.parent_name || '',
+          student_photo_data_url: student.student_photo_data_url || preview,
+        };
+      });
       await onImportDrafts(students, `Class ${selectedClass === 'auto' ? 'ID Cards' : selectedClass} (${students.length} students)`);
       toast({ title: 'Import successful', description: `${students.length} student records imported to biometric enrollment.` });
       clear(); setFiles([]); onClose();
@@ -228,8 +238,13 @@ export function ClassPDFIDCardImporter({ isOpen, onClose, onImportDrafts, initia
               if (!mounted.current || controller.signal.aborted) return;
               totalExtracted++;
               const student = cardToRegistrationStudent(card, selectedClass === 'auto' ? undefined : selectedClass) as ExtractedStudentCard;
+              if (!student.student_photo_data_url && card.portrait) {
+                student.student_photo_data_url = card.portrait;
+              } else if (!student.student_photo_data_url && card.preview) {
+                student.student_photo_data_url = card.preview;
+              }
               setCards(current => [...current, { id: card.id, student, preview: card.preview, text: card.text, page: card.page, fileName: currentFile.name }]);
-              const normalizedId = student.employee_id.trim().toLowerCase();
+              const normalizedId = (student.employee_id || student.student_id_kv || student.roll_number || student.name).trim().toLowerCase();
               if (student.name.trim() && normalizedId && !card.text.startsWith('SCAN FAILED:') && !seenIds.has(normalizedId)) {
                 seenIds.add(normalizedId);
                 setSelected(current => new Set([...current, card.id]));

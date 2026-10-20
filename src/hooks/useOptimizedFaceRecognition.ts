@@ -214,7 +214,24 @@ export const useOptimizedFaceRecognition = () => {
               confidence >= AUTO_MARK_MIN_CONFIDENCE && qualityScore >= AUTO_MARK_MIN_QUALITY_SCORE
             );
             
-            // Attendance is marked purely from face vectors (zero-photo retention)
+            let capturedDataUrl: string | undefined;
+            try {
+              if (mediaElement instanceof HTMLVideoElement && mediaElement.videoWidth > 0) {
+                const canvas = document.createElement('canvas');
+                canvas.width = mediaElement.videoWidth;
+                canvas.height = mediaElement.videoHeight;
+                const ctx = canvas.getContext('2d');
+                if (ctx) {
+                  ctx.drawImage(mediaElement, 0, 0, canvas.width, canvas.height);
+                  capturedDataUrl = canvas.toDataURL('image/jpeg', 0.88);
+                }
+              } else if (mediaElement instanceof HTMLCanvasElement) {
+                capturedDataUrl = mediaElement.toDataURL('image/jpeg', 0.88);
+              } else if (mediaElement instanceof HTMLImageElement) {
+                capturedDataUrl = mediaElement.src;
+              }
+            } catch {}
+
             if (autoMarked) {
               await recordAttendance(
                 recognitionResult.employee.id,
@@ -226,10 +243,17 @@ export const useOptimizedFaceRecognition = () => {
                         class: options.classScope.className,
                         section: options.classScope.section,
                         subject: options.classScope.subject,
+                        name: recognitionResult.employee.name,
+                        force_attendance_save: true,
                       },
                     }
-                  : undefined,
-                undefined,
+                  : {
+                      metadata: {
+                        name: recognitionResult.employee.name,
+                        force_attendance_save: true,
+                      },
+                    },
+                capturedDataUrl,
                 'ai-scan'
               );
             }

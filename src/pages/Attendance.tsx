@@ -290,7 +290,7 @@ const Attendance: React.FC = () => {
                 </div>
                 <div className="text-xs text-slate-500 dark:text-slate-400 font-medium truncate mt-1 flex items-center gap-1.5">
                   <span className="w-1.5 h-1.5 rounded-full bg-indigo-500 shrink-0" />
-                  <span>Registered roster</span>
+                  <span>Enrolled face biometrics</span>
                 </div>
               </div>
 

@@ -93,6 +93,7 @@ interface RegistrationDraft {
   captureMode: 'auto' | '3d';
   status: 'student_info' | 'pending_face_scan';
   updatedAt: string;
+  idCardPhoto?: string;
 }
 
 const getDraftIdentityKey = (draft: Pick<RegistrationDraft, 'id' | 'formData'>) => {
@@ -326,6 +327,7 @@ const Register = () => {
         captureMode: 'auto' as const,
         status: 'pending_face_scan' as const,
         updatedAt: now,
+        idCardPhoto: c.student_photo_data_url || (c as any).preview || (c as any).portrait,
       };
     });
 
@@ -519,6 +521,7 @@ const Register = () => {
     setFormData({ ...EMPTY_FORM_DATA, ...draft.formData });
     setCaptureMode(draft.captureMode || 'auto');
     setRegistrationStep(draft.registrationStep || 2);
+    if (draft.idCardPhoto) setExtractedIdCardPhoto(draft.idCardPhoto);
     setFaceCaptured(false);
     setFaceImage(null);
     setFaceDescriptor(null);

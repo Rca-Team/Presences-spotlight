@@ -55,10 +55,21 @@ export async function idCardFunction<T>(body: Record<string, unknown>, signal?: 
   return data as T;
 }
 export async function extractBulkPdf(file: File, options: BulkPdfOptions) {
-  const isPdf = /\.pdf$/i.test(file.name) || file.type === 'application/pdf';
-  const isMht = /\.(?:mht|mhtml|html|htm)$/i.test(file.name) || /^(?:multipart\/related|message\/rfc822|application\/x-mimearchive|text\/html)$/i.test(file.type);
-  const isImage = /^image\/(png|jpe?g|webp|bmp|gif)$/i.test(file.type) || /\.(?:png|jpe?g|webp|bmp|gif)$/i.test(file.name);
-  const isExcel = /\.(?:xlsx|xls|csv|ods)$/i.test(file.name) || /^(?:application\/vnd\.openxmlformats-officedocument\.spreadsheetml\.sheet|application\/vnd\.ms-excel|text\/csv|application\/csv)$/i.test(file.type);
+  // Sniff file header to gracefully handle files without extension or misnamed MHT/Excel/PDF files
+  let headerSnippet = '';
+  try {
+    const slice = file.slice(0, 1024);
+    headerSnippet = await slice.text();
+  } catch {}
+
+  const isPdfHeader = headerSnippet.startsWith('%PDF');
+  const isMhtHeader = /^(?:From:\s*<|MIME-Version:|<!DOCTYPE\s+html|<html|<body|--)/i.test(headerSnippet.trim()) || headerSnippet.includes('multipart/related');
+  const isZipHeader = headerSnippet.startsWith('PK\x03\x04');
+
+  const isPdf = isPdfHeader || (!isMhtHeader && (/\.pdf$/i.test(file.name) || file.type === 'application/pdf'));
+  const isMht = (!isPdfHeader && (isMhtHeader || /\.(?:mht|mhtml|html|htm)$/i.test(file.name) || /^(?:multipart\/related|message\/rfc822|application\/x-mimearchive|text\/html)$/i.test(file.type)));
+  const isImage = /^image\/(png|jpe?g|webp|bmp|gif)$/i.test(file.type) || /\.(?:png|jpe?g|webp|bmp|gif)$/i.test(file.name) || /^\xFF\xD8\xFF|^\x89PNG|^RIFF/i.test(headerSnippet);
+  const isExcel = isZipHeader || /\.(?:xlsx|xls|csv|ods)$/i.test(file.name) || /^(?:application\/vnd\.openxmlformats-officedocument\.spreadsheetml\.sheet|application\/vnd\.ms-excel|text\/csv|application\/csv)$/i.test(file.type);
 
   if (!isPdf && !isMht && !isImage && !isExcel) {
     throw new Error('Choose a student ID-card PDF, Excel sheet (.xlsx/.xls/.csv), MHT/MHTML, or image file.');

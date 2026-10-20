@@ -163,7 +163,7 @@ function distanceToConfidence(distance: number, threshold: number): number {
  */
 export async function matchDescriptorIndexed(
   descriptor: Float32Array,
-  matchThreshold = 0.56,
+  matchThreshold = 0.45,
   shortlist = 64,
 ): Promise<{ userId: string; name: string; distance: number; confidence: number } | null> {
   await ensureGalleryIndex();
@@ -196,9 +196,24 @@ export async function matchDescriptorIndexed(
 
     if (sampleDists.length === 0 && !Number.isFinite(centroidDist)) continue;
 
-    // Use minimum distance across all registered samples & centroid (pure FaceMatcher standard):
-    const minSample = sampleDists.length > 0 ? Math.min(...sampleDists) : Number.POSITIVE_INFINITY;
-    const effectiveDist = Math.min(minSample, centroidDist);
+    sampleDists.sort((a, b) => a - b);
+    const d1 = sampleDists[0] ?? centroidDist;
+    const d2 = sampleDists[1] ?? (Number.isFinite(centroidDist) ? centroidDist : d1);
+
+    // Compute composite distance with centroid alienation rejection
+    let effectiveDist = d1;
+    if (sampleDists.length >= 2) {
+      const top2Avg = (d1 + d2) / 2;
+      const validCentroid = Number.isFinite(centroidDist) ? centroidDist : top2Avg;
+      // Guard against a single drifted sample matching an unrelated face:
+      // Centroid must not be completely alienated (> 0.54) from query face
+      if (Number.isFinite(centroidDist) && centroidDist > 0.54 && d1 > 0.40) {
+        continue;
+      }
+      effectiveDist = Math.min(validCentroid, 0.65 * d1 + 0.35 * Math.min(d2, validCentroid));
+    } else if (Number.isFinite(centroidDist)) {
+      effectiveDist = (d1 * 0.65) + (centroidDist * 0.35);
+    }
 
     if (!Number.isFinite(effectiveDist)) continue;
     const finalUserId = (entry as any).userId || userId;
@@ -210,11 +225,13 @@ export async function matchDescriptorIndexed(
   const second = ranked[1];
   if (!best || best.distance > matchThreshold) return null;
 
-  // Ambiguity guard: only if two COMPLETELY DIFFERENT students have virtually identical distance
-  // and both matches are near the threshold edge (best.distance > 0.48 and margin < 0.02)
-  if (second && second.userId !== best.userId && best.distance > 0.48) {
+  // Ambiguity Filter: If a runner-up candidate from a DIFFERENT registered student
+  // is close to the threshold and within a narrow margin of the best match,
+  // reject to prevent look-alike false-positive confusion.
+  if (second && second.userId !== best.userId && second.distance <= matchThreshold + 0.08) {
     const margin = second.distance - best.distance;
-    if (margin < 0.02) {
+    const ratio = second.distance > 0 ? best.distance / second.distance : 1;
+    if (margin < 0.035 || ratio > 0.88) {
       return null;
     }
   }
@@ -245,7 +262,7 @@ export function createRecognitionEngine(
   const detectFps = options.detectFps ?? 14;
   const detectionWidth = options.detectionWidth ?? 480;
   const inputSize = options.inputSize ?? 320;
-  const matchThreshold = options.matchThreshold ?? 0.56;
+  const matchThreshold = options.matchThreshold ?? 0.45;
   const shortlist = options.shortlist ?? 16;
   const baseRequiredHoldMs = options.requiredHoldMs ?? 0;
 
@@ -376,62 +393,84 @@ export function createRecognitionEngine(
         const now = Date.now();
 
         if (match) {
-          // Instant verification: student matched within threshold (<100ms)
-          tracker.assignIdentity(t.id, {
-            userId: match.userId,
-            name: match.name,
-            confidence: match.confidence,
-            recognizedAt: now,
-            verified: true,
-          });
+          // Zero False Positive Guard:
+          // Strong match (dist <= 0.42) -> instant verification
+          // Borderline match (0.42 < dist <= 0.45) -> require 2-frame consistency
+          const isHighCertainty = match.distance <= 0.42;
+          const isConfirmedCandidate = t.candidate?.userId === match.userId;
 
-          const normName = match.name.toLowerCase().trim();
-          const isAlreadyMarkedInSession =
-            markedIdentities.has(`uid:${match.userId}`) ||
-            (normName !== 'unknown' && markedIdentities.has(`name:${normName}`));
+          if (isHighCertainty || isConfirmedCandidate || t.identity?.verified) {
+            tracker.assignIdentity(t.id, {
+              userId: match.userId,
+              name: match.name,
+              confidence: match.confidence,
+              recognizedAt: now,
+              verified: true,
+            });
 
-          if (!isAlreadyMarkedInSession) {
-            markedByTrack.set(t.id, match.userId);
-            markedIdentities.add(`uid:${match.userId}`);
-            if (normName !== 'unknown') {
-              markedIdentities.add(`name:${normName}`);
+            const normName = match.name.toLowerCase().trim();
+            const isAlreadyMarkedInSession =
+              markedIdentities.has(`uid:${match.userId}`) ||
+              (normName !== 'unknown' && markedIdentities.has(`name:${normName}`));
+
+            if (!isAlreadyMarkedInSession) {
+              markedByTrack.set(t.id, match.userId);
+              markedIdentities.add(`uid:${match.userId}`);
+              if (normName !== 'unknown') {
+                markedIdentities.add(`name:${normName}`);
+              }
+
+              const identified: IdentifiedFace = {
+                trackId: t.id,
+                userId: match.userId,
+                name: match.name,
+                confidence: match.confidence,
+                distance: match.distance,
+                box: t.box,
+                descriptor: d.descriptor,
+              };
+
+              options.onIdentified?.(identified);
+
+              if (options.markAttendance) {
+                options.markAttendance(identified).catch(err => {
+                  console.error('[RealtimeEngine] markAttendance handler error:', err);
+                });
+              } else {
+                recordAttendance(
+                  match.userId,
+                  'present',
+                  match.confidence,
+                  {
+                    metadata: {
+                      name: match.name,
+                      source: 'realtime-engine',
+                      trackId: t.id,
+                      matchDistance: match.distance,
+                    },
+                  },
+                  undefined,
+                  'ai-scan'
+                ).catch(err => {
+                  console.error('[RealtimeEngine] Direct cloud attendance write failed:', err);
+                });
+              }
             }
-
-            const identified: IdentifiedFace = {
-              trackId: t.id,
+          } else {
+            // Register candidate on frame 1 to verify on next frame
+            t.candidate = {
               userId: match.userId,
               name: match.name,
               confidence: match.confidence,
               distance: match.distance,
-              box: t.box,
-              descriptor: d.descriptor,
+              firstMatchedAt: now,
+              lastMatchedAt: now,
+              continuousHoldMs: 0,
             };
-
-            options.onIdentified?.(identified);
-
-            if (options.markAttendance) {
-              options.markAttendance(identified).catch(err => {
-                console.error('[RealtimeEngine] markAttendance handler error:', err);
-              });
-            } else {
-              recordAttendance(
-                match.userId,
-                'present',
-                match.confidence,
-                {
-                  metadata: {
-                    name: match.name,
-                    source: 'realtime-engine',
-                    trackId: t.id,
-                    matchDistance: match.distance,
-                  },
-                },
-                undefined,
-                'ai-scan'
-              ).catch(err => {
-                console.error('[RealtimeEngine] Direct cloud attendance write failed:', err);
-              });
-            }
+          }
+        } else {
+          if (!t.identity?.verified) {
+            t.candidate = undefined;
           }
         }
       }

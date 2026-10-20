@@ -168,8 +168,24 @@ export function parseMhtParts(rawText: string): { htmlParts: string[]; images: M
       htmlParts.push(decoded);
     } else if (contentType.startsWith('image/')) {
       let b64 = '';
-      if (encoding === 'base64') b64 = body.replace(/[^A-Za-z0-9+/=]/g, '');
-      else if (encoding === 'quoted-printable') b64 = quotedPrintableToBase64(body);
+      if (encoding === 'base64') {
+        b64 = body.replace(/[^A-Za-z0-9+/=]/g, '');
+      } else if (encoding === 'quoted-printable') {
+        b64 = quotedPrintableToBase64(body);
+      } else {
+        // Binary or 8bit encoding: convert raw bytes to base64
+        try {
+          if (typeof Buffer !== 'undefined') {
+            b64 = Buffer.from(body, 'latin1').toString('base64');
+          } else {
+            let bin = '';
+            for (let i = 0; i < body.length; i++) {
+              bin += String.fromCharCode(body.charCodeAt(i) & 0xff);
+            }
+            b64 = btoa(bin);
+          }
+        } catch {}
+      }
       if (b64) registerImage(contentType, b64, location, contentId);
     } else if (contentType === 'application/pdf') {
       const b64 = encoding === 'base64' ? body.replace(/[^A-Za-z0-9+/=]/g, '') : quotedPrintableToBase64(body);
@@ -234,6 +250,25 @@ export function elementToStructuredText(root: Element): string {
 
   walk(root);
   flush();
+
+  // Explicitly check for student name container (e.g. <div class="student-name">)
+  const nameEl = root.querySelector('.student-name, .student_name, [class*="student-name"], [class*="student_name"]');
+  if (nameEl) {
+    const rawName = (nameEl.textContent || '').replace(/\s+/g, ' ').trim();
+    if (rawName && !lines.some(l => l.toLowerCase().includes(rawName.toLowerCase()))) {
+      lines.unshift(`Student Name: ${rawName}`);
+    }
+  }
+
+  // Explicitly check for student ID container (e.g. <div class="student_id">)
+  const idEl = root.querySelector('.student_id, .student-id, [class*="student_id"], [class*="student-id"]');
+  if (idEl) {
+    const rawId = (idEl.textContent || '').replace(/\s+/g, ' ').trim();
+    const idDigits = (rawId.match(/\b\d{6,15}\b/) || [])[0];
+    if (idDigits && !lines.some(l => l.includes(idDigits))) {
+      lines.push(`Student ID: ${idDigits}`);
+    }
+  }
 
   // Deduplicate consecutive identical lines while preserving order
   const deduped: string[] = [];
@@ -398,26 +433,49 @@ export async function extractMhtCards(file: File, options: MhtExtractOptions = {
         }
       }
 
-      // Recursive DOM walker to isolate individual student card containers
-      const cardContainers: Element[] = [];
-      const collectCards = (el: Element): number => {
-        let childCardCount = 0;
-        for (const child of Array.from(el.children)) {
-          childCardCount += collectCards(child);
-        }
-        if (childCardCount > 0) return childCardCount;
+      // Check for explicit card containers first (.card, .id-card, .student-card, .idcard, .id_card_container)
+      const explicitCardSelectors = ['.card', '.id-card', '.student-card', '.icard', '.id_card_container', '[class*="card"]'];
+      let cardContainers: Element[] = [];
 
-        const text = elementToStructuredText(el);
-        if (text.length < 20 || text.length > 4000) return 0;
-        const parsed = parseCardText(text);
-        if (hasCardIdentity(parsed)) {
-          cardContainers.push(el);
-          return 1;
+      for (const sel of explicitCardSelectors) {
+        const matches = Array.from(doc.querySelectorAll(sel));
+        const validMatches = matches.filter(el => {
+          const text = elementToStructuredText(el);
+          return text.length >= 20 && text.length <= 4000 && hasCardIdentity(parseCardText(text));
+        });
+        if (validMatches.length > 0) {
+          cardContainers = validMatches;
+          break;
         }
-        return 0;
-      };
+      }
 
-      if (doc.body) collectCards(doc.body);
+      // Fallback to DOM walker only if no explicit card class exists
+      if (cardContainers.length === 0) {
+        const collectCards = (el: Element): number => {
+          const selfText = elementToStructuredText(el);
+          const selfParsed = parseCardText(selfText);
+          const isDirectCard = hasCardIdentity(selfParsed) && selfText.length >= 20 && selfText.length <= 4000;
+
+          if (isDirectCard && ((selfParsed.name && (selfParsed.admission_number || selfParsed.student_id_kv)) || (selfParsed.class && selfParsed.name))) {
+            cardContainers.push(el);
+            return 1;
+          }
+
+          let childCardCount = 0;
+          for (const child of Array.from(el.children)) {
+            childCardCount += collectCards(child);
+          }
+          if (childCardCount > 0) return childCardCount;
+
+          if (isDirectCard) {
+            cardContainers.push(el);
+            return 1;
+          }
+          return 0;
+        };
+
+        if (doc.body) collectCards(doc.body);
+      }
 
       const totalFound = cardContainers.length;
       for (let idx = 0; idx < totalFound; idx++) {
@@ -433,12 +491,18 @@ export async function extractMhtCards(file: File, options: MhtExtractOptions = {
         if (!student.name && !student.admission_number) continue;
 
         // Find the student's portrait image inside this card container
+        const studentPhotoImg = container.querySelector('img.student-photo, img[class*="photo"], img[class*="student"]') as HTMLImageElement | null;
+        let explicitPhotoSrc = studentPhotoImg?.getAttribute('src') || '';
+        if (explicitPhotoSrc && (explicitPhotoSrc.includes('barcode') || explicitPhotoSrc.includes('/qr?'))) {
+          explicitPhotoSrc = '';
+        }
+
         const candidateImgs = Array.from(container.querySelectorAll('img'))
           .map(img => ({
             src: img.getAttribute('src') || '',
             alt: (img.getAttribute('alt') || img.getAttribute('class') || img.getAttribute('id') || '').toLowerCase(),
           }))
-          .filter(item => item.src.startsWith('data:image/') && item.src.length > 400 && !/barcode|qr|logo|sign|seal/i.test(item.alt));
+          .filter(item => item.src && item.src.length > 30 && !/barcode|qr|logo|sign|seal/i.test(item.alt) && !item.src.includes('barcode') && !item.src.includes('/qr?'));
 
         // Prefer images that are unique to this card (frequency <= 2) or explicitly tagged as photo/student
         candidateImgs.sort((a, b) => {
@@ -450,9 +514,9 @@ export async function extractMhtCards(file: File, options: MhtExtractOptions = {
           return freqA - freqB;
         });
 
-        let portrait: string | undefined = candidateImgs[0]?.src;
+        let portrait: string | undefined = explicitPhotoSrc || candidateImgs[0]?.src;
         // If multiple cards share the image (e.g. a school logo and no student photo), don't mistake the school logo for the student's portrait
-        if (portrait && totalFound >= 3 && (imgFrequency.get(portrait) || 0) >= totalFound) {
+        if (portrait && totalFound >= 3 && (imgFrequency.get(portrait) || 0) >= totalFound && !/photo|student/i.test(candidateImgs[0]?.alt || '')) {
           portrait = undefined;
         }
 

@@ -32,6 +32,7 @@ export interface CanonicalStudent {
   parent_phone?: string;
   parent_email?: string;
   phone?: string;
+  is_face_enrolled?: boolean;
 }
 
 export interface UnifiedRecentCheckIn {
@@ -55,6 +56,9 @@ export interface UnifiedStudentSnapshot {
   roster: CanonicalStudent[];
   students: CanonicalStudent[];
   recentCheckIns?: UnifiedRecentCheckIn[];
+  enrolledFaceCount?: number;
+  totalSchoolRoster?: number;
+  enrolledRoster?: CanonicalStudent[];
 }
 
 const SNAPSHOT_STORAGE_KEY = 'presences_unified_snapshot_v3';
@@ -506,7 +510,7 @@ export async function fetchUnifiedStudentSnapshot(forceFresh = false): Promise<U
 
   inFlightSnapshotPromise = (async () => {
     try {
-      const [registeredRes, profilesRes, todayRes, gateRes] = await Promise.all([
+      const [registeredRes, profilesRes, todayRes, gateRes, descriptorsRes] = await Promise.all([
         supabase
           .from('attendance_records')
           .select('id, user_id, device_info, category, class, section, student_id, student_name, image_url')
@@ -530,22 +534,48 @@ export async function fetchUnifiedStudentSnapshot(forceFresh = false): Promise<U
           .eq('is_recognized', true)
           .order('entry_time', { ascending: false })
           .limit(500),
+        supabase
+          .from('face_descriptors')
+          .select('id, user_id, student_id, label, student_name, image_url, descriptor')
+          .limit(5000),
       ]);
 
-      let fallbackDescriptors: any[] = [];
-      if (!(profilesRes.data?.length) && !(registeredRes.data?.length)) {
-        const descriptorsRes = await supabase
-          .from('face_descriptors')
-          .select('id, user_id, student_id, label, image_url')
-          .limit(500);
-        fallbackDescriptors = descriptorsRes.data || [];
-      }
-
+      const rawDescriptors = descriptorsRes?.data || [];
       const roster = buildDeduplicatedRoster(
         registeredRes.data || [],
-        fallbackDescriptors,
+        rawDescriptors,
         profilesRes.data || []
       );
+
+      // Detect who actually has enrolled face biometric data in real-time
+      const enrolledFaceKeys = new Set<string>();
+      rawDescriptors.forEach((d: any) => {
+        if (d.student_id) enrolledFaceKeys.add(normStr(d.student_id));
+        if (d.user_id) enrolledFaceKeys.add(normStr(d.user_id));
+        if (d.student_name) enrolledFaceKeys.add(normStr(d.student_name));
+        if (d.label && d.label !== 'Trained Student') enrolledFaceKeys.add(normStr(d.label));
+      });
+
+      (profilesRes.data || []).forEach((p: any) => {
+        const meta = safeJsonParse(p.metadata);
+        if (meta?.biometric_summary?.centroid_descriptor) {
+          const emp = p.admission_number || p.employee_id || '';
+          if (emp) enrolledFaceKeys.add(normStr(emp));
+          if (p.user_id) enrolledFaceKeys.add(normStr(p.user_id));
+          if (p.full_name) enrolledFaceKeys.add(normStr(p.full_name));
+          if (p.display_name) enrolledFaceKeys.add(normStr(p.display_name));
+        }
+      });
+
+      // Mark exact real-time biometric enrollment status for each student
+      roster.forEach((student) => {
+        const isEnrolled =
+          enrolledFaceKeys.has(normStr(student.employee_id)) ||
+          enrolledFaceKeys.has(normStr(student.admission_number)) ||
+          enrolledFaceKeys.has(normStr(student.user_id)) ||
+          enrolledFaceKeys.has(normStr(student.name));
+        student.is_face_enrolled = isEnrolled;
+      });
 
       const idToStudentKey = new Map<string, string>();
       const keyToStudent = new Map<string, CanonicalStudent>();
@@ -641,12 +671,17 @@ export async function fetchUnifiedStudentSnapshot(forceFresh = false): Promise<U
           });
       });
 
-      const totalRegistered = roster.length;
-      const presentToday = roster.filter((student) => {
+      const enrolledRoster = roster.filter((s) => s.is_face_enrolled);
+      const totalEnrolledFaces = enrolledRoster.length;
+      // For attendance UI: Only show enrolled students whose face data exists
+      const targetAttendanceRoster = totalEnrolledFaces > 0 ? enrolledRoster : roster;
+      const totalRegistered = targetAttendanceRoster.length;
+
+      const presentToday = targetAttendanceRoster.filter((student) => {
         const key = student.employee_id || student.name || student.id;
         return statusesByEmployeeId[key]?.status === 'present';
       }).length;
-      const lateToday = roster.filter((student) => {
+      const lateToday = targetAttendanceRoster.filter((student) => {
         const key = student.employee_id || student.name || student.id;
         return statusesByEmployeeId[key]?.status === 'late';
       }).length;
@@ -656,13 +691,16 @@ export async function fetchUnifiedStudentSnapshot(forceFresh = false): Promise<U
 
       const result: UnifiedStudentSnapshot = {
         totalRegistered,
+        enrolledFaceCount: totalEnrolledFaces,
+        totalSchoolRoster: roster.length,
         presentToday,
         lateToday,
         absentToday,
         attendanceRate,
         statusesByEmployeeId,
         roster,
-        students: roster,
+        enrolledRoster,
+        students: targetAttendanceRoster,
         recentCheckIns,
       };
       cachedSnapshot = { data: result, expiresAt: Date.now() + SNAPSHOT_TTL_MS };
