@@ -17,7 +17,11 @@ export const uploadImage = async (file: File, path: string, bucket: string = 'fa
       throw new Error('Invalid file: The file is empty or invalid');
     }
 
-    const bucketId = APPWRITE_CONFIG.buckets.faceImages || bucket || 'face-images';
+    const resolveBucketId = (bucketName?: string): string => {
+      if (!bucketName) return APPWRITE_CONFIG.buckets.faceImages || 'face-images';
+      return (APPWRITE_CONFIG.buckets as any)[bucketName] || bucketName;
+    };
+    const bucketId = resolveBucketId(bucket);
     
     // Clean path to generate fileId if helpful, or unique ID
     const cleanId = path ? path.replace(/[^a-zA-Z0-9._-]/g, '_').slice(0, 36) : ID.unique();
@@ -77,7 +81,7 @@ export const uploadImage = async (file: File, path: string, bucket: string = 'fa
  * @returns The public URL of the file.
  */
 export const getImageUrl = (path: string, bucket: string = 'face-images'): string => {
-  const bucketId = APPWRITE_CONFIG.buckets.faceImages || bucket || 'face-images';
+  const bucketId = (bucket && (APPWRITE_CONFIG.buckets as any)[bucket]) || bucket || APPWRITE_CONFIG.buckets.faceImages || 'face-images';
   if (path.startsWith('http://') || path.startsWith('https://')) {
     return path;
   }

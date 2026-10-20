@@ -6,7 +6,7 @@ import gauravPhoto from '@/assets/gaurav-photo.png';
 import swamiAnantVyasPhoto from '@/assets/swami-anant-vyas.png';
 import jatinDhamaPhoto from '@/assets/jatin-dhama.jpg';
 import teamRcaPhoto from '@/assets/team-rca.jpg';
-import { usePortfolioData } from '@/hooks/usePortfolioData';
+import { usePortfolioData, normalizeProfileImage } from '@/hooks/usePortfolioData';
 import { useHapticFeedback } from '@/hooks/useHapticFeedback';
 import { PublicPortfolioView } from '@/pages/Portfolio';
 import { HomeGallery } from '@/components/portfolio/HomeGallery';
@@ -996,10 +996,16 @@ const Index = () => {
                         <div className="relative shrink-0">
                           <div className="rounded-2xl p-[2px] bg-gradient-to-tr from-amber-500 via-yellow-300 to-amber-400 shadow-[0_0_20px_rgba(245,158,11,0.4)] group-hover:scale-105 transition-transform duration-300">
                             <img
-                              src={portfolio.profileImage || gauravMember.image || gauravPhoto}
-                              alt={gauravMember.name}
+                              src={normalizeProfileImage(portfolio.profileImage || gauravMember.image) || gauravPhoto}
+                              alt={gauravMember.name || 'Gaurav'}
                               className="h-16 w-16 sm:h-[68px] sm:w-[68px] rounded-[14px] border-2 border-background object-cover"
                               loading="lazy"
+                              onError={(e) => {
+                                const target = e.currentTarget;
+                                if (target.src !== gauravPhoto) {
+                                  target.src = gauravPhoto;
+                                }
+                              }}
                             />
                           </div>
                           {/* Corner Leader Trophy Badge */}

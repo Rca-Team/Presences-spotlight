@@ -1,7 +1,8 @@
 import React from 'react';
 import { Card } from '@/components/ui/card';
 import { cn } from '@/lib/utils';
-import { usePortfolioData } from '@/hooks/usePortfolioData';
+import { usePortfolioData, normalizeProfileImage } from '@/hooks/usePortfolioData';
+import gauravPhoto from '@/assets/gaurav-photo.png';
 
 interface AboutMeProps {
   className?: string;
@@ -10,8 +11,7 @@ interface AboutMeProps {
 export function AboutMe({ className }: AboutMeProps) {
   const { data } = usePortfolioData();
 
-  const fallbackImage = '/lovable-uploads/c9bd72dd-8059-4f9b-b068-b0752dff3ce3.png';
-  const image = data.profileImage || fallbackImage;
+  const image = normalizeProfileImage(data.profileImage) || gauravPhoto;
   const name = data.name?.split(' ')[0] || 'Gaurav';
   const skills = data.skills.length > 0 ? data.skills.slice(0, 6) : ['React', 'TypeScript', 'Java', 'Python', 'AI'];
 
@@ -24,6 +24,12 @@ export function AboutMe({ className }: AboutMeProps) {
               src={image}
               alt={`${data.name || 'Gaurav'} — Creator of Presence`}
               className="w-full h-full object-cover"
+              onError={(e) => {
+                const target = e.currentTarget;
+                if (target.src !== gauravPhoto) {
+                  target.src = gauravPhoto;
+                }
+              }}
             />
           </div>
         </div>

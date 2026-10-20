@@ -206,6 +206,30 @@ export const DEFAULT_PORTFOLIO: PortfolioData = {
   },
 };
 
+/** Normalize profile image to ensure dead Supabase URLs or invalid assets gracefully fallback to gauravPhoto */
+export function normalizeProfileImage(url?: string | null): string {
+  if (!url || typeof url !== 'string') return gauravPhoto;
+  const clean = url.trim();
+  if (
+    !clean ||
+    clean.includes('supabase.co') ||
+    clean.includes('undefined') ||
+    clean.includes('null') ||
+    clean.includes('.asset.json') ||
+    clean.startsWith('/__l5e/') ||
+    clean.includes('cvdcbcsonlianbfeessy') ||
+    clean.includes('eiahucigcvsnuvviajqt')
+  ) {
+    return gauravPhoto;
+  }
+  if (clean.includes('6abfd34f000604fcf074') || clean.includes('6accbd5d00053c5c1ac2')) {
+    return clean
+      .replace(/6abfd34f000604fcf074/g, '6ad309e200176195d398')
+      .replace(/6accbd5d00053c5c1ac2/g, '6ad309e200176195d398');
+  }
+  return clean;
+}
+
 /** Normalize gallery array so legacy string URLs and rich objects work seamlessly */
 export function normalizeGallery(rawGallery: any): PortfolioGalleryItem[] {
   if (!Array.isArray(rawGallery) || rawGallery.length === 0) {
@@ -217,7 +241,9 @@ export function normalizeGallery(rawGallery: any): PortfolioGalleryItem[] {
       if (typeof item === 'string') {
         let cleanUrl = item.trim();
         if (!cleanUrl) return null;
-        cleanUrl = cleanUrl.replace(/eiahucigcvsnuvviajqt/g, 'cvdcbcsonlianbfeessy');
+        if (cleanUrl.includes('supabase.co') || cleanUrl.includes('cvdcbcsonlianbfeessy') || cleanUrl.includes('eiahucigcvsnuvviajqt')) {
+          cleanUrl = gauravPhoto;
+        }
         return {
           id: `gal-migrated-${idx}-${Math.random().toString(36).slice(2, 6)}`,
           url: cleanUrl,
@@ -228,7 +254,10 @@ export function normalizeGallery(rawGallery: any): PortfolioGalleryItem[] {
         };
       }
       if (item && typeof item === 'object' && item.url) {
-        const cleanUrl = String(item.url).replace(/eiahucigcvsnuvviajqt/g, 'cvdcbcsonlianbfeessy');
+        let cleanUrl = String(item.url);
+        if (cleanUrl.includes('supabase.co') || cleanUrl.includes('cvdcbcsonlianbfeessy') || cleanUrl.includes('eiahucigcvsnuvviajqt')) {
+          cleanUrl = gauravPhoto;
+        }
         return {
           id: item.id || `gal-${idx}-${uid()}`,
           url: cleanUrl,
@@ -246,8 +275,10 @@ export function normalizeGallery(rawGallery: any): PortfolioGalleryItem[] {
 
 function migrate(raw: any): PortfolioData {
   const base = { ...DEFAULT_PORTFOLIO, ...(raw ?? {}) };
-  if (base.profileImage) base.profileImage = base.profileImage.replace(/eiahucigcvsnuvviajqt/g, 'cvdcbcsonlianbfeessy');
-  if (base.coverImage) base.coverImage = base.coverImage.replace(/eiahucigcvsnuvviajqt/g, 'cvdcbcsonlianbfeessy');
+  base.profileImage = normalizeProfileImage(base.profileImage);
+  if (base.coverImage && (base.coverImage.includes('supabase.co') || base.coverImage.includes('cvdcbcsonlianbfeessy') || base.coverImage.includes('eiahucigcvsnuvviajqt'))) {
+    base.coverImage = '';
+  }
   base.achievements = Array.isArray(raw?.achievements) ? raw.achievements : DEFAULT_PORTFOLIO.achievements;
   base.skills = Array.isArray(raw?.skills) ? raw.skills : DEFAULT_PORTFOLIO.skills;
   base.gallery = normalizeGallery(raw?.gallery);
@@ -287,13 +318,26 @@ function migrate(raw: any): PortfolioData {
   }
 
   base.members = rawMembers.map((m: any) => {
-    let img = (m.image ?? '').replace(/eiahucigcvsnuvviajqt/g, 'cvdcbcsonlianbfeessy');
+    let img = m.image ? String(m.image).trim() : '';
     const norm = (m.name || '').toLowerCase().trim();
-    if (!img || img.includes('.asset.json') || img.startsWith('/__l5e/')) {
+    if (
+      !img ||
+      img.includes('supabase.co') ||
+      img.includes('cvdcbcsonlianbfeessy') ||
+      img.includes('eiahucigcvsnuvviajqt') ||
+      img.includes('.asset.json') ||
+      img.startsWith('/__l5e/') ||
+      img.includes('undefined') ||
+      img.includes('null')
+    ) {
       if (norm.includes('gaurav')) img = gauravPhoto;
       else if (norm.includes('swami') || norm.includes('anant')) img = swamiAnantVyasPhoto;
       else if (norm.includes('dhama') || norm === 'jatin') img = jatinDhamaPhoto;
       else img = '';
+    } else if (img.includes('6abfd34f000604fcf074') || img.includes('6accbd5d00053c5c1ac2')) {
+      img = img
+        .replace(/6abfd34f000604fcf074/g, '6ad309e200176195d398')
+        .replace(/6accbd5d00053c5c1ac2/g, '6ad309e200176195d398');
     }
     const resolvedName = norm === 'mayank' ? 'Mayank Ranjan' : (m.name ?? '');
     return {
@@ -315,7 +359,15 @@ export function usePortfolioData() {
   const [data, setData] = useState<PortfolioData>(() => {
     try {
       const cached = localStorage.getItem('gaurav_portfolio_cache');
-      if (cached) return migrate(JSON.parse(cached));
+      if (cached) {
+        const parsed = JSON.parse(cached);
+        const migrated = migrate(parsed);
+        // Persist clean migrated structure if legacy dead URLs were detected
+        if (parsed.profileImage !== migrated.profileImage) {
+          try { localStorage.setItem('gaurav_portfolio_cache', JSON.stringify(migrated)); } catch {}
+        }
+        return migrated;
+      }
     } catch {
       /* ignore */
     }
@@ -335,13 +387,14 @@ export function usePortfolioData() {
 
       const { data: row } = await supabase
         .from('attendance_settings')
-        .select('value')
-        .eq('key', PORTFOLIO_KEY)
+        .select('*')
+        .or(`key.eq.${PORTFOLIO_KEY},setting_key.eq.${PORTFOLIO_KEY}`)
         .maybeSingle();
 
-      if (row?.value) {
+      const rawVal = row?.value || (row as any)?.setting_value;
+      if (rawVal) {
         try {
-          const parsed = migrate(JSON.parse(row.value));
+          const parsed = migrate(typeof rawVal === 'string' ? JSON.parse(rawVal) : rawVal);
           setData(parsed);
           await savePortfolioToIndexedDb(parsed);
           try {

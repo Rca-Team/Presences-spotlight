@@ -93,6 +93,13 @@ import {
   deleteSingleFacePhoto,
   deleteAllStudentFacePhotos,
 } from '@/services/enrollment/photoDeletionService';
+import { storage as appwriteStorage, APPWRITE_CONFIG, getAppwriteStorageViewUrl } from '@/integrations/appwrite/client';
+import { Permission, Role } from 'appwrite';
+import { storageFileId } from '@/integrations/appwrite/storage-id';
+import { dataUrlToBlob } from '@/services/face-recognition/TrainingDataStorageService';
+import { getFaceDescriptorFromBlob, loadRegistrationModels } from '@/services/face-recognition/OptimizedRegistrationService';
+import { descriptorToString } from '@/services/face-recognition/ModelService';
+import { v4 as uuidv4 } from 'uuid';
 import '@/components/enrollment/enrollment.css';
 
 const StudentStoredFaceAssets = lazy(() => import('@/components/enrollment/StudentStoredFaceAssets'));

@@ -28,6 +28,9 @@
  */
 
 import { supabase } from '@/integrations/supabase/client';
+import { storage as appwriteStorage, APPWRITE_CONFIG, getAppwriteStorageViewUrl } from '@/integrations/appwrite/client';
+import { Permission, Role } from 'appwrite';
+import { uploadImage } from './StorageService';
 import { descriptorToString, stringToDescriptor } from './ModelService';
 import { getAttendanceCutoffTime, isSaveAttendanceFaceSamplesEnabledSync } from '../attendance/AttendanceSettingsService';
 import { getAllTrainedDescriptors } from './ProgressiveTrainingService';
@@ -679,11 +682,6 @@ export async function recordAttendance(
   const timestamp = new Date().toISOString();
   const dateStr = timestamp.split('T')[0];
 
-  // Zero-photo retention policy: Daily attendance is marked purely from face vectors in memory.
-  // No photo snapshot files are saved or uploaded during daily attendance marking.
-  const uploadedImageUrl: string | null = null;
-  const trainingAttendancePath: string | null = null;
-
   const resolvedSource: 'ai-scan' | 'qr-scan' | 'gate-mode' =
     captureMode === 'gate-mode' ? 'gate-mode' :
     captureMode === 'qr-scan'  ? 'qr-scan'  : 'ai-scan';
@@ -825,6 +823,48 @@ export async function recordAttendance(
     (userProfile?.admission_number ? String(userProfile.admission_number) : null) ||
     (isTeacher ? 'FACULTY' : 'STUDENT');
 
+  // ── Save captured face snapshot to Appwrite Cloud Storage ────────────────────
+  let uploadedImageUrl: string | null = null;
+  let trainingAttendancePath: string | null = null;
+
+  if (capturedImageDataUrl && typeof capturedImageDataUrl === 'string' && capturedImageDataUrl.startsWith('data:image')) {
+    try {
+      const blob = await dataUrlToBlob(capturedImageDataUrl);
+      if (blob && blob.size > 0) {
+        const cleanEmp = (effectiveStudentId || 'student').replace(/[^a-zA-Z0-9]/g, '').slice(0, 10);
+        const randSuffix = Math.random().toString(36).substring(2, 7);
+        const safeFileId = `att_${cleanEmp}_${Date.now().toString(36)}_${randSuffix}`.slice(0, 36);
+        const filename = `${safeFileId}.jpg`;
+        const file = new File([blob], filename, { type: 'image/jpeg' });
+        const targetBucket = APPWRITE_CONFIG.buckets.attendanceTrainingFaces || 'attendance-training-faces';
+
+        try {
+          const res = await appwriteStorage.createFile(
+            targetBucket,
+            safeFileId,
+            file,
+            [
+              Permission.read(Role.any()),
+              Permission.write(Role.any()),
+              Permission.delete(Role.any())
+            ]
+          );
+          uploadedImageUrl = getAppwriteStorageViewUrl(targetBucket, res.$id);
+          trainingAttendancePath = `attendance/${resolvedClass || 'general'}/${effectiveStudentId}/${safeFileId}.jpg`;
+          console.log('[Attendance] Live face snapshot stored in cloud:', uploadedImageUrl);
+        } catch (uploadErr) {
+          console.warn('[Attendance] Direct Appwrite upload failed, trying uploadImage fallback:', uploadErr);
+          uploadedImageUrl = await uploadImage(file, `attendance/${safeFileId}.jpg`, targetBucket);
+          if (uploadedImageUrl) {
+            trainingAttendancePath = `attendance/${resolvedClass || 'general'}/${effectiveStudentId}/${safeFileId}.jpg`;
+          }
+        }
+      }
+    } catch (photoErr) {
+      console.warn('[Attendance] Could not process captured face image:', photoErr);
+    }
+  }
+
   const fullDeviceInfo = {
     type: 'webcam',
     timestamp,
@@ -843,6 +883,8 @@ export async function recordAttendance(
       capture_mode:             sanitizeSegment(captureMode),
       source:                   resolvedSource,
       training_attendance_path: trainingAttendancePath,
+      captured_image_url:       uploadedImageUrl,
+      firebase_image_url:       uploadedImageUrl || deviceInfo?.metadata?.firebase_image_url,
     },
   };
 

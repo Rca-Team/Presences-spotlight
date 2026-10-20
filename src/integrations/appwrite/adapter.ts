@@ -79,12 +79,18 @@ function normalizeDoc(doc: any): any {
       normalized.metadata = JSON.parse(normalized.metadata);
     } catch (_) {}
   }
+  if (normalized.setting_key && !normalized.key) normalized.key = normalized.setting_key;
+  if (normalized.setting_value && !normalized.value) normalized.value = normalized.setting_value;
+  if (normalized.key && !normalized.setting_key) normalized.setting_key = normalized.key;
+  if (normalized.value && !normalized.setting_value) normalized.setting_value = normalized.value;
   return normalized;
 }
 
-// Convert column name if needed ($id <-> id)
+// Convert column name if needed ($id <-> id, key <-> setting_key)
 function mapColumnName(col: string): string {
   if (col === 'id') return '$id';
+  if (col === 'key') return 'setting_key';
+  if (col === 'value') return 'setting_value';
   return col;
 }
 
@@ -97,6 +103,10 @@ function sanitizeDocForSave(data: any): any {
   delete clean.$permissions;
   delete clean.$databaseId;
   delete clean.$collectionId;
+  if (clean.key && !clean.setting_key) clean.setting_key = clean.key;
+  if (clean.value && !clean.setting_value) clean.setting_value = clean.value;
+  if (clean.setting_key && !clean.key) clean.key = clean.setting_key;
+  if (clean.setting_value && !clean.value) clean.value = clean.setting_value;
   for (const [key, value] of Object.entries(clean)) {
     if (value !== null && typeof value === 'object') clean[key] = JSON.stringify(value);
   }

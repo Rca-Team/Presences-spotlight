@@ -345,47 +345,160 @@ const Register = () => {
           setExtractedIdCardPhoto(cards[0].student_photo_data_url);
         }
       }
-      // Also persist imported student records to the profiles database in the background
+      // Also persist imported student records, upload card photos, and sync face descriptors
       void (async () => {
         try {
           const { supabase } = await import('@/integrations/supabase/client');
-          const rows = cards
-            .filter(c => c.name?.trim() && (c.employee_id || c.student_id_kv)?.trim())
-            .map(c => {
-              const adm = (c.employee_id || c.student_id_kv || '').trim();
-              const cleanPhone = (c.parent_phone || c.phone || '').replace(/\D/g, '').slice(-10);
-              return {
-                full_name: c.name.trim(),
-                display_name: c.name.trim(),
-                admission_number: adm,
-                employee_id: adm,
-                roll_number: c.roll_number?.trim() || null,
+          const { storage: appwriteStorage, APPWRITE_CONFIG, getAppwriteStorageViewUrl } = await import('@/integrations/appwrite/client');
+          const { Permission, Role } = await import('appwrite');
+          const { storageFileId } = await import('@/integrations/appwrite/storage-id');
+          const { dataUrlToBlob } = await import('@/services/face-recognition/TrainingDataStorageService');
+          const { getFaceDescriptorFromBlob, loadRegistrationModels } = await import('@/services/face-recognition/OptimizedRegistrationService');
+          const { descriptorToString } = await import('@/services/face-recognition/ModelService');
+
+          try {
+            await loadRegistrationModels();
+          } catch {}
+
+          const profileRows: any[] = [];
+          const descriptorRows: any[] = [];
+          const attendanceRows: any[] = [];
+
+          for (const c of cards.filter(c => c.name?.trim() && (c.employee_id || c.student_id_kv)?.trim())) {
+            const adm = (c.employee_id || c.student_id_kv || '').trim().replace(/\s+/g, '-');
+            const cleanPhone = (c.parent_phone || c.phone || '').replace(/\D/g, '').slice(-10);
+            const stableUserId = uuidv4();
+            let photoUrl: string | null = null;
+            let descriptor: Float32Array | null = null;
+
+            if (c.student_photo_data_url && typeof c.student_photo_data_url === 'string' && c.student_photo_data_url.startsWith('data:image')) {
+              try {
+                const blob = await dataUrlToBlob(c.student_photo_data_url);
+                if (blob && blob.size > 0) {
+                  const cleanAdm = adm.replace(/[^a-zA-Z0-9_-]/g, '_');
+                  const fileId = storageFileId(`students/${cleanAdm}/face.jpg`);
+                  const file = new File([blob], `${cleanAdm}.jpg`, { type: 'image/jpeg' });
+                  const bucketId = APPWRITE_CONFIG.buckets.faceImages || 'face-images';
+
+                  try {
+                    const res = await appwriteStorage.createFile(
+                      bucketId,
+                      fileId,
+                      file,
+                      [
+                        Permission.read(Role.any()),
+                        Permission.write(Role.any()),
+                        Permission.delete(Role.any()),
+                      ]
+                    );
+                    photoUrl = getAppwriteStorageViewUrl(bucketId, res.$id);
+                  } catch (upErr: any) {
+                    photoUrl = getAppwriteStorageViewUrl(bucketId, fileId);
+                  }
+
+                  try {
+                    descriptor = await getFaceDescriptorFromBlob(blob);
+                  } catch {}
+                }
+              } catch {}
+            }
+
+            profileRows.push({
+              user_id: stableUserId,
+              full_name: c.name.trim(),
+              display_name: c.name.trim(),
+              admission_number: adm,
+              employee_id: adm,
+              roll_number: c.roll_number?.trim() || null,
+              class: c.class?.trim() || null,
+              section: c.section?.trim() || null,
+              category: [c.class?.trim(), c.section?.trim()].filter(Boolean).join('-') || c.department || null,
+              parent_phone: cleanPhone || null,
+              phone: cleanPhone || null,
+              parent_name: c.parent_name || c.father_name || c.mother_name || null,
+              father_name: c.father_name?.trim() || null,
+              blood_group: c.blood_group?.trim() || null,
+              address: c.address?.trim() || null,
+              email: c.student_email?.trim() || null,
+              parent_email: c.parent_email?.trim() || null,
+              avatar_url: photoUrl || null,
+              photo_url: photoUrl || null,
+              role: 'student',
+              metadata: JSON.stringify({
+                blood_group: c.blood_group || '',
+                pen_number: c.pen_number || '',
+                student_id_kv: c.student_id_kv || '',
+                mother_name: c.mother_name || '',
+                date_of_birth: c.date_of_birth || '',
+                address: c.address || '',
+                phone_locked: true,
+                source: 'pdf_upload',
+                imported_from_pdf: true,
+                verified_parent_phone: cleanPhone,
+                photo_url: photoUrl || '',
+                avatar_url: photoUrl || '',
+              }),
+              updated_at: now,
+            });
+
+            if (descriptor) {
+              descriptorRows.push({
+                student_id: adm,
+                user_id: stableUserId,
+                label: c.name.trim(),
+                student_name: c.name.trim(),
                 class: c.class?.trim() || null,
                 section: c.section?.trim() || null,
-                category: [c.class?.trim(), c.section?.trim()].filter(Boolean).join('-') || c.department || null,
-                parent_phone: cleanPhone || null,
-                phone: cleanPhone || null,
-                parent_name: c.parent_name || c.father_name || c.mother_name || null,
-                father_name: c.father_name?.trim() || null,
-                date_of_birth: c.date_of_birth?.trim() || null,
-                role: 'student',
+                category: [c.class?.trim(), c.section?.trim()].filter(Boolean).join('-') || null,
+                descriptor: descriptorToString(descriptor),
+                image_url: photoUrl,
                 metadata: JSON.stringify({
-                  blood_group: c.blood_group || '',
-                  pen_number: c.pen_number || '',
-                  student_id_kv: c.student_id_kv || '',
-                  mother_name: c.mother_name || '',
-                  address: c.address || '',
-                  phone_locked: true,
-                  source: 'pdf_upload',
-                  imported_from_pdf: true,
-                  verified_parent_phone: cleanPhone,
+                  source: 'class_id_card_import',
+                  has_aligned_face: true,
+                  imported_at: now,
                 }),
-                updated_at: now,
-              };
+                created_at: now,
+              });
+            }
+
+            attendanceRows.push({
+              user_id: stableUserId,
+              student_id: adm,
+              student_name: c.name.trim(),
+              class: c.class?.trim() || null,
+              section: c.section?.trim() || null,
+              category: [c.class?.trim(), c.section?.trim()].filter(Boolean).join('-') || 'A',
+              status: 'registered',
+              timestamp: now,
+              date: now.split('T')[0],
+              image_url: photoUrl || null,
+              device_info: JSON.stringify({
+                source: 'class_id_card_import',
+                employee_id: adm,
+                metadata: {
+                  name: c.name.trim(),
+                  employee_id: adm,
+                  class: c.class?.trim(),
+                  section: c.section?.trim(),
+                  photo_url: photoUrl,
+                },
+              }),
+              source: 'class_id_card_import',
             });
-          if (rows.length > 0) {
-            await supabase.from('profiles').upsert(rows, { onConflict: 'admission_number' });
           }
+
+          if (profileRows.length > 0) {
+            await supabase.from('profiles').upsert(profileRows, { onConflict: 'admission_number' });
+          }
+          if (descriptorRows.length > 0) {
+            await supabase.from('face_descriptors').upsert(descriptorRows, { onConflict: 'student_id' });
+          }
+          if (attendanceRows.length > 0) {
+            await supabase.from('attendance_records').insert(attendanceRows);
+          }
+
+          window.dispatchEvent(new CustomEvent('presence:descriptors-updated'));
+          window.dispatchEvent(new CustomEvent('presences:roster-updated'));
         } catch (syncErr) {
           console.warn('Background profile sync note:', syncErr);
         }

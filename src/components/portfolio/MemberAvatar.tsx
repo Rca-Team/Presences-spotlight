@@ -65,7 +65,8 @@ export function MemberAvatar({
     setFailed(false);
   }, [image]);
 
-  const resolvedImage = (!failed && image && !image.includes('.asset.json')) ? image : getKnownPhoto(name);
+  const isDeadUrl = !image || image.includes('supabase.co') || image.includes('.asset.json') || image.startsWith('/__l5e/') || image.includes('cvdcbcsonlianbfeessy') || image.includes('eiahucigcvsnuvviajqt');
+  const resolvedImage = (!failed && !isDeadUrl) ? image : getKnownPhoto(name);
   const showImage = !!resolvedImage;
   const h = hueFrom(name || 'x');
 
@@ -75,7 +76,9 @@ export function MemberAvatar({
         <img
           src={resolvedImage}
           alt={alt || name}
-          onError={() => setFailed(true)}
+          onError={() => {
+            setFailed(true);
+          }}
           className={cn('h-full w-full object-cover transition-transform duration-500 hover:scale-108', imgClassName)}
           loading="lazy"
         />

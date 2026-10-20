@@ -1231,7 +1231,7 @@ const FuturisticFaceScanner: React.FC<FuturisticFaceScannerProps> = ({ onScanCom
                         force_attendance_save: true,
                       },
                     },
-                    undefined,
+                    faceCaptureImageDataUrl,
                     'ai-scan'
                   ),
                   5000,
@@ -1416,7 +1416,7 @@ const FuturisticFaceScanner: React.FC<FuturisticFaceScannerProps> = ({ onScanCom
             force_attendance_save: true,
           },
         },
-        undefined,
+        review.capturedImageDataUrl,
       );
 
       sendAutoParentNotification(

@@ -85,6 +85,12 @@ export const MadeByGauravBadge: React.FC = () => {
                 alt="Gaurav Raj"
                 className="w-full h-full object-cover rounded-full bg-slate-900"
                 loading="eager"
+                onError={(e) => {
+                  const target = e.currentTarget;
+                  if (target.src !== '/gaurav-photo.png') {
+                    target.src = '/gaurav-photo.png';
+                  }
+                }}
               />
             </div>
 

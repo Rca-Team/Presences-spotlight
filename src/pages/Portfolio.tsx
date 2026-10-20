@@ -59,6 +59,7 @@ import {
   type PortfolioMember,
   type PortfolioGalleryItem,
   migratePortfolioData,
+  normalizeProfileImage,
   portfolioUid,
 } from '@/hooks/usePortfolioData';
 import { ImageDropzone } from '@/components/portfolio/ImageDropzone';
@@ -158,10 +159,16 @@ export function PublicPortfolioView({
               <div className="relative group">
                 <div className="p-1 rounded-3xl bg-gradient-to-tr from-cyan-400 via-primary to-purple-500 shadow-xl shadow-primary/25 transition-transform duration-300 group-hover:scale-105">
                   <img
-                    src={data.profileImage || gauravPhoto}
-                    alt={data.name}
+                    src={normalizeProfileImage(data.profileImage) || gauravPhoto}
+                    alt={data.name || 'Gaurav'}
                     className="h-28 w-28 sm:h-36 sm:w-36 md:h-44 md:w-44 rounded-[22px] border-2 border-background object-cover shadow-2xl bg-card"
-                    loading="lazy"
+                    loading="eager"
+                    onError={(e) => {
+                      const target = e.currentTarget;
+                      if (target.src !== gauravPhoto) {
+                        target.src = gauravPhoto;
+                      }
+                    }}
                   />
                 </div>
                 <span className="absolute bottom-2 right-2 flex h-4 w-4">
@@ -641,15 +648,16 @@ const Portfolio = () => {
     }
 
     try {
-      const { data: row, error } = await supabase
+      const { data: row } = await supabase
         .from('attendance_settings')
-        .select('value')
-        .eq('key', PORTFOLIO_KEY)
+        .select('*')
+        .or(`key.eq.${PORTFOLIO_KEY},setting_key.eq.${PORTFOLIO_KEY}`)
         .maybeSingle();
 
-      if (row?.value) {
+      const rawVal = row?.value || (row as any)?.setting_value;
+      if (rawVal) {
         try {
-          const parsed = migratePortfolioData(JSON.parse(row.value));
+          const parsed = migratePortfolioData(typeof rawVal === 'string' ? JSON.parse(rawVal) : rawVal);
           setData(parsed);
           await savePortfolioToIndexedDb(parsed);
           try {
@@ -760,25 +768,33 @@ const Portfolio = () => {
       console.warn('Local cache save warning:', e);
     }
 
-    // 2. Persist to Supabase attendance_settings table
+    // 2. Persist to Supabase / Appwrite attendance_settings table
     try {
       const { data: existing } = await supabase
         .from('attendance_settings')
-        .select('id')
-        .eq('key', PORTFOLIO_KEY)
+        .select('id, setting_key, key')
+        .or(`key.eq.${PORTFOLIO_KEY},setting_key.eq.${PORTFOLIO_KEY}`)
         .maybeSingle();
 
       let saveErr = null;
+      const settingsPayload = {
+        key: PORTFOLIO_KEY,
+        value: payload,
+        setting_key: PORTFOLIO_KEY,
+        setting_value: payload,
+        updated_at: new Date().toISOString(),
+      };
+
       if (existing?.id) {
         const { error } = await supabase
           .from('attendance_settings')
-          .update({ value: payload, updated_at: new Date().toISOString() })
+          .update(settingsPayload)
           .eq('id', existing.id);
         saveErr = error;
       } else {
         const { error } = await supabase
           .from('attendance_settings')
-          .insert({ key: PORTFOLIO_KEY, value: payload });
+          .insert(settingsPayload);
         saveErr = error;
       }
 
