@@ -388,7 +388,8 @@ function buildDeduplicatedRoster(
         existing.user_id = cand.user_id;
         byUserId.set(normStr(existing.user_id), existing);
       }
-      if ((!existing.category || existing.category === '6-A') && cand.category && cand.category !== '6-A') {
+      // Preserve Class 6-A and designated classes; never displace with synthetic classes
+      if (!existing.category && cand.category) {
         existing.category = cand.category;
         existing.class = cand.class;
         existing.section = cand.section;

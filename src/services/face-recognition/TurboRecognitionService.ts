@@ -55,7 +55,7 @@ export interface TurboOptions {
 
 const DEFAULT_OPTIONS: TurboOptions = {
   maxFaces: 10,
-  matchThreshold: 0.45,   // Strict threshold aligned with RecognitionService
+  matchThreshold: 0.56,   // Strict threshold aligned with RecognitionService
   useGPU: true,
   useWorkers: true,
   useCache: true,
@@ -291,7 +291,7 @@ export async function turboClassroomScan(
 ): Promise<TurboDetectionResult> {
   return turboDetectAndRecognize(input, {
     maxFaces: 60,
-    matchThreshold: 0.45,
+    matchThreshold: 0.56,
     classroomMode: true,
     minFaceSize: 60 // Allow smaller faces in classroom setting
   });

@@ -163,7 +163,7 @@ function distanceToConfidence(distance: number, threshold: number): number {
  */
 export async function matchDescriptorIndexed(
   descriptor: Float32Array,
-  matchThreshold = 0.45,
+  matchThreshold = 0.56,
   shortlist = 64,
 ): Promise<{ userId: string; name: string; distance: number; confidence: number } | null> {
   await ensureGalleryIndex();
@@ -200,19 +200,12 @@ export async function matchDescriptorIndexed(
     const d1 = sampleDists[0] ?? centroidDist;
     const d2 = sampleDists[1] ?? (Number.isFinite(centroidDist) ? centroidDist : d1);
 
-    // Compute composite distance with centroid alienation rejection
+    // Compute composite distance
     let effectiveDist = d1;
     if (sampleDists.length >= 2) {
-      const top2Avg = (d1 + d2) / 2;
-      const validCentroid = Number.isFinite(centroidDist) ? centroidDist : top2Avg;
-      // Guard against a single drifted sample matching an unrelated face:
-      // Centroid must not be completely alienated (> 0.54) from query face
-      if (Number.isFinite(centroidDist) && centroidDist > 0.54 && d1 > 0.40) {
-        continue;
-      }
-      effectiveDist = Math.min(validCentroid, 0.65 * d1 + 0.35 * Math.min(d2, validCentroid));
+      effectiveDist = Math.min(d1, 0.75 * d1 + 0.25 * d2);
     } else if (Number.isFinite(centroidDist)) {
-      effectiveDist = (d1 * 0.65) + (centroidDist * 0.35);
+      effectiveDist = Math.min(d1, 0.75 * d1 + 0.25 * centroidDist);
     }
 
     if (!Number.isFinite(effectiveDist)) continue;
@@ -228,10 +221,9 @@ export async function matchDescriptorIndexed(
   // Ambiguity Filter: If a runner-up candidate from a DIFFERENT registered student
   // is close to the threshold and within a narrow margin of the best match,
   // reject to prevent look-alike false-positive confusion.
-  if (second && second.userId !== best.userId && second.distance <= matchThreshold + 0.08) {
+  if (second && second.userId !== best.userId && best.distance > 0.48) {
     const margin = second.distance - best.distance;
-    const ratio = second.distance > 0 ? best.distance / second.distance : 1;
-    if (margin < 0.035 || ratio > 0.88) {
+    if (margin < 0.02) {
       return null;
     }
   }
@@ -262,7 +254,7 @@ export function createRecognitionEngine(
   const detectFps = options.detectFps ?? 14;
   const detectionWidth = options.detectionWidth ?? 480;
   const inputSize = options.inputSize ?? 320;
-  const matchThreshold = options.matchThreshold ?? 0.45;
+  const matchThreshold = options.matchThreshold ?? 0.56;
   const shortlist = options.shortlist ?? 16;
   const baseRequiredHoldMs = options.requiredHoldMs ?? 0;
 
