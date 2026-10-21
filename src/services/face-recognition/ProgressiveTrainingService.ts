@@ -59,6 +59,30 @@ const MAX_REGISTRATION_POSE_EXEMPLARS = 6;
  * Filter a list of captured descriptors + images to remove outlier frames and
  * near-identical burst duplicates (< 0.042 Euclidean distance).
  */
+/**
+ * Purge any anomalous or outlier vectors from a student's sample cluster.
+ * Strictly discards vectors whose distance to the cluster median exceeds maxAllowedDist (default 0.42).
+ * Prevents corrupted or noisy vectors from polluting the student gallery.
+ */
+export function purgeClusterOutliers(descriptors: Float32Array[], maxAllowedDist = 0.42): Float32Array[] {
+  if (descriptors.length <= 2) return descriptors;
+
+  const dim = descriptors[0].length;
+  const mean = new Float32Array(dim);
+  for (const d of descriptors) {
+    for (let i = 0; i < dim; i++) mean[i] += d[i];
+  }
+  for (let i = 0; i < dim; i++) mean[i] /= descriptors.length;
+
+  const dists = descriptors.map(d => euclideanDistance(d, mean));
+  const sorted = [...dists].sort((a, b) => a - b);
+  const median = sorted[Math.floor(sorted.length / 2)] || 0.12;
+  const cutoff = Math.min(Math.max(median * 2.0, 0.16), maxAllowedDist);
+
+  const clean = descriptors.filter((_, idx) => dists[idx] <= cutoff);
+  return clean.length >= 1 ? clean : descriptors.slice(0, 1);
+}
+
 export function filterDistinctCaptureSamples(
   descriptors: Float32Array[],
   images: string[] = [],
@@ -85,7 +109,7 @@ export function filterDistinctCaptureSamples(
   const distsToCentroid = validPairs.map((p) => euclideanDistance(p.desc, centroid));
   const sortedDists = [...distsToCentroid].sort((a, b) => a - b);
   const medianDist = sortedDists[Math.floor(sortedDists.length / 2)] || 0.12;
-  const outlierCutoff = Math.max(medianDist * 2.5, 0.22);
+  const outlierCutoff = Math.min(Math.max(medianDist * 2.0, 0.18), 0.40);
 
   const inlierPairs = validPairs.filter((_, idx) => distsToCentroid[idx] <= outlierCutoff);
   const pool = inlierPairs.length > 0 ? inlierPairs : validPairs;
@@ -794,8 +818,12 @@ export async function getAllTrainedDescriptors(forceFresh = false): Promise<Map<
           }
           if (dominantGroup.length === 0) continue;
 
-          const averaged = robustAverage(dominantGroup);
-          const exemplars = selectDiverseExemplars(dominantGroup, averaged, 6);
+          // Autonomous runtime firewall: purge any outlier vectors before computing gallery representations
+          const sanitizedGroup = purgeClusterOutliers(dominantGroup, 0.42);
+          if (sanitizedGroup.length === 0) continue;
+
+          const averaged = robustAverage(sanitizedGroup);
+          const exemplars = selectDiverseExemplars(sanitizedGroup, averaged, 6);
 
           const entry: TrainedUserEntry = {
             userId: key,
@@ -1024,8 +1052,8 @@ function robustAverage(descriptors: Float32Array[]): Float32Array {
 
   // Step 3: median deviation
   const sorted   = [...dists].sort((a, b) => a - b);
-  const median   = sorted[Math.floor(sorted.length / 2)];
-  const cutoff   = median * 2.5;
+  const median   = sorted[Math.floor(sorted.length / 2)] || 0.10;
+  const cutoff   = Math.min(Math.max(median * 2.0, 0.12), 0.40);
 
   // Step 4: filter outliers and re-average
   const inliers  = descriptors.filter((_, i) => dists[i] <= cutoff);
@@ -1050,8 +1078,8 @@ function selectDiverseExemplars(
   // Filter out outliers relative to centroid
   const dists = descriptors.map(d => euclideanDistance(d, centroid));
   const sorted = [...dists].sort((a, b) => a - b);
-  const median = sorted[Math.floor(sorted.length / 2)] || 0.1;
-  const cutoff = Math.max(median * 2.5, 0.08);
+  const median = sorted[Math.floor(sorted.length / 2)] || 0.10;
+  const cutoff = Math.min(Math.max(median * 2.0, 0.08), 0.40);
   const inliers = descriptors.filter((_, idx) => dists[idx] <= cutoff);
   const pool = inliers.length > 0 ? inliers : descriptors;
 

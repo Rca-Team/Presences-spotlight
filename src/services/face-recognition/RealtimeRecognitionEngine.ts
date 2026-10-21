@@ -202,16 +202,16 @@ export async function matchDescriptorIndexed(
 
     // Guard against stray outlier matching:
     // If centroid is finite and query face is alienated from person centroid (> 0.58), skip
-    if (Number.isFinite(centroidDist) && centroidDist > 0.58) {
+    if (Number.isFinite(centroidDist) && centroidDist > 0.52) {
       continue;
     }
 
-    // Compute composite distance
+    // Compute weighted composite distance (65% closest exemplar + 35% centroid)
     let effectiveDist = d1;
-    if (sampleDists.length >= 2) {
-      effectiveDist = Math.min(d1, 0.75 * d1 + 0.25 * d2);
-    } else if (Number.isFinite(centroidDist)) {
-      effectiveDist = Math.min(d1, 0.75 * d1 + 0.25 * centroidDist);
+    if (Number.isFinite(centroidDist)) {
+      effectiveDist = 0.65 * d1 + 0.35 * centroidDist;
+    } else if (sampleDists.length >= 2) {
+      effectiveDist = 0.65 * d1 + 0.35 * d2;
     }
 
     if (!Number.isFinite(effectiveDist)) continue;
