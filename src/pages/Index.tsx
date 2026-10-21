@@ -333,20 +333,20 @@ const Index = () => {
       };
     }
     if (n.includes('swami') || n.includes('anant')) {
-      // Swami Anant Vyas — normal matte crimson (#fc0303 family, non-shiny)
+      // Swami Anant Vyas — Retired Core Member (faded/muted color palette)
       return {
-        hex: '#fc0303',
-        badge: 'Hardware & Core',
-        shortLabel: 'Anant',
-        borderColor: 'rgba(220, 38, 38, 0.28)',
-        hoverBorderColor: 'rgba(220, 38, 38, 0.5)',
+        hex: '#94a3b8',
+        badge: 'Retired · Hardware & Core',
+        shortLabel: 'Anant (Retired)',
+        borderColor: 'rgba(148, 163, 184, 0.28)',
+        hoverBorderColor: 'rgba(148, 163, 184, 0.5)',
         glowBg: 'none',
-        topBarGradient: '#dc2626',
-        dotColor: '#ef4444',
+        topBarGradient: '#64748b',
+        dotColor: '#94a3b8',
         dotShadow: 'none',
-        pillBg: 'rgba(220, 38, 38, 0.10)',
-        pillBorder: 'rgba(220, 38, 38, 0.28)',
-        textClass: 'text-rose-700 dark:text-rose-300',
+        pillBg: 'rgba(148, 163, 184, 0.10)',
+        pillBorder: 'rgba(148, 163, 184, 0.28)',
+        textClass: 'text-slate-500 dark:text-slate-400',
         ringColor: 'transparent',
       };
     }
@@ -397,11 +397,11 @@ const Index = () => {
   }, []);
 
   const defaultTeamMembers = useMemo(
-    () => [swamiMember, jatinMember, jatinMauryaMember, mayankMember],
-    [swamiMember, jatinMember, jatinMauryaMember, mayankMember],
+    () => [jatinMember, jatinMauryaMember, mayankMember],
+    [jatinMember, jatinMauryaMember, mayankMember],
   );
   const displayedTeamMembers = useMemo(() => {
-    if (teamMembersList.length >= 4) return teamMembersList;
+    if (teamMembersList.length >= 3) return teamMembersList;
     return defaultTeamMembers;
   }, [teamMembersList, defaultTeamMembers]);
 
@@ -420,7 +420,7 @@ const Index = () => {
       // Ensure it is different from both the starting order and the mid-spin order,
       // and ideally moves every member to a new slot
       const changedSlots = candidate.filter((m, idx) => m.name !== current[idx]?.name).length;
-      if (candidateKey !== originalOrderKey && candidateKey !== currentKey && changedSlots >= 3) {
+      if (candidateKey !== originalOrderKey && candidateKey !== currentKey && changedSlots >= 2) {
         return candidate;
       }
       if (candidateKey !== originalOrderKey && candidateKey !== currentKey) {
@@ -443,20 +443,20 @@ const Index = () => {
     const extraSpin = 720 + Math.floor(Math.random() * 540) + 90;
     setWheelDegrees((prev) => prev + extraSpin);
 
-    const startingList = teamMembersList.length >= 4 ? teamMembersList : defaultTeamMembers;
+    const startingList = teamMembersList.length >= 3 ? teamMembersList : defaultTeamMembers;
     const originalOrderKey = startingList.map((m) => m.name).join('|');
 
     // Step 1 (0ms): Immediate clockwise orbit step so motion starts with zero lag
     setTeamMembersList((prev) => {
-      const cur = prev.length >= 4 ? prev : defaultTeamMembers;
-      return cur.length === 4 ? [cur[2], cur[0], cur[3], cur[1]] : [...cur].reverse();
+      const cur = prev.length >= 3 ? prev : defaultTeamMembers;
+      return cur.length === 3 ? [cur[2], cur[0], cur[1]] : [...cur].reverse();
     });
 
     // Step 2 (160ms): Second fast clockwise orbit step while wheel is at peak speed
     const t1 = window.setTimeout(() => {
       setTeamMembersList((prev) => {
-        const cur = prev.length >= 4 ? prev : defaultTeamMembers;
-        return cur.length === 4 ? [cur[2], cur[0], cur[3], cur[1]] : [...cur].reverse();
+        const cur = prev.length >= 3 ? prev : defaultTeamMembers;
+        return cur.length === 3 ? [cur[2], cur[0], cur[1]] : [...cur].reverse();
       });
     }, 160);
 
@@ -464,7 +464,7 @@ const Index = () => {
     const t2 = window.setTimeout(() => {
       haptic('light');
       setTeamMembersList((prev) => {
-        const cur = prev.length >= 4 ? prev : defaultTeamMembers;
+        const cur = prev.length >= 3 ? prev : defaultTeamMembers;
         return randomizeMembers(cur, originalOrderKey);
       });
     }, 340);
@@ -800,15 +800,7 @@ const Index = () => {
                       <span className="text-xs font-black uppercase tracking-[0.22em] text-amber-200">Team RCA</span>
                     </div>
 
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => navigate('/portfolio')}
-                      className="h-8 text-xs font-bold text-amber-200 bg-black/65 hover:bg-black/90 hover:text-amber-100 border border-amber-300/35 rounded-full px-3.5 backdrop-blur-md transition-all shadow-sm cursor-pointer"
-                    >
-                      <span>Studio</span>
-                      <ArrowRight className="ml-1 h-3.5 w-3.5" />
-                    </Button>
+
                   </div>
 
                   {/* Interactive Hotspot Zones Across the 3 Members in the Photo */}
@@ -902,7 +894,7 @@ const Index = () => {
                         </span>
                       </button>
 
-                      {/* SWAMI (RIGHT) */}
+                      {/* SWAMI (RIGHT - RETIRED) */}
                       <button
                         type="button"
                         onClick={(e) => {
@@ -910,13 +902,13 @@ const Index = () => {
                           haptic('selection');
                           setActiveProfile(swamiMember);
                         }}
-                        className="group/btn relative flex flex-col items-center justify-center rounded-2xl border border-white/15 bg-white/[0.04] hover:bg-amber-500/15 hover:border-amber-400/70 py-2 sm:py-2.5 px-1 backdrop-blur-xl transition-all duration-200 shadow-md active:scale-95 cursor-pointer text-center"
+                        className="group/btn relative flex flex-col items-center justify-center rounded-2xl border border-white/10 bg-white/[0.02] hover:bg-white/[0.06] hover:border-white/20 py-2 sm:py-2.5 px-1 backdrop-blur-xl transition-all duration-200 shadow-md active:scale-95 cursor-pointer text-center opacity-70 hover:opacity-100"
                       >
-                        <span className="text-[11px] sm:text-xs font-black uppercase tracking-wider text-amber-100 group-hover/btn:text-amber-300 transition-colors">
+                        <span className="text-[11px] sm:text-xs font-black uppercase tracking-wider text-slate-300 group-hover/btn:text-white transition-colors">
                           SWAMI
                         </span>
-                        <span className="text-[9px] sm:text-[10px] font-bold text-white/60 group-hover/btn:text-white/90 transition-colors">
-                          (RIGHT)
+                        <span className="text-[8px] sm:text-[9px] font-bold text-amber-400/80 group-hover/btn:text-amber-300 transition-colors">
+                          (RETIRED)
                         </span>
                       </button>
                     </div>
@@ -929,8 +921,6 @@ const Index = () => {
                         const projEl = document.getElementById('rca-projects');
                         if (projEl) {
                           projEl.scrollIntoView({ behavior: 'smooth' });
-                        } else {
-                          navigate('/portfolio');
                         }
                       }}
                       className="w-full h-11 sm:h-12 rounded-2xl bg-gradient-to-r from-amber-500 via-yellow-500 to-amber-600 hover:from-amber-600 hover:to-yellow-600 text-slate-950 font-black text-xs sm:text-sm uppercase tracking-wider shadow-lg shadow-amber-500/25 border border-amber-300/60 btn-spring flex items-center justify-center gap-2 cursor-pointer active:scale-98"
@@ -961,18 +951,11 @@ const Index = () => {
                           Creators &amp; Core Architects
                         </span>
                         <span className="text-[10px] font-semibold text-slate-500 dark:text-slate-400 mt-0.5 block">
-                          Team RCA Engineering Roster · 5 Members
+                          Team RCA Engineering Roster · 4 Active · 1 Retired
                         </span>
                       </div>
                     </div>
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => navigate('/portfolio')}
-                      className="h-8 px-3.5 text-xs font-bold text-amber-700 dark:text-amber-300 hover:text-amber-800 dark:hover:text-amber-200 bg-amber-500/10 hover:bg-amber-500/20 border border-amber-400/35 rounded-full cursor-pointer transition-all shadow-xs"
-                    >
-                      View Studio <ArrowRight className="ml-1.5 h-3.5 w-3.5" />
-                    </Button>
+
                   </div>
 
                   {/* LEADER SPOTLIGHT CARD — GAURAV */}
@@ -1074,7 +1057,7 @@ const Index = () => {
                       <span className="text-[11px] font-bold uppercase tracking-[0.14em] text-slate-600 dark:text-slate-400">
                         Core Team Contributors
                       </span>
-                      {/* 4-Member Normal Color Dots */}
+                      {/* 3 Active Colored Dots + 1 Retired Dot */}
                       <div className="hidden sm:flex items-center gap-1.5 ml-1 rounded-full bg-slate-100 dark:bg-white/[0.04] px-2 py-1 border border-border/50 dark:border-white/10">
                         {displayedTeamMembers.map((m, idx) => {
                           const dotTheme = getMemberTheme(m.name);
@@ -1093,6 +1076,10 @@ const Index = () => {
                             />
                           );
                         })}
+                        <span
+                          className="h-1.5 w-1.5 rounded-full bg-slate-400 dark:bg-slate-500 opacity-40 border border-slate-300 dark:border-white/10"
+                          title="Swami Anant Vyas (Retired Emeritus)"
+                        />
                       </div>
                     </div>
 
@@ -1108,7 +1095,7 @@ const Index = () => {
                           className="relative inline-flex h-4 w-4 items-center justify-center rounded-full p-[1.5px] transform-gpu"
                           style={{
                             background:
-                              'conic-gradient(#ef4444 0deg 90deg, #06b6d4 90deg 180deg, #9400D3 180deg 270deg, #10b981 270deg 360deg)',
+                              'conic-gradient(#06b6d4 0deg 120deg, #9400D3 120deg 240deg, #10b981 240deg 360deg)',
                             transform: `rotate(${wheelDegrees}deg)`,
                             transition: 'transform 620ms cubic-bezier(0.15, 0.85, 0.25, 1)',
                           }}
@@ -1122,27 +1109,27 @@ const Index = () => {
                     )}
                   </div>
 
-                  {/* 4 Core Contributors 2x2 Normal-Colored Grid with Center Spin-the-Wheel Hub */}
+                  {/* Core Contributors 2x2 Grid: 3 Active Spinable Members + 1 Static Retired Member down on the right side */}
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 relative">
                     {/* Centerpiece Spin-the-Wheel Hub Button (Desktop/Tablet 2x2 Intersection) */}
-                    {displayedTeamMembers.length === 4 && (
+                    {displayedTeamMembers.length === 3 && (
                       <button
                         type="button"
                         onClick={handleRotateTeamMembers}
-                        aria-label="Spin the wheel to randomize team members"
-                        title="Click to spin the wheel & randomize team members"
+                        aria-label="Spin the wheel to randomize active team members"
+                        title="Click to spin the wheel & randomize active team members"
                         className="hidden sm:flex absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 z-20 h-10 w-10 items-center justify-center rounded-full border-2 border-white dark:border-[#0b0e17] bg-white dark:bg-[#151b29] hover:scale-110 active:scale-95 transition-transform duration-200 shadow-md cursor-pointer focus:outline-none"
                       >
                         {/* Top Fixed Wheel Pointer Notch */}
                         <span
                           className="pointer-events-none absolute -top-1.5 left-1/2 -translate-x-1/2 z-30 h-0 w-0 border-l-[4px] border-r-[4px] border-t-[5px] border-l-transparent border-r-transparent border-t-slate-800 dark:border-t-white"
                         />
-                        {/* 4-Quadrant Spinning Wheel Rim */}
+                        {/* 3-Sector Spinning Wheel Rim */}
                         <span
                           className="flex h-full w-full items-center justify-center rounded-full p-[3px] transform-gpu"
                           style={{
                             background:
-                              'conic-gradient(#ef4444 0deg 90deg, #06b6d4 90deg 180deg, #9400D3 180deg 270deg, #10b981 270deg 360deg)',
+                              'conic-gradient(#06b6d4 0deg 120deg, #9400D3 120deg 240deg, #10b981 240deg 360deg)',
                             transform: `rotate(${wheelDegrees}deg)`,
                             transition: 'transform 620ms cubic-bezier(0.15, 0.85, 0.25, 1)',
                           }}
@@ -1154,6 +1141,7 @@ const Index = () => {
                       </button>
                     )}
 
+                    {/* 3 Active Spinable Contributors */}
                     {displayedTeamMembers.map((member) => {
                       const theme = getMemberTheme(member.name);
                       return (
@@ -1173,7 +1161,7 @@ const Index = () => {
                           aria-label={`Open ${member.name} profile`}
                         >
                           <div className="flex items-center gap-3 min-w-0">
-                            {/* Clean Matte Avatar without shiny glow */}
+                            {/* Clean Matte Avatar */}
                             <div className="relative shrink-0">
                               <MemberAvatar
                                 name={member.name}
@@ -1190,7 +1178,7 @@ const Index = () => {
                             </div>
 
                             <div className="min-w-0">
-                              {/* Normal Matte Tag Pill (Bio Wale / Gaming Wale / Hardware & Core) */}
+                              {/* Tag Pill */}
                               <div className="flex items-center gap-1.5">
                                 <span
                                   className={cn(
@@ -1225,6 +1213,67 @@ const Index = () => {
                         </motion.button>
                       );
                     })}
+
+                    {/* STATIC RETIRED SLOT: Swami Anant Vyas down on the right side (Row 2, Col 2) */}
+                    {/* Removed from the spinning stick; remains fixed and faded with retirement mark */}
+                    <div
+                      role="button"
+                      tabIndex={0}
+                      onClick={() => {
+                        haptic('selection');
+                        setActiveProfile(swamiMember);
+                      }}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter' || e.key === ' ') {
+                          e.preventDefault();
+                          haptic('selection');
+                          setActiveProfile(swamiMember);
+                        }
+                      }}
+                      className="group relative overflow-hidden flex items-center justify-between gap-3 rounded-2xl border border-dashed border-slate-300 dark:border-white/20 bg-slate-100/60 dark:bg-[#0c0f18]/70 hover:bg-slate-100/90 dark:hover:bg-[#121624] p-3.5 text-left transition-all duration-300 opacity-70 hover:opacity-100 cursor-pointer active:scale-[0.98]"
+                      aria-label="Open Swami Anant Vyas profile (Retired Core Architect)"
+                    >
+                      <div className="flex items-center gap-3 min-w-0">
+                        {/* Faded/Muted Avatar with Grayscale Filter */}
+                        <div className="relative shrink-0">
+                          <MemberAvatar
+                            name={swamiMember.name}
+                            image={swamiMember.image}
+                            className="h-11 w-11 rounded-xl border border-dashed border-slate-300/80 dark:border-white/20 shrink-0 grayscale-[75%] group-hover:grayscale-0 transition-all duration-300"
+                            fallbackClassName="text-xs font-bold text-slate-400"
+                          />
+                          {/* Muted Status Dot */}
+                          <span
+                            className="absolute -bottom-0.5 -right-0.5 h-2.5 w-2.5 rounded-full border-2 border-white dark:border-[#0c0f18] bg-slate-400 dark:bg-slate-500"
+                            title="Retired"
+                          />
+                        </div>
+
+                        <div className="min-w-0">
+                          {/* Faded Retirement Mark Pill */}
+                          <div className="flex items-center gap-1.5">
+                            <span className="inline-flex items-center gap-1 rounded-md px-2 py-0.5 text-[9px] font-bold uppercase tracking-wider border border-slate-300/60 dark:border-white/10 bg-slate-200/70 dark:bg-white/[0.04] text-slate-500 dark:text-slate-400">
+                              <span className="h-1.5 w-1.5 rounded-full bg-slate-400 dark:bg-slate-500" />
+                              Retired · Core
+                            </span>
+                            <span className="text-[8px] font-black uppercase tracking-widest text-amber-600/80 dark:text-amber-400/80 px-1 py-0.2 rounded border border-amber-500/20 bg-amber-500/10">
+                              Emeritus
+                            </span>
+                          </div>
+
+                          <p className="mt-1 text-sm font-bold text-slate-600 dark:text-slate-300 group-hover:text-slate-900 dark:group-hover:text-white transition-colors truncate">
+                            {swamiMember.name}
+                          </p>
+                          <p className="text-[11px] font-medium text-slate-400 dark:text-slate-500 truncate">
+                            Hardware Prototype (Retired)
+                          </p>
+                        </div>
+                      </div>
+
+                      <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg border border-slate-200/80 dark:border-white/10 bg-white/50 dark:bg-white/[0.02] text-slate-400 dark:text-slate-500 transition-transform duration-200 group-hover:translate-x-0.5">
+                        <ArrowRight className="h-3.5 w-3.5" />
+                      </div>
+                    </div>
                   </div>
                 </div>
 
@@ -1265,11 +1314,7 @@ const Index = () => {
                   </div>
                 </div>
 
-                <Button asChild variant="ghost" size="sm" className="text-xs font-bold text-primary hover:text-primary/80 self-start sm:self-auto gap-1 rounded-xl">
-                  <Link to="/portfolio">
-                    View Portfolio Studio <ArrowRight className="h-3.5 w-3.5" />
-                  </Link>
-                </Button>
+
               </div>
 
               <div className="grid gap-6 grid-cols-1 md:grid-cols-2 lg:grid-cols-3">
@@ -1414,9 +1459,7 @@ const Index = () => {
 
                   <div className="pt-4 mt-6 border-t border-border/50 flex items-center justify-between text-xs font-medium text-slate-600 dark:text-slate-400">
                     <span>Modern Tech Architecture</span>
-                    <Link to="/portfolio" className="font-bold text-primary hover:underline flex items-center gap-1">
-                      Full Portfolio <ArrowRight className="h-3 w-3" />
-                    </Link>
+                    <span className="font-bold text-slate-700 dark:text-slate-300">Production Deployed</span>
                   </div>
                 </div>
               </div>
@@ -1520,7 +1563,7 @@ const Index = () => {
                   </p>
                 </div>
               </div>
-              <PublicPortfolioView data={portfolio} showGallery={false} showProjects={false} onUnlock={() => navigate('/portfolio')} />
+              <PublicPortfolioView data={portfolio} showGallery={false} showProjects={false} />
             </section>
           </RoyalReveal>
         )}
@@ -1588,7 +1631,7 @@ const Index = () => {
                     <div className="flex flex-wrap gap-1.5">
                       {[
                         { label: '★ Gaurav', member: gauravMember },
-                        { label: 'Anant', member: swamiMember },
+                        { label: 'Anant (Retired)', member: swamiMember },
                         { label: 'Jatin D.', member: jatinMember },
                         { label: 'Jatin M.', member: jatinMauryaMember },
                         { label: 'Mayank', member: mayankMember },
@@ -1684,16 +1727,7 @@ const Index = () => {
                       </div>
                     )}
 
-                    <div className="pt-2 flex items-center justify-between">
-                      <Link
-                        to="/portfolio"
-                        onClick={() => setActiveProfile(null)}
-                        className={cn('inline-flex items-center gap-1.5 text-xs font-bold hover:underline transition-colors', activeTheme.textClass)}
-                      >
-                        <span>Explore Team RCA Studio</span>
-                        <ArrowRight className="h-3.5 w-3.5" />
-                      </Link>
-                    </div>
+
                   </DialogHeader>
                 </div>
               );

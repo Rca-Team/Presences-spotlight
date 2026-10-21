@@ -497,11 +497,7 @@ export const LiteHome: React.FC = () => {
                 <FileSpreadsheet className="h-3.5 w-3.5 text-amber-500" /> Class Reports
               </Link>
             </Button>
-            <Button asChild variant="ghost" size="sm" className="h-8 px-3 text-xs font-semibold rounded-xl gap-1.5">
-              <Link to="/portfolio">
-                <Sparkles className="h-3.5 w-3.5 text-indigo-500" /> Team & Hall of Fame
-              </Link>
-            </Button>
+
           </div>
         </div>
 
@@ -728,10 +724,7 @@ export const LiteHome: React.FC = () => {
             <Link to="/contact" className="hover:text-foreground transition-colors">
               Help & Support
             </Link>
-            <span>•</span>
-            <Link to="/portfolio" className="hover:text-foreground transition-colors">
-              Team Portfolios
-            </Link>
+
           </div>
         </footer>
 

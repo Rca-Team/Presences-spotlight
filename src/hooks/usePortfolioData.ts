@@ -31,6 +31,8 @@ export type PortfolioMember = {
   details?: string;
   image: string;
   tags?: string[];
+  isRetired?: boolean;
+  retiredAt?: string;
 };
 
 export type PortfolioSocials = {
@@ -161,6 +163,7 @@ export const DEFAULT_PORTFOLIO: PortfolioData = {
       image: gauravPhoto,
       bio: 'Creator of Presences Smart School automation. Designs and leads scalable attendance, security, and school workflow systems.',
       details: 'Full-stack engineer focused on neural face-recognition pipelines, database architecture, and production-ready education systems.',
+      isRetired: false,
     },
     {
       id: uid(),
@@ -169,6 +172,8 @@ export const DEFAULT_PORTFOLIO: PortfolioData = {
       image: swamiAnantVyasPhoto,
       bio: 'Helped build the hardware prototype and contributed core engineering ideas for the live software experience.',
       details: 'Built and validated early hardware concepts for kiosk gate mode, physical enclosures, and camera triggers.',
+      isRetired: true,
+      tags: ['Hardware & Core', 'Retired'],
     },
     {
       id: uid(),
@@ -348,6 +353,8 @@ function migrate(raw: any): PortfolioData {
       bio: m.bio ?? '',
       details: m.details ?? '',
       tags: Array.isArray(m.tags) ? m.tags : undefined,
+      isRetired: typeof m.isRetired === 'boolean' ? m.isRetired : (norm.includes('swami') || norm.includes('anant') || (m.role && m.role.toLowerCase().includes('retired'))),
+      retiredAt: m.retiredAt ?? undefined,
     };
   });
 
@@ -455,3 +462,37 @@ export function usePortfolioData() {
 }
 
 export { uid as portfolioUid, migrate as migratePortfolioData };
+
+/** Real-time live persistence helper: updates IndexedDB, dispatches custom event, updates localStorage, and syncs cloud */
+export async function persistPortfolioDataLive(portfolioData: PortfolioData): Promise<void> {
+  try {
+    await savePortfolioToIndexedDb(portfolioData);
+    window.dispatchEvent(new CustomEvent('portfolio-updated', { detail: portfolioData }));
+    try {
+      localStorage.setItem('gaurav_portfolio_cache', JSON.stringify(portfolioData));
+    } catch {}
+
+    const payload = JSON.stringify(portfolioData);
+    const settingsPayload = {
+      key: PORTFOLIO_KEY,
+      value: payload,
+      setting_key: PORTFOLIO_KEY,
+      setting_value: payload,
+      updated_at: new Date().toISOString(),
+    };
+
+    const { data: existing } = await supabase
+      .from('attendance_settings')
+      .select('id, setting_key, key')
+      .or(`key.eq.${PORTFOLIO_KEY},setting_key.eq.${PORTFOLIO_KEY}`)
+      .maybeSingle();
+
+    if (existing?.id) {
+      await supabase.from('attendance_settings').update(settingsPayload).eq('id', existing.id);
+    } else {
+      await supabase.from('attendance_settings').insert(settingsPayload);
+    }
+  } catch (err) {
+    console.warn('Realtime portfolio sync notice:', err);
+  }
+}

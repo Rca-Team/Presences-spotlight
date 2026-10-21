@@ -179,11 +179,7 @@ export function HomeGallery({
             </h2>
             <p className="mt-1 text-xs sm:text-sm text-muted-foreground max-w-xl">{subtitle}</p>
           </div>
-          {allowManage && (
-            <Button onClick={() => navigate('/portfolio')} className="rounded-2xl font-bold gap-2">
-              <Plus className="h-4 w-4" /> Add Photos in Studio
-            </Button>
-          )}
+
         </div>
 
         <div className="rounded-3xl border border-dashed border-border/70 p-12 text-center bg-card/40 backdrop-blur-xl">
@@ -192,11 +188,7 @@ export function HomeGallery({
           <p className="mt-1 text-xs text-muted-foreground max-w-md mx-auto">
             Upload multiple photos in Portfolio Studio to create a showcase of campus life, AI gate tests, and awards.
           </p>
-          {allowManage && (
-            <Button size="sm" onClick={() => navigate('/portfolio')} className="mt-4 rounded-xl font-bold gap-1.5">
-              Open Portfolio Studio <ArrowRight className="h-3.5 w-3.5" />
-            </Button>
-          )}
+
         </div>
       </section>
     );
@@ -290,16 +282,7 @@ export function HomeGallery({
             </button>
           </div>
 
-          {allowManage && (
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => navigate('/portfolio')}
-              className="rounded-2xl border-primary/30 bg-card/50 text-xs font-bold gap-1.5 hover:border-primary/60 hover:bg-card"
-            >
-              <ImageIcon className="h-3.5 w-3.5 text-primary" /> Manage Gallery
-            </Button>
-          )}
+
         </div>
       </div>
 

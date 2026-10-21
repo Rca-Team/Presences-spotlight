@@ -91,7 +91,7 @@ const Footer = () => {
             {[
               { label: 'Principal Dashboard', path: '/admin' },
               { label: 'Teacher Portal', path: '/teacher' },
-              { label: 'RCA Studio & Team', path: '/portfolio' },
+  
               { label: 'Contact School Desk', path: '/contact' },
             ].map((item) => (
               <li key={item.label}>
@@ -131,11 +131,7 @@ const Footer = () => {
             <span className="text-xs"> (Lead Architect &amp; Developer)</span> with Team RCA
           </p>
         </div>
-        <div className="flex space-x-4 mt-4 md:mt-0">
-          <Link to="/portfolio" className="text-xs font-bold text-amber-600 dark:text-amber-400 hover:underline">
-            RCA Portfolio &amp; Creators Studio →
-          </Link>
-        </div>
+
       </div>
     </footer>
   );

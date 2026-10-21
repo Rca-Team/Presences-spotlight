@@ -200,6 +200,12 @@ export async function matchDescriptorIndexed(
     const d1 = sampleDists[0] ?? centroidDist;
     const d2 = sampleDists[1] ?? (Number.isFinite(centroidDist) ? centroidDist : d1);
 
+    // Guard against stray outlier matching:
+    // If centroid is finite and query face is alienated from person centroid (> 0.58), skip
+    if (Number.isFinite(centroidDist) && centroidDist > 0.58) {
+      continue;
+    }
+
     // Compute composite distance
     let effectiveDist = d1;
     if (sampleDists.length >= 2) {
@@ -388,7 +394,7 @@ export function createRecognitionEngine(
           // Zero False Positive Guard:
           // Strong match (dist <= 0.42) -> instant verification
           // Borderline match (0.42 < dist <= 0.45) -> require 2-frame consistency
-          const isHighCertainty = match.distance <= 0.42;
+          const isHighCertainty = match.distance <= 0.48;
           const isConfirmedCandidate = t.candidate?.userId === match.userId;
 
           if (isHighCertainty || isConfirmedCandidate || t.identity?.verified) {

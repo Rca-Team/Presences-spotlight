@@ -287,6 +287,12 @@ export async function recognizeFace(faceDescriptor: Float32Array): Promise<Recog
         const d1 = sampleDists[0] ?? centroidDist;
         const d2 = sampleDists[1] ?? (Number.isFinite(centroidDist) ? centroidDist : d1);
 
+        // Guard against stray outlier matching:
+        // If centroid is finite and query face is alienated from person centroid (> 0.58), skip
+        if (Number.isFinite(centroidDist) && centroidDist > 0.58) {
+          continue;
+        }
+
         let effectiveDist = d1;
         if (sampleDists.length >= 2) {
           effectiveDist = Math.min(d1, 0.75 * d1 + 0.25 * d2);

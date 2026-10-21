@@ -63,14 +63,13 @@ export const MadeByGauravBadge: React.FC = () => {
         whileTap={{ scale: 0.96 }}
         onMouseEnter={() => {
           setIsHovered(true);
-          preloadRoute('/portfolio');
+          
         }}
         onMouseLeave={() => setIsHovered(false)}
-        onTouchStart={() => preloadRoute('/portfolio')}
+        
         className="group relative flex items-center"
       >
-        <Link
-          to="/portfolio"
+        <div
           className="relative flex items-center gap-2.5 pl-1.5 pr-3.5 py-1 rounded-full backdrop-blur-md border border-white/75 dark:border-white/20 bg-white/45 dark:bg-[#0c1222]/55 shadow-[0_12px_32px_-8px_rgba(15,23,42,0.18),inset_0_1.5px_1px_rgba(255,255,255,0.95),inset_0_0_16px_rgba(255,255,255,0.15)] dark:shadow-[0_16px_36px_-10px_rgba(0,0,0,0.65),inset_0_1.5px_1px_rgba(255,255,255,0.25),inset_0_0_16px_rgba(255,255,255,0.05)] transition-all duration-200"
           title="Designed & Architected by Gaurav Raj — View Creator Portfolio"
         >
@@ -118,7 +117,7 @@ export const MadeByGauravBadge: React.FC = () => {
 
           {/* Elegant Micro Arrow on Hover */}
           <ArrowUpRight className="w-3.5 h-3.5 text-slate-400 dark:text-slate-500 group-hover:text-cyan-500 dark:group-hover:text-cyan-400 group-hover:translate-x-0.5 group-hover:-translate-y-0.5 transition-all duration-200 shrink-0" />
-        </Link>
+        </div>
 
         {/* Subtle Dismiss Button on Hover (Desktop) or Persistent Soft Button */}
         <AnimatePresence>
