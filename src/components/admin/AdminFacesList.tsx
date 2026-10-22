@@ -9,6 +9,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { useToast } from '@/hooks/use-toast';
 import { supabase } from '@/integrations/supabase/client';
 import { Search, User, Users, UserCheck, UserX, Calendar, MoreVertical, Phone, Filter, ArrowUpDown, Clock, CheckCircle2, XCircle, SortAsc, SortDesc, Trash2, BellRing, X, BrainCircuit, ScanFace, FileText, Download, LayoutList, LayoutGrid, FolderInput } from 'lucide-react';
+import StudentAvatar from '@/components/common/StudentAvatar';
 import NotificationService from './NotificationService';
 import AttendanceCalendar from './AttendanceCalendar';
 import CaptureFaceDialog from './CaptureFaceDialog';
@@ -916,12 +917,14 @@ const AdminFacesList: React.FC<AdminFacesListProps> = ({
                             >
                               <TableCell className="py-2.5">
                                 <div className="flex items-center gap-3">
-                                  <Avatar className="h-8 w-8 rounded-lg border border-border shrink-0">
-                                    <AvatarImage src={face.image_url} alt={face.name} className="object-cover" />
-                                    <AvatarFallback className="rounded-lg text-xs font-bold bg-muted">
-                                      {face.name?.charAt(0) || '?'}
-                                    </AvatarFallback>
-                                  </Avatar>
+                                  <StudentAvatar
+                                    name={face.name}
+                                    photoUrl={face.image_url}
+                                    admissionNumber={face.employee_id}
+                                    size="sm"
+                                    shape="rounded-lg"
+                                    className="shrink-0"
+                                  />
                                   <div className="min-w-0">
                                     <p className="font-semibold text-foreground truncate">{face.name}</p>
                                     {face.phone && (
@@ -1089,12 +1092,13 @@ const AdminFacesList: React.FC<AdminFacesListProps> = ({
                         <CardContent className="p-3">
                           <div className="flex items-center gap-3">
                             <div className="relative shrink-0">
-                              <Avatar className="h-10 w-10 rounded-lg border border-border">
-                                <AvatarImage src={face.image_url} alt={face.name} className="object-cover" />
-                                <AvatarFallback className="rounded-lg text-sm font-bold bg-muted">
-                                  {face.name?.charAt(0) || '?'}
-                                </AvatarFallback>
-                              </Avatar>
+                              <StudentAvatar
+                                name={face.name}
+                                photoUrl={face.image_url}
+                                admissionNumber={face.employee_id}
+                                size="md"
+                                shape="rounded-lg"
+                              />
                               <span className={cn(
                                 "absolute -bottom-0.5 -right-0.5 w-2.5 h-2.5 rounded-full border-2 border-card",
                                 todayStatuses[face.employee_id]?.status === 'present' ? 'bg-emerald-500' :

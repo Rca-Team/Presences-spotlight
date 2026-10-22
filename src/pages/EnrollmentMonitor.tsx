@@ -100,6 +100,7 @@ import { dataUrlToBlob } from '@/services/face-recognition/TrainingDataStorageSe
 import { getFaceDescriptorFromBlob, loadRegistrationModels } from '@/services/face-recognition/OptimizedRegistrationService';
 import { descriptorToString } from '@/services/face-recognition/ModelService';
 import { v4 as uuidv4 } from 'uuid';
+import StudentAvatar from '@/components/common/StudentAvatar';
 import '@/components/enrollment/enrollment.css';
 
 const StudentStoredFaceAssets = lazy(() => import('@/components/enrollment/StudentStoredFaceAssets'));
@@ -551,13 +552,15 @@ function StudentDetailSheet({
         <SheetHeader className="text-left pb-4 border-b border-slate-800">
           <div className="flex items-start justify-between gap-3">
             <div className="flex items-center gap-3 min-w-0">
-              <div className="h-14 w-14 rounded-2xl bg-slate-900 border border-slate-700 flex items-center justify-center font-bold text-base text-white overflow-hidden shrink-0">
-                {student.avatarUrl ? (
-                  <img src={student.avatarUrl} alt={student.name} className="h-full w-full object-cover" />
-                ) : (
-                  student.name.slice(0, 2).toUpperCase()
-                )}
-              </div>
+              <StudentAvatar
+                name={student.name}
+                photoUrl={student.avatarUrl || student.primaryPhotoUrl || student.profilePhotoUrl}
+                admissionNumber={student.admission_number}
+                studentId={student.student_id_kv}
+                size="xl"
+                shape="rounded-2xl"
+                isEnrolled={isStudentEnrolled(student)}
+              />
               <div className="min-w-0">
                 <SheetTitle className="text-lg sm:text-xl font-bold text-white truncate">
                   {student.name}
@@ -2470,17 +2473,15 @@ export default function EnrollmentMonitor() {
                               className="flex items-center justify-between gap-2.5 p-2.5 rounded-xl bg-slate-950/90 border border-emerald-500/30 hover:border-emerald-400/60 transition-all"
                             >
                               <div className="flex items-center gap-2.5 min-w-0 flex-1">
-                                <div className="h-9 w-9 rounded-lg bg-slate-800 border border-slate-700 flex items-center justify-center font-bold text-xs text-white overflow-hidden shrink-0">
-                                  {match.avatarUrl ? (
-                                    <img
-                                      src={match.avatarUrl}
-                                      alt={match.name}
-                                      className="h-full w-full object-cover"
-                                    />
-                                  ) : (
-                                    match.name.slice(0, 2).toUpperCase()
-                                  )}
-                                </div>
+                                <StudentAvatar
+                                  name={match.name}
+                                  photoUrl={match.avatarUrl || match.primaryPhotoUrl || match.profilePhotoUrl}
+                                  admissionNumber={match.admission_number}
+                                  studentId={match.student_id_kv}
+                                  size="sm"
+                                  shape="rounded-lg"
+                                  isEnrolled={enrolled}
+                                />
                                 <div className="min-w-0 flex-1">
                                   <div className="flex items-center gap-1.5">
                                     <p className="text-xs font-bold text-white truncate">{match.name}</p>
@@ -2670,24 +2671,17 @@ export default function EnrollmentMonitor() {
                                     {/* Student Identity */}
                                     <td className="py-3 px-3 align-middle">
                                       <div className="flex items-center gap-3">
-                                        <button
-                                          type="button"
+                                        <StudentAvatar
+                                          name={s.name}
+                                          photoUrl={s.avatarUrl || s.primaryPhotoUrl || s.profilePhotoUrl}
+                                          admissionNumber={s.admission_number}
+                                          studentId={s.student_id_kv}
+                                          size="md"
+                                          shape="rounded-xl"
+                                          isEnrolled={isComplete}
                                           onClick={() => setSelectedStudentAdm(s.admission_number)}
-                                          className="h-10 w-10 rounded-xl bg-slate-800 border border-slate-700 flex items-center justify-center font-bold text-xs text-white overflow-hidden shrink-0 hover:ring-2 hover:ring-emerald-400 transition-all"
-                                        >
-                                          {s.avatarUrl ? (
-                                            <img
-                                              src={s.avatarUrl}
-                                              alt={s.name}
-                                              className="h-full w-full object-cover"
-                                              onError={(e) => {
-                                                (e.target as HTMLElement).style.display = 'none';
-                                              }}
-                                            />
-                                          ) : (
-                                            s.name.slice(0, 2).toUpperCase()
-                                          )}
-                                        </button>
+                                          className="hover:ring-2 hover:ring-emerald-400"
+                                        />
                                         <div className="min-w-0">
                                           <button
                                             type="button"
@@ -2953,20 +2947,16 @@ export default function EnrollmentMonitor() {
                                       className="rounded border-slate-700 bg-slate-950 shrink-0"
                                     />
                                   )}
-                                  <div className="h-11 w-11 rounded-xl bg-slate-800 border border-slate-700 flex items-center justify-center font-bold text-xs text-white overflow-hidden shrink-0">
-                                    {s.avatarUrl ? (
-                                      <img
-                                        src={s.avatarUrl}
-                                        alt={s.name}
-                                        className="h-full w-full object-cover"
-                                        onError={(e) => {
-                                          (e.target as HTMLElement).style.display = 'none';
-                                        }}
-                                      />
-                                    ) : (
-                                      s.name.slice(0, 2).toUpperCase()
-                                    )}
-                                  </div>
+                                  <StudentAvatar
+                                    name={s.name}
+                                    photoUrl={s.avatarUrl || s.primaryPhotoUrl || s.profilePhotoUrl}
+                                    admissionNumber={s.admission_number}
+                                    studentId={s.student_id_kv}
+                                    size="md"
+                                    shape="rounded-xl"
+                                    isEnrolled={isComplete}
+                                    className="shrink-0"
+                                  />
                                   <div className="min-w-0 flex-1">
                                     <h4 className="text-sm font-bold text-white truncate">{s.name}</h4>
                                     <div className="flex flex-wrap items-center gap-1.5 text-[11px] text-slate-400 font-mono mt-0.5">

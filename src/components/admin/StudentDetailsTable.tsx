@@ -5,6 +5,7 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
+import StudentAvatar from '@/components/common/StudentAvatar';
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from '@/components/ui/select';
@@ -657,10 +658,14 @@ const StudentDetailsTable: React.FC = () => {
                 >
                   <div className="flex items-start justify-between gap-3">
                     <div className="flex items-center gap-3 min-w-0">
-                      <Avatar className="h-11 w-11 border shrink-0">
-                        {s.avatar_url ? <AvatarImage src={s.avatar_url} alt={s.name} /> : null}
-                        <AvatarFallback><UserIcon className="h-4 w-4" /></AvatarFallback>
-                      </Avatar>
+                      <StudentAvatar
+                        name={s.name}
+                        photoUrl={s.avatar_url}
+                        admissionNumber={s.employee_id}
+                        size="lg"
+                        shape="rounded-2xl"
+                        className="shrink-0"
+                      />
                       <div className="min-w-0">
                         <p className="font-bold text-sm text-foreground truncate">{s.name}</p>
                         <div className="flex items-center gap-1.5 text-xs text-muted-foreground mt-0.5">
@@ -771,10 +776,14 @@ const StudentDetailsTable: React.FC = () => {
                     <TableRow key={s.id} className="hover:bg-muted/40">
                       <TableCell>
                         <div className="flex items-center gap-3 min-w-[200px]">
-                          <Avatar className="h-10 w-10 border">
-                            {s.avatar_url ? <AvatarImage src={s.avatar_url} alt={s.name} /> : null}
-                            <AvatarFallback><UserIcon className="h-4 w-4" /></AvatarFallback>
-                          </Avatar>
+                          <StudentAvatar
+                            name={s.name}
+                            photoUrl={s.avatar_url}
+                            admissionNumber={s.employee_id}
+                            size="md"
+                            shape="rounded-xl"
+                            className="shrink-0"
+                          />
                           <div className="min-w-0">
                             <p className="font-medium truncate">{s.name}</p>
                             <p className="text-xs text-muted-foreground truncate">{s.parent_email}</p>

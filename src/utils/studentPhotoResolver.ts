@@ -287,6 +287,13 @@ export const resolveStudentPhotoUrlSync = (
 
   // 1. Direct Appwrite Storage URLs
   if (/^https?:\/\//i.test(value) && (value.includes('appwrite.io') || value.includes('/storage/buckets/'))) {
+    const fileMatch = value.match(/\/files\/([^/?]+)/);
+    if (fileMatch) {
+      const fileId = fileMatch[1];
+      if (fileId.startsWith('faces_') || fileId.startsWith('attendance_') || (fileId.length !== 32 && !fileId.includes('.'))) {
+        return '';
+      }
+    }
     if (options) {
       return getOptimizedStudentPhotoUrl(value, options);
     }
