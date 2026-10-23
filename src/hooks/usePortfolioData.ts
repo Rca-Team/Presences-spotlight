@@ -473,26 +473,46 @@ export function usePortfolioData() {
     };
     window.addEventListener('portfolio-updated', onLocalUpdate as EventListener);
 
-    // Supabase realtime channel
+    // Cross-tab broadcast listener for instant synchronization across tabs
+    let broadcastChannel: BroadcastChannel | null = null;
+    try {
+      if (typeof window !== 'undefined' && 'BroadcastChannel' in window) {
+        broadcastChannel = new BroadcastChannel('presences_portfolio_broadcast');
+        broadcastChannel.onmessage = (e) => {
+          if (e.data) {
+            setData(migrate(e.data));
+          }
+        };
+      }
+    } catch (err) {
+      console.warn('BroadcastChannel init notice:', err);
+    }
+
+    // Supabase / Appwrite realtime channel
     const channel = supabase
       .channel('portfolio-live')
       .on(
         'postgres_changes',
-        { event: '*', schema: 'public', table: 'attendance_settings', filter: `key=eq.${PORTFOLIO_KEY}` },
+        { event: '*', schema: 'public', table: 'attendance_settings' },
         async (payload) => {
-          const raw = (payload.new as any)?.value ?? (payload.old as any)?.value;
+          const doc = (payload.new as any) || (payload.old as any);
+          if (!doc) return;
+          const k = doc.setting_key || doc.key;
+          if (k !== PORTFOLIO_KEY) return;
+          const raw = doc.setting_value ?? doc.value;
           if (!raw) return;
           try {
-            const parsed = migrate(JSON.parse(raw));
+            const parsed = migrate(typeof raw === 'string' ? JSON.parse(raw) : raw);
             setData(parsed);
             await savePortfolioToIndexedDb(parsed);
             try {
               localStorage.setItem('gaurav_portfolio_cache', JSON.stringify(parsed));
+              localStorage.setItem(PORTFOLIO_KEY, JSON.stringify(parsed));
             } catch {
               /* quota limit safe */
             }
-          } catch {
-            /* ignore */
+          } catch (e) {
+            console.warn('Realtime parse notice:', e);
           }
         },
       )
@@ -500,6 +520,11 @@ export function usePortfolioData() {
 
     return () => {
       window.removeEventListener('portfolio-updated', onLocalUpdate as EventListener);
+      if (broadcastChannel) {
+        try {
+          broadcastChannel.close();
+        } catch {}
+      }
       void supabase.removeChannel(channel);
     };
   }, [fetchOnce]);
@@ -509,13 +534,26 @@ export function usePortfolioData() {
 
 export { uid as portfolioUid, migrate as migratePortfolioData };
 
-/** Real-time live persistence helper: updates IndexedDB, dispatches custom event, updates localStorage, and syncs cloud */
+/** Real-time live persistence helper: updates IndexedDB, dispatches custom event, broadcasts cross-tab, updates localStorage, and syncs cloud */
 export async function persistPortfolioDataLive(portfolioData: PortfolioData): Promise<void> {
   try {
     await savePortfolioToIndexedDb(portfolioData);
     window.dispatchEvent(new CustomEvent('portfolio-updated', { detail: portfolioData }));
+    
+    // Broadcast instantly to all other browser tabs/windows
+    try {
+      if (typeof window !== 'undefined' && 'BroadcastChannel' in window) {
+        const bc = new BroadcastChannel('presences_portfolio_broadcast');
+        bc.postMessage(portfolioData);
+        bc.close();
+      }
+    } catch (err) {
+      console.warn('BroadcastChannel postMessage notice:', err);
+    }
+
     try {
       localStorage.setItem('gaurav_portfolio_cache', JSON.stringify(portfolioData));
+      localStorage.setItem(PORTFOLIO_KEY, JSON.stringify(portfolioData));
     } catch {}
 
     const payload = JSON.stringify(portfolioData);

@@ -196,13 +196,43 @@ const Index = () => {
   const creatorMembers = useMemo(
     () =>
       (portfolio.members.length > 0 ? portfolio.members : []).map((m) => ({
+        id: m.id,
         name: m.name,
         role: m.role,
         image: m.image || fallbackImages[m.name] || '',
         bio: m.bio,
         details: m.details,
+        isRetired: Boolean(m.isRetired),
+        tags: m.tags,
       })),
     // eslint-disable-next-line react-hooks/exhaustive-deps
+    [portfolio.members],
+  );
+
+  const activeContributors = useMemo(() => {
+    const list = creatorMembers.filter(
+      (m) => !m.isRetired && !m.name.toLowerCase().includes('gaurav'),
+    );
+    if (list.length > 0) return list;
+    return [];
+  }, [creatorMembers]);
+
+  const retiredContributors = useMemo(() => {
+    const list = creatorMembers.filter((m) => m.isRetired);
+    return list;
+  }, [creatorMembers]);
+
+  const retiredMember = useMemo(
+    () => retiredContributors[0] || swamiMember,
+    [retiredContributors, swamiMember],
+  );
+
+  const activeCount = useMemo(
+    () => (portfolio.members.length > 0 ? portfolio.members.filter((m) => !m.isRetired).length : 4),
+    [portfolio.members],
+  );
+  const retiredCount = useMemo(
+    () => (portfolio.members.length > 0 ? portfolio.members.filter((m) => m.isRetired).length : 1),
     [portfolio.members],
   );
 
@@ -396,11 +426,11 @@ const Index = () => {
   }, []);
 
   const defaultTeamMembers = useMemo(
-    () => [jatinMember, jatinMauryaMember, mayankMember],
-    [jatinMember, jatinMauryaMember, mayankMember],
+    () => (activeContributors.length > 0 ? activeContributors : [jatinMember, jatinMauryaMember, mayankMember]),
+    [activeContributors, jatinMember, jatinMauryaMember, mayankMember],
   );
   const displayedTeamMembers = useMemo(() => {
-    if (teamMembersList.length >= 3) return teamMembersList;
+    if (teamMembersList.length >= 1 && teamMembersList.length === defaultTeamMembers.length) return teamMembersList;
     return defaultTeamMembers;
   }, [teamMembersList, defaultTeamMembers]);
 
@@ -950,7 +980,7 @@ const Index = () => {
                           Creators &amp; Core Architects
                         </span>
                         <span className="text-[10px] font-semibold text-slate-500 dark:text-slate-400 mt-0.5 block">
-                          Team RCA Engineering Roster · 4 Active · 1 Retired
+                          Team RCA Engineering Roster · {activeCount} Active · {retiredCount} Retired
                         </span>
                       </div>
                     </div>
@@ -1213,31 +1243,31 @@ const Index = () => {
                       );
                     })}
 
-                    {/* STATIC RETIRED SLOT: Swami Anant Vyas down on the right side (Row 2, Col 2) */}
+                    {/* STATIC RETIRED SLOT: Retired Emeritus down on the right side (Row 2, Col 2) */}
                     {/* Removed from the spinning stick; remains fixed and faded with retirement mark */}
                     <div
                       role="button"
                       tabIndex={0}
                       onClick={() => {
                         haptic('selection');
-                        setActiveProfile(swamiMember);
+                        setActiveProfile(retiredMember);
                       }}
                       onKeyDown={(e) => {
                         if (e.key === 'Enter' || e.key === ' ') {
                           e.preventDefault();
                           haptic('selection');
-                          setActiveProfile(swamiMember);
+                          setActiveProfile(retiredMember);
                         }
                       }}
                       className="group relative overflow-hidden flex items-center justify-between gap-3 rounded-2xl border border-dashed border-slate-300 dark:border-white/20 bg-slate-100/60 dark:bg-[#0c0f18]/70 hover:bg-slate-100/90 dark:hover:bg-[#121624] p-3.5 text-left transition-all duration-300 opacity-70 hover:opacity-100 cursor-pointer active:scale-[0.98]"
-                      aria-label="Open Swami Anant Vyas profile (Retired Core Architect)"
+                      aria-label={`Open ${retiredMember.name} profile (Retired Core Architect)`}
                     >
                       <div className="flex items-center gap-3 min-w-0">
                         {/* Faded/Muted Avatar with Grayscale Filter */}
                         <div className="relative shrink-0">
                           <MemberAvatar
-                            name={swamiMember.name}
-                            image={swamiMember.image}
+                            name={retiredMember.name}
+                            image={retiredMember.image}
                             className="h-11 w-11 rounded-xl border border-dashed border-slate-300/80 dark:border-white/20 shrink-0 grayscale-[75%] group-hover:grayscale-0 transition-all duration-300"
                             fallbackClassName="text-xs font-bold text-slate-400"
                           />
@@ -1261,10 +1291,10 @@ const Index = () => {
                           </div>
 
                           <p className="mt-1 text-sm font-bold text-slate-600 dark:text-slate-300 group-hover:text-slate-900 dark:group-hover:text-white transition-colors truncate">
-                            {swamiMember.name}
+                            {retiredMember.name}
                           </p>
                           <p className="text-[11px] font-medium text-slate-400 dark:text-slate-500 truncate">
-                            Hardware Prototype (Retired)
+                            {retiredMember.role}
                           </p>
                         </div>
                       </div>

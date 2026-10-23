@@ -1189,6 +1189,13 @@ const Portfolio = () => {
     setDirty(true);
   };
 
+  const updateAndPersist = async (patch: Partial<PortfolioData>) => {
+    const next = { ...data, ...patch };
+    setData(next);
+    setDirty(false);
+    await persistPortfolioDataLive(next);
+  };
+
   const handleResetToDefaults = () => {
     if (window.confirm('Reset portfolio back to Team RCA defaults? Any unsaved edits will be discarded.')) {
       setData(DEFAULT_PORTFOLIO);
@@ -1460,42 +1467,79 @@ const Portfolio = () => {
   }
 
 /* ---- Drag and drop handlers ---- */
-  const onDragEndProjects = (e: DragEndEvent) => {
+  const onDragEndProjects = async (e: DragEndEvent) => {
     const { active, over } = e;
     if (!over || active.id === over.id) return;
     const oldIndex = data.projects.findIndex((p) => p.id === active.id);
     const newIndex = data.projects.findIndex((p) => p.id === over.id);
     if (oldIndex < 0 || newIndex < 0) return;
-    update({ projects: arrayMove(data.projects, oldIndex, newIndex) });
+    const nextProjects = arrayMove(data.projects, oldIndex, newIndex);
+    await updateAndPersist({ projects: nextProjects });
   };
 
-  const onDragEndMembers = (e: DragEndEvent) => {
+  const onDragEndMembers = async (e: DragEndEvent) => {
     const { active, over } = e;
     if (!over || active.id === over.id) return;
     const oldIndex = data.members.findIndex((m) => m.id === active.id);
     const newIndex = data.members.findIndex((m) => m.id === over.id);
     if (oldIndex < 0 || newIndex < 0) return;
-    update({ members: arrayMove(data.members, oldIndex, newIndex) });
+    const nextMembers = arrayMove(data.members, oldIndex, newIndex);
+    await updateAndPersist({ members: nextMembers });
   };
 
   const patchProject = (id: string, patch: Partial<PortfolioProject>) =>
     update({ projects: data.projects.map((p) => (p.id === id ? { ...p, ...patch } : p)) });
-  const removeProject = (id: string) => update({ projects: data.projects.filter((p) => p.id !== id) });
-  const addProject = () =>
-    update({
-      projects: [
-        ...data.projects,
-        { id: portfolioUid(), title: 'New Project', description: '', stack: '', image: '', link: '', year: new Date().getFullYear().toString() },
-      ],
-    });
+
+  const removeProject = async (id: string) => {
+    const target = data.projects.find((p) => p.id === id);
+    if (!window.confirm(`Delete project "${target?.title || 'this project'}"?`)) return;
+    const nextProjects = data.projects.filter((p) => p.id !== id);
+    await updateAndPersist({ projects: nextProjects });
+    toast({ title: 'Project Removed', description: 'Project removed live across platform.' });
+  };
+
+  const addProject = async () => {
+    const newProj: PortfolioProject = {
+      id: portfolioUid(),
+      title: 'New Project',
+      description: '',
+      stack: 'React, TypeScript',
+      image: teamRcaPhoto,
+      link: '',
+      year: new Date().getFullYear().toString(),
+      tags: ['New'],
+      featured: false,
+    };
+    const nextProjects = [...data.projects, newProj];
+    await updateAndPersist({ projects: nextProjects });
+    toast({ title: 'Project Added Live', description: 'New project appended in real time.' });
+  };
 
   const patchMember = (id: string, patch: Partial<PortfolioMember>) =>
     update({ members: data.members.map((m) => (m.id === id ? { ...m, ...patch } : m)) });
-  const removeMember = (id: string) => update({ members: data.members.filter((m) => m.id !== id) });
-  const addMember = () =>
-    update({
-      members: [...data.members, { id: portfolioUid(), name: 'New Team Member', role: 'Contributor', bio: '', image: '' }],
-    });
+
+  const removeMember = async (id: string) => {
+    const target = data.members.find((m) => m.id === id);
+    if (!window.confirm(`Remove member "${target?.name || 'this member'}"?`)) return;
+    const nextMembers = data.members.filter((m) => m.id !== id);
+    await updateAndPersist({ members: nextMembers });
+    toast({ title: 'Member Removed', description: 'Member removed live across platform.' });
+  };
+
+  const addMember = async () => {
+    const newM: PortfolioMember = {
+      id: portfolioUid(),
+      name: 'New Team Member',
+      role: 'Contributor · Core Team',
+      bio: 'Engineering and system contributor.',
+      image: '',
+      isRetired: false,
+      tags: ['Contributor'],
+    };
+    const nextMembers = [...data.members, newM];
+    await updateAndPersist({ members: nextMembers });
+    toast({ title: 'Member Added Live', description: 'New member appended in real time.' });
+  };
 
   return (
     <PageTransition>
@@ -1551,7 +1595,12 @@ const Portfolio = () => {
           {/* Dual Mode Switcher */}
           {studioViewMode === 'preview' ? (
             <Card className="rounded-3xl border border-white/10 shadow-2xl p-4 sm:p-6 bg-card/60 backdrop-blur-xl">
-              <PublicPortfolioView data={data} onUpdateData={(next) => setData(next)} onUnlock={() => setStudioViewMode('editor')} canManage={true} />
+              <PublicPortfolioView
+                data={data}
+                onUpdateData={(next) => void updateAndPersist(next)}
+                onUnlock={() => setStudioViewMode('editor')}
+                canManage={true}
+              />
             </Card>
           ) : (
             <Tabs defaultValue="gallery" className="space-y-5">
@@ -1587,7 +1636,7 @@ const Portfolio = () => {
                   <CardContent>
                     <BatchGalleryUploader
                       items={data.gallery}
-                      onChange={(gallery) => update({ gallery })}
+                      onChange={(gallery) => void updateAndPersist({ gallery })}
                     />
                   </CardContent>
                 </Card>
@@ -1779,14 +1828,18 @@ const Portfolio = () => {
                                       size="sm"
                                       variant="outline"
                                       type="button"
-                                      onClick={() => {
+                                      onClick={async () => {
                                         const newRetired = false;
-                                        patchMember(m.id, { isRetired: newRetired });
-                                        void persistPortfolioDataLive({
-                                          ...data,
-                                          members: data.members.map((item) => (item.id === m.id ? { ...item, isRetired: newRetired } : item)),
+                                        const updatedMembers = data.members.map((item) =>
+                                          item.id === m.id
+                                            ? { ...item, isRetired: newRetired, retiredAt: undefined }
+                                            : item,
+                                        );
+                                        await updateAndPersist({ members: updatedMembers });
+                                        toast({
+                                          title: 'Retirement Undone',
+                                          description: `${m.name} is reactivated to the active team in real time.`,
                                         });
-                                        toast({ title: 'Retirement Undone', description: `${m.name} is reactivated to the active team in real time.` });
                                       }}
                                       className="h-7 text-xs font-bold rounded-xl gap-1 text-emerald-600 hover:text-emerald-700 hover:bg-emerald-500/10 border-emerald-500/30"
                                       title="Undo retirement and reactivate to active team"
@@ -1799,14 +1852,18 @@ const Portfolio = () => {
                                       size="sm"
                                       variant="outline"
                                       type="button"
-                                      onClick={() => {
+                                      onClick={async () => {
                                         const newRetired = true;
-                                        patchMember(m.id, { isRetired: newRetired });
-                                        void persistPortfolioDataLive({
-                                          ...data,
-                                          members: data.members.map((item) => (item.id === m.id ? { ...item, isRetired: newRetired } : item)),
+                                        const updatedMembers = data.members.map((item) =>
+                                          item.id === m.id
+                                            ? { ...item, isRetired: newRetired, retiredAt: 'Emeritus' }
+                                            : item,
+                                        );
+                                        await updateAndPersist({ members: updatedMembers });
+                                        toast({
+                                          title: 'Marked as Retired',
+                                          description: `${m.name} is now marked as retired (emeritus) in real time.`,
                                         });
-                                        toast({ title: 'Marked as Retired', description: `${m.name} is now marked as retired (emeritus) in real time.` });
                                       }}
                                       className="h-7 text-xs font-bold rounded-xl gap-1 text-slate-600 dark:text-slate-300 hover:bg-slate-200/60 dark:hover:bg-white/10 border-border"
                                       title="Mark member as retired"
@@ -1818,16 +1875,7 @@ const Portfolio = () => {
                                   <Button
                                     size="sm"
                                     variant="ghost"
-                                    onClick={() => {
-                                      if (window.confirm(`Remove ${m.name || 'this member'} from the roster?`)) {
-                                        removeMember(m.id);
-                                        void persistPortfolioDataLive({
-                                          ...data,
-                                          members: data.members.filter((item) => item.id !== m.id),
-                                        });
-                                        toast({ title: 'Member Removed', description: `${m.name} was removed in real time.` });
-                                      }
-                                    }}
+                                    onClick={() => void removeMember(m.id)}
                                     className="text-destructive hover:bg-destructive/10 h-7 px-2"
                                   >
                                     <Trash2 className="h-4 w-4" />
