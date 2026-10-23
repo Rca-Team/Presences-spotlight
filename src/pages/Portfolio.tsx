@@ -149,6 +149,7 @@ export function PublicPortfolioView({
   showGallery = true,
   showProjects = true,
   showAchievements = true,
+  canManage = false,
 }: {
   data: PortfolioData;
   onUnlock?: () => void;
@@ -156,6 +157,7 @@ export function PublicPortfolioView({
   showGallery?: boolean;
   showProjects?: boolean;
   showAchievements?: boolean;
+  canManage?: boolean;
 }) {
   const { toast } = useToast();
   const [selectedMember, setSelectedMember] = useState<PortfolioMember | null>(null);
@@ -518,13 +520,15 @@ export function PublicPortfolioView({
                     {retiredMembers.length} Retired
                   </span>
                 )}
-                <Button
-                  size="sm"
-                  onClick={() => setIsAddModalOpen(true)}
-                  className="h-8 rounded-xl font-bold gap-1 bg-primary text-primary-foreground shadow-xs text-xs cursor-pointer active:scale-95"
-                >
-                  <Plus className="h-3.5 w-3.5" /> Add Member
-                </Button>
+                {canManage && (
+                  <Button
+                    size="sm"
+                    onClick={() => setIsAddModalOpen(true)}
+                    className="h-8 rounded-xl font-bold gap-1 bg-primary text-primary-foreground shadow-xs text-xs cursor-pointer active:scale-95"
+                  >
+                    <Plus className="h-3.5 w-3.5" /> Add Member
+                  </Button>
+                )}
                 {onUnlock && (
                   <Button
                     size="sm"
@@ -651,17 +655,19 @@ export function PublicPortfolioView({
                       <div className="mt-3 pt-2.5 border-t border-border/30 flex items-center justify-between text-[11px] font-bold text-muted-foreground group-hover:text-foreground">
                         <span>View Member Profile</span>
                         <div className="flex items-center gap-1">
-                          <button
-                            type="button"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              void handleLiveToggleRetire(m.id);
-                            }}
-                            className="text-[10px] text-amber-600 dark:text-amber-400 hover:underline px-1.5 py-0.5 rounded hover:bg-amber-500/10 transition-colors"
-                            title="Mark this member as retired"
-                          >
-                            Retire
-                          </button>
+                          {canManage && (
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                void handleLiveToggleRetire(m.id);
+                              }}
+                              className="text-[10px] text-amber-600 dark:text-amber-400 hover:underline px-1.5 py-0.5 rounded hover:bg-amber-500/10 transition-colors"
+                              title="Mark this member as retired"
+                            >
+                              Retire
+                            </button>
+                          )}
                           <ArrowRight className="h-3.5 w-3.5 group-hover:translate-x-1 transition-transform" />
                         </div>
                       </div>
@@ -742,19 +748,21 @@ export function PublicPortfolioView({
                         </div>
 
                         <div className="mt-3 pt-2.5 border-t border-border/30 flex items-center justify-between text-[11px] font-bold text-muted-foreground group-hover:text-foreground">
-                          <button
-                            type="button"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              void handleLiveToggleRetire(m.id);
-                            }}
-                            className="inline-flex items-center gap-1 text-[11px] text-emerald-600 dark:text-emerald-400 hover:underline font-bold"
-                            title="Undo retirement and reactivate member"
-                          >
-                            <RotateCcw className="h-3 w-3" />
-                            Undo Retirement
-                          </button>
-                          <div className="flex items-center gap-1">
+                          {canManage && (
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                void handleLiveToggleRetire(m.id);
+                              }}
+                              className="inline-flex items-center gap-1 text-[11px] text-emerald-600 dark:text-emerald-400 hover:underline font-bold"
+                              title="Undo retirement and reactivate member"
+                            >
+                              <RotateCcw className="h-3 w-3" />
+                              Undo Retirement
+                            </button>
+                          )}
+                          <div className={cn("flex items-center gap-1", !canManage && "ml-auto")}>
                             <span className="text-[10px] text-muted-foreground">Profile</span>
                             <ArrowRight className="h-3.5 w-3.5 group-hover:translate-x-1 transition-transform" />
                           </div>
@@ -829,112 +837,122 @@ export function PublicPortfolioView({
               )}
 
               {/* Real-time Retirement & Removal Actions */}
-              <div className="pt-3 border-t flex flex-wrap items-center justify-between gap-2">
-                <Button
-                  size="sm"
-                  variant={selectedMember.isRetired ? "default" : "outline"}
-                  onClick={() => void handleLiveToggleRetire(selectedMember.id)}
-                  className="rounded-xl text-xs font-bold gap-1.5"
-                >
-                  {selectedMember.isRetired ? (
-                    <>
-                      <RotateCcw className="h-3.5 w-3.5" /> Undo Retirement (Reactivate)
-                    </>
-                  ) : (
-                    <>
-                      <Clock className="h-3.5 w-3.5 text-amber-500" /> Mark as Retired
-                    </>
-                  )}
-                </Button>
-
-                <div className="flex items-center gap-2">
+              {canManage ? (
+                <div className="pt-3 border-t flex flex-wrap items-center justify-between gap-2">
                   <Button
                     size="sm"
-                    variant="ghost"
-                    onClick={() => void handleLiveRemoveMember(selectedMember.id)}
-                    className="rounded-xl text-xs font-bold text-destructive hover:bg-destructive/10 gap-1"
+                    variant={selectedMember.isRetired ? "default" : "outline"}
+                    onClick={() => void handleLiveToggleRetire(selectedMember.id)}
+                    className="rounded-xl text-xs font-bold gap-1.5"
                   >
-                    <Trash2 className="h-3.5 w-3.5" /> Remove
+                    {selectedMember.isRetired ? (
+                      <>
+                        <RotateCcw className="h-3.5 w-3.5" /> Undo Retirement (Reactivate)
+                      </>
+                    ) : (
+                      <>
+                        <Clock className="h-3.5 w-3.5 text-amber-500" /> Mark as Retired
+                      </>
+                    )}
                   </Button>
+
+                  <div className="flex items-center gap-2">
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      onClick={() => void handleLiveRemoveMember(selectedMember.id)}
+                      className="rounded-xl text-xs font-bold text-destructive hover:bg-destructive/10 gap-1"
+                    >
+                      <Trash2 className="h-3.5 w-3.5" /> Remove
+                    </Button>
+                    <Button size="sm" variant="secondary" onClick={() => setSelectedMember(null)} className="rounded-xl text-xs">
+                      Close
+                    </Button>
+                  </div>
+                </div>
+              ) : (
+                <div className="pt-3 border-t flex items-center justify-end">
                   <Button size="sm" variant="secondary" onClick={() => setSelectedMember(null)} className="rounded-xl text-xs">
                     Close
                   </Button>
                 </div>
-              </div>
+              )}
             </div>
           )}
         </DialogContent>
       </Dialog>
 
       {/* Quick Add Member Modal */}
-      <Dialog open={isAddModalOpen} onOpenChange={setIsAddModalOpen}>
-        <DialogContent className="max-w-md rounded-3xl p-6">
-          <DialogHeader>
-            <DialogTitle className="text-lg font-black flex items-center gap-2">
-              <Plus className="h-5 w-5 text-primary" /> Add New Team Member
-            </DialogTitle>
-            <DialogDescription className="text-xs">
-              Add a new contributor or architect to Team RCA in real time.
-            </DialogDescription>
-          </DialogHeader>
+      {canManage && (
+        <Dialog open={isAddModalOpen} onOpenChange={setIsAddModalOpen}>
+          <DialogContent className="max-w-md rounded-3xl p-6">
+            <DialogHeader>
+              <DialogTitle className="text-lg font-black flex items-center gap-2">
+                <Plus className="h-5 w-5 text-primary" /> Add New Team Member
+              </DialogTitle>
+              <DialogDescription className="text-xs">
+                Add a new contributor or architect to Team RCA in real time.
+              </DialogDescription>
+            </DialogHeader>
 
-          <form
-            onSubmit={(e) => {
-              e.preventDefault();
-              const form = e.currentTarget;
-              const name = (form.elements.namedItem('memberName') as HTMLInputElement).value;
-              const role = (form.elements.namedItem('memberRole') as HTMLInputElement).value;
-              const bio = (form.elements.namedItem('memberBio') as HTMLTextAreaElement).value;
-              const tags = (form.elements.namedItem('memberTag') as HTMLInputElement).value
-                .split(',')
-                .map((t) => t.trim())
-                .filter(Boolean);
-              void handleLiveAddMember(name, role, bio, tags, isNewMemberRetired);
-            }}
-            className="space-y-4 pt-2"
-          >
-            <div>
-              <Label className="text-xs font-bold">Full Name *</Label>
-              <Input name="memberName" placeholder="e.g. Priyanshu Sharma" required className="mt-1" />
-            </div>
-
-            <div>
-              <Label className="text-xs font-bold">Role / Specialty *</Label>
-              <Input name="memberRole" placeholder="e.g. AI Vision Engineer · Core Team" required className="mt-1" />
-            </div>
-
-            <div>
-              <Label className="text-xs font-bold">Short Bio</Label>
-              <Textarea name="memberBio" rows={2} placeholder="Brief summary of their contributions..." className="mt-1" />
-            </div>
-
-            <div>
-              <Label className="text-xs font-bold">Specialty Tags (comma separated)</Label>
-              <Input name="memberTag" placeholder="e.g. Vision Lab, Full-Stack" className="mt-1" />
-            </div>
-
-            <div className="flex items-center justify-between p-3 rounded-2xl border bg-muted/20">
+            <form
+              onSubmit={(e) => {
+                e.preventDefault();
+                const form = e.currentTarget;
+                const name = (form.elements.namedItem('memberName') as HTMLInputElement).value;
+                const role = (form.elements.namedItem('memberRole') as HTMLInputElement).value;
+                const bio = (form.elements.namedItem('memberBio') as HTMLTextAreaElement).value;
+                const tags = (form.elements.namedItem('memberTag') as HTMLInputElement).value
+                  .split(',')
+                  .map((t) => t.trim())
+                  .filter(Boolean);
+                void handleLiveAddMember(name, role, bio, tags, isNewMemberRetired);
+              }}
+              className="space-y-4 pt-2"
+            >
               <div>
-                <p className="text-xs font-bold text-foreground">Initial Status: {isNewMemberRetired ? 'Retired (Emeritus)' : 'Active Core Team'}</p>
-                <p className="text-[10px] text-muted-foreground">Can be changed or undone at any time in real time.</p>
+                <Label className="text-xs font-bold">Full Name *</Label>
+                <Input name="memberName" placeholder="e.g. Priyanshu Sharma" required className="mt-1" />
               </div>
-              <Switch
-                checked={isNewMemberRetired}
-                onCheckedChange={setIsNewMemberRetired}
-              />
-            </div>
 
-            <DialogFooter className="pt-2 flex items-center justify-end gap-2">
-              <Button type="button" variant="ghost" onClick={() => setIsAddModalOpen(false)} className="rounded-xl text-xs">
-                Cancel
-              </Button>
-              <Button type="submit" className="rounded-xl text-xs font-bold gap-1">
-                <Plus className="h-3.5 w-3.5" /> Add Member Live
-              </Button>
-            </DialogFooter>
-          </form>
-        </DialogContent>
-      </Dialog>
+              <div>
+                <Label className="text-xs font-bold">Role / Specialty *</Label>
+                <Input name="memberRole" placeholder="e.g. AI Vision Engineer · Core Team" required className="mt-1" />
+              </div>
+
+              <div>
+                <Label className="text-xs font-bold">Short Bio</Label>
+                <Textarea name="memberBio" rows={2} placeholder="Brief summary of their contributions..." className="mt-1" />
+              </div>
+
+              <div>
+                <Label className="text-xs font-bold">Specialty Tags (comma separated)</Label>
+                <Input name="memberTag" placeholder="e.g. Vision Lab, Full-Stack" className="mt-1" />
+              </div>
+
+              <div className="flex items-center justify-between p-3 rounded-2xl border bg-muted/20">
+                <div>
+                  <p className="text-xs font-bold text-foreground">Initial Status: {isNewMemberRetired ? 'Retired (Emeritus)' : 'Active Core Team'}</p>
+                  <p className="text-[10px] text-muted-foreground">Can be changed or undone at any time in real time.</p>
+                </div>
+                <Switch
+                  checked={isNewMemberRetired}
+                  onCheckedChange={setIsNewMemberRetired}
+                />
+              </div>
+
+              <DialogFooter className="pt-2 flex items-center justify-end gap-2">
+                <Button type="button" variant="ghost" onClick={() => setIsAddModalOpen(false)} className="rounded-xl text-xs">
+                  Cancel
+                </Button>
+                <Button type="submit" className="rounded-xl text-xs font-bold gap-1">
+                  <Plus className="h-3.5 w-3.5" /> Add Member Live
+                </Button>
+              </DialogFooter>
+            </form>
+          </DialogContent>
+        </Dialog>
+      )}
     </section>
   );
 }
@@ -1481,7 +1499,7 @@ const Portfolio = () => {
           {/* Dual Mode Switcher */}
           {studioViewMode === 'preview' ? (
             <Card className="rounded-3xl border border-white/10 shadow-2xl p-4 sm:p-6 bg-card/60 backdrop-blur-xl">
-              <PublicPortfolioView data={data} onUpdateData={(next) => setData(next)} onUnlock={() => setStudioViewMode('editor')} />
+              <PublicPortfolioView data={data} onUpdateData={(next) => setData(next)} onUnlock={() => setStudioViewMode('editor')} canManage={true} />
             </Card>
           ) : (
             <Tabs defaultValue="gallery" className="space-y-5">

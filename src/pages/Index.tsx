@@ -8,7 +8,6 @@ import jatinDhamaPhoto from '@/assets/jatin-dhama.jpg';
 import teamRcaPhoto from '@/assets/team-rca.jpg';
 import { usePortfolioData, normalizeProfileImage } from '@/hooks/usePortfolioData';
 import { useHapticFeedback } from '@/hooks/useHapticFeedback';
-import { PublicPortfolioView } from '@/pages/Portfolio';
 import { HomeGallery } from '@/components/portfolio/HomeGallery';
 import { MemberAvatar } from '@/components/portfolio/MemberAvatar';
 import { Button } from '@/components/ui/button';
@@ -1536,39 +1535,11 @@ const Index = () => {
               defaultLayout={portfolio.settings?.homeGalleryLayout || 'bento'}
               title="Media & Campus Gallery"
               subtitle="Capturing smart gate testing, face-recognition kiosks, school activities, and team milestones at KV NFC Vigyan Vihar."
-              allowManage={true}
+              allowManage={false}
             />
           </RoyalReveal>
         )}
 
-        {/* ========================================================================= */}
-        {/* DEVELOPER PORTFOLIO SHOWCASE                                              */}
-        {/* ========================================================================= */}
-        {(portfolio.settings?.showOnHome !== false) && (
-          <RoyalReveal effect="fade-up" className="pb-14 min-w-0">
-            <section id="developer-portfolio">
-              <div className="mb-6 flex items-end justify-between gap-4">
-                <div>
-                  <p className="inline-flex items-center gap-2 rounded-full bg-primary/15 px-3 py-1 text-[10px] font-black uppercase tracking-widest text-primary">
-                    <Sparkles className="h-3 w-3" /> Meet the Developer
-                  </p>
-                  <h2
-                    className="mt-2 text-3xl font-black text-slate-900 dark:text-foreground md:text-4xl"
-                    style={{ fontFamily: 'Sora, sans-serif' }}
-                  >
-                    {portfolio.name || 'Gaurav Raj'}
-                  </h2>
-                  <p className="mt-1 text-sm text-slate-600 dark:text-slate-300 font-medium md:text-base">
-                    {portfolio.role || 'Developer & Team Leader'}
-                  </p>
-                </div>
-              </div>
-              <PublicPortfolioView data={portfolio} showGallery={false} showProjects={false} />
-            </section>
-          </RoyalReveal>
-        )}
-
-        {/* ========================================================================= */}
         {/* BOTTOM CTA BANNER                                                         */}
         {/* ========================================================================= */}
         <RoyalReveal effect="card-lift" className="pb-10">
