@@ -1331,6 +1331,12 @@ const Index = () => {
                           alt={p.title}
                           className="h-full w-full object-cover transition-transform duration-700 ease-out group-hover:scale-105"
                           loading="lazy"
+                          onError={(e) => {
+                            const target = e.currentTarget;
+                            if (target.src !== teamRcaPhoto) {
+                              target.src = teamRcaPhoto;
+                            }
+                          }}
                         />
                       ) : (
                         <div className="flex h-full items-center justify-center text-muted-foreground">

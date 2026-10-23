@@ -4,6 +4,7 @@ import gauravPhoto from '@/assets/gaurav-photo.png';
 import swamiAnantVyasPhoto from '@/assets/swami-anant-vyas.png';
 import jatinDhamaPhoto from '@/assets/jatin-dhama.jpg';
 import teamRcaPhoto from '@/assets/team-rca.jpg';
+import studentCampusBanner from '@/assets/student-campus-banner.jpg';
 import { getPortfolioFromIndexedDb, savePortfolioToIndexedDb } from '@/utils/portfolioCacheDb';
 
 export const PORTFOLIO_KEY = 'gaurav_portfolio';
@@ -97,6 +98,14 @@ export const DEFAULT_GALLERY_ITEMS: PortfolioGalleryItem[] = [
     featured: true,
   },
   {
+    id: 'gal-campus-testing',
+    url: studentCampusBanner,
+    title: 'Campus Rollout & Gate Testing',
+    category: 'Campus',
+    caption: 'Live kiosk testing and face-recognition gate operation at KV NFC Vigyan Vihar.',
+    featured: true,
+  },
+  {
     id: 'gal-gaurav-lead',
     url: gauravPhoto,
     title: 'Gaurav Raj — Lead Architect & Developer',
@@ -139,19 +148,43 @@ export const DEFAULT_PORTFOLIO: PortfolioData = {
     'Shipped scalable admin workflows for school operations',
     'Architected instant timetable automatic teacher substitution engine',
   ],
-  skills: ['React', 'TypeScript', 'Supabase', 'Face Recognition', 'Realtime Systems', 'Tailwind CSS', 'PWA & Edge AI'],
+  skills: ['React', 'TypeScript', 'Appwrite', 'Face Recognition', 'Realtime Systems', 'Tailwind CSS', 'PWA & Edge AI'],
   gallery: DEFAULT_GALLERY_ITEMS,
   projects: [
     {
-      id: uid(),
+      id: 'proj-presences-platform',
       title: 'Presences Smart School Platform',
       description: 'Unified attendance, gate mode, analytics, and communication platform built for PM Shri KV NFC Vigyan Vihar.',
-      stack: 'React, TypeScript, Supabase, Face API',
+      stack: 'React, TypeScript, Appwrite, Face API, PWA',
       image: teamRcaPhoto,
       link: 'https://presences.dev',
-      githubUrl: 'https://github.com/Rca-Team/Presences-supabase',
+      githubUrl: 'https://github.com/Rca-Team/Presences-spotlight',
       year: '2025',
-      tags: ['React', 'Supabase', 'AI Vision', 'PWA'],
+      tags: ['React', 'TypeScript', 'AI Vision', 'PWA', 'Appwrite'],
+      featured: true,
+    },
+    {
+      id: 'proj-gate-kiosk',
+      title: 'Edge AI Kiosk & Gate Security',
+      description: 'High-precision on-device facial detection and dual-camera gate security system for instant multi-student verification.',
+      stack: 'TensorFlow.js, WebAssembly, ONNX Runtime, Canvas',
+      image: studentCampusBanner,
+      link: 'https://presences.dev/gate',
+      githubUrl: 'https://github.com/Rca-Team/Presences-spotlight',
+      year: '2025',
+      tags: ['Edge AI', 'Computer Vision', 'ONNX', 'Wasm'],
+      featured: true,
+    },
+    {
+      id: 'proj-substitution-engine',
+      title: 'Real-Time Substitution & Timetable Engine',
+      description: 'Autonomous teacher leave detection and instant period substitution scheduler with multi-format PDF export.',
+      stack: 'React, Appwrite Realtime, Tailwind CSS, Lucide',
+      image: teamRcaPhoto,
+      link: 'https://presences.dev/admin?tab=timetable',
+      githubUrl: 'https://github.com/Rca-Team/Presences-spotlight',
+      year: '2025',
+      tags: ['Realtime', 'Automation', 'Smart Scheduling'],
       featured: true,
     },
   ],
@@ -246,8 +279,8 @@ export function normalizeGallery(rawGallery: any): PortfolioGalleryItem[] {
       if (typeof item === 'string') {
         let cleanUrl = item.trim();
         if (!cleanUrl) return null;
-        if (cleanUrl.includes('supabase.co') || cleanUrl.includes('cvdcbcsonlianbfeessy') || cleanUrl.includes('eiahucigcvsnuvviajqt')) {
-          cleanUrl = gauravPhoto;
+        if (cleanUrl.includes('supabase.co') || cleanUrl.includes('cvdcbcsonlianbfeessy') || cleanUrl.includes('eiahucigcvsnuvviajqt') || cleanUrl.includes('undefined') || cleanUrl.includes('null')) {
+          cleanUrl = teamRcaPhoto;
         }
         return {
           id: `gal-migrated-${idx}-${Math.random().toString(36).slice(2, 6)}`,
@@ -259,9 +292,9 @@ export function normalizeGallery(rawGallery: any): PortfolioGalleryItem[] {
         };
       }
       if (item && typeof item === 'object' && item.url) {
-        let cleanUrl = String(item.url);
-        if (cleanUrl.includes('supabase.co') || cleanUrl.includes('cvdcbcsonlianbfeessy') || cleanUrl.includes('eiahucigcvsnuvviajqt')) {
-          cleanUrl = gauravPhoto;
+        let cleanUrl = String(item.url).trim();
+        if (!cleanUrl || cleanUrl.includes('supabase.co') || cleanUrl.includes('cvdcbcsonlianbfeessy') || cleanUrl.includes('eiahucigcvsnuvviajqt') || cleanUrl.includes('undefined') || cleanUrl.includes('null')) {
+          cleanUrl = teamRcaPhoto;
         }
         return {
           id: item.id || `gal-${idx}-${uid()}`,
@@ -284,24 +317,37 @@ function migrate(raw: any): PortfolioData {
   if (base.coverImage && (base.coverImage.includes('supabase.co') || base.coverImage.includes('cvdcbcsonlianbfeessy') || base.coverImage.includes('eiahucigcvsnuvviajqt'))) {
     base.coverImage = '';
   }
-  base.achievements = Array.isArray(raw?.achievements) ? raw.achievements : DEFAULT_PORTFOLIO.achievements;
-  base.skills = Array.isArray(raw?.skills) ? raw.skills : DEFAULT_PORTFOLIO.skills;
+  base.achievements = Array.isArray(raw?.achievements) && raw.achievements.length > 0 ? raw.achievements : DEFAULT_PORTFOLIO.achievements;
+  base.skills = Array.isArray(raw?.skills) && raw.skills.length > 0 ? raw.skills : DEFAULT_PORTFOLIO.skills;
   base.gallery = normalizeGallery(raw?.gallery);
   base.socials = { ...DEFAULT_PORTFOLIO.socials, ...(raw?.socials ?? {}) };
   base.settings = { ...DEFAULT_PORTFOLIO.settings, ...(raw?.settings ?? {}) };
   
-  base.projects = (Array.isArray(raw?.projects) && raw.projects.length > 0 ? raw.projects : DEFAULT_PORTFOLIO.projects).map((p: any) => ({
-    id: p.id ?? uid(),
-    title: p.title ?? '',
-    description: p.description ?? '',
-    stack: p.stack ?? '',
-    image: (p.image ?? '').replace(/eiahucigcvsnuvviajqt/g, 'cvdcbcsonlianbfeessy'),
-    link: p.link ?? '',
-    githubUrl: p.githubUrl ?? '',
-    year: p.year ?? '',
-    tags: Array.isArray(p.tags) ? p.tags : [],
-    featured: Boolean(p.featured),
-  }));
+  base.projects = (Array.isArray(raw?.projects) && raw.projects.length > 0 ? raw.projects : DEFAULT_PORTFOLIO.projects).map((p: any) => {
+    let pImg = p.image ? String(p.image).trim() : '';
+    if (
+      !pImg ||
+      pImg.includes('supabase.co') ||
+      pImg.includes('cvdcbcsonlianbfeessy') ||
+      pImg.includes('eiahucigcvsnuvviajqt') ||
+      pImg.includes('undefined') ||
+      pImg.includes('null')
+    ) {
+      pImg = teamRcaPhoto;
+    }
+    return {
+      id: p.id ?? uid(),
+      title: p.title ?? '',
+      description: p.description ?? '',
+      stack: p.stack ?? '',
+      image: pImg,
+      link: p.link ?? '',
+      githubUrl: p.githubUrl ?? '',
+      year: p.year ?? '',
+      tags: Array.isArray(p.tags) ? p.tags : [],
+      featured: Boolean(p.featured),
+    };
+  });
 
   const rawMembers = Array.isArray(raw?.members) && raw.members.length > 0 ? [...raw.members] : [...DEFAULT_PORTFOLIO.members];
 

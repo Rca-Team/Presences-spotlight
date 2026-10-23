@@ -28,6 +28,7 @@ import { cn } from '@/lib/utils';
 import { useToast } from '@/hooks/use-toast';
 import { useNavigate } from 'react-router-dom';
 import type { PortfolioGalleryItem } from '@/hooks/usePortfolioData';
+import teamRcaPhoto from '@/assets/team-rca.jpg';
 
 export type GalleryVisualTheme = 'cyber' | 'royal' | 'crystal' | 'vintage';
 export type LightboxFilter = 'normal' | 'cyberpunk' | 'golden' | 'vivid' | 'noir' | 'matrix';
@@ -359,6 +360,12 @@ export function HomeGallery({
                   src={item.url}
                   alt={item.title || 'Campus photo'}
                   className="h-full w-full object-cover transition-transform duration-700 ease-out group-hover:scale-110"
+                  onError={(e) => {
+                    const target = e.currentTarget;
+                    if (target.src !== teamRcaPhoto) {
+                      target.src = teamRcaPhoto;
+                    }
+                  }}
                   loading="lazy"
                 />
 
@@ -418,6 +425,12 @@ export function HomeGallery({
                 src={item.url}
                 alt={item.title || 'Gallery item'}
                 className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-110"
+                onError={(e) => {
+                  const target = e.currentTarget;
+                  if (target.src !== teamRcaPhoto) {
+                    target.src = teamRcaPhoto;
+                  }
+                }}
                 loading="lazy"
               />
 
@@ -477,6 +490,12 @@ export function HomeGallery({
                   src={filteredItems[carouselIndex].url}
                   alt={filteredItems[carouselIndex].title || 'Slide'}
                   className="h-full w-full object-cover transition-all duration-700 pointer-events-none select-none"
+                  onError={(e) => {
+                    const target = e.currentTarget;
+                    if (target.src !== teamRcaPhoto) {
+                      target.src = teamRcaPhoto;
+                    }
+                  }}
                   draggable={false}
                 />
 
@@ -560,7 +579,18 @@ export function HomeGallery({
                     : 'border-transparent opacity-60 hover:opacity-100',
                 )}
               >
-                <img src={item.url} alt="thumbnail" className="h-full w-full object-cover pointer-events-none" draggable={false} />
+                <img
+                  src={item.url}
+                  alt="thumbnail"
+                  className="h-full w-full object-cover pointer-events-none"
+                  draggable={false}
+                  onError={(e) => {
+                    const target = e.currentTarget;
+                    if (target.src !== teamRcaPhoto) {
+                      target.src = teamRcaPhoto;
+                    }
+                  }}
+                />
               </button>
             ))}
           </div>
@@ -691,6 +721,12 @@ export function HomeGallery({
                   src={activeLightboxItem.url}
                   alt={activeLightboxItem.title || 'Lightbox photo'}
                   className="max-h-[60vh] max-w-full object-contain rounded-xl shadow-2xl transition-all duration-300 select-none cursor-grab active:cursor-grabbing"
+                  onError={(e) => {
+                    const target = e.currentTarget as HTMLImageElement;
+                    if (target.src !== teamRcaPhoto) {
+                      target.src = teamRcaPhoto;
+                    }
+                  }}
                   style={{
                     transform: `scale(${zoomLevel})`,
                     filter: filterCss[lightboxFilter],

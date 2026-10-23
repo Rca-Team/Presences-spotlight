@@ -414,6 +414,12 @@ export function PublicPortfolioView({
                       alt={p.title}
                       className="h-full w-full object-cover transition-transform duration-700 ease-out group-hover:scale-110"
                       loading="lazy"
+                      onError={(e) => {
+                        const target = e.currentTarget;
+                        if (target.src !== teamRcaPhoto) {
+                          target.src = teamRcaPhoto;
+                        }
+                      }}
                     />
                   ) : (
                     <div className="flex h-full items-center justify-center text-muted-foreground">
@@ -776,6 +782,41 @@ export function PublicPortfolioView({
           </div>
         );
       })()}
+
+      {/* Campus & Media Gallery Showcase */}
+      {showGallery && data.gallery && data.gallery.length > 0 && (
+        <div className="pt-2">
+          <HomeGallery
+            items={data.gallery}
+            defaultLayout={data.settings?.homeGalleryLayout || 'bento'}
+            title="Campus &amp; Media Gallery"
+            subtitle="Capturing smart gate testing, face-recognition kiosks, school activities, and team milestones at KV NFC Vigyan Vihar."
+            allowManage={canManage}
+          />
+        </div>
+      )}
+
+      {/* Key Milestones & Achievements */}
+      {showAchievements && data.achievements && data.achievements.length > 0 && (
+        <div className="space-y-4">
+          <div className="flex items-center justify-between">
+            <h2 className="text-xl md:text-2xl font-extrabold text-foreground flex items-center gap-2">
+              <Trophy className="h-5 w-5 text-amber-500 dark:text-amber-400" /> Key Milestones &amp; Achievements
+            </h2>
+            <span className="text-xs text-muted-foreground font-semibold">{data.achievements.length} Milestones</span>
+          </div>
+          <div className="rounded-3xl border border-white/10 bg-card/70 p-6 backdrop-blur shadow-md">
+            <ul className="grid gap-3 sm:grid-cols-2 text-xs sm:text-sm">
+              {data.achievements.map((item, idx) => (
+                <li key={idx} className="flex items-start gap-2.5">
+                  <CheckCircle2 className="h-4 w-4 text-emerald-500 shrink-0 mt-0.5" />
+                  <span className="text-foreground/90 font-medium leading-relaxed">{item}</span>
+                </li>
+              ))}
+            </ul>
+          </div>
+        </div>
+      )}
 
       {/* Member Detail Dialog with Live Retirement & Removal Controls */}
       <Dialog open={!!selectedMember} onOpenChange={(open) => !open && setSelectedMember(null)}>
