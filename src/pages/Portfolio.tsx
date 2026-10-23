@@ -1148,6 +1148,17 @@ const Portfolio = () => {
     setDirty(true);
   };
 
+  const handleResetToDefaults = () => {
+    if (window.confirm('Reset portfolio back to Team RCA defaults? Any unsaved edits will be discarded.')) {
+      setData(DEFAULT_PORTFOLIO);
+      setDirty(true);
+      toast({
+        title: 'Reset to Defaults',
+        description: 'Portfolio configuration restored to Team RCA defaults. Click Save to persist.',
+      });
+    }
+  };
+
   const sanitizePortfolioImages = async (current: PortfolioData): Promise<PortfolioData> => {
     const next = { ...current };
     if (next.profileImage && next.profileImage.startsWith('data:image/')) {
@@ -1490,7 +1501,7 @@ const Portfolio = () => {
                 {saving ? 'Saving…' : 'Save now'}
               </Button>
 
-              <Button size="sm" variant="outline" onClick={() => setIsUnlocked(false)} className="h-8 rounded-xl">
+              <Button size="sm" variant="outline" onClick={handleLockVault} className="h-8 rounded-xl">
                 <Lock className="h-3.5 w-3.5 mr-1" /> Lock
               </Button>
             </div>
