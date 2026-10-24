@@ -495,7 +495,7 @@ export default function GuidedFaceCapture({
     const render = () => {
       if (!running) return;
       const rect = canvas.getBoundingClientRect();
-      const dpr = window.devicePixelRatio || 1;
+      const dpr = Math.min(window.devicePixelRatio || 1, 1.5);
       const targetW = Math.round(rect.width * dpr);
       const targetH = Math.round(rect.height * dpr);
       if (targetW > 0 && targetH > 0 && (canvas.width !== targetW || canvas.height !== targetH)) {
@@ -860,6 +860,7 @@ export default function GuidedFaceCapture({
 
         const loop = async () => {
           if (disposed || phase.current === 'done') return;
+          const loopStart = performance.now();
 
           try {
             const v = video.current;
@@ -871,8 +872,8 @@ export default function GuidedFaceCapture({
               return;
             }
 
-            const targetW = 480;
-            const targetH = Math.round((480 * v.videoHeight) / v.videoWidth);
+            const targetW = 384;
+            const targetH = Math.round((384 * v.videoHeight) / v.videoWidth);
             if (canvas.width !== targetW || canvas.height !== targetH) {
               canvas.width = targetW;
               canvas.height = targetH;
@@ -927,6 +928,10 @@ export default function GuidedFaceCapture({
               return;
             }
 
+            if (qualityCanvas.width !== 64 || qualityCanvas.height !== 64) {
+              qualityCanvas.width = 64;
+              qualityCanvas.height = 64;
+            }
             const qCtx = qualityCanvas.getContext('2d');
             if (qCtx) {
               qCtx.drawImage(
@@ -937,14 +942,14 @@ export default function GuidedFaceCapture({
                 Math.min(canvas.height - b.y, b.height),
                 0,
                 0,
-                128,
-                128
+                64,
+                64
               );
             }
             const quality = imageQuality(
-              qualityCanvas.getContext('2d')!.getImageData(0, 0, 128, 128).data,
-              128,
-              128
+              qualityCanvas.getContext('2d')!.getImageData(0, 0, 64, 64).data,
+              64,
+              64
             );
 
             if (quality.brightness < 10 || quality.brightness > 250 || quality.sharpness < 2.5) {
@@ -1192,7 +1197,10 @@ export default function GuidedFaceCapture({
             }
           } finally {
             if (!disposed && (phase.current as Phase) !== 'done') {
-              timer = setTimeout(loop, 16);
+              const elapsed = performance.now() - loopStart;
+              // Smooth 15 FPS cadence (~65ms) leaves 35-50ms free main-thread time per tick for silky smooth 60fps video & animations
+              const delay = Math.max(16, 65 - elapsed);
+              timer = setTimeout(loop, delay);
             }
           }
         };
