@@ -10,6 +10,8 @@ replit.nix
 /scratch
 /scripts/*
 !/scripts/update-version.js
+!/scripts/generate-og-enroll.mjs
+!/scripts/postbuild-pages.mjs
 /appwrite
 /supabase
 /self-hosted-supabase
