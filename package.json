@@ -6,15 +6,16 @@
   "scripts": {
     "dev": "vite",
     "dev:next": "next dev",
-    "prebuild": "node scripts/update-version.js",
-    "build": "node --max-old-space-size=8192 ./node_modules/vite/bin/vite.js build",
+    "prebuild": "node scripts/update-version.js && node scripts/generate-og-enroll.mjs",
+    "build": "node --max-old-space-size=8192 ./node_modules/vite/bin/vite.js build && node scripts/postbuild-pages.mjs",
     "build:dev": "vite build --mode development",
     "lint": "eslint .",
     "typecheck": "tsc --noEmit -p tsconfig.app.json && tsc --noEmit -p tsconfig.node.json",
     "preview": "vite preview",
     "backup:appwrite": "node scripts/auto-appwrite-backup.mjs",
     "purge:attendance-photos": "node scripts/purge-attendance-photos.mjs",
-    "audit:security": "node scripts/security-audit.mjs"
+    "audit:security": "node scripts/security-audit.mjs",
+    "generate:og": "node scripts/generate-og-enroll.mjs"
   },
   "dependencies": {
     "@appwrite.io/react": "^0.1.0",

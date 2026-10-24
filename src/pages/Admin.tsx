@@ -435,6 +435,23 @@ const Admin = () => {
 
   useEffect(() => {
     fetchData();
+
+    const onBiometricSync = () => {
+      invalidateUnifiedStatsCache();
+      fetchData();
+    };
+    window.addEventListener('presence:descriptors-updated', onBiometricSync);
+    window.addEventListener('presences:roster-updated', onBiometricSync);
+    window.addEventListener('presences:enrollment-completed', onBiometricSync);
+
+    let bc: BroadcastChannel | null = null;
+    try {
+      if (typeof window !== 'undefined' && 'BroadcastChannel' in window) {
+        bc = new BroadcastChannel('presences_enrollment_sync');
+        bc.onmessage = () => onBiometricSync();
+      }
+    } catch {}
+
     const channel = supabase
       .channel('admin-dashboard')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'attendance_records' }, () => {
@@ -448,6 +465,14 @@ const Admin = () => {
       .on('postgres_changes', { event: '*', schema: 'public', table: 'notifications' }, () => queueRefresh())
       .subscribe();
     return () => {
+      window.removeEventListener('presence:descriptors-updated', onBiometricSync);
+      window.removeEventListener('presences:roster-updated', onBiometricSync);
+      window.removeEventListener('presences:enrollment-completed', onBiometricSync);
+      if (bc) {
+        try {
+          bc.close();
+        } catch {}
+      }
       if (refreshTimerRef.current) {
         window.clearTimeout(refreshTimerRef.current);
         refreshTimerRef.current = null;

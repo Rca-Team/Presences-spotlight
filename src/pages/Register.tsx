@@ -501,6 +501,14 @@ const Register = () => {
 
           window.dispatchEvent(new CustomEvent('presence:descriptors-updated'));
           window.dispatchEvent(new CustomEvent('presences:roster-updated'));
+          window.dispatchEvent(new CustomEvent('presences:enrollment-completed'));
+          try {
+            if (typeof window !== 'undefined' && 'BroadcastChannel' in window) {
+              const bc = new BroadcastChannel('presences_enrollment_sync');
+              bc.postMessage({ type: 'roster-updated' });
+              bc.close();
+            }
+          } catch {}
         } catch (syncErr) {
           console.warn('Background profile sync note:', syncErr);
         }
@@ -689,6 +697,19 @@ const Register = () => {
             sampleImages: allFaceImages,
             replaceExisting: true,
           });
+        }
+
+        if (typeof window !== 'undefined') {
+          window.dispatchEvent(new CustomEvent('presence:descriptors-updated', { detail: { count: allDescriptors.length, studentId: validData.employeeId } }));
+          window.dispatchEvent(new CustomEvent('presences:roster-updated', { detail: { studentId: validData.employeeId } }));
+          window.dispatchEvent(new CustomEvent('presences:enrollment-completed', { detail: { studentId: validData.employeeId } }));
+          try {
+            if ('BroadcastChannel' in window) {
+              const bc = new BroadcastChannel('presences_enrollment_sync');
+              bc.postMessage({ type: 'enrollment-completed', studentId: validData.employeeId, count: allDescriptors.length });
+              bc.close();
+            }
+          } catch {}
         }
         
         toast({

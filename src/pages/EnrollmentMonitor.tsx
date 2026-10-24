@@ -1481,9 +1481,37 @@ export default function EnrollmentMonitor() {
     window.addEventListener('focus', onFocusOrVisible);
     document.addEventListener('visibilitychange', onFocusOrVisible);
     const id = window.setInterval(onFocusOrVisible, 90000);
+
+    // Real-time synchronization when any student completes face enrollment
+    const onBiometricSync = () => {
+      clearMonitorCache();
+      void load(true);
+    };
+    window.addEventListener('presence:descriptors-updated', onBiometricSync);
+    window.addEventListener('presences:roster-updated', onBiometricSync);
+    window.addEventListener('presences:enrollment-completed', onBiometricSync);
+
+    let bc: BroadcastChannel | null = null;
+    try {
+      if (typeof window !== 'undefined' && 'BroadcastChannel' in window) {
+        bc = new BroadcastChannel('presences_enrollment_sync');
+        bc.onmessage = () => {
+          onBiometricSync();
+        };
+      }
+    } catch {}
+
     return () => {
       window.removeEventListener('focus', onFocusOrVisible);
       document.removeEventListener('visibilitychange', onFocusOrVisible);
+      window.removeEventListener('presence:descriptors-updated', onBiometricSync);
+      window.removeEventListener('presences:roster-updated', onBiometricSync);
+      window.removeEventListener('presences:enrollment-completed', onBiometricSync);
+      if (bc) {
+        try {
+          bc.close();
+        } catch {}
+      }
       window.clearInterval(id);
     };
   }, [load]);

@@ -41,7 +41,8 @@ import { useLiteFeedback } from '@/hooks/useLiteFeedback';
 import { LiteFlashOverlay } from '@/components/attendance/LiteFeedbackControls';
 import LiteModeToggle from '@/components/LiteModeToggle';
 import { useToast } from '@/hooks/use-toast';
-import { fetchUnifiedAttendanceStats, type UnifiedAttendanceStats } from '@/utils/attendanceStatsHelper';
+import { fetchUnifiedAttendanceStats, invalidateUnifiedStatsCache, type UnifiedAttendanceStats } from '@/utils/attendanceStatsHelper';
+import { invalidateTrainedDescriptorsCache } from '@/services/face-recognition/ProgressiveTrainingService';
 import { supabase } from '@/integrations/supabase/client';
 import { getCutoffTime } from '@/services/attendance/AttendanceSettingsService';
 import { cn } from '@/lib/utils';
@@ -160,6 +161,23 @@ const Attendance: React.FC = () => {
     };
     window.addEventListener('presence:attendance-marked', handleLocalMarked);
 
+    const onBiometricSync = () => {
+      invalidateUnifiedStatsCache();
+      invalidateTrainedDescriptorsCache();
+      debouncedRefreshStats();
+    };
+    window.addEventListener('presence:descriptors-updated', onBiometricSync);
+    window.addEventListener('presences:roster-updated', onBiometricSync);
+    window.addEventListener('presences:enrollment-completed', onBiometricSync);
+
+    let bc: BroadcastChannel | null = null;
+    try {
+      if (typeof window !== 'undefined' && 'BroadcastChannel' in window) {
+        bc = new BroadcastChannel('presences_enrollment_sync');
+        bc.onmessage = () => onBiometricSync();
+      }
+    } catch {}
+
     const channel = supabase
       .channel('attendance-page-live-metrics')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'attendance_records' }, () => {
@@ -173,6 +191,14 @@ const Attendance: React.FC = () => {
     return () => {
       window.clearTimeout(timer);
       window.removeEventListener('presence:attendance-marked', handleLocalMarked);
+      window.removeEventListener('presence:descriptors-updated', onBiometricSync);
+      window.removeEventListener('presences:roster-updated', onBiometricSync);
+      window.removeEventListener('presences:enrollment-completed', onBiometricSync);
+      if (bc) {
+        try {
+          bc.close();
+        } catch {}
+      }
       if (refreshTimerRef.current) {
         window.clearTimeout(refreshTimerRef.current);
       }

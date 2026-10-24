@@ -155,6 +155,11 @@ const ROUTE_SEO: Record<string, { title: string; description: string }> = {
     description:
       "Save a safe backup of your school records, student photos, and accounts with one simple click.",
   },
+  "/enroll": {
+    title: "Student Face Enrollment | PM Shri KV NFC Vigyan Vihar",
+    description:
+      "Official Student Face Biometric & Profile Registration Portal for PM Shri Kendriya Vidyalaya NFC Vigyan Vihar. Engineered by Gaurav (Team RCA) on Presences AI.",
+  },
   "/enrollment-monitor": {
     title: "Enrollment Monitor | Presences",
     description:

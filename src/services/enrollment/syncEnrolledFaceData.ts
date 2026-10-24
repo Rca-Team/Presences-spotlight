@@ -518,6 +518,20 @@ export async function syncEnrolledFaceDataToSupabase({
       clearMonitorCache();
     } catch {}
 
+    // Dispatch synchronous enrollment events right away so all open tabs and components update immediately
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('presence:descriptors-updated', { detail: { count: descriptorsToInsert.length, studentId: cleanAdmission } }));
+      window.dispatchEvent(new CustomEvent('presences:roster-updated', { detail: { studentId: cleanAdmission } }));
+      window.dispatchEvent(new CustomEvent('presences:enrollment-completed', { detail: { studentId: cleanAdmission } }));
+      try {
+        if ('BroadcastChannel' in window) {
+          const bc = new BroadcastChannel('presences_enrollment_sync');
+          bc.postMessage({ type: 'enrollment-completed', studentId: cleanAdmission, count: descriptorsToInsert.length });
+          bc.close();
+        }
+      } catch {}
+    }
+
     // 7 & 8. Complete auxiliary artifacts, registration log & descriptor cache refresh in background (0ms UI block)
     void (async () => {
       try {
@@ -631,6 +645,8 @@ export async function syncEnrolledFaceDataToSupabase({
         await syncDescriptorCache();
         if (typeof window !== 'undefined') {
           window.dispatchEvent(new CustomEvent('presence:descriptors-updated', { detail: { count: descriptorsToInsert.length } }));
+          window.dispatchEvent(new CustomEvent('presences:roster-updated', { detail: { count: descriptorsToInsert.length } }));
+          window.dispatchEvent(new CustomEvent('presences:enrollment-completed', { detail: { count: descriptorsToInsert.length } }));
         }
       } catch (bgErr) {
         console.warn('[SyncFaceData] Background artifact/cache sync notice:', bgErr);

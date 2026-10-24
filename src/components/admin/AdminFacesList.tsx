@@ -416,6 +416,22 @@ const AdminFacesList: React.FC<AdminFacesListProps> = ({
   useEffect(() => {
     fetchRegisteredFaces();
 
+    const onBiometricSync = () => {
+      invalidateUnifiedStatsCache();
+      fetchRegisteredFaces(true);
+    };
+    window.addEventListener('presence:descriptors-updated', onBiometricSync);
+    window.addEventListener('presences:roster-updated', onBiometricSync);
+    window.addEventListener('presences:enrollment-completed', onBiometricSync);
+
+    let bc: BroadcastChannel | null = null;
+    try {
+      if (typeof window !== 'undefined' && 'BroadcastChannel' in window) {
+        bc = new BroadcastChannel('presences_enrollment_sync');
+        bc.onmessage = () => onBiometricSync();
+      }
+    } catch {}
+
     // Debounce realtime sync to 30 seconds so screen never jumps or fluctuates while reading
     let updateTimeout: ReturnType<typeof setTimeout>;
     const attendanceChannel = supabase
@@ -432,6 +448,14 @@ const AdminFacesList: React.FC<AdminFacesListProps> = ({
       .subscribe();
 
     return () => {
+      window.removeEventListener('presence:descriptors-updated', onBiometricSync);
+      window.removeEventListener('presences:roster-updated', onBiometricSync);
+      window.removeEventListener('presences:enrollment-completed', onBiometricSync);
+      if (bc) {
+        try {
+          bc.close();
+        } catch {}
+      }
       clearTimeout(updateTimeout);
       supabase.removeChannel(attendanceChannel);
     };

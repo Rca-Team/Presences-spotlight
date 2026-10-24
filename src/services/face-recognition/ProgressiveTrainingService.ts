@@ -487,6 +487,20 @@ if (typeof window !== 'undefined') {
   window.addEventListener('presence:descriptors-updated', () => {
     invalidateTrainedDescriptorsCache();
   });
+  window.addEventListener('presences:roster-updated', () => {
+    invalidateTrainedDescriptorsCache();
+  });
+  window.addEventListener('presences:enrollment-completed', () => {
+    invalidateTrainedDescriptorsCache();
+  });
+  try {
+    if ('BroadcastChannel' in window) {
+      const bc = new BroadcastChannel('presences_enrollment_sync');
+      bc.onmessage = () => {
+        invalidateTrainedDescriptorsCache();
+      };
+    }
+  } catch {}
 }
 
 /**
