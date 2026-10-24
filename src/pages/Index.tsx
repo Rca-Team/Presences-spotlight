@@ -209,33 +209,6 @@ const Index = () => {
     [portfolio.members],
   );
 
-  const activeContributors = useMemo(() => {
-    const list = creatorMembers.filter(
-      (m) => !m.isRetired && !m.name.toLowerCase().includes('gaurav'),
-    );
-    if (list.length > 0) return list;
-    return [];
-  }, [creatorMembers]);
-
-  const retiredContributors = useMemo(() => {
-    const list = creatorMembers.filter((m) => m.isRetired);
-    return list;
-  }, [creatorMembers]);
-
-  const retiredMember = useMemo(
-    () => retiredContributors[0] || swamiMember,
-    [retiredContributors, swamiMember],
-  );
-
-  const activeCount = useMemo(
-    () => (portfolio.members.length > 0 ? portfolio.members.filter((m) => !m.isRetired).length : 4),
-    [portfolio.members],
-  );
-  const retiredCount = useMemo(
-    () => (portfolio.members.length > 0 ? portfolio.members.filter((m) => m.isRetired).length : 1),
-    [portfolio.members],
-  );
-
   const gauravMember = useMemo(
     () =>
       creatorMembers.find((m) => m.name.toLowerCase().includes('gaurav')) || {
@@ -303,6 +276,33 @@ const Index = () => {
       };
     },
     [creatorMembers],
+  );
+
+  const activeContributors = useMemo(() => {
+    const list = creatorMembers.filter(
+      (m) => !m.isRetired && !m.name.toLowerCase().includes('gaurav'),
+    );
+    if (list.length > 0) return list;
+    return [jatinMember, jatinMauryaMember, mayankMember];
+  }, [creatorMembers, jatinMember, jatinMauryaMember, mayankMember]);
+
+  const retiredContributors = useMemo(() => {
+    const list = creatorMembers.filter((m) => m.isRetired);
+    return list;
+  }, [creatorMembers]);
+
+  const retiredMember = useMemo(
+    () => retiredContributors[0] || swamiMember,
+    [retiredContributors, swamiMember],
+  );
+
+  const activeCount = useMemo(
+    () => (portfolio.members.length > 0 ? portfolio.members.filter((m) => !m.isRetired).length : 4),
+    [portfolio.members],
+  );
+  const retiredCount = useMemo(
+    () => (portfolio.members.length > 0 ? portfolio.members.filter((m) => m.isRetired).length : 1),
+    [portfolio.members],
   );
 
   const getMemberTheme = (name: string) => {

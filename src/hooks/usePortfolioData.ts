@@ -488,44 +488,64 @@ export function usePortfolioData() {
       console.warn('BroadcastChannel init notice:', err);
     }
 
-    // Supabase / Appwrite realtime channel
-    const channel = supabase
-      .channel('portfolio-live')
-      .on(
-        'postgres_changes',
-        { event: '*', schema: 'public', table: 'attendance_settings' },
-        async (payload) => {
-          const doc = (payload.new as any) || (payload.old as any);
-          if (!doc) return;
-          const k = doc.setting_key || doc.key;
-          if (k !== PORTFOLIO_KEY) return;
-          const raw = doc.setting_value ?? doc.value;
-          if (!raw) return;
-          try {
-            const parsed = migrate(typeof raw === 'string' ? JSON.parse(raw) : raw);
-            setData(parsed);
-            await savePortfolioToIndexedDb(parsed);
+    // Refresh data when user switches back to the tab
+    const onFocusOrVisible = () => {
+      if (typeof document !== 'undefined' && document.visibilityState === 'visible') {
+        void fetchOnce();
+      }
+    };
+    window.addEventListener('focus', onFocusOrVisible);
+    window.addEventListener('visibilitychange', onFocusOrVisible);
+
+    // Supabase / Appwrite realtime channel with safe error boundary
+    let channel: any = null;
+    try {
+      channel = supabase
+        .channel('portfolio-live')
+        .on(
+          'postgres_changes',
+          { event: '*', schema: 'public', table: 'attendance_settings' },
+          async (payload: any) => {
+            const doc = (payload.new as any) || (payload.old as any);
+            if (!doc) return;
+            const k = doc.setting_key || doc.key;
+            if (k !== PORTFOLIO_KEY) return;
+            const raw = doc.setting_value ?? doc.value;
+            if (!raw) return;
             try {
-              localStorage.setItem('gaurav_portfolio_cache', JSON.stringify(parsed));
-              localStorage.setItem(PORTFOLIO_KEY, JSON.stringify(parsed));
-            } catch {
-              /* quota limit safe */
+              const parsed = migrate(typeof raw === 'string' ? JSON.parse(raw) : raw);
+              setData(parsed);
+              await savePortfolioToIndexedDb(parsed);
+              try {
+                localStorage.setItem('gaurav_portfolio_cache', JSON.stringify(parsed));
+                localStorage.setItem(PORTFOLIO_KEY, JSON.stringify(parsed));
+              } catch {
+                /* quota limit safe */
+              }
+            } catch (e) {
+              /* ignore parse notice */
             }
-          } catch (e) {
-            console.warn('Realtime parse notice:', e);
-          }
-        },
-      )
-      .subscribe();
+          },
+        )
+        .subscribe();
+    } catch {
+      /* ignore realtime connection error */
+    }
 
     return () => {
       window.removeEventListener('portfolio-updated', onLocalUpdate as EventListener);
+      window.removeEventListener('focus', onFocusOrVisible);
+      window.removeEventListener('visibilitychange', onFocusOrVisible);
       if (broadcastChannel) {
         try {
           broadcastChannel.close();
         } catch {}
       }
-      void supabase.removeChannel(channel);
+      if (channel) {
+        try {
+          void supabase.removeChannel(channel);
+        } catch {}
+      }
     };
   }, [fetchOnce]);
 
