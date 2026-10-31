@@ -12,17 +12,17 @@ export function AboutMe({ className }: AboutMeProps) {
   const { data } = usePortfolioData();
 
   const image = normalizeProfileImage(data.profileImage) || gauravPhoto;
-  const name = data.name?.split(' ')[0] || 'Gaurav';
-  const skills = data.skills.length > 0 ? data.skills.slice(0, 6) : ['React', 'TypeScript', 'Java', 'Python', 'AI'];
+  const name = data.name || 'Gaurav Raj';
+  const skills = data.skills.length > 0 ? data.skills.slice(0, 8) : ['Hardware IoT', 'AI Vision', 'React', 'TypeScript', 'Python', 'Supabase'];
 
   return (
     <Card className={cn('p-5 md:p-8 backdrop-panel overflow-hidden', className)}>
       <div className="flex flex-col md:flex-row items-center gap-6 md:gap-8">
         <div className="flex-shrink-0">
-          <div className="relative w-36 h-36 sm:w-40 sm:h-40 md:w-48 md:h-48 lg:w-56 lg:h-56 overflow-hidden rounded-full border-4 border-primary/20">
+          <div className="relative w-36 h-36 sm:w-40 sm:h-40 md:w-48 md:h-48 lg:w-56 lg:h-56 overflow-hidden rounded-full border-4 border-primary/20 shadow-xl">
             <img
               src={image}
-              alt={`${data.name || 'Gaurav'} — Creator of Presence`}
+              alt={`${data.name || 'Gaurav Raj'} — Creator & Main Developer of Presences AI`}
               className="w-full h-full object-cover"
               onError={(e) => {
                 const target = e.currentTarget;
@@ -36,7 +36,7 @@ export function AboutMe({ className }: AboutMeProps) {
 
         <div className="space-y-3 md:space-y-4 text-center md:text-left">
           <div>
-            <h2 className="text-2xl md:text-3xl font-bold mb-1 md:mb-2">About Me</h2>
+            <h2 className="text-2xl md:text-3xl font-bold mb-1 md:mb-2">About the Creator</h2>
             <div className="w-12 md:w-16 h-1 bg-primary rounded-full mb-3 md:mb-6 mx-auto md:mx-0"></div>
           </div>
 

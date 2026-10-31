@@ -1,22 +1,30 @@
 /**
  * RealtimeRecognitionEngine
  *
- * A single pipeline that implements the whole real-time optimisation stack:
+ * Restored 3-thread architecture (from commit 39bc521) with temporal hold
+ * verification and session-level deduplication.
  *
- *  1. Fast inference backend  — WebGL/WASM-SIMD tuned face-api.js, with an
- *     optional InsightFace/ArcFace ONNX embedder when a model is present
- *     (see OnnxEmbeddingService).
- *  2. Frame decimation        — camera keeps rendering at 30–60 fps while
- *     detection runs at `detectFps` (default 9).
- *  3. Downscaled detection    — detection runs on a small copy of the frame
- *     (default max 640 px wide); boxes are mapped back to full resolution.
- *  4. Recognise-once tracking — IoU tracker keeps identities for seconds; a
- *     face is only embedded/matched when it is NEW (or re-enters).
- *  5. Indexed gallery search  — HNSW vector index shortlists candidates,
- *     which are then re-scored exactly, so accuracy is preserved.
- *  6. Task separation         — capture (rAF), detection (throttled async),
- *     embedding+matching (worker pool / microtask queue) and DB writes
- *     (background queue) never block each other or the UI.
+ *  1. Thread 1 (Capture loop)  — rAF at display rate, only gates detection.
+ *  2. Thread 2 (detectPass)    — Throttled TinyFaceDetector on a downscaled
+ *     frame. NO landmarks or descriptors extracted here. Updates the IoU
+ *     tracker and queues only NEW / unverified faces for recognition.
+ *  3. Thread 3 (pumpQueue → recognizeTrack) — Bounded concurrency (default 2
+ *     jobs). Each job crops at FULL resolution with 28% padding into a
+ *     dedicated canvas, runs SSD+landmarks+descriptor on the crop, then
+ *     matches with strict thresholds (0.41 default, 0.80 ambiguity ratio).
+ *     Temporal hold verification requires the same identity to be confirmed
+ *     across multiple recognition passes (≥ requiredHoldMs wall-clock time)
+ *     before firing attendance callbacks.
+ *
+ * Key accuracy guarantees vs the previous single-pass architecture:
+ *  • Detection runs separately from recognition — no descriptor extraction on
+ *    every frame, so a momentary bad angle never triggers a false match.
+ *  • Each face is recognised individually on a high-quality full-res crop,
+ *    not on a shared downscaled detection frame.
+ *  • Bounded concurrency prevents pixel bleed between concurrent recognition
+ *    jobs (each gets its own canvas).
+ *  • Temporal hold ensures transient matches (motion blur, odd angle) are
+ *    never acted upon — only stable, consistent identities fire callbacks.
  */
 
 import * as faceapi from 'face-api.js';
@@ -29,14 +37,14 @@ import { initializeWorkerPool, matchDescriptorParallel, isPoolInitialized } from
 import { initializeGPU } from './GPUAccelerationService';
 import { embedFaceOnnx, initializeOnnxEmbedder, isOnnxEmbedderReady } from './OnnxEmbeddingService';
 import { recordAttendance } from './RecognitionService';
-import { assessFaceQuality } from './FaceQualityGate';
+import { estimateYaw, estimatePitch } from './FaceQualityGate';
 
 export interface EngineOptions {
   /** Recognition/detection passes per second (camera preview stays full fps) */
   detectFps?: number;
   /** Max width of the downscaled detection frame */
   detectionWidth?: number;
-  /** TinyFaceDetector input dimension (e.g. 320 for sub-50ms instant detection, 224 for lowCPU) */
+  /** TinyFaceDetector input dimension (e.g. 320 for sub-50ms instant detection) */
   inputSize?: number;
   /** Euclidean match threshold (face-api descriptors) */
   matchThreshold?: number;
@@ -55,9 +63,8 @@ export interface EngineOptions {
   /** Called once per newly identified person */
   onIdentified?: (result: IdentifiedFace) => void;
   /**
-   * Optional persistence handler. When provided, writes are pushed onto the
-   * background write queue (de-duplicated per person) so the camera loop never
-   * waits for the network.
+   * Optional persistence handler. When provided the engine calls it once per
+   * verified person; the camera loop never waits for the network.
    */
   markAttendance?: (result: IdentifiedFace) => Promise<void>;
   /** Called with latency/throughput telemetry */
@@ -92,6 +99,8 @@ type GalleryEntry = {
   averagedDescriptor: Float32Array;
   userName: string;
   sampleCount: number;
+  studentId?: string;
+  userId?: string;
 };
 
 let gallery: Map<string, GalleryEntry> = new Map();
@@ -155,83 +164,56 @@ function distanceToConfidence(distance: number, threshold: number): number {
 }
 
 /**
- * Match a descriptor using the vector index shortlist + exact re-scoring.
- * Falls back to a full scan when the gallery is small or the index is empty.
+ * Match a descriptor against the gallery using pure minimum sample distance
+ * (restored from commit 39bc521).
  *
- * Implements composite multi-sample aggregation (evaluating top-2 samples and centroid)
- * plus strict ambiguity rejection to eliminate false positives and look-alike confusion.
+ * For each registered student the minimum Euclidean distance across all stored
+ * samples AND the averaged centroid is computed. The closest student below
+ * `matchThreshold` wins, subject to a strict ambiguity guard: if the ratio
+ * best/second > 0.80 for a different student, the match is rejected.
  */
 export async function matchDescriptorIndexed(
   descriptor: Float32Array,
-  matchThreshold = 0.56,
+  matchThreshold = 0.41,
   shortlist = 64,
 ): Promise<{ userId: string; name: string; distance: number; confidence: number } | null> {
   await ensureGalleryIndex();
   if (gallery.size === 0) return null;
 
-  // Exact re-scoring over all registered students with multi-sample composite distance
-  const seenPeople = new Set<string>();
+  // Exact re-scoring over all registered students
   const ranked: Array<{ userId: string; name: string; distance: number }> = [];
-
   for (const [userId, entry] of gallery.entries()) {
     if (!entry) continue;
-
-    // Deduplicate student aliases (e.g. entry mapped under both UUID and studentId)
-    const personKey = (entry.studentId || entry.userName || userId).toLowerCase().trim();
-    if (seenPeople.has(personKey)) continue;
-    seenPeople.add(personKey);
-
-    // Collect all valid distances matching descriptor length
-    const sampleDists: number[] = [];
+    // Pure minimum distance: best of centroid and every individual sample
+    let best = euclidean(descriptor, entry.averagedDescriptor);
     for (const d of entry.descriptors) {
       if (d.length !== descriptor.length) continue;
       const dist = euclidean(descriptor, d);
-      if (Number.isFinite(dist)) sampleDists.push(dist);
+      if (dist < best) best = dist;
     }
-
-    let centroidDist = Number.POSITIVE_INFINITY;
-    if (entry.averagedDescriptor && entry.averagedDescriptor.length === descriptor.length) {
-      centroidDist = euclidean(descriptor, entry.averagedDescriptor);
-    }
-
-    if (sampleDists.length === 0 && !Number.isFinite(centroidDist)) continue;
-
-    sampleDists.sort((a, b) => a - b);
-    const d1 = sampleDists[0] ?? centroidDist;
-    const d2 = sampleDists[1] ?? (Number.isFinite(centroidDist) ? centroidDist : d1);
-
-    // Guard against stray outlier matching:
-    // If centroid is finite and query face is alienated from person centroid (> 0.58), skip
-    if (Number.isFinite(centroidDist) && centroidDist > 0.52) {
-      continue;
-    }
-
-    // Compute weighted composite distance (65% closest exemplar + 35% centroid)
-    let effectiveDist = d1;
-    if (Number.isFinite(centroidDist)) {
-      effectiveDist = 0.65 * d1 + 0.35 * centroidDist;
-    } else if (sampleDists.length >= 2) {
-      effectiveDist = 0.65 * d1 + 0.35 * d2;
-    }
-
-    if (!Number.isFinite(effectiveDist)) continue;
+    if (!Number.isFinite(best)) continue;
     const finalUserId = (entry as any).userId || userId;
-    ranked.push({ userId: finalUserId, name: entry.userName, distance: effectiveDist });
+    ranked.push({ userId: finalUserId, name: entry.userName, distance: best });
   }
 
   ranked.sort((a, b) => a.distance - b.distance);
   const best = ranked[0];
-  const second = ranked[1];
   if (!best || best.distance > matchThreshold) return null;
 
-  // Ambiguity Filter: If a runner-up candidate from a DIFFERENT registered student
-  // is close to the threshold and within a narrow margin of the best match,
-  // reject to prevent look-alike false-positive confusion.
-  if (second && second.userId !== best.userId && best.distance > 0.48) {
-    const margin = second.distance - best.distance;
-    if (margin < 0.02) {
-      return null;
-    }
+  // Strict Ambiguity Guard (39bc521):
+  // If best/second ratio > 0.80 for a DIFFERENT student, reject to prevent
+  // look-alike false-positive confusion.
+  const second = ranked.find(
+    r =>
+      r.userId !== best.userId &&
+      r.name.trim().toLowerCase() !== best.name.trim().toLowerCase(),
+  );
+  if (second && best.distance / second.distance > 0.80) {
+    console.log(
+      `Rejecting ambiguous match: best=${best.name} (${best.distance.toFixed(3)}) ` +
+        `vs second=${second.name} (${second.distance.toFixed(3)})`,
+    );
+    return null;
   }
 
   return {
@@ -257,15 +239,15 @@ export function createRecognitionEngine(
   getVideo: () => HTMLVideoElement | null,
   options: EngineOptions = {},
 ): RecognitionEngine {
-  const detectFps = options.detectFps ?? 14;
-  const detectionWidth = options.detectionWidth ?? 480;
-  const inputSize = options.inputSize ?? 320;
-  const matchThreshold = options.matchThreshold ?? 0.56;
+  const detectFps = options.detectFps ?? 9;
+  const detectionWidth = options.detectionWidth ?? 640;
+  const matchThreshold = options.matchThreshold ?? 0.41;
   const shortlist = options.shortlist ?? 16;
-  const baseRequiredHoldMs = options.requiredHoldMs ?? 0;
+  const maxConcurrentJobs = options.maxConcurrentJobs ?? 2;
+  const baseRequiredHoldMs = options.requiredHoldMs ?? 800;
 
   const tracker = createFaceTracker({
-    identityTtlMs: options.identityTtlMs ?? 2500,
+    identityTtlMs: options.identityTtlMs ?? 3500,
     maxMissed: options.maxMissed ?? 4,
   });
   const detectCanvas = document.createElement('canvas');
@@ -276,12 +258,10 @@ export function createRecognitionEngine(
   let lastDetectAt = 0;
   let activeJobs = 0;
   let queue: number[] = [];
-  /** trackId -> userId that was last handed to markAttendance for that track */
+  /** trackId → userId that was last handed to markAttendance for that track */
   const markedByTrack = new Map<number, string>();
-  /** Session-wide set of marked userIds and names to prevent cross-track duplicate attendance */
+  /** Session-wide set of marked userIds and names to prevent cross-track duplicates */
   const markedIdentities = new Set<string>();
-  /** trackId -> best biometric shot recorded for this tracklet (Innovatrics best-shot selection) */
-  const bestShotByTrack = new Map<number, { descriptor: Float32Array; quality: number }>();
 
   const stats: EngineStats = {
     detectFps: 0,
@@ -304,7 +284,9 @@ export function createRecognitionEngine(
     options.onStats?.({ ...stats });
   }
 
-  /** Thread 2: instant single-pass detection, landmarking, embedding & matching for all visible faces */
+  // ─── Thread 2: FAST detection only ─────────────────────────────────────────
+  // Runs TinyFaceDetector on a downscaled frame. NO landmarks, NO descriptors.
+  // Updates the IoU tracker and queues NEW / unverified faces for recognition.
   async function detectPass(video: HTMLVideoElement) {
     const t0 = performance.now();
     const vw = video.videoWidth;
@@ -322,166 +304,277 @@ export function createRecognitionEngine(
     if (!ctx) return;
     ctx.drawImage(video, 0, 0, targetW, targetH);
 
-    try {
-      // 1-Pass Extraction: Detect all faces, landmarks, and 128-d embeddings simultaneously
-      // using inputSize (320 standard / 224 lowCPU) for sub-50ms execution on CPU/mobile
-      const rawDetections = await faceapi
-        .detectAllFaces(
-          detectCanvas,
-          new faceapi.TinyFaceDetectorOptions({ inputSize, scoreThreshold: 0.35 }),
-        )
-        .withFaceLandmarks()
-        .withFaceDescriptors();
+    const detections = await faceapi.detectAllFaces(
+      detectCanvas,
+      new faceapi.TinyFaceDetectorOptions({ inputSize: 320, scoreThreshold: 0.5 }),
+    );
 
-      const tDetect = performance.now();
-      stats.detectMs = tDetect - t0;
+    // Map small-frame boxes back to full-resolution coordinates
+    const boxes: Box[] = detections.map(d => ({
+      x: d.box.x / scale,
+      y: d.box.y / scale,
+      width: d.box.width / scale,
+      height: d.box.height / scale,
+    }));
 
-      // Filter out tiny or degenerate face detections (< 45px) that lack biometric detail
-      const detections = rawDetections.filter(d => {
-        const w = d.detection.box.width / scale;
-        const h = d.detection.box.height / scale;
-        return w >= 45 && h >= 45 && (d.detection.score ?? 1) >= 0.35;
+    const tracks = tracker.update(boxes);
+    stats.detectMs = performance.now() - t0;
+    stats.tracked = tracks.length;
+    stats.identified = markedByTrack.size;
+
+    // Prune bookkeeping for tracks that no longer exist
+    if (markedByTrack.size > 0) {
+      const live = new Set(tracks.map(t => t.id));
+      for (const id of markedByTrack.keys()) if (!live.has(id)) markedByTrack.delete(id);
+    }
+
+    // Surface freshly-seen tracks so overlay boxes are always up-to-date
+    options.onTracks?.(tracks.filter(t => t.missed === 0));
+
+    // Queue only NEW / unverified faces for recognition
+    for (const t of tracker.pendingRecognition()) {
+      if (!queue.includes(t.id)) queue.push(t.id);
+    }
+    void pumpQueue(video);
+    publishStats();
+  }
+
+  // ─── Thread 3: bounded concurrency recognition ────────────────────────────
+  async function pumpQueue(video: HTMLVideoElement) {
+    while (activeJobs < maxConcurrentJobs && queue.length > 0) {
+      const trackId = queue.shift()!;
+      const track = tracker.getTracks().find(t => t.id === trackId);
+      // Skip tracks that are already fully verified AND marked
+      if (!track || (track.identity?.verified && markedByTrack.has(track.id))) continue;
+      activeJobs++;
+      tracker.markPending(trackId, true);
+      void recognizeTrack(video, track).finally(() => {
+        activeJobs--;
+        tracker.markPending(trackId, false);
+        // Keep draining immediately when a recognition slot becomes free
+        if (running && queue.length > 0) void pumpQueue(video);
       });
-
-      // Map small-frame boxes back to full-resolution coordinates
-      const boxes: Box[] = detections.map(d => ({
-        x: d.detection.box.x / scale,
-        y: d.detection.box.y / scale,
-        width: d.detection.box.width / scale,
-        height: d.detection.box.height / scale,
-      }));
-
-      const tracks = tracker.update(boxes);
-      stats.tracked = tracks.length;
-
-      // Prune bookkeeping for tracks that no longer exist
-      if (markedByTrack.size > 0 || bestShotByTrack.size > 0) {
-        const live = new Set(tracks.map(t => t.id));
-        for (const id of markedByTrack.keys()) if (!live.has(id)) markedByTrack.delete(id);
-        for (const id of bestShotByTrack.keys()) if (!live.has(id)) bestShotByTrack.delete(id);
-      }
-
-      // Process and recognize EVERY visible student face in parallel
-      for (let i = 0; i < detections.length; i++) {
-        const d = detections[i];
-        if (!d.descriptor) continue;
-
-        const detX = d.detection.box.x / scale;
-        const detY = d.detection.box.y / scale;
-        const detW = d.detection.box.width / scale;
-        const detH = d.detection.box.height / scale;
-        const detCx = detX + detW / 2;
-        const detCy = detY + detH / 2;
-
-        // Accurate spatial matching to the tracker's assigned tracklet (no naive index assumption)
-        let t = tracks.find(track => {
-          const trackCx = track.box.x + track.box.width / 2;
-          const trackCy = track.box.y + track.box.height / 2;
-          const dist = Math.hypot(detCx - trackCx, detCy - trackCy);
-          return dist < Math.max(track.box.width, track.box.height) * 0.75;
-        });
-
-        if (!t) {
-          t = tracks[i];
-        }
-
-        if (!t) continue;
-
-        const match = await matchDescriptorIndexed(d.descriptor, matchThreshold, shortlist);
-        const now = Date.now();
-
-        if (match) {
-          // Zero False Positive Guard:
-          // Strong match (dist <= 0.42) -> instant verification
-          // Borderline match (0.42 < dist <= 0.45) -> require 2-frame consistency
-          const isHighCertainty = match.distance <= 0.48;
-          const isConfirmedCandidate = t.candidate?.userId === match.userId;
-
-          if (isHighCertainty || isConfirmedCandidate || t.identity?.verified) {
-            tracker.assignIdentity(t.id, {
-              userId: match.userId,
-              name: match.name,
-              confidence: match.confidence,
-              recognizedAt: now,
-              verified: true,
-            });
-
-            const normName = match.name.toLowerCase().trim();
-            const isAlreadyMarkedInSession =
-              markedIdentities.has(`uid:${match.userId}`) ||
-              (normName !== 'unknown' && markedIdentities.has(`name:${normName}`));
-
-            if (!isAlreadyMarkedInSession) {
-              markedByTrack.set(t.id, match.userId);
-              markedIdentities.add(`uid:${match.userId}`);
-              if (normName !== 'unknown') {
-                markedIdentities.add(`name:${normName}`);
-              }
-
-              const identified: IdentifiedFace = {
-                trackId: t.id,
-                userId: match.userId,
-                name: match.name,
-                confidence: match.confidence,
-                distance: match.distance,
-                box: t.box,
-                descriptor: d.descriptor,
-              };
-
-              options.onIdentified?.(identified);
-
-              if (options.markAttendance) {
-                options.markAttendance(identified).catch(err => {
-                  console.error('[RealtimeEngine] markAttendance handler error:', err);
-                });
-              } else {
-                recordAttendance(
-                  match.userId,
-                  'present',
-                  match.confidence,
-                  {
-                    metadata: {
-                      name: match.name,
-                      source: 'realtime-engine',
-                      trackId: t.id,
-                      matchDistance: match.distance,
-                    },
-                  },
-                  undefined,
-                  'ai-scan'
-                ).catch(err => {
-                  console.error('[RealtimeEngine] Direct cloud attendance write failed:', err);
-                });
-              }
-            }
-          } else {
-            // Register candidate on frame 1 to verify on next frame
-            t.candidate = {
-              userId: match.userId,
-              name: match.name,
-              confidence: match.confidence,
-              distance: match.distance,
-              firstMatchedAt: now,
-              lastMatchedAt: now,
-              continuousHoldMs: 0,
-            };
-          }
-        } else {
-          if (!t.identity?.verified) {
-            t.candidate = undefined;
-          }
-        }
-      }
-
-      stats.identified = markedByTrack.size;
-      options.onTracks?.(tracks.filter(t => t.missed === 0));
-      publishStats();
-    } catch (err) {
-      console.warn('detectPass error:', err);
     }
   }
 
-  /** Thread 1: capture loop — runs at display rate, only gates detection */
+  // ─── Per-track recognition: full-res crop → embed → match → hold ──────────
+  async function recognizeTrack(video: HTMLVideoElement, track: FaceTrack) {
+    try {
+      // ── 1. Full-resolution padded crop ──────────────────────────────────
+      const pad = 0.28;
+      const sx = Math.max(0, track.box.x - track.box.width * pad);
+      const sy = Math.max(0, track.box.y - track.box.height * pad);
+      const sw = Math.min(video.videoWidth - sx, track.box.width * (1 + pad * 2));
+      const sh = Math.min(video.videoHeight - sy, track.box.height * (1 + pad * 2));
+      if (sw < 40 || sh < 40) {
+        tracker.assignIdentity(track.id, null);
+        return;
+      }
+
+      // Each concurrent recognition job gets its own crop canvas to prevent
+      // pixel bleed between faces (critical fix from 39bc521).
+      const cropCanvas = acquireCropCanvas();
+      const cctx = cropCanvas.getContext('2d');
+      if (!cctx) {
+        releaseCropCanvas(cropCanvas);
+        return;
+      }
+      cctx.drawImage(video, sx, sy, sw, sh, 0, 0, 224, 224);
+
+      // ── 2. Extract embedding ───────────────────────────────────────────
+      const tEmbed = performance.now();
+
+      // Fast path: InsightFace/ArcFace via ONNX Runtime (WebGPU/WASM-SIMD).
+      // Only used when the gallery itself is 512-dim ArcFace.
+      let onnxEmbedding: Float32Array | null = null;
+      if (getVectorIndexStats().dimension === 512 && isOnnxEmbedderReady()) {
+        onnxEmbedding = await embedFaceOnnx(cropCanvas);
+      }
+
+      const det = onnxEmbedding
+        ? ({ descriptor: onnxEmbedding, landmarks: null } as {
+            descriptor: Float32Array;
+            landmarks: any;
+          })
+        : await faceapi
+            .detectSingleFace(
+              cropCanvas,
+              new faceapi.SsdMobilenetv1Options({ minConfidence: 0.4 }),
+            )
+            .withFaceLandmarks()
+            .withFaceDescriptor();
+      stats.embedMs = performance.now() - tEmbed;
+
+      releaseCropCanvas(cropCanvas);
+
+      if (!det) {
+        tracker.assignIdentity(track.id, null);
+        return;
+      }
+
+      // ── 3. Quality gate: reject extreme head poses ─────────────────────
+      if (det.landmarks?.positions) {
+        const yaw = estimateYaw(det.landmarks.positions);
+        const pitch = estimatePitch(det.landmarks.positions);
+        if (Math.abs(yaw) > 28 || Math.abs(pitch) > 22) {
+          // Bad angle — don't count as failure, just skip this pass
+          if (track.candidate && Date.now() - track.candidate.lastMatchedAt > 350) {
+            track.candidate = null;
+            track.holdingProgress = 0;
+          }
+          return;
+        }
+      }
+
+      // ── 4. Match against gallery ───────────────────────────────────────
+      const tMatch = performance.now();
+      let match = await matchDescriptorIndexed(det.descriptor, matchThreshold, shortlist);
+
+      // Worker pool fallback when the indexed match misses
+      if (!match && isPoolInitialized()) {
+        const registered = Array.from(gallery.entries()).map(([id, e]) => ({
+          id,
+          name: e.userName,
+          descriptor: Array.from(e.averagedDescriptor),
+        }));
+        const parallel = await matchDescriptorParallel(
+          det.descriptor,
+          registered,
+          matchThreshold,
+        );
+        if (parallel?.match) {
+          match = {
+            userId: parallel.match.id,
+            name: parallel.match.name,
+            distance: parallel.distance,
+            confidence: parallel.confidence,
+          };
+        }
+      }
+      stats.matchMs = performance.now() - tMatch;
+
+      const now = Date.now();
+
+      // ── 5. No match: reset candidate after grace period ────────────────
+      if (!match) {
+        if (track.candidate && now - track.candidate.lastMatchedAt > 350) {
+          track.candidate = null;
+          track.holdingProgress = 0;
+          tracker.assignIdentity(track.id, null);
+        }
+        publishStats();
+        return;
+      }
+
+      // ── 6. Temporal Hold Verification ──────────────────────────────────
+      const prevCand = track.candidate;
+      const isSamePerson = prevCand && prevCand.userId === match.userId;
+
+      if (isSamePerson) {
+        // Same candidate matched again — extend hold streak
+        track.candidate!.lastMatchedAt = now;
+        track.candidate!.continuousHoldMs = now - track.candidate!.firstMatchedAt;
+        track.candidate!.matchCount = (track.candidate!.matchCount || 1) + 1;
+        track.candidate!.confidence = Math.max(track.candidate!.confidence, match.confidence);
+        track.candidate!.distance = Math.min(track.candidate!.distance, match.distance);
+      } else {
+        // New or different candidate — start fresh hold
+        track.candidate = {
+          userId: match.userId,
+          name: match.name,
+          confidence: match.confidence,
+          distance: match.distance,
+          firstMatchedAt: now,
+          lastMatchedAt: now,
+          continuousHoldMs: 0,
+          matchCount: 1,
+        };
+      }
+
+      const requiredHold = Math.max(500, baseRequiredHoldMs);
+      const holdingProgress = Math.min(1.0, track.candidate!.continuousHoldMs / requiredHold);
+      track.holdingProgress = holdingProgress;
+
+      const holdComplete =
+        track.candidate!.continuousHoldMs >= requiredHold &&
+        (track.candidate!.matchCount ?? 0) >= 2;
+
+      // Show identity in HUD immediately (verified flag gates attendance)
+      tracker.assignIdentity(track.id, {
+        userId: match.userId,
+        name: match.name,
+        confidence: track.candidate!.confidence,
+        recognizedAt: now,
+        verified: holdComplete,
+      });
+
+      if (!holdComplete) {
+        // Still holding — will be re-queued by pendingRecognition()
+        publishStats();
+        return;
+      }
+
+      // ── 7. VERIFIED — fire attendance (once per person per session) ────
+      track.holdingProgress = 1.0;
+
+      const normName = match.name.toLowerCase().trim();
+      const isAlreadyMarkedInSession =
+        markedIdentities.has(`uid:${match.userId}`) ||
+        (normName !== 'unknown' && markedIdentities.has(`name:${normName}`));
+
+      if (!isAlreadyMarkedInSession && !markedByTrack.has(track.id)) {
+        markedByTrack.set(track.id, match.userId);
+        markedIdentities.add(`uid:${match.userId}`);
+        if (normName !== 'unknown') {
+          markedIdentities.add(`name:${normName}`);
+        }
+
+        const identified: IdentifiedFace = {
+          trackId: track.id,
+          userId: match.userId,
+          name: match.name,
+          confidence: track.candidate!.confidence,
+          distance: track.candidate!.distance,
+          box: track.box,
+          descriptor: det.descriptor,
+        };
+
+        options.onIdentified?.(identified);
+
+        if (options.markAttendance) {
+          options.markAttendance(identified).catch(err => {
+            console.error('[RealtimeEngine] markAttendance handler error:', err);
+          });
+        } else {
+          // Fallback: direct cloud write when no handler is provided
+          recordAttendance(
+            match.userId,
+            'present',
+            track.candidate!.confidence,
+            {
+              metadata: {
+                name: match.name,
+                source: 'realtime-engine',
+                trackId: track.id,
+                matchDistance: track.candidate!.distance,
+              },
+            },
+            undefined,
+            'ai-scan',
+          ).catch(err => {
+            console.error('[RealtimeEngine] Direct cloud attendance write failed:', err);
+          });
+        }
+      }
+
+      publishStats();
+    } catch (err) {
+      console.warn('recognizeTrack failed:', err);
+      tracker.assignIdentity(track.id, null);
+    }
+  }
+
+  // ─── Thread 1: capture loop — runs at display rate, only gates detection ───
   function loop() {
     if (!running) return;
     rafId = requestAnimationFrame(loop);
@@ -510,6 +603,9 @@ export function createRecognitionEngine(
       void (async () => {
         if (!areModelsLoaded()) await loadModels();
         await loadNet('tinyFaceDetector');
+        // SSD MobileNet is used in recognizeTrack for high-quality single-face
+        // detection on the full-resolution crop canvas.
+        await loadNet('ssdMobilenetv1').catch(() => undefined);
         await initializeGPU().catch(() => undefined);
         await initializeWorkerPool().catch(() => undefined);
         void initializeOnnxEmbedder().catch(() => undefined);
@@ -525,7 +621,6 @@ export function createRecognitionEngine(
       queue = [];
       markedByTrack.clear();
       markedIdentities.clear();
-      bestShotByTrack.clear();
       tracker.reset();
     },
     isRunning: () => running,

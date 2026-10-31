@@ -69,7 +69,7 @@ export default function EnrollmentInformationCard({
                 Verify Student Details
               </h3>
               <Badge variant="outline" className="text-[10px] font-bold px-2 py-0.5 bg-blue-500/20 text-blue-300 border-blue-400/40">
-                PM Shri KV
+                PM Shri KV NFC Vigyan Vihar
               </Badge>
               <Badge variant="outline" className="hidden sm:inline-flex text-[10px] font-bold px-2 py-0.5 bg-emerald-500/15 text-emerald-300 border-emerald-400/40 gap-1 items-center">
                 <img src="/logo.png" alt="" className="w-3 h-3 object-contain inline" /> Presences
@@ -392,6 +392,17 @@ export default function EnrollmentInformationCard({
               className="w-full rounded-xl bg-slate-950/80 border border-white/20 p-2.5 text-xs text-white focus:outline-none focus:border-emerald-400 focus:ring-1 focus:ring-emerald-400 font-medium placeholder:text-slate-500"
             />
           </div>
+        </div>
+
+        {/* Institutional & Developer Accreditation Footer */}
+        <div className="pt-3 flex items-center justify-between text-[11px] text-slate-400 flex-wrap gap-2 border-t border-white/10">
+          <span className="flex items-center gap-1 text-slate-300 font-medium">
+            <ShieldCheck className="w-3.5 h-3.5 text-emerald-400 inline" />
+            PM Shri Kendriya Vidyalaya NFC Vigyan Vihar
+          </span>
+          <span className="text-[10px] text-slate-400">
+            Engineered by <strong className="text-emerald-300 font-semibold">Gaurav (Team RCA)</strong>
+          </span>
         </div>
       </div>
     </div>

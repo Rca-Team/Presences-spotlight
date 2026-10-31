@@ -95,6 +95,9 @@ npm run build
 npm run preview
 ```
 
-## Made by Gaurav
+## Creator & Lead Developer
 
-© 2024 Presence. All rights reserved.
+**Gaurav Raj** — Creator, the main developer, and lead coder of Presences AI.
+Architected and implemented the complete ecosystem across hardware (Raspberry Pi edge stations, dual-camera gate kiosks, relay sensors), software (React 18, TypeScript, Supabase PostgreSQL RLS, Appwrite Realtime, Cloudflare Workers), AI models (MediaPipe Face Landmarker, ONNX Runtime, YuNet, Face-api.js), mobile APK (Android / Capacitor), and live school campus operations at PM Shri KV NFC Vigyan Vihar.
+
+© 2024–2025 Presences AI. All rights reserved.

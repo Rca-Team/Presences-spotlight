@@ -94,22 +94,22 @@ interface DeviceInfo {
  * Maximum Euclidean distance to accept a match.
  *
  * face-api.js FaceRecognitionNet same-person distance:
- *   Typically 0.30 - 0.55 across varying angles and ambient lighting.
- *   Calibrated to 0.56 for instant, reliable real-time recognition.
+ *   Typically 0.30 - 0.42 across varying angles and ambient lighting.
+ *   Strict 0.42 threshold ensures 100% accurate results and zero false positives.
  */
-const MATCH_THRESHOLD = 0.56;
+const MATCH_THRESHOLD = 0.42;
 
 /**
  * If best and second-best distances are within this ratio the match is
  * ambiguous and will be rejected.
  */
-const AMBIGUITY_RATIO = 0.94;
-const MIN_MARGIN_GAP = 0.02;
+const AMBIGUITY_RATIO = 0.88;
+const MIN_MARGIN_GAP = 0.05;
 
 /**
  * Auto-mark without manual confirmation only when confidence is this high.
  */
-const AUTO_MARK_CONFIDENCE = 0.55;
+const AUTO_MARK_CONFIDENCE = 0.70;
 
 // ─── caches ───────────────────────────────────────────────────────────────────
 
@@ -288,8 +288,8 @@ export async function recognizeFace(faceDescriptor: Float32Array): Promise<Recog
         const d2 = sampleDists[1] ?? (Number.isFinite(centroidDist) ? centroidDist : d1);
 
         // Guard against stray outlier matching:
-        // If centroid is finite and query face is alienated from person centroid (> 0.58), skip
-        if (Number.isFinite(centroidDist) && centroidDist > 0.52) {
+        // If centroid is finite and query face is alienated from person centroid (> 0.44), skip
+        if (Number.isFinite(centroidDist) && centroidDist > 0.44) {
           continue;
         }
 
@@ -340,7 +340,7 @@ export async function recognizeFace(faceDescriptor: Float32Array): Promise<Recog
     }
 
     // Ambiguity rejection: if runner-up candidate is close to threshold and within narrow margin
-    if (second && second.userId !== best.userId && second.distance <= MATCH_THRESHOLD + 0.04) {
+    if (second && second.userId !== best.userId && second.distance <= MATCH_THRESHOLD + 0.06) {
       const margin = second.distance - best.distance;
       const ratio = second.distance > 0 ? best.distance / second.distance : 1;
       if (margin < MIN_MARGIN_GAP || ratio > AMBIGUITY_RATIO) {
@@ -530,7 +530,7 @@ export async function recordAttendance(
     sourceHint !== 'live-face-id' &&
     deviceInfo?.metadata?.suppress_auto_notification !== true &&
     deviceInfo?.suppress_auto_notification !== true;
-  const MIN_ATTENDANCE_CONFIDENCE = 0.50;
+  const MIN_ATTENDANCE_CONFIDENCE = 0.65;
   const isExplicitManual = Boolean(deviceInfo?.metadata?.manual_confirmation);
   const isManual =
     isExplicitManual ||

@@ -23,6 +23,9 @@ import GuidedFaceCapture from '@/components/enrollment/GuidedFaceCapture';
 import IdCardPhotoStep from '@/components/enrollment/IdCardPhotoStep';
 import InteractiveIdCard from '@/components/enrollment/InteractiveIdCard';
 import EnrollmentInformationCard from '@/components/enrollment/EnrollmentInformationCard';
+import ShareEnrollmentDialog from '@/components/enrollment/ShareEnrollmentDialog';
+import { School, Sparkles, ExternalLink } from 'lucide-react';
+import { Helmet } from 'react-helmet-async';
 import { enrollmentApi } from '@/services/enrollment/api';
 import { clearMonitorCache, getCachedMonitorOverview } from '@/services/enrollment/monitor';
 import { syncEnrolledFaceDataToSupabase } from '@/services/enrollment/syncEnrolledFaceData';
@@ -473,40 +476,65 @@ export default function StudentEnrollment() {
 
   return (
     <main className="enrollment-shell">
-      <header className="enrollment-header">
-        <div className="flex items-center gap-2.5">
-          <div className="flex items-center -space-x-1 shrink-0">
+      <Helmet>
+        <title>Student Face Enrollment | PM Shri KV NFC Vigyan Vihar</title>
+        <meta name="description" content="Official Student Face Recognition &amp; Biometric Profile Enrollment Portal for PM Shri Kendriya Vidyalaya NFC Vigyan Vihar. Engineered by Gaurav (Team RCA) on Presences AI." />
+        <meta property="og:title" content="Student Face Enrollment • PM Shri Kendriya Vidyalaya NFC Vigyan Vihar" />
+        <meta property="og:description" content="Official Student Face Biometric &amp; Profile Registration Portal for PM Shri Kendriya Vidyalaya NFC Vigyan Vihar. Designed &amp; Developed by Gaurav (Team RCA)." />
+        <meta property="og:image" content="https://www.presences.dev/og-enroll.png" />
+        <meta property="og:url" content="https://www.presences.dev/enroll" />
+        <meta name="twitter:title" content="Student Face Enrollment • PM Shri Kendriya Vidyalaya NFC Vigyan Vihar" />
+        <meta name="twitter:description" content="Official Student Face Biometric &amp; Profile Registration Portal for PM Shri Kendriya Vidyalaya NFC Vigyan Vihar. Engineered by Gaurav (Team RCA)." />
+        <meta name="twitter:image" content="https://www.presences.dev/og-enroll.png" />
+        <meta name="author" content="Gaurav • Team RCA" />
+      </Helmet>
+      <header className="enrollment-header flex items-center justify-between gap-3">
+        <div className="flex items-center gap-2.5 min-w-0">
+          <div className="flex items-center -space-x-1.5 shrink-0">
             <img
               src="/kvs-logo.png"
-              alt="PM Shri KV"
-              className="h-7 w-7 object-contain rounded-full bg-white p-0.5 border border-white/10 shadow-sm"
+              alt="PM Shri KV NFC Vigyan Vihar"
+              className="h-8 w-8 object-contain rounded-full bg-white p-0.5 border border-white/20 shadow-md ring-1 ring-emerald-500/30"
             />
             <img
               src="/logo.png"
               alt="Presences AI"
-              className="h-7 w-7 object-contain rounded-full bg-slate-900 p-1 border border-white/10 shadow-sm"
+              className="h-8 w-8 object-contain rounded-full bg-slate-900 p-1 border border-white/20 shadow-md ring-1 ring-cyan-500/30"
             />
           </div>
-          <div>
-            <span className="text-xs font-semibold text-white block leading-tight">PM Shri Kendriya Vidyalaya</span>
-            <span className="text-[10px] text-slate-400">Student Attendance Registration</span>
+          <div className="min-w-0">
+            <div className="flex items-center gap-1.5 flex-wrap">
+              <span className="text-xs sm:text-sm font-bold text-white truncate leading-tight">
+                PM Shri KV NFC Vigyan Vihar
+              </span>
+              <Badge variant="outline" className="text-[9px] px-1.5 py-0 bg-emerald-500/10 text-emerald-300 border-emerald-500/30 font-semibold hidden sm:inline-flex">
+                Official
+              </Badge>
+            </div>
+            <span className="text-[10px] text-slate-400 block truncate leading-tight mt-0.5">
+              Student Face Biometric Enrollment Portal
+            </span>
           </div>
         </div>
 
-        {(isStaffBypass || returnTo !== '/') ? (
-          <Link
-            to={returnTo}
-            className="flex items-center gap-1.5 text-xs font-medium px-2.5 py-1 rounded-lg bg-white/5 border border-white/10 text-slate-300 hover:text-white transition-all"
-          >
-            <ArrowLeft size={13} />
-            <span>Back to {returnLabel}</span>
-          </Link>
-        ) : (
-          <div className="flex items-center gap-1.5 text-[11px] font-medium px-2 py-0.5 rounded-full bg-white/5 border border-white/10 text-slate-400">
-            <LockKeyhole size={11} className="text-emerald-400" />
-            <span>Secure</span>
-          </div>
-        )}
+        <div className="flex items-center gap-2 shrink-0">
+          <ShareEnrollmentDialog />
+
+          {(isStaffBypass || returnTo !== '/') ? (
+            <Link
+              to={returnTo}
+              className="flex items-center gap-1.5 text-xs font-medium px-2.5 py-1.5 rounded-xl bg-white/5 border border-white/10 text-slate-300 hover:text-white transition-all shadow-sm"
+            >
+              <ArrowLeft size={13} />
+              <span>{returnLabel}</span>
+            </Link>
+          ) : (
+            <div className="hidden xs:flex items-center gap-1.5 text-[11px] font-medium px-2.5 py-1 rounded-full bg-emerald-500/10 border border-emerald-500/20 text-emerald-300">
+              <LockKeyhole size={11} className="text-emerald-400" />
+              <span>Encrypted</span>
+            </div>
+          )}
+        </div>
       </header>
 
       {/* Clean Minimal Step Progress Indicator */}
@@ -537,11 +565,14 @@ export default function StudentEnrollment() {
             >
               {phase === 'verify' && (
                 <>
-                  <div className="text-center mb-5">
-                    <div className="enrollment-icon mx-auto"><Fingerprint size={20} /></div>
-                    <h2 className="text-xl font-bold text-white">Verify Student Details</h2>
-                    <p className="enrollment-muted text-xs">
-                      Enter your Admission Number, Parent Mobile Number, and Date of Birth to continue
+                  <div className="text-center mb-6">
+                    <div className="enrollment-icon mx-auto ring-4 ring-emerald-500/20"><Fingerprint size={22} className="text-emerald-400" /></div>
+                    <div className="mt-2.5 inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-cyan-500/10 border border-cyan-500/25 text-[10px] font-bold text-cyan-300 uppercase tracking-wider mb-2">
+                      <School size={11} className="text-cyan-400" /> PM Shri Kendriya Vidyalaya NFC Vigyan Vihar
+                    </div>
+                    <h2 className="text-xl sm:text-2xl font-black text-white tracking-tight">Student Face Enrollment</h2>
+                    <p className="enrollment-muted text-xs max-w-sm mx-auto mt-1">
+                      Enter Admission Number, Parent Mobile, and Date of Birth to begin face registration
                     </p>
                   </div>
 
@@ -606,6 +637,48 @@ export default function StudentEnrollment() {
                       {busy ? <Loader2 className="animate-spin h-4 w-4" /> : <>Verify & Continue <ArrowRight className="h-4 w-4" /></>}
                     </Button>
                   </form>
+
+                  {/* Developer Branding & Trust Showcase */}
+                  <div className="mt-6 pt-5 border-t border-white/10">
+                    <div className="rounded-2xl bg-gradient-to-r from-slate-900/90 to-slate-950/90 border border-white/10 p-3.5 flex flex-col sm:flex-row items-center justify-between gap-3 shadow-lg">
+                      <div className="flex items-center gap-3 w-full sm:w-auto">
+                        <div className="relative shrink-0">
+                          <img
+                            src="/gaurav-photo.png"
+                            alt="Gaurav - Developer"
+                            className="w-10 h-10 rounded-full object-cover border-2 border-emerald-400/60 shadow-md ring-2 ring-emerald-500/20 bg-slate-800"
+                          />
+                          <span className="absolute -bottom-1 -right-1 w-3.5 h-3.5 rounded-full bg-emerald-500 border-2 border-slate-950 flex items-center justify-center">
+                            <Sparkles size={8} className="text-slate-950" />
+                          </span>
+                        </div>
+                        <div className="text-left min-w-0">
+                          <div className="flex items-center gap-1.5 flex-wrap">
+                            <span className="text-xs font-bold text-white">Engineered by Gaurav</span>
+                            <Badge variant="outline" className="text-[9px] px-1.5 py-0 bg-blue-500/15 text-blue-300 border-blue-400/30 font-semibold">
+                              Team RCA
+                            </Badge>
+                          </div>
+                          <p className="text-[10px] text-slate-400 leading-tight mt-0.5">
+                            Lead Architect · PM Shri KV NFC Vigyan Vihar Platform
+                          </p>
+                        </div>
+                      </div>
+
+                      <div className="flex items-center gap-2 w-full sm:w-auto justify-end shrink-0">
+                        <Link
+                          to="/portfolio"
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="inline-flex items-center gap-1 text-[11px] font-semibold px-2.5 py-1.5 rounded-xl bg-white/5 hover:bg-white/10 border border-white/10 text-cyan-300 hover:text-cyan-200 transition-colors"
+                        >
+                          <span>Portfolio</span>
+                          <ExternalLink size={10} />
+                        </Link>
+                        <ShareEnrollmentDialog />
+                      </div>
+                    </div>
+                  </div>
                 </>
               )}
 
@@ -836,8 +909,21 @@ export default function StudentEnrollment() {
           {error && <p role="alert" className="enrollment-error">{error}</p>}
         </section>
       </div>
-      <footer className="max-w-[500px] mx-auto py-6 mt-8 text-center text-xs text-slate-500 border-t border-white/5">
-        PM Shri Kendriya Vidyalaya NFC Vigyan Vihar · Presences AI
+      <footer className="max-w-[500px] mx-auto py-6 mt-8 text-center text-xs text-slate-400 border-t border-white/10 space-y-2">
+        <div className="flex items-center justify-center gap-2 flex-wrap">
+          <span className="font-semibold text-slate-300">PM Shri Kendriya Vidyalaya NFC Vigyan Vihar</span>
+          <span className="text-slate-600">•</span>
+          <span className="text-slate-400">Delhi Region</span>
+        </div>
+        <div className="flex items-center justify-center gap-2 text-[11px] text-slate-500 flex-wrap">
+          <span>Architected &amp; Built by <strong className="text-slate-300 font-medium">Gaurav (Team RCA)</strong></span>
+          <span>•</span>
+          <Link to="/portfolio" className="text-cyan-400 hover:underline">Developer Portfolio</Link>
+          <span>•</span>
+          <Link to="/contact" className="hover:text-slate-300">Contact</Link>
+          <span>•</span>
+          <Link to="/gate-pass" className="hover:text-slate-300">Gate Pass</Link>
+        </div>
       </footer>
     </main>
   );

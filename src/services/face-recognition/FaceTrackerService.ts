@@ -31,7 +31,7 @@ export interface FaceTrack {
     recognizedAt: number;
     verified?: boolean;
   } | null;
-  /** candidate tracking for continuous 1-second verification */
+  /** candidate tracking for continuous verification */
   candidate?: {
     userId: string;
     name: string;
@@ -40,6 +40,8 @@ export interface FaceTrack {
     firstMatchedAt: number;
     lastMatchedAt: number;
     continuousHoldMs: number;
+    matchCount?: number;
+    recentDistances?: number[];
   } | null;
   /** holding progress from 0.0 to 1.0 */
   holdingProgress?: number;
@@ -70,8 +72,8 @@ export function iou(a: Box, b: Box): number {
 
 export function createFaceTracker(options: TrackerOptions = {}) {
   const iouThreshold = options.iouThreshold ?? 0.28;
-  const maxMissed = options.maxMissed ?? 3;
-  const identityTtlMs = options.identityTtlMs ?? 2000;
+  const maxMissed = options.maxMissed ?? 6;
+  const identityTtlMs = options.identityTtlMs ?? 3500;
   const maxFailedAttempts = options.maxFailedAttempts ?? 3;
 
   let nextId = 1;
@@ -119,8 +121,8 @@ export function createFaceTracker(options: TrackerOptions = {}) {
         track.missed = 0;
       } else {
         track.missed += 1;
-        // If a face is missed for > 2 frames (~250ms), immediately clear candidate hold
-        if (track.missed > 2) {
+        // If a face is missed for > 4 frames (~400ms), clear candidate hold
+        if (track.missed > 4) {
           track.candidate = null;
           track.holdingProgress = 0;
         }

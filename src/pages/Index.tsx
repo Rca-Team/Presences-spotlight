@@ -212,11 +212,12 @@ const Index = () => {
   const gauravMember = useMemo(
     () =>
       creatorMembers.find((m) => m.name.toLowerCase().includes('gaurav')) || {
-        name: 'Gaurav',
-        role: 'Developer & Team Leader',
+        name: 'Gaurav Raj',
+        role: 'Creator, Lead Developer & System Architect',
         image: gauravPhoto,
-        bio: 'Creator of Presences Smart School automation. Designs and leads scalable attendance, security, and school workflow systems.',
-        details: 'Full-stack engineer focused on neural face-recognition pipelines, database architecture, and production-ready education tech.',
+        bio: 'Creator and the lead coder of Presences AI. Conceived and coded the entire ecosystem across hardware, software, and AI vision.',
+        details: 'Architected and implemented the entire project end-to-end: physical Raspberry Pi edge stations, dual-camera gate kiosks, MediaPipe/ONNX neural embeddings, Supabase/Appwrite realtime backends, Android Capacitor app, Jarvis self-healing engine, and campus emergency broadcasting.',
+        tags: ['Creator & Lead Coder', 'Full-Stack Architect', 'Hardware & AI Engineer'],
       },
     [creatorMembers],
   );
@@ -1034,10 +1035,10 @@ const Index = () => {
                           <div className="flex flex-wrap items-center gap-1.5 mb-1">
                             <span className="inline-flex items-center gap-1.5 rounded-full bg-gradient-to-r from-amber-400 via-yellow-300 to-amber-500 px-2.5 py-0.5 text-[10px] font-black uppercase tracking-[0.16em] text-slate-950 shadow-sm">
                               <Sparkles className="h-2.5 w-2.5 fill-slate-950" />
-                              Team Leader
+                              Creator &amp; Leader
                             </span>
                             <span className="inline-flex items-center gap-1 rounded-full border border-amber-400/45 bg-amber-500/15 px-2.5 py-0.5 text-[10px] font-extrabold uppercase tracking-wider text-amber-800 dark:text-amber-200">
-                              Lead Architect
+                              Lead Architect &amp; Coder
                             </span>
                           </div>
 
@@ -1057,7 +1058,7 @@ const Index = () => {
 
                           {/* Leader Specialty Chips */}
                           <div className="mt-2.5 flex flex-wrap items-center gap-1.5">
-                            {['Full-Stack Engine', 'AI Vision', 'System Lead'].map((chip) => (
+                            {['Creator & Lead Coder', 'Hardware & IoT Edge', 'Full-Stack Engine', 'Neural AI Vision'].map((chip) => (
                               <span
                                 key={chip}
                                 className="rounded-lg border border-amber-400/30 bg-amber-500/10 px-2 py-0.5 text-[10px] font-bold text-amber-800 dark:text-amber-200/90"

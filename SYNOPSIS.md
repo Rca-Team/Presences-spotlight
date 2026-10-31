@@ -184,4 +184,4 @@ It is built for the future of education — where technology works silently in t
 
 ---
 
-*Made with love by Gaurav | Team RCA | © 2024 Presences. All rights reserved.*
+*Conceived, coded, and architected by Gaurav Raj (Creator & Lead Developer) | Team RCA | © 2024–2025 Presences AI. All rights reserved.*

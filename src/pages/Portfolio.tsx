@@ -354,7 +354,7 @@ export function PublicPortfolioView({
           </div>
 
           {/* Contact & Meta Strip */}
-          <div className="mt-6 pt-5 border-t border-border/60 grid gap-3 sm:grid-cols-2 lg:grid-cols-4 text-xs font-medium">
+          <div className="mt-6 pt-5 border-t border-border/60 grid gap-3 sm:grid-cols-2 lg:grid-cols-5 text-xs font-medium">
             {data.location && (
               <div className="flex items-center gap-2 text-slate-600 dark:text-slate-300 min-w-0">
                 <MapPin className="h-4 w-4 text-primary shrink-0" />
@@ -362,19 +362,25 @@ export function PublicPortfolioView({
               </div>
             )}
             {data.email && (
-              <a href={`mailto:${data.email}`} className="flex items-center gap-2 text-slate-600 dark:text-slate-300 hover:text-foreground min-w-0 transition">
+              <a href={`mailto:${data.email}`} className="flex items-center gap-2 text-slate-600 dark:text-slate-300 hover:text-foreground min-w-0 transition" title="Send email">
                 <Mail className="h-4 w-4 text-primary shrink-0" />
                 <span className="truncate">{data.email}</span>
               </a>
             )}
             {data.phone && (
-              <div className="flex items-center gap-2 text-slate-600 dark:text-slate-300 min-w-0">
+              <a href={`tel:${data.phone.replace(/\s+/g, '')}`} className="flex items-center gap-2 text-slate-600 dark:text-slate-300 hover:text-foreground min-w-0 transition" title="Call phone">
                 <Phone className="h-4 w-4 text-primary shrink-0" />
                 <span className="truncate">{data.phone}</span>
-              </div>
+              </a>
+            )}
+            {data.socials?.github && (
+              <a href={data.socials.github} target="_blank" rel="noreferrer" className="flex items-center gap-2 text-slate-600 dark:text-slate-300 hover:text-foreground min-w-0 transition" title="View GitHub">
+                <Github className="h-4 w-4 text-primary shrink-0" />
+                <span className="truncate">GitHub Profile</span>
+              </a>
             )}
             {data.website && (
-              <a href={data.website} target="_blank" rel="noreferrer" className="flex items-center gap-2 text-slate-600 dark:text-slate-300 hover:text-foreground min-w-0 transition">
+              <a href={data.website} target="_blank" rel="noreferrer" className="flex items-center gap-2 text-slate-600 dark:text-slate-300 hover:text-foreground min-w-0 transition" title="Visit Website">
                 <Globe className="h-4 w-4 text-primary shrink-0" />
                 <span className="truncate">{data.website.replace(/^https?:\/\//, '')}</span>
               </a>
@@ -387,6 +393,56 @@ export function PublicPortfolioView({
             </p>
           )}
         </div>
+      </div>
+
+      {/* End-to-End Engineering Disciplines */}
+      <div className="grid gap-3.5 sm:grid-cols-2 lg:grid-cols-5">
+        {[
+          {
+            icon: '🛠️',
+            title: 'Hardware & IoT',
+            desc: 'Raspberry Pi daemons, dual-camera gate kiosks, relay sensors & buzzers',
+            border: 'border-amber-500/30',
+          },
+          {
+            icon: '🧠',
+            title: 'AI & Neural Vision',
+            desc: 'MediaPipe Face Landmarker, ONNX Runtime, YuNet & Face-api embeddings',
+            border: 'border-cyan-500/30',
+          },
+          {
+            icon: '⚡',
+            title: 'Full-Stack & Realtime',
+            desc: 'React 18, TypeScript, Supabase PostgreSQL, Appwrite & Cloudflare',
+            border: 'border-blue-500/30',
+          },
+          {
+            icon: '📱',
+            title: 'Mobile APK & PWA',
+            desc: 'Production Android APK (Capacitor/Java), offline IndexedDB & push alerts',
+            border: 'border-purple-500/30',
+          },
+          {
+            icon: '🏫',
+            title: 'School Automation',
+            desc: 'Teacher substitution engine, Jarvis diagnostics & campus emergency alerts',
+            border: 'border-emerald-500/30',
+          },
+        ].map((item) => (
+          <div
+            key={item.title}
+            className={cn(
+              'rounded-2xl border bg-card/60 backdrop-blur p-4 flex flex-col justify-between transition-all hover:scale-[1.02] shadow-sm',
+              item.border
+            )}
+          >
+            <div>
+              <span className="text-2xl">{item.icon}</span>
+              <h3 className="mt-2 text-sm font-extrabold text-foreground">{item.title}</h3>
+              <p className="mt-1 text-xs text-muted-foreground leading-relaxed">{item.desc}</p>
+            </div>
+          </div>
+        ))}
       </div>
 
       {/* Featured Projects */}
@@ -818,6 +874,30 @@ export function PublicPortfolioView({
         </div>
       )}
 
+      {/* Core Technical Stack & Engineering Capabilities */}
+      {data.skills && data.skills.length > 0 && (
+        <div className="space-y-4">
+          <div className="flex items-center justify-between">
+            <h2 className="text-xl md:text-2xl font-extrabold text-foreground flex items-center gap-2">
+              <Sparkles className="h-5 w-5 text-primary" /> Technical Stack &amp; Capabilities
+            </h2>
+            <span className="text-xs text-muted-foreground font-semibold">{data.skills.length} Skills</span>
+          </div>
+          <div className="rounded-3xl border border-white/10 bg-card/70 p-6 backdrop-blur shadow-md">
+            <div className="flex flex-wrap gap-2.5">
+              {data.skills.map((skill) => (
+                <span
+                  key={skill}
+                  className="rounded-xl border border-primary/20 bg-primary/10 px-3.5 py-1.5 text-xs font-semibold text-primary shadow-xs transition-all hover:bg-primary/20"
+                >
+                  {skill}
+                </span>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Member Detail Dialog with Live Retirement & Removal Controls */}
       <Dialog open={!!selectedMember} onOpenChange={(open) => !open && setSelectedMember(null)}>
         <DialogContent className="max-w-md rounded-3xl p-6">
@@ -1009,6 +1089,7 @@ const Portfolio = () => {
   const [pinDigits, setPinDigits] = useState('');
   const [isVerifying, setIsVerifying] = useState(false);
   const [lockoutSec, setLockoutSec] = useState(() => getRemainingLockoutSeconds());
+  const [isPinModalOpen, setIsPinModalOpen] = useState(false);
   const [isChangePinOpen, setIsChangePinOpen] = useState(false);
   const [newPinInput, setNewPinInput] = useState('');
   const [confirmPinInput, setConfirmPinInput] = useState('');
@@ -1038,7 +1119,7 @@ const Portfolio = () => {
 
   // Keyboard listener for keypad verification
   useEffect(() => {
-    if (isVerified) return;
+    if (isVerified || !isPinModalOpen) return;
 
     const onKeyDown = (e: KeyboardEvent) => {
       if (isVerifying || lockoutSec > 0) return;
@@ -1054,12 +1135,13 @@ const Portfolio = () => {
         setPinDigits((prev) => prev.slice(0, -1));
       } else if (e.key === 'Escape') {
         setPinDigits('');
+        setIsPinModalOpen(false);
       }
     };
 
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
-  }, [isVerified, pinDigits, isVerifying, lockoutSec]);
+  }, [isVerified, isPinModalOpen, pinDigits, isVerifying, lockoutSec]);
 
   const handleKeypadInput = (digit: string) => {
     if (pinDigits.length >= 4 || isVerifying || lockoutSec > 0) return;
@@ -1078,7 +1160,9 @@ const Portfolio = () => {
       const isValid = await verifyPortfolioPin(candidatePin);
       if (isValid) {
         setIsVerified(true);
+        setIsPinModalOpen(false);
         setPinDigits('');
+        setStudioViewMode('editor');
         toast({
           title: 'Identity Verified',
           description: 'Access granted to Team RCA Vault.',
@@ -1326,147 +1410,7 @@ const Portfolio = () => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [data, dirty, isVerified, loading]);
 
-  /* ---- Gate Verification View (Locked Mode) ---- */
-  if (!isVerified) {
-    return (
-      <PageTransition>
-        <PageLayout className="has-bottom-nav md:pb-0">
-          <div className="min-h-[80vh] flex flex-col items-center justify-center px-4 py-8 relative">
-            {/* Ambient Background Aura */}
-            <div className="pointer-events-none absolute inset-0 overflow-hidden flex items-center justify-center">
-              <div className="h-96 w-96 rounded-full bg-primary/10 blur-3xl animate-pulse" />
-              <div className="h-80 w-80 rounded-full bg-amber-500/10 blur-3xl" />
-            </div>
-
-            <motion.div
-              initial={{ scale: 0.95, opacity: 0, y: 10 }}
-              animate={{ scale: 1, opacity: 1, y: 0 }}
-              transition={{ duration: 0.35, ease: 'easeOut' }}
-              className="relative z-10 w-full max-w-sm"
-            >
-              <Card className="rounded-3xl border border-white/20 dark:border-white/10 bg-card/85 dark:bg-[#0c101d]/90 shadow-2xl backdrop-blur-2xl p-6 sm:p-7 text-center">
-                {/* Shield Icon with Holographic Pulse */}
-                <div className="relative mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-2xl bg-primary/15 text-primary border border-primary/30 shadow-[0_0_24px_rgba(14,165,233,0.35)]">
-                  <ShieldCheck className="h-8 w-8 text-primary animate-pulse" />
-                  <span className="absolute -top-1 -right-1 flex h-3.5 w-3.5">
-                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-primary opacity-75" />
-                    <span className="relative inline-flex rounded-full h-3.5 w-3.5 bg-primary" />
-                  </span>
-                </div>
-
-                <CardTitle className="text-xl sm:text-2xl font-black text-foreground tracking-tight" style={{ fontFamily: 'Sora, sans-serif' }}>
-                  Vault Verification
-                </CardTitle>
-                <CardDescription className="text-xs text-muted-foreground mt-1 max-w-xs mx-auto">
-                  Enter authorized security PIN to access the Team RCA architecture &amp; portfolio vault.
-                </CardDescription>
-
-                {/* 4 Cell Dots Display */}
-                <div className="my-6 flex items-center justify-center gap-3">
-                  {[0, 1, 2, 3].map((idx) => {
-                    const isFilled = pinDigits.length > idx;
-                    const isCurrent = pinDigits.length === idx;
-                    return (
-                      <span
-                        key={idx}
-                        className={cn(
-                          'h-4 w-4 rounded-full border-2 transition-all duration-200 flex items-center justify-center',
-                          isFilled
-                            ? 'bg-primary border-primary shadow-[0_0_12px_rgba(14,165,233,0.8)] scale-110'
-                            : isCurrent
-                            ? 'border-primary/80 bg-primary/20 scale-105 animate-pulse'
-                            : 'border-border/80 bg-muted/40'
-                        )}
-                      >
-                        {isFilled && <span className="h-1.5 w-1.5 rounded-full bg-white" />}
-                      </span>
-                    );
-                  })}
-                </div>
-
-                {/* Lockout or Verifying Status Banner */}
-                {lockoutSec > 0 ? (
-                  <div className="mb-4 rounded-2xl border border-destructive/30 bg-destructive/10 p-3 text-xs text-destructive font-bold flex items-center justify-center gap-2">
-                    <Clock className="h-4 w-4 shrink-0" />
-                    <span>Security lockout active: wait {lockoutSec}s</span>
-                  </div>
-                ) : isVerifying ? (
-                  <div className="mb-4 text-xs font-semibold text-primary flex items-center justify-center gap-2 animate-pulse">
-                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                    <span>Verifying cryptographic cell signature…</span>
-                  </div>
-                ) : null}
-
-                {/* Numeric Keypad Grid */}
-                <div className="grid grid-cols-3 gap-2.5">
-                  {['1', '2', '3', '4', '5', '6', '7', '8', '9', 'C', '0', '⌫'].map((k) => (
-                    <Button
-                      key={k}
-                      type="button"
-                      disabled={isVerifying || lockoutSec > 0}
-                      variant="outline"
-                      onClick={() => {
-                        if (k === 'C') {
-                          setPinDigits('');
-                        } else if (k === '⌫') {
-                          setPinDigits((p) => p.slice(0, -1));
-                        } else {
-                          handleKeypadInput(k);
-                        }
-                      }}
-                      className={cn(
-                        'h-12 rounded-2xl text-base font-bold transition-all active:scale-95 cursor-pointer shadow-xs',
-                        k === 'C' || k === '⌫'
-                          ? 'text-xs text-muted-foreground bg-muted/30 border-border/60 hover:bg-muted/60'
-                          : 'text-foreground bg-card/70 border-border hover:bg-card hover:border-primary/50'
-                      )}
-                    >
-                      {k}
-                    </Button>
-                  ))}
-                </div>
-
-                {/* Manual Verify Button */}
-                <Button
-                  type="button"
-                  disabled={isVerifying || pinDigits.length < 4 || lockoutSec > 0}
-                  onClick={() => void handleVerifyPin(pinDigits)}
-                  className="w-full mt-4 h-11 rounded-2xl font-bold text-xs uppercase tracking-wider bg-primary text-primary-foreground shadow-md hover:bg-primary/90 transition-all cursor-pointer"
-                >
-                  {isVerifying ? (
-                    <span className="flex items-center gap-2">
-                      <Loader2 className="h-4 w-4 animate-spin" />
-                      Verifying…
-                    </span>
-                  ) : (
-                    <span className="flex items-center gap-1.5">
-                      <ShieldCheck className="h-4 w-4" />
-                      Verify Identity
-                    </span>
-                  )}
-                </Button>
-
-                {/* Return to Home link */}
-                <div className="mt-4 pt-3 border-t border-border/40">
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="sm"
-                    onClick={() => navigate('/')}
-                    className="text-xs text-muted-foreground hover:text-foreground font-semibold rounded-xl"
-                  >
-                    ← Return to Home
-                  </Button>
-                </div>
-              </Card>
-            </motion.div>
-          </div>
-        </PageLayout>
-      </PageTransition>
-    );
-  }
-
-/* ---- Drag and drop handlers ---- */
+  /* ---- Drag and drop handlers ---- */
   const onDragEndProjects = async (e: DragEndEvent) => {
     const { active, over } = e;
     if (!over || active.id === over.id) return;
@@ -1546,54 +1490,97 @@ const Portfolio = () => {
       <PageLayout className="has-bottom-nav md:pb-0">
         <section className="space-y-6 pb-16">
           {/* Top Sticky Command Strip */}
-          <div className="sticky top-2 z-30 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-primary/20 bg-background/90 px-4 py-3 backdrop-blur-xl shadow-lg">
-            <div className="flex items-center gap-3">
-              <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-primary/10 text-primary border border-primary/30">
-                <Sparkles className="h-5 w-5" />
+          {!isVerified ? (
+            <div className="sticky top-2 z-30 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-primary/20 bg-background/90 px-4 py-3 backdrop-blur-xl shadow-lg">
+              <div className="flex items-center gap-3">
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => navigate('/')}
+                  className="h-8 rounded-xl px-2 text-xs font-semibold text-muted-foreground hover:text-foreground cursor-pointer"
+                >
+                  ← Home
+                </Button>
+                <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-primary/10 text-primary border border-primary/30">
+                  <Sparkles className="h-5 w-5" />
+                </div>
+                <div>
+                  <h1 className="text-base sm:text-lg font-extrabold text-foreground">Creator &amp; Architect Portfolio</h1>
+                  <p className="text-[11px] text-muted-foreground font-medium">
+                    Presences AI · Complete Ecosystem by Gaurav Raj
+                  </p>
+                </div>
               </div>
-              <div>
-                <h1 className="text-base sm:text-lg font-extrabold text-foreground">Portfolio Studio</h1>
-                <p className="text-[11px] text-muted-foreground font-medium">
-                  {loading ? 'Loading…' : dirty ? '● Unsaved changes (auto-saving…)' : '✓ Published live across platform'}
-                </p>
+
+              <div className="flex items-center gap-2">
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => setIsPinModalOpen(true)}
+                  className="h-8 rounded-xl font-bold gap-1.5 border-primary/30 text-primary hover:bg-primary/10 text-xs cursor-pointer"
+                >
+                  <Lock className="h-3.5 w-3.5" /> Studio Editor
+                </Button>
               </div>
             </div>
-
-            <div className="flex flex-wrap items-center gap-2">
-              <div className="flex items-center rounded-xl border bg-muted/40 p-0.5">
-                <button
-                  type="button"
-                  onClick={() => setStudioViewMode('editor')}
-                  className={`flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-bold transition ${studioViewMode === 'editor' ? 'bg-background text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'}`}
-                >
-                  <Edit3 className="h-3.5 w-3.5" /> Editor
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setStudioViewMode('preview')}
-                  className={`flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-bold transition ${studioViewMode === 'preview' ? 'bg-background text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'}`}
-                >
-                  <Eye className="h-3.5 w-3.5" /> Live Preview
-                </button>
+          ) : (
+            <div className="sticky top-2 z-30 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-primary/20 bg-background/90 px-4 py-3 backdrop-blur-xl shadow-lg">
+              <div className="flex items-center gap-3">
+                <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-primary/10 text-primary border border-primary/30">
+                  <Sparkles className="h-5 w-5" />
+                </div>
+                <div>
+                  <h1 className="text-base sm:text-lg font-extrabold text-foreground">Portfolio Studio</h1>
+                  <p className="text-[11px] text-muted-foreground font-medium">
+                    {loading ? 'Loading…' : dirty ? '● Unsaved changes (auto-saving…)' : '✓ Published live across platform'}
+                  </p>
+                </div>
               </div>
 
-              <Button size="sm" variant="ghost" onClick={handleResetToDefaults} className="h-8 text-xs text-muted-foreground hover:text-destructive">
-                <RotateCcw className="h-3.5 w-3.5 mr-1" /> Reset
-              </Button>
+              <div className="flex flex-wrap items-center gap-2">
+                <div className="flex items-center rounded-xl border bg-muted/40 p-0.5">
+                  <button
+                    type="button"
+                    onClick={() => setStudioViewMode('editor')}
+                    className={`flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-bold transition ${studioViewMode === 'editor' ? 'bg-background text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'}`}
+                  >
+                    <Edit3 className="h-3.5 w-3.5" /> Editor
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setStudioViewMode('preview')}
+                    className={`flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-bold transition ${studioViewMode === 'preview' ? 'bg-background text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'}`}
+                  >
+                    <Eye className="h-3.5 w-3.5" /> Live Preview
+                  </button>
+                </div>
 
-              <Button size="sm" onClick={save} disabled={saving || loading} className="h-8 rounded-xl font-bold gap-1.5 shadow-md shadow-primary/20">
-                <Save className="h-3.5 w-3.5" />
-                {saving ? 'Saving…' : 'Save now'}
-              </Button>
+                <Button size="sm" variant="ghost" onClick={handleResetToDefaults} className="h-8 text-xs text-muted-foreground hover:text-destructive">
+                  <RotateCcw className="h-3.5 w-3.5 mr-1" /> Reset
+                </Button>
 
-              <Button size="sm" variant="outline" onClick={handleLockVault} className="h-8 rounded-xl">
-                <Lock className="h-3.5 w-3.5 mr-1" /> Lock
-              </Button>
+                <Button size="sm" onClick={save} disabled={saving || loading} className="h-8 rounded-xl font-bold gap-1.5 shadow-md shadow-primary/20">
+                  <Save className="h-3.5 w-3.5" />
+                  {saving ? 'Saving…' : 'Save now'}
+                </Button>
+
+                <Button size="sm" variant="outline" onClick={handleLockVault} className="h-8 rounded-xl">
+                  <Lock className="h-3.5 w-3.5 mr-1" /> Lock
+                </Button>
+              </div>
             </div>
-          </div>
+          )}
 
           {/* Dual Mode Switcher */}
-          {studioViewMode === 'preview' ? (
+          {!isVerified ? (
+            <Card className="rounded-3xl border border-white/10 shadow-2xl p-4 sm:p-6 bg-card/60 backdrop-blur-xl">
+              <PublicPortfolioView
+                data={data}
+                onUnlock={() => setIsPinModalOpen(true)}
+                canManage={false}
+              />
+            </Card>
+          ) : studioViewMode === 'preview' ? (
             <Card className="rounded-3xl border border-white/10 shadow-2xl p-4 sm:p-6 bg-card/60 backdrop-blur-xl">
               <PublicPortfolioView
                 data={data}
@@ -2149,6 +2136,113 @@ const Portfolio = () => {
                   </Button>
                 </DialogFooter>
               </form>
+            </DialogContent>
+          </Dialog>
+
+          {/* Studio Editor Unlock PIN Modal */}
+          <Dialog open={isPinModalOpen} onOpenChange={setIsPinModalOpen}>
+            <DialogContent className="max-w-sm rounded-3xl p-6 sm:p-7 text-center">
+              <div className="relative mx-auto mb-3 flex h-14 w-14 items-center justify-center rounded-2xl bg-primary/15 text-primary border border-primary/30 shadow-[0_0_24px_rgba(14,165,233,0.35)]">
+                <ShieldCheck className="h-7 w-7 text-primary animate-pulse" />
+                <span className="absolute -top-1 -right-1 flex h-3 w-3">
+                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-primary opacity-75" />
+                  <span className="relative inline-flex rounded-full h-3 w-3 bg-primary" />
+                </span>
+              </div>
+
+              <DialogHeader className="text-center">
+                <DialogTitle className="text-lg sm:text-xl font-black text-foreground tracking-tight" style={{ fontFamily: 'Sora, sans-serif' }}>
+                  Vault Verification
+                </DialogTitle>
+                <DialogDescription className="text-xs text-muted-foreground mt-1 max-w-xs mx-auto">
+                  Enter authorized security PIN to access the Team RCA architecture &amp; portfolio editor.
+                </DialogDescription>
+              </DialogHeader>
+
+              {/* 4 Cell Dots Display */}
+              <div className="my-5 flex items-center justify-center gap-3">
+                {[0, 1, 2, 3].map((idx) => {
+                  const isFilled = pinDigits.length > idx;
+                  const isCurrent = pinDigits.length === idx;
+                  return (
+                    <span
+                      key={idx}
+                      className={cn(
+                        'h-4 w-4 rounded-full border-2 transition-all duration-200 flex items-center justify-center',
+                        isFilled
+                          ? 'bg-primary border-primary shadow-[0_0_12px_rgba(14,165,233,0.8)] scale-110'
+                          : isCurrent
+                          ? 'border-primary/80 bg-primary/20 scale-105 animate-pulse'
+                          : 'border-border/80 bg-muted/40'
+                      )}
+                    >
+                      {isFilled && <span className="h-1.5 w-1.5 rounded-full bg-white" />}
+                    </span>
+                  );
+                })}
+              </div>
+
+              {/* Lockout or Verifying Status Banner */}
+              {lockoutSec > 0 ? (
+                <div className="mb-3 rounded-2xl border border-destructive/30 bg-destructive/10 p-2.5 text-xs text-destructive font-bold flex items-center justify-center gap-2">
+                  <Clock className="h-4 w-4 shrink-0" />
+                  <span>Security lockout active: wait {lockoutSec}s</span>
+                </div>
+              ) : isVerifying ? (
+                <div className="mb-3 text-xs font-semibold text-primary flex items-center justify-center gap-2 animate-pulse">
+                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                  <span>Verifying cryptographic cell signature…</span>
+                </div>
+              ) : null}
+
+              {/* Numeric Keypad Grid */}
+              <div className="grid grid-cols-3 gap-2">
+                {['1', '2', '3', '4', '5', '6', '7', '8', '9', 'C', '0', '⌫'].map((k) => (
+                  <Button
+                    key={k}
+                    type="button"
+                    disabled={isVerifying || lockoutSec > 0}
+                    variant="outline"
+                    onClick={() => {
+                      if (k === 'C') {
+                        setPinDigits('');
+                      } else if (k === '⌫') {
+                        setPinDigits((p) => p.slice(0, -1));
+                      } else {
+                        handleKeypadInput(k);
+                      }
+                    }}
+                    className={cn(
+                      'h-11 rounded-xl text-base font-bold transition-all active:scale-95 cursor-pointer shadow-xs',
+                      k === 'C' || k === '⌫'
+                        ? 'text-xs text-muted-foreground bg-muted/30 border-border/60 hover:bg-muted/60'
+                        : 'text-foreground bg-card/70 border-border hover:bg-card hover:border-primary/50'
+                    )}
+                  >
+                    {k}
+                  </Button>
+                ))}
+              </div>
+
+              {/* Manual Verify Button */}
+              <Button
+                type="button"
+                disabled={isVerifying || pinDigits.length < 4 || lockoutSec > 0}
+                onClick={() => void handleVerifyPin(pinDigits)}
+                className="w-full mt-3 h-10 rounded-xl font-bold text-xs uppercase tracking-wider bg-primary text-primary-foreground shadow-md hover:bg-primary/90 transition-all cursor-pointer"
+              >
+                {isVerifying ? (
+                  <span className="flex items-center gap-2">
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                    Verifying…
+                  </span>
+                ) : (
+                  <span className="flex items-center gap-1.5">
+                    <ShieldCheck className="h-4 w-4" />
+                    Verify Identity
+                  </span>
+                )}
+              </Button>
             </DialogContent>
           </Dialog>
         </section>

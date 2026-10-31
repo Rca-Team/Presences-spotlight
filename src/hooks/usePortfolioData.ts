@@ -133,69 +133,123 @@ export const DEFAULT_GALLERY_ITEMS: PortfolioGalleryItem[] = [
 
 export const DEFAULT_PORTFOLIO: PortfolioData = {
   name: 'Gaurav Raj',
-  role: 'Full Stack Developer & Team Leader',
-  tagline: 'Building practical school automation systems for real-world scale.',
-  bio: 'I design and ship full-stack products with a focus on reliability, realtime workflows, and meaningful user experience.',
-  location: 'India',
-  email: 'gaurav@example.com',
-  phone: '+91 00000 00000',
+  role: 'Creator, Lead Architect & Full-Stack Systems Engineer',
+  tagline: 'Conceived, architected, coded, and deployed the complete Presences AI ecosystem — spanning custom hardware, neural vision models, real-time cloud services, and production school operations.',
+  bio: 'Creator, the developer, and lead coder of Presences AI. Gaurav engineered the entire platform from the ground up: from prototyping hardware gate kiosks, Raspberry Pi edge controllers, and sensor triggers, to programming neural face-recognition engines (ONNX, MediaPipe, Face-api.js), scalable cloud backends, native Android APKs, and autonomous campus automation deployed live at PM Shri KV NFC Vigyan Vihar.',
+  location: 'Delhi, India',
+  email: 'gauravraj10226@gmail.com',
+  phone: '+91 9414741664',
   website: 'https://presences.dev',
   profileImage: gauravPhoto,
   coverImage: '',
   achievements: [
-    'Led end-to-end delivery of smart attendance platform',
-    'Built face-recognition gate mode with realtime alerts',
-    'Shipped scalable admin workflows for school operations',
-    'Architected instant timetable automatic teacher substitution engine',
+    'Sole Creator & Lead Coder — Conceived, designed, and coded the entire Presences AI platform from ground zero.',
+    'Hardware & IoT Engineering — Designed and implemented Raspberry Pi edge attendance stations, dual-camera gate kiosks, buzzer circuits, and Linux systemd daemons.',
+    'High-Speed Computer Vision — Architected neural face-recognition pipelines using ONNX Runtime, MediaPipe, YuNet, and Face-api.js with sub-100ms multi-student matching.',
+    'Full-Stack Realtime Infrastructure — Built dual-cloud architecture with Supabase (PostgreSQL, RLS), Appwrite Realtime websockets, and offline IndexedDB resilience.',
+    'Autonomous Timetable Substitution Engine — Developed algorithmic period detection with instant automatic teacher substitution and multi-format PDF export.',
+    'Jarvis AI Diagnostics & Safety Suite — Created self-healing audit engine and campus-wide emergency broadcast system (fire, earthquake, lockdown).',
+    'Native Mobile APK & Cross-Platform PWA — Shipped production Android APK via Capacitor with native camera integrations and responsive offline-first PWA.',
+    'Live Institutional Deployment — Successfully rolled out and battle-tested the complete system at PM Shri KV NFC Vigyan Vihar.',
   ],
-  skills: ['React', 'TypeScript', 'Appwrite', 'Face Recognition', 'Realtime Systems', 'Tailwind CSS', 'PWA & Edge AI'],
+  skills: [
+    'Full-Stack Software Architecture',
+    'Hardware & Embedded IoT (Raspberry Pi)',
+    'Computer Vision & Neural Networks (ONNX, MediaPipe, TF.js)',
+    'React 18 & TypeScript',
+    'Python (OpenCV, YuNet, Edge Daemons)',
+    'Supabase & PostgreSQL RLS',
+    'Appwrite Realtime & Cloudflare Workers',
+    'Android & Capacitor Native Engineering',
+    'Tailwind CSS & Modern UI/UX',
+    'Progressive Web Apps (PWA) & Offline Sync',
+    'Real-time WebSocket Distributed Systems',
+    'Edge Computing & Hardware Prototyping',
+  ],
   gallery: DEFAULT_GALLERY_ITEMS,
   projects: [
     {
       id: 'proj-presences-platform',
       title: 'Presences Smart School Platform',
       description: 'Unified attendance, gate mode, analytics, and communication platform built for PM Shri KV NFC Vigyan Vihar.',
-      stack: 'React, TypeScript, Appwrite, Face API, PWA',
+      stack: 'React, TypeScript, Appwrite, Supabase, Face API, PWA',
       image: teamRcaPhoto,
       link: 'https://presences.dev',
-      githubUrl: 'https://github.com/Rca-Team/Presences-spotlight',
+      githubUrl: 'https://github.com/Gauravrajmeena',
       year: '2025',
-      tags: ['React', 'TypeScript', 'AI Vision', 'PWA', 'Appwrite'],
+      tags: ['React', 'TypeScript', 'AI Vision', 'PWA', 'Realtime'],
       featured: true,
     },
     {
-      id: 'proj-gate-kiosk',
-      title: 'Edge AI Kiosk & Gate Security',
-      description: 'High-precision on-device facial detection and dual-camera gate security system for instant multi-student verification.',
-      stack: 'TensorFlow.js, WebAssembly, ONNX Runtime, Canvas',
+      id: 'proj-spotlight-engine',
+      title: 'Presences Spotlight Engine & Dual-Camera Kiosk',
+      description: 'Custom hardware & Python edge engine with dual-camera FOV sync, MediaPipe Face Landmarker, and ONNX Runtime for live multi-student verification.',
+      stack: 'Python, OpenCV, MediaPipe, ONNX Runtime, Hardware Relays',
       image: studentCampusBanner,
       link: 'https://presences.dev/gate',
-      githubUrl: 'https://github.com/Rca-Team/Presences-spotlight',
+      githubUrl: 'https://github.com/Gauravrajmeena',
       year: '2025',
-      tags: ['Edge AI', 'Computer Vision', 'ONNX', 'Wasm'],
+      tags: ['Hardware Kiosk', 'Edge AI', 'MediaPipe', 'ONNX', 'Python'],
+      featured: true,
+    },
+    {
+      id: 'proj-raspberry-pi-station',
+      title: 'Raspberry Pi IoT Edge Attendance Station',
+      description: 'Standalone embedded attendance hardware running YuNet ONNX, local SQLite cache fallback, audio buzzer feedback chime, and systemd daemons.',
+      stack: 'Raspberry Pi, Linux Systemd, Python, YuNet ONNX, SQLite',
+      image: studentCampusBanner,
+      link: 'https://presences.dev',
+      githubUrl: 'https://github.com/Gauravrajmeena',
+      year: '2025',
+      tags: ['Raspberry Pi', 'IoT', 'Embedded Linux', 'Computer Vision'],
       featured: true,
     },
     {
       id: 'proj-substitution-engine',
-      title: 'Real-Time Substitution & Timetable Engine',
-      description: 'Autonomous teacher leave detection and instant period substitution scheduler with multi-format PDF export.',
+      title: 'Autonomous Timetable & Teacher Substitution Engine',
+      description: 'Real-time teacher absence detection and instant algorithmic period substitution scheduler with multi-format timetable PDF generation.',
       stack: 'React, Appwrite Realtime, Tailwind CSS, Lucide',
       image: teamRcaPhoto,
       link: 'https://presences.dev/admin?tab=timetable',
-      githubUrl: 'https://github.com/Rca-Team/Presences-spotlight',
+      githubUrl: 'https://github.com/Gauravrajmeena',
       year: '2025',
-      tags: ['Realtime', 'Automation', 'Smart Scheduling'],
+      tags: ['Realtime', 'Automation', 'Smart Scheduling', 'Algorithms'],
+      featured: true,
+    },
+    {
+      id: 'proj-jarvis-ai',
+      title: 'Jarvis AI Diagnostics & Self-Healing Health Auditor',
+      description: 'Autonomous institutional health audit engine featuring conversational voice query, biometric gap detection, and self-healing database diagnostics.',
+      stack: 'TypeScript, Voice Synthesis, Anomaly Detection, Appwrite',
+      image: teamRcaPhoto,
+      link: 'https://presences.dev/admin',
+      githubUrl: 'https://github.com/Gauravrajmeena',
+      year: '2025',
+      tags: ['Jarvis AI', 'Diagnostics', 'Self-Healing', 'Voice AI'],
+      featured: true,
+    },
+    {
+      id: 'proj-android-app',
+      title: 'Presences Android App & Mobile Suite',
+      description: 'Production Android APK packaged with Capacitor, featuring offline biometric synchronization, native camera integration, and instant push notifications.',
+      stack: 'Capacitor, Android Java, Gradle, WebAssembly, IndexedDB',
+      image: studentCampusBanner,
+      link: 'https://presences.dev/mobile',
+      githubUrl: 'https://github.com/Gauravrajmeena',
+      year: '2025',
+      tags: ['Android', 'Capacitor', 'Mobile APK', 'Offline Sync'],
       featured: true,
     },
   ],
   members: [
     {
       id: uid(),
-      name: 'Gaurav',
-      role: 'Developer & Team Leader',
+      name: 'Gaurav Raj',
+      role: 'Creator, Lead Developer & System Architect',
       image: gauravPhoto,
-      bio: 'Creator of Presences Smart School automation. Designs and leads scalable attendance, security, and school workflow systems.',
-      details: 'Full-stack engineer focused on neural face-recognition pipelines, database architecture, and production-ready education systems.',
+      bio: 'Creator and the lead coder of Presences AI. Conceived and coded the entire ecosystem across hardware, software, and AI vision.',
+      details: 'Architected and implemented the entire project end-to-end: physical Raspberry Pi edge stations, dual-camera gate kiosks, MediaPipe/ONNX neural embeddings, Supabase/Appwrite realtime backends, Android Capacitor app, Jarvis self-healing engine, and campus emergency broadcasting.',
+      tags: ['Creator & Lead Coder', 'Full-Stack Architect', 'Hardware & AI Engineer'],
       isRetired: false,
     },
     {
@@ -233,7 +287,13 @@ export const DEFAULT_PORTFOLIO: PortfolioData = {
       details: 'Assists with batch enrollment validation, kiosk responsiveness testing, and rollout readiness.',
     },
   ],
-  socials: { github: '', linkedin: '', twitter: '', instagram: '', youtube: '' },
+  socials: {
+    github: 'https://github.com/Gauravrajmeena',
+    linkedin: '',
+    twitter: '',
+    instagram: '',
+    youtube: '',
+  },
   settings: {
     showOnHome: true,
     showGalleryOnHome: true,
@@ -317,13 +377,70 @@ function migrate(raw: any): PortfolioData {
   if (base.coverImage && (base.coverImage.includes('supabase.co') || base.coverImage.includes('cvdcbcsonlianbfeessy') || base.coverImage.includes('eiahucigcvsnuvviajqt'))) {
     base.coverImage = '';
   }
-  base.achievements = Array.isArray(raw?.achievements) && raw.achievements.length > 0 ? raw.achievements : DEFAULT_PORTFOLIO.achievements;
-  base.skills = Array.isArray(raw?.skills) && raw.skills.length > 0 ? raw.skills : DEFAULT_PORTFOLIO.skills;
+
+  // Upgrade legacy placeholder role/bio/tagline to full creator profile
+  if (
+    !base.role ||
+    base.role === 'Full Stack Developer & Team Leader' ||
+    !base.bio ||
+    base.bio.startsWith('I design and ship')
+  ) {
+    base.role = DEFAULT_PORTFOLIO.role;
+    base.tagline = DEFAULT_PORTFOLIO.tagline;
+    base.bio = DEFAULT_PORTFOLIO.bio;
+  }
+
+  // Upgrade legacy achievements (length <= 4 or missing hardware/AI highlights)
+  const rawAch = Array.isArray(raw?.achievements) ? raw.achievements : [];
+  if (rawAch.length <= 4 || !rawAch.some((a: string) => a.toLowerCase().includes('hardware'))) {
+    base.achievements = DEFAULT_PORTFOLIO.achievements;
+  } else {
+    base.achievements = rawAch;
+  }
+
+  // Upgrade legacy skills (length <= 7 or missing hardware/embedded)
+  const rawSkills = Array.isArray(raw?.skills) ? raw.skills : [];
+  if (rawSkills.length <= 7 || !rawSkills.some((s: string) => s.toLowerCase().includes('hardware'))) {
+    base.skills = DEFAULT_PORTFOLIO.skills;
+  } else {
+    base.skills = rawSkills;
+  }
+
+  // Upgrade legacy placeholder contact information to authentic information
+  if (!base.email || base.email === 'gaurav@example.com') {
+    base.email = DEFAULT_PORTFOLIO.email;
+  }
+  if (!base.phone || base.phone.includes('00000') || base.phone.includes('9868901664')) {
+    base.phone = DEFAULT_PORTFOLIO.phone;
+  }
+  if (!base.location || base.location === 'India') {
+    base.location = DEFAULT_PORTFOLIO.location;
+  }
+
   base.gallery = normalizeGallery(raw?.gallery);
-  base.socials = { ...DEFAULT_PORTFOLIO.socials, ...(raw?.socials ?? {}) };
+  let migratedGithub = (raw?.socials?.github || '').trim();
+  if (!migratedGithub || migratedGithub.includes('Presences-spotlight') || migratedGithub.endsWith('/')) {
+    migratedGithub = DEFAULT_PORTFOLIO.socials.github;
+  }
+  base.socials = {
+    ...DEFAULT_PORTFOLIO.socials,
+    ...(raw?.socials ?? {}),
+    github: migratedGithub,
+  };
   base.settings = { ...DEFAULT_PORTFOLIO.settings, ...(raw?.settings ?? {}) };
   
-  base.projects = (Array.isArray(raw?.projects) && raw.projects.length > 0 ? raw.projects : DEFAULT_PORTFOLIO.projects).map((p: any) => {
+  // Merge and migrate projects, ensuring comprehensive hardware/AI projects exist
+  const existingProjects = Array.isArray(raw?.projects) && raw.projects.length > 0 ? raw.projects : [];
+  const mergedProjects = [...existingProjects];
+
+  for (const defProj of DEFAULT_PORTFOLIO.projects) {
+    const exists = mergedProjects.some((p: any) => p.id === defProj.id || p.title?.toLowerCase() === defProj.title?.toLowerCase());
+    if (!exists) {
+      mergedProjects.push(defProj);
+    }
+  }
+
+  base.projects = mergedProjects.map((p: any) => {
     let pImg = p.image ? String(p.image).trim() : '';
     if (
       !pImg ||
@@ -335,6 +452,10 @@ function migrate(raw: any): PortfolioData {
     ) {
       pImg = teamRcaPhoto;
     }
+    let pGithub = p.githubUrl ? String(p.githubUrl).trim() : '';
+    if (!pGithub || pGithub.includes('Presences-spotlight')) {
+      pGithub = 'https://github.com/Gauravrajmeena';
+    }
     return {
       id: p.id ?? uid(),
       title: p.title ?? '',
@@ -342,7 +463,7 @@ function migrate(raw: any): PortfolioData {
       stack: p.stack ?? '',
       image: pImg,
       link: p.link ?? '',
-      githubUrl: p.githubUrl ?? '',
+      githubUrl: pGithub,
       year: p.year ?? '',
       tags: Array.isArray(p.tags) ? p.tags : [],
       featured: Boolean(p.featured),
@@ -351,7 +472,7 @@ function migrate(raw: any): PortfolioData {
 
   const rawMembers = Array.isArray(raw?.members) && raw.members.length > 0 ? [...raw.members] : [...DEFAULT_PORTFOLIO.members];
 
-  // Ensure newly added core members (Jatin Maurya, Mayank Ranjan) are present in migrated member lists
+  // Ensure newly added core members are present in migrated member lists
   for (const defMember of DEFAULT_PORTFOLIO.members) {
     const defKey = defMember.name.toLowerCase().trim();
     const exists = rawMembers.some((m: any) => {
@@ -371,6 +492,8 @@ function migrate(raw: any): PortfolioData {
   base.members = rawMembers.map((m: any) => {
     let img = m.image ? String(m.image).trim() : '';
     const norm = (m.name || '').toLowerCase().trim();
+    const isGaurav = norm.includes('gaurav');
+
     if (
       !img ||
       img.includes('supabase.co') ||
@@ -381,7 +504,7 @@ function migrate(raw: any): PortfolioData {
       img.includes('undefined') ||
       img.includes('null')
     ) {
-      if (norm.includes('gaurav')) img = gauravPhoto;
+      if (isGaurav) img = gauravPhoto;
       else if (norm.includes('swami') || norm.includes('anant')) img = swamiAnantVyasPhoto;
       else if (norm.includes('dhama') || norm === 'jatin') img = jatinDhamaPhoto;
       else img = '';
@@ -390,6 +513,22 @@ function migrate(raw: any): PortfolioData {
         .replace(/6abfd34f000604fcf074/g, '6ad309e200176195d398')
         .replace(/6accbd5d00053c5c1ac2/g, '6ad309e200176195d398');
     }
+
+    if (isGaurav) {
+      // Upgrade Gaurav's role, bio and details to the complete Creator & Lead Architect profile
+      return {
+        id: m.id ?? uid(),
+        name: 'Gaurav Raj',
+        role: 'Creator, Lead Developer & System Architect',
+        image: gauravPhoto,
+        bio: 'Creator and the lead coder of Presences AI. Conceived and coded the entire ecosystem across hardware, software, and AI vision.',
+        details: 'Architected and implemented the entire project end-to-end: physical Raspberry Pi edge stations, dual-camera gate kiosks, MediaPipe/ONNX neural embeddings, Supabase/Appwrite realtime backends, Android Capacitor app, Jarvis self-healing engine, and campus emergency broadcasting.',
+        tags: ['Creator & Lead Coder', 'Full-Stack Architect', 'Hardware & AI Engineer'],
+        isRetired: false,
+        retiredAt: undefined,
+      };
+    }
+
     const resolvedName = norm === 'mayank' ? 'Mayank Ranjan' : (m.name ?? '');
     return {
       id: m.id ?? uid(),

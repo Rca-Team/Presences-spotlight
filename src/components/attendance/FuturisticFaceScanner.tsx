@@ -155,6 +155,7 @@ const FuturisticFaceScanner: React.FC<FuturisticFaceScannerProps> = ({ onScanCom
   const processedEmbeddingsRef = useRef<Array<{ descriptor: Float32Array; employeeId?: string; ts: number }>>([]);
   const autoMarkedUsersRef = useRef<Map<string, number>>(new Map());
   const inFlightMarkingRef = useRef<Set<string>>(new Set());
+  const lastMarkedTimestampRef = useRef<number>(0);
   const soundEnabledRef = useRef(true);
   const cutoffCacheRef = useRef<{ value: { hour: number; minute: number }; at: number } | null>(null);
   const sharedCropCanvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -582,9 +583,9 @@ const FuturisticFaceScanner: React.FC<FuturisticFaceScannerProps> = ({ onScanCom
       tracks.forEach((track) => {
         const box = track.box;
         const isVerified = track.identity?.verified;
-        const isHolding = track.identity && !isVerified;
+        const isHolding = !isVerified && (track.candidate != null || (track.holdingProgress ?? 0) > 0);
 
-        // Styling: Verified -> Apple Emerald (#10b981), Recognizing -> Electric Sky (#38bdf8), Standby -> Pure Cyan (#06b6d4)
+        // Styling: Verified -> Apple Emerald (#10b981), Recognizing/Holding -> Electric Sky (#38bdf8), Standby -> Pure Cyan (#06b6d4)
         const strokeColor = isVerified ? '#10b981' : isHolding ? '#38bdf8' : 'rgba(56, 189, 248, 0.75)';
         const cornerSize = Math.min(22, Math.max(12, box.width * 0.18));
         const r = 4; // subtle rounded corner
@@ -622,13 +623,29 @@ const FuturisticFaceScanner: React.FC<FuturisticFaceScannerProps> = ({ onScanCom
         ctx.lineTo(box.x, box.y + box.height - cornerSize);
         ctx.stroke();
 
+        // Progress bar along bottom of box while holding
+        if (isHolding && (track.holdingProgress ?? 0) > 0) {
+          const progressW = box.width * Math.min(1.0, track.holdingProgress ?? 0);
+          ctx.beginPath();
+          ctx.moveTo(box.x, box.y + box.height + 4);
+          ctx.lineTo(box.x + progressW, box.y + box.height + 4);
+          ctx.strokeStyle = '#38bdf8';
+          ctx.lineWidth = 3;
+          ctx.stroke();
+        }
+
         // ─── Render Student Nameplate / Status Badge Above Box ───────────
-        const hasIdentity = !!track.identity?.name;
+        const hasIdentity = Boolean(isVerified && track.identity?.name);
         const studentName = (track.identity?.name || '').trim();
         const confPercent = Math.round((track.identity?.confidence ?? 0.9) * 100);
-        const badgeText = hasIdentity
-          ? `✓ ${studentName.toUpperCase()} · ${confPercent}%`
-          : '⚡ SCANNING';
+        const progressPercent = Math.round((track.holdingProgress ?? 0) * 100);
+
+        let badgeText = '⚡ SCANNING';
+        if (hasIdentity) {
+          badgeText = `✓ ${studentName.toUpperCase()} · ${confPercent}%`;
+        } else if (isHolding) {
+          badgeText = `⚡ HOLD STILL · ${progressPercent}%`;
+        }
 
         ctx.save();
         ctx.font = hasIdentity
@@ -680,12 +697,12 @@ const FuturisticFaceScanner: React.FC<FuturisticFaceScannerProps> = ({ onScanCom
     };
 
     const engine = createRecognitionEngine(() => webcamRef.current?.video ?? null, {
-      detectFps: signals.lowCPU ? 12 : 16, // High responsiveness for millisecond detection
+      detectFps: signals.lowCPU ? 10 : 12, // High responsiveness without frame overloading
       detectionWidth: 480, // Sharp 480px width
-      matchThreshold: 0.56, // Calibrated Euclidean distance threshold
-      requiredHoldMs: 0, // Instant 0ms verification on first match
-      identityTtlMs: 2500, // 2.5s TTL keeps name tag smoothly locked above student's head
-      maxMissed: 4, // Smooth tracking
+      matchThreshold: 0.42, // Strict Euclidean distance threshold (eliminates false positives)
+      requiredHoldMs: 800, // 800ms continuous hold required before confirming
+      identityTtlMs: 3500, // 3.5s TTL keeps name tag smoothly locked above student's head
+      maxMissed: 6, // Smooth tracking
       onTracks: (tracks) => {
         drawTracks(tracks);
         setFaceCount((prev) => (prev === tracks.length ? prev : tracks.length));
@@ -705,12 +722,17 @@ const FuturisticFaceScanner: React.FC<FuturisticFaceScannerProps> = ({ onScanCom
         const dedupeKey = `${face.userId}:${normName}`;
         if (inFlightMarkingRef.current.has(dedupeKey)) return;
 
+        // Rapid-fire burst guard: prevent multiple triggers in short bursts (< 1.5s)
+        const now = Date.now();
+        if (now - lastMarkedTimestampRef.current < 1500) return;
+
         const alreadyMarkedAt = Math.max(
           autoMarkedUsersRef.current.get(face.userId) || 0,
           normName !== 'unknown' ? (autoMarkedUsersRef.current.get(`name:${normName}`) || 0) : 0
         );
         if (Date.now() - alreadyMarkedAt < AUTO_MARK_COOLDOWN_MS) return;
 
+        lastMarkedTimestampRef.current = now;
         inFlightMarkingRef.current.add(dedupeKey);
         autoMarkedUsersRef.current.set(face.userId, Date.now());
         if (normName !== 'unknown') {
@@ -1115,12 +1137,12 @@ const FuturisticFaceScanner: React.FC<FuturisticFaceScannerProps> = ({ onScanCom
 
       const detectionPromise: Promise<faceapi.WithFaceDescriptor<faceapi.WithFaceLandmarks<{ detection: faceapi.FaceDetection }, faceapi.FaceLandmarks68>>[]> = useSsd
         ? faceapi
-            .detectAllFaces(video, new faceapi.SsdMobilenetv1Options({ minConfidence: 0.5 }))
+            .detectAllFaces(video, new faceapi.SsdMobilenetv1Options({ minConfidence: 0.6 }))
             .withFaceLandmarks()
             .withFaceDescriptors()
             .run()
         : faceapi
-            .detectAllFaces(video, new faceapi.TinyFaceDetectorOptions({ inputSize: 416, scoreThreshold: 0.4 }))
+            .detectAllFaces(video, new faceapi.TinyFaceDetectorOptions({ inputSize: 416, scoreThreshold: 0.55 }))
             .withFaceLandmarks()
             .withFaceDescriptors()
             .run();
