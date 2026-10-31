@@ -239,12 +239,12 @@ export function createRecognitionEngine(
   getVideo: () => HTMLVideoElement | null,
   options: EngineOptions = {},
 ): RecognitionEngine {
-  const detectFps = options.detectFps ?? 9;
-  const detectionWidth = options.detectionWidth ?? 640;
+  const detectFps = options.detectFps ?? 12;
+  const detectionWidth = options.detectionWidth ?? 480;
   const matchThreshold = options.matchThreshold ?? 0.41;
   const shortlist = options.shortlist ?? 16;
   const maxConcurrentJobs = options.maxConcurrentJobs ?? 2;
-  const baseRequiredHoldMs = options.requiredHoldMs ?? 800;
+  const baseRequiredHoldMs = options.requiredHoldMs ?? 400;
 
   const tracker = createFaceTracker({
     identityTtlMs: options.identityTtlMs ?? 3500,
@@ -491,12 +491,17 @@ export function createRecognitionEngine(
         };
       }
 
-      const requiredHold = Math.max(500, baseRequiredHoldMs);
-      const holdingProgress = Math.min(1.0, track.candidate!.continuousHoldMs / requiredHold);
+      // Adaptive hold duration based on biometric certainty:
+      // High-certainty match (distance <= 0.36) needs only ~280ms.
+      // Standard match (0.36 < distance <= 0.41) requires ~380ms.
+      // Both strictly require at least 2 consecutive matching frames to prevent any transient fluke.
+      const isHighCertainty = match.distance <= 0.36;
+      const targetHoldMs = isHighCertainty ? 280 : Math.max(350, baseRequiredHoldMs);
+      const holdingProgress = Math.min(1.0, track.candidate!.continuousHoldMs / targetHoldMs);
       track.holdingProgress = holdingProgress;
 
       const holdComplete =
-        track.candidate!.continuousHoldMs >= requiredHold &&
+        track.candidate!.continuousHoldMs >= targetHoldMs &&
         (track.candidate!.matchCount ?? 0) >= 2;
 
       // Show identity in HUD immediately (verified flag gates attendance)
@@ -509,7 +514,13 @@ export function createRecognitionEngine(
       });
 
       if (!holdComplete) {
-        // Still holding — will be re-queued by pendingRecognition()
+        // Fast-track the next verification pass without waiting for detection decimation
+        if (running && !queue.includes(track.id)) {
+          queue.push(track.id);
+          setTimeout(() => {
+            if (running && queue.length > 0) void pumpQueue(video);
+          }, 30);
+        }
         publishStats();
         return;
       }
