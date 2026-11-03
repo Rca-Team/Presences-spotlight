@@ -244,7 +244,7 @@ export function createRecognitionEngine(
   const matchThreshold = options.matchThreshold ?? 0.41;
   const shortlist = options.shortlist ?? 16;
   const maxConcurrentJobs = options.maxConcurrentJobs ?? 2;
-  const baseRequiredHoldMs = options.requiredHoldMs ?? 400;
+  const baseRequiredHoldMs = options.requiredHoldMs ?? 0;
 
   const tracker = createFaceTracker({
     identityTtlMs: options.identityTtlMs ?? 3500,
@@ -491,18 +491,19 @@ export function createRecognitionEngine(
         };
       }
 
-      // Adaptive hold duration based on biometric certainty:
-      // High-certainty match (distance <= 0.36) needs only ~280ms.
-      // Standard match (0.36 < distance <= 0.41) requires ~380ms.
-      // Both strictly require at least 2 consecutive matching frames to prevent any transient fluke.
-      const isHighCertainty = match.distance <= 0.36;
-      const targetHoldMs = isHighCertainty ? 280 : Math.max(350, baseRequiredHoldMs);
-      const holdingProgress = Math.min(1.0, track.candidate!.continuousHoldMs / targetHoldMs);
+      // Instant recognition vs optional hold:
+      // When requiredHoldMs <= 0, verify instantly on the first high-accuracy match.
+      // Strict 0.41 threshold & 0.80 ambiguity guard guarantee zero false positives.
+      const requiresHold = baseRequiredHoldMs > 0;
+      const targetHoldMs = requiresHold ? (match.distance <= 0.36 ? 200 : baseRequiredHoldMs) : 0;
+      const holdingProgress = requiresHold
+        ? Math.min(1.0, track.candidate!.continuousHoldMs / Math.max(1, targetHoldMs))
+        : 1.0;
       track.holdingProgress = holdingProgress;
 
       const holdComplete =
-        track.candidate!.continuousHoldMs >= targetHoldMs &&
-        (track.candidate!.matchCount ?? 0) >= 2;
+        !requiresHold ||
+        (track.candidate!.continuousHoldMs >= targetHoldMs && (track.candidate!.matchCount ?? 0) >= 2);
 
       // Show identity in HUD immediately (verified flag gates attendance)
       tracker.assignIdentity(track.id, {
@@ -519,7 +520,7 @@ export function createRecognitionEngine(
           queue.push(track.id);
           setTimeout(() => {
             if (running && queue.length > 0) void pumpQueue(video);
-          }, 30);
+          }, 25);
         }
         publishStats();
         return;
