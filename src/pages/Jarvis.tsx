@@ -1,6 +1,8 @@
 import React, { useState, useEffect, useRef } from "react";
 import { Link } from "react-router-dom";
 import { JarvisHUD } from "@/components/jarvis/JarvisHUD";
+import { AntigravityCanvas } from "@/components/jarvis/AntigravityCanvas";
+import { AntigravityPromptCard } from "@/components/jarvis/AntigravityPromptCard";
 import { JarvisAuditTable } from "@/components/jarvis/JarvisAuditTable";
 import { jarvisAudit, AuditSummaryResult } from "@/services/jarvis/JarvisAuditService";
 import { jarvisAI, JarvisAnalysisResponse } from "@/services/jarvis/JarvisAIService";
@@ -46,6 +48,7 @@ export default function Jarvis() {
   const [auditSummary, setAuditSummary] = useState<AuditSummaryResult | null>(null);
   const [analysis, setAnalysis] = useState<JarvisAnalysisResponse | null>(null);
   const [activeTab, setActiveTab] = useState<"audits" | "recommendations" | "telemetry">("audits");
+  const [viewStyle, setViewStyle] = useState<"antigravity" | "hologram">("antigravity");
 
 
   // Chat / Command input
@@ -213,7 +216,7 @@ export default function Jarvis() {
   };
 
   // Send Command / Question to Jarvis with action interception
-  const handleSendCommand = async (textToSend?: string) => {
+  const handleSendCommand = async (textToSend?: string, options?: { model?: string; mode?: string }) => {
     const prompt = (textToSend || chatInput).trim();
     if (!prompt) return;
 
@@ -226,6 +229,18 @@ export default function Jarvis() {
     ]);
 
     const lower = prompt.toLowerCase();
+    if (lower.startsWith("/sweep") || lower.includes("run diagnostic") || lower.includes("diagnostic sweep") || lower.includes("scan system")) {
+      handleRunDiagnosticSweep();
+      return;
+    }
+    if (lower.startsWith("/export") || lower.includes("export report") || lower.includes("download report") || lower.includes("export csv")) {
+      handleExportCSV();
+      return;
+    }
+    if (lower.startsWith("/biometrics")) {
+      handleRunDiagnosticSweep();
+      return;
+    }
     if (lower.includes("run diagnostic") || lower.includes("diagnostic sweep") || lower.includes("scan system")) {
       handleRunDiagnosticSweep();
       return;
@@ -349,15 +364,60 @@ export default function Jarvis() {
 
       {/* Main Container */}
       <main className="max-w-7xl mx-auto px-4 sm:px-6 pt-8 space-y-8">
-        {/* Top Hero Section: Holographic HUD */}
-        <JarvisHUD
-          isScanning={isScanning}
-          isSpeaking={isSpeaking}
-          isListening={isListening}
-          healthScore={healthScore}
-          onMicClick={handleToggleMic}
-          onScanClick={handleRunDiagnosticSweep}
-        />
+        {/* Mode Switcher Banner / Top Hero */}
+        <div className="flex items-center justify-between px-1">
+          <div className="flex items-center gap-2">
+            <span className="text-xs font-mono uppercase tracking-wider text-zinc-400">Interface Mode:</span>
+            <div className="inline-flex p-1 rounded-xl bg-zinc-900 border border-zinc-800 text-xs">
+              <button
+                type="button"
+                onClick={() => setViewStyle("antigravity")}
+                className={`px-3 py-1 rounded-lg font-medium transition-all ${
+                  viewStyle === "antigravity"
+                    ? "bg-[#ffab91] text-zinc-950 font-bold shadow-sm"
+                    : "text-zinc-400 hover:text-white"
+                }`}
+              >
+                Antigravity UI
+              </button>
+              <button
+                type="button"
+                onClick={() => setViewStyle("hologram")}
+                className={`px-3 py-1 rounded-lg font-medium transition-all ${
+                  viewStyle === "hologram"
+                    ? "bg-cyan-500 text-slate-950 font-bold shadow-sm"
+                    : "text-zinc-400 hover:text-white"
+                }`}
+              >
+                Arc Reactor HUD
+              </button>
+            </div>
+          </div>
+        </div>
+
+        {viewStyle === "antigravity" ? (
+          <AntigravityCanvas
+            userName="Administrator"
+            chatInput={chatInput}
+            onChatInputChange={setChatInput}
+            onSendPrompt={(p) => handleSendCommand(p)}
+            isListening={isListening}
+            onToggleMic={handleToggleMic}
+            isThinking={isSpeaking}
+            onQuickAction={(p) => handleSendCommand(p)}
+            onToggleViewMode={() => setViewStyle("hologram")}
+            viewModeLabel="Switch to Arc Reactor HUD"
+          />
+        ) : (
+          <JarvisHUD
+            isScanning={isScanning}
+            isSpeaking={isSpeaking}
+            isListening={isListening}
+            healthScore={healthScore}
+            onMicClick={handleToggleMic}
+            onScanClick={handleRunDiagnosticSweep}
+          />
+        )}
 
         {/* Telemetry Metric Cards */}
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
@@ -452,30 +512,18 @@ export default function Jarvis() {
               <div ref={chatBottomRef} />
             </div>
 
-            {/* Input Bar */}
-            <div className="p-3 border-t border-white/10 bg-white/[0.02]">
-              <form
-                onSubmit={(e) => {
-                  e.preventDefault();
-                  handleSendCommand();
-                }}
-                className="flex items-center gap-2"
-              >
-                <input
-                  type="text"
-                  value={chatInput}
-                  onChange={(e) => setChatInput(e.target.value)}
-                  placeholder="Ask Jarvis anything about school records..."
-                  className="flex-1 px-4 py-2.5 rounded-xl bg-white/5 border border-white/10 text-sm placeholder:text-slate-500 text-slate-100 focus:outline-none focus:border-cyan-400"
-                />
-                <button
-                  type="submit"
-                  disabled={!chatInput.trim()}
-                  className="p-2.5 rounded-xl bg-cyan-500 hover:bg-cyan-400 text-slate-950 disabled:opacity-40 transition-colors cursor-pointer"
-                >
-                  <Send className="w-4 h-4" />
-                </button>
-              </form>
+            {/* Input Bar - Antigravity Prompt Card */}
+            <div className="p-3 border-t border-zinc-800 bg-[#0e0e11]">
+              <AntigravityPromptCard
+                value={chatInput}
+                onChange={setChatInput}
+                onSubmit={(p) => handleSendCommand(p)}
+                isListening={isListening}
+                onToggleMic={handleToggleMic}
+                isThinking={isSpeaking}
+                showContextPill={false}
+                placeholder="Ask anything, @ to mention, / for actions"
+              />
             </div>
           </div>
 
